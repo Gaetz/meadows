@@ -30,6 +30,12 @@ bool groundAt(const render::TerrainParams& terrain, bool interiorMode,
               phys::PhysicsWorld* physics, Vec3& position);
 bool groundNpc(const NpcContext& ctx, Vec3& position);
 
+// Wraps an angle into [-pi, pi].
+f32 wrapAngle(f32 angle);
+// Exponentially eases `yaw` toward `goalYaw` (`rate` in 1/s), wrap-aware —
+// the shared facing smoother of the walkers, guards and the mount.
+void smoothYawToward(f32& yaw, f32 goalYaw, f32 rate, f32 dt);
+
 // Walks npc.path from npc.pathIndex; returns true when the path is done.
 bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
                       f32 speedScale);

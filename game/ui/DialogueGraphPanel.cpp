@@ -1,4 +1,5 @@
 #include "game/ui/DialogueGraphPanel.hpp"
+#include "game/ui/Keywords.hpp"
 
 #include <algorithm>
 #include <deque>
@@ -7,6 +8,7 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
+#include "game/ui/GraphPanelCommon.hpp"
 #include "game/ui/EventPicker.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "quest/Dialogue.hpp"
@@ -84,7 +86,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
     const auto* dialogue =
         static_cast<const quest::DialogueForm*>(session.view(dialogueId));
     if (!dialogue->rootNode.isValid() || !session.view(dialogue->rootNode)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+        ImGui::TextColored(kWarnColor,
                            "(!) no root node — create it in the Inspector");
         return;
     }
@@ -97,7 +99,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
     ImGui::TextDisabled("%zu lines — drag a link to re-parent a reply",
                         data.nodes.size());
     if (!status.empty()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s",
+        ImGui::TextColored(kWarnColor, "%s",
                            status.c_str());
     }
 
@@ -127,35 +129,13 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
                 edges.emplace_back(node->parent, id);
             }
         }
-        const data::GraphLayoutResult layout = data::layoutGraph(
-            nodes, edges, { dialogue->rootNode }, &rank);
-        for (const core::Guid& node : nodes) {
-            if (autoLayoutRequested) {
-                const auto it = layout.positions.find(node);
-                if (it != layout.positions.end()) {
-                    canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(dialogueId, node, it->second);
-                }
-                continue;
-            }
-            if (const auto stored = layouts.positionOf(dialogueId, node)) {
-                canvas.setNodePosition(node, *stored);
-            } else if (const auto it = layout.positions.find(node);
-                       it != layout.positions.end()) {
-                canvas.setNodePosition(node, it->second);
-            }
-        }
-        if (autoLayoutRequested) {
-            layouts.save();
-        }
+        applyGraphLayout(canvas, layouts, dialogueId, nodes, edges,
+                         { dialogue->rootNode }, autoLayoutRequested,
+                         &rank);
         canvasShown = dialogueId;
     }
-    if (pendingPlace.isValid()) {
-        canvas.setNodePosition(pendingPlace, pendingPlacePos);
-        layouts.setPosition(dialogueId, pendingPlace, pendingPlacePos);
-        layouts.save();
-        pendingPlace = {};
-    }
+    placePendingNode(canvas, layouts, dialogueId, pendingPlace,
+                     pendingPlacePos);
 
     // Lint precompute: which event names anything reacts to (tasks,
     // quest startEvents, C++ listeners) — one scan, not one per node.
@@ -192,7 +172,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
         if (!node->event.empty()) {
             ImGui::TextDisabled("[%s]", node->event.c_str());
             if (!listened.contains(node->event)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                ImGui::TextColored(kWarnColor,
                                    "(!) no listener");
             }
         }
@@ -217,6 +197,45 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
     NodeCanvas::Actions actions;
     canvas.end(actions);
 
+    // Next sibling order under a parent line, shared by re-parenting
+    // and both "+ reply" popups.
+    const auto nextOrderUnder = [&](const core::Guid& parent) {
+        i32 nextOrder = 0;
+        for (const auto& [id, node] : data.nodes) {
+            if (node->parent == parent) {
+                nextOrder = std::max(nextOrder, node->order + 1);
+            }
+        }
+        return nextOrder;
+    };
+    // Create a reply line under `parent` — alternate speakers, next
+    // order — and select it. Returns the new node (null if the parent
+    // vanished under a stale frame).
+    const auto createReply = [&](const core::Guid& parent) -> core::Guid {
+        const auto* parentNode =
+            static_cast<const quest::DialogueNodeForm*>(
+                session.view(parent));
+        if (!parentNode) {
+            return {};
+        }
+        data::EditSession::Gesture gesture { session };
+        const bool parentIsPlayer = parentNode->speaker == "Player";
+        const core::Guid id = session.createForm(
+            quest::DialogueNodeForm::staticTypeInfo().id,
+            parentNode->editorId + "Reply" +
+                std::to_string(++createCounter));
+        session.setField(id, core::fnv1a("parent"),
+                         reflect::Value { parent });
+        session.setField(
+            id, core::fnv1a("speaker"),
+            reflect::Value { parentIsPlayer ? str {}
+                                            : str { "Player" } });
+        session.setField(id, core::fnv1a("order"),
+                         reflect::Value { nextOrderUnder(parent) });
+        selected = id;
+        return id;
+    };
+
     if (actions.linkCreated) {
         // Re-parent, with the same guard the canvas already applied —
         // data may have changed under a stale frame.
@@ -226,16 +245,11 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
             status = "(!) refused: would cycle the tree";
         } else {
             data::EditSession::Gesture gesture { session }; // parent+order
-            i32 nextOrder = 0;
-            for (const auto& [id, node] : data.nodes) {
-                if (node->parent == actions.linkFrom) {
-                    nextOrder = std::max(nextOrder, node->order + 1);
-                }
-            }
             session.setField(actions.linkTo, core::fnv1a("parent"),
                              reflect::Value { actions.linkFrom });
             session.setField(actions.linkTo, core::fnv1a("order"),
-                             reflect::Value { nextOrder });
+                             reflect::Value {
+                                 nextOrderUnder(actions.linkFrom) });
             selected = actions.linkTo;
             status.clear();
         }
@@ -243,12 +257,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
     for (const core::Guid& id : actions.deletedNodes) {
         session.removeCreated(id);
     }
-    for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(dialogueId, node, position);
-    }
-    if (!actions.movedNodes.empty()) {
-        layouts.save();
-    }
+    persistMovedNodes(layouts, dialogueId, actions.movedNodes);
     if (actions.clickedNode.isValid()) {
         selected = actions.clickedNode;
     }
@@ -266,66 +275,17 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
 
     if (ImGui::BeginPopup("dgg-newnode")) {
         if (ImGui::MenuItem("+ reply here")) {
-            data::EditSession::Gesture gesture { session };
-            const auto* parentNode =
-                static_cast<const quest::DialogueNodeForm*>(
-                    session.view(dragFrom));
-            if (parentNode) {
-                i32 nextOrder = 0;
-                for (const auto& [id, node] : data.nodes) {
-                    if (node->parent == dragFrom) {
-                        nextOrder = std::max(nextOrder, node->order + 1);
-                    }
-                }
-                const bool parentIsPlayer = parentNode->speaker == "Player";
-                const core::Guid id = session.createForm(
-                    quest::DialogueNodeForm::staticTypeInfo().id,
-                    parentNode->editorId + "Reply" +
-                        std::to_string(++createCounter));
-                session.setField(id, core::fnv1a("parent"),
-                                 reflect::Value { dragFrom });
-                session.setField(
-                    id, core::fnv1a("speaker"),
-                    reflect::Value { parentIsPlayer ? str {}
-                                                    : str { "Player" } });
-                session.setField(id, core::fnv1a("order"),
-                                 reflect::Value { nextOrder });
+            if (const core::Guid id = createReply(dragFrom);
+                id.isValid()) {
                 pendingPlace = id;
                 pendingPlacePos = dragPos;
-                selected = id;
             }
         }
         ImGui::EndPopup();
     }
     if (ImGui::BeginPopup("dgg-node")) {
         if (ImGui::MenuItem("+ reply")) {
-            data::EditSession::Gesture gesture { session };
-            const auto* parentNode =
-                static_cast<const quest::DialogueNodeForm*>(
-                    session.view(contextNode));
-            if (parentNode) {
-                // Alternate speakers, next order.
-                i32 nextOrder = 0;
-                for (const auto& [id, node] : data.nodes) {
-                    if (node->parent == contextNode) {
-                        nextOrder = std::max(nextOrder, node->order + 1);
-                    }
-                }
-                const bool parentIsPlayer = parentNode->speaker == "Player";
-                const core::Guid id = session.createForm(
-                    quest::DialogueNodeForm::staticTypeInfo().id,
-                    parentNode->editorId + "Reply" +
-                        std::to_string(++createCounter));
-                session.setField(id, core::fnv1a("parent"),
-                                 reflect::Value { contextNode });
-                session.setField(
-                    id, core::fnv1a("speaker"),
-                    reflect::Value { parentIsPlayer ? str {}
-                                                    : str { "Player" } });
-                session.setField(id, core::fnv1a("order"),
-                                 reflect::Value { nextOrder });
-                selected = id;
-            }
+            createReply(contextNode);
         }
         ImGui::EndPopup();
     }

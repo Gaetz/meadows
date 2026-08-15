@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/FormDatabase.hpp"
+#include "game/ui/TestActor.hpp"
 #include "data/plugins/EditSession.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
@@ -25,14 +26,10 @@ public:
     void drawEditor(const core::Guid& ability);
 
 private:
-    void resetActor();
 
     data::EditSession& session;
     const data::FormDatabase& forms;
-    gameplay::AttributeSet testSet;
-    gameplay::AbilitySystem testSystem;
-    gameplay::GameplayTagRegistry testTags;
-    str lastResult;
+    TestActor testActor; // the "Try it" bench
 };
 
 } // namespace game

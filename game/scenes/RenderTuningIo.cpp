@@ -127,6 +127,139 @@ void RenderTuningIo::applyTuning(
     gs.materialCutoff = tuning.grassMaterialCutoff;
 }
 
+namespace {
+
+// ONE field list per Form <-> engine-params pair, walked in BOTH
+// directions (apply and capture): a field added to a table is
+// automatically read AND written — a field forgotten in one of two
+// hand-written lists is how nine conifer fields silently stopped saving.
+// The member pointers are compile-checked against both structs.
+template <typename Params, typename Form, typename T>
+struct FieldLane {
+    T Params::* param;
+    T Form::* form;
+};
+
+template <typename Params, typename Form, typename T, size_t N>
+void applyLanes(Params& params, const Form& form,
+                const FieldLane<Params, Form, T> (&lanes)[N]) {
+    for (const auto& lane : lanes) {
+        params.*lane.param = form.*lane.form;
+    }
+}
+
+template <typename Params, typename Form, typename T, size_t N>
+void captureLanes(const Params& params, Form& form,
+                  const FieldLane<Params, Form, T> (&lanes)[N]) {
+    for (const auto& lane : lanes) {
+        form.*lane.form = params.*lane.param;
+    }
+}
+
+constexpr FieldLane<render::LobeTreeParams, data::LobeTreeTuningForm, f32> kLobeLanesF32[] = {
+    { &render::LobeTreeParams::trunkHeightMin, &data::LobeTreeTuningForm::trunkHeightMin },
+    { &render::LobeTreeParams::trunkHeightMax, &data::LobeTreeTuningForm::trunkHeightMax },
+    { &render::LobeTreeParams::trunkRadiusMin, &data::LobeTreeTuningForm::trunkRadiusMin },
+    { &render::LobeTreeParams::trunkRadiusMax, &data::LobeTreeTuningForm::trunkRadiusMax },
+    { &render::LobeTreeParams::trunkTaper, &data::LobeTreeTuningForm::trunkTaper },
+    { &render::LobeTreeParams::lean, &data::LobeTreeTuningForm::lean },
+    { &render::LobeTreeParams::branchLengthMin, &data::LobeTreeTuningForm::branchLengthMin },
+    { &render::LobeTreeParams::branchLengthMax, &data::LobeTreeTuningForm::branchLengthMax },
+    { &render::LobeTreeParams::crownLobeRadiusMin, &data::LobeTreeTuningForm::crownLobeRadiusMin },
+    { &render::LobeTreeParams::crownLobeRadiusMax, &data::LobeTreeTuningForm::crownLobeRadiusMax },
+    { &render::LobeTreeParams::branchLobeRadiusMin, &data::LobeTreeTuningForm::branchLobeRadiusMin },
+    { &render::LobeTreeParams::branchLobeRadiusMax, &data::LobeTreeTuningForm::branchLobeRadiusMax },
+    { &render::LobeTreeParams::lobeFlatten, &data::LobeTreeTuningForm::lobeFlatten },
+    { &render::LobeTreeParams::normalSpherize, &data::LobeTreeTuningForm::normalSpherize },
+};
+constexpr FieldLane<render::LobeTreeParams, data::LobeTreeTuningForm, i32> kLobeLanesI32[] = {
+    { &render::LobeTreeParams::branchCountMin, &data::LobeTreeTuningForm::branchCountMin },
+    { &render::LobeTreeParams::branchCountMax, &data::LobeTreeTuningForm::branchCountMax },
+};
+constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, f32> kColonizedLanesF32[] = {
+    { &render::ColonizedTreeParams::flareAmount, &data::ColonizedTreeTuningForm::flareAmount },
+    { &render::ColonizedTreeParams::flareHeight, &data::ColonizedTreeTuningForm::flareHeight },
+    { &render::ColonizedTreeParams::curvePreserve, &data::ColonizedTreeTuningForm::curvePreserve },
+    { &render::ColonizedTreeParams::pathJitter, &data::ColonizedTreeTuningForm::pathJitter },
+    { &render::ColonizedTreeParams::ringIrregularity, &data::ColonizedTreeTuningForm::ringIrregularity },
+    { &render::ColonizedTreeParams::sideMinFraction, &data::ColonizedTreeTuningForm::sideMinFraction },
+    { &render::ColonizedTreeParams::segment, &data::ColonizedTreeTuningForm::segment },
+    { &render::ColonizedTreeParams::killDistance, &data::ColonizedTreeTuningForm::killDistance },
+    { &render::ColonizedTreeParams::pipeExponent, &data::ColonizedTreeTuningForm::pipeExponent },
+    { &render::ColonizedTreeParams::tropism, &data::ColonizedTreeTuningForm::tropism },
+    { &render::ColonizedTreeParams::trunkBaseMin, &data::ColonizedTreeTuningForm::trunkBaseMin },
+    { &render::ColonizedTreeParams::trunkBaseMax, &data::ColonizedTreeTuningForm::trunkBaseMax },
+    { &render::ColonizedTreeParams::crownHeightMin, &data::ColonizedTreeTuningForm::crownHeightMin },
+    { &render::ColonizedTreeParams::crownHeightMax, &data::ColonizedTreeTuningForm::crownHeightMax },
+    { &render::ColonizedTreeParams::crownRadiusMin, &data::ColonizedTreeTuningForm::crownRadiusMin },
+    { &render::ColonizedTreeParams::crownRadiusMax, &data::ColonizedTreeTuningForm::crownRadiusMax },
+    { &render::ColonizedTreeParams::crownTaper, &data::ColonizedTreeTuningForm::crownTaper },
+    { &render::ColonizedTreeParams::leaderBias, &data::ColonizedTreeTuningForm::leaderBias },
+    { &render::ColonizedTreeParams::lateralFlatten, &data::ColonizedTreeTuningForm::lateralFlatten },
+    { &render::ColonizedTreeParams::sprayFoliage, &data::ColonizedTreeTuningForm::sprayFoliage },
+    { &render::ColonizedTreeParams::tipBallRadius, &data::ColonizedTreeTuningForm::tipBallRadius },
+    { &render::ColonizedTreeParams::tipOrderFalloff, &data::ColonizedTreeTuningForm::tipOrderFalloff },
+    { &render::ColonizedTreeParams::tipBallMin, &data::ColonizedTreeTuningForm::tipBallMin },
+    { &render::ColonizedTreeParams::seasonality, &data::ColonizedTreeTuningForm::seasonality },
+    { &render::ColonizedTreeParams::smoothK, &data::ColonizedTreeTuningForm::smoothK },
+    { &render::ColonizedTreeParams::cardHalfSizeMin, &data::ColonizedTreeTuningForm::cardHalfSizeMin },
+    { &render::ColonizedTreeParams::cardHalfSizeMax, &data::ColonizedTreeTuningForm::cardHalfSizeMax },
+    { &render::ColonizedTreeParams::densityGradient, &data::ColonizedTreeTuningForm::densityGradient },
+    { &render::ColonizedTreeParams::foliageDensity, &data::ColonizedTreeTuningForm::foliageDensity },
+    { &render::ColonizedTreeParams::leafSizeMin, &data::ColonizedTreeTuningForm::leafSizeMin },
+    { &render::ColonizedTreeParams::leafSizeMax, &data::ColonizedTreeTuningForm::leafSizeMax },
+    { &render::ColonizedTreeParams::leafSolidStart, &data::ColonizedTreeTuningForm::leafSolidStart },
+    { &render::ColonizedTreeParams::leafSolidEnd, &data::ColonizedTreeTuningForm::leafSolidEnd },
+    { &render::ColonizedTreeParams::barkTileScale, &data::ColonizedTreeTuningForm::barkTileScale },
+    { &render::ColonizedTreeParams::barkHexCell, &data::ColonizedTreeTuningForm::barkHexCell },
+    { &render::ColonizedTreeParams::barkHexSharpness, &data::ColonizedTreeTuningForm::barkHexSharpness },
+};
+constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, i32> kColonizedLanesI32[] = {
+    { &render::ColonizedTreeParams::tubeSides, &data::ColonizedTreeTuningForm::tubeSides },
+    { &render::ColonizedTreeParams::flareLobes, &data::ColonizedTreeTuningForm::flareLobes },
+    { &render::ColonizedTreeParams::curveSubdiv, &data::ColonizedTreeTuningForm::curveSubdiv },
+    { &render::ColonizedTreeParams::attractorCount, &data::ColonizedTreeTuningForm::attractorCount },
+    { &render::ColonizedTreeParams::leafStyle, &data::ColonizedTreeTuningForm::leafStyle },
+    { &render::ColonizedTreeParams::leafShape, &data::ColonizedTreeTuningForm::leafShape },
+    { &render::ColonizedTreeParams::leafCount, &data::ColonizedTreeTuningForm::leafCount },
+};
+constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, Vec3> kColonizedLanesVec3[] = {
+    { &render::ColonizedTreeParams::autumnTint, &data::ColonizedTreeTuningForm::autumnTint },
+    { &render::ColonizedTreeParams::barkTint, &data::ColonizedTreeTuningForm::barkTint },
+};
+
+constexpr FieldLane<render::RcTuning, data::RcTuningForm, f32> kRcLanesF32[] = {
+    { &render::RcTuning::fineVoxel, &data::RcTuningForm::fineVoxel },
+    { &render::RcTuning::coarseVoxel, &data::RcTuningForm::coarseVoxel },
+    { &render::RcTuning::intensity, &data::RcTuningForm::intensity },
+    { &render::RcTuning::skyFactor, &data::RcTuningForm::skyFactor },
+    { &render::RcTuning::emitterBoost, &data::RcTuningForm::emitterBoost },
+    { &render::RcTuning::lightSplatBounce,
+      &data::RcTuningForm::lightSplatBounce },
+    { &render::RcTuning::bounceFeedback,
+      &data::RcTuningForm::bounceFeedback },
+    { &render::RcTuning::interval0, &data::RcTuningForm::interval0 },
+    { &render::RcTuning::edgeFade, &data::RcTuningForm::edgeFade },
+    { &render::RcTuning::bandCount, &data::RcTuningForm::bandCount },
+    { &render::RcTuning::bandAa, &data::RcTuningForm::bandAa },
+    { &render::RcTuning::giFloor, &data::RcTuningForm::giFloor },
+};
+constexpr FieldLane<render::RcTuning, data::RcTuningForm, i32> kRcLanesI32[] = {
+    { &render::RcTuning::resolution, &data::RcTuningForm::resolution },
+    { &render::RcTuning::cascadeCount, &data::RcTuningForm::cascadeCount },
+    { &render::RcTuning::updateInterval,
+      &data::RcTuningForm::updateInterval },
+};
+constexpr FieldLane<render::RcTuning, data::RcTuningForm, bool> kRcLanesBool[] = {
+    { &render::RcTuning::pipelined, &data::RcTuningForm::pipelined },
+    { &render::RcTuning::asyncCompute, &data::RcTuningForm::asyncCompute },
+    { &render::RcTuning::rcOnlyLights, &data::RcTuningForm::rcOnlyLights },
+    { &render::RcTuning::intervalExtension,
+      &data::RcTuningForm::intervalExtension },
+};
+
+} // namespace
+
 void RenderTuningIo::applyTreeTuning(
     render::WorldRenderer& r, const data::LobeTreeTuningForm& lobes,
     const data::ColonizedTreeTuningForm& colonized) {
@@ -136,103 +269,32 @@ void RenderTuningIo::applyTreeTuning(
 
 render::LobeTreeParams RenderTuningIo::toLobeParams(
     const data::LobeTreeTuningForm& lobes) {
-    // Field-for-field Form -> flat engine params (§4: engine never sees
-    // data/). The Trees panel then edits the params live.
+    // Form -> flat engine params through the lane tables (§4: engine
+    // never sees data/). The Trees panel then edits the params live.
     render::LobeTreeParams l;
-    l.trunkHeightMin = lobes.trunkHeightMin;
-    l.trunkHeightMax = lobes.trunkHeightMax;
-    l.trunkRadiusMin = lobes.trunkRadiusMin;
-    l.trunkRadiusMax = lobes.trunkRadiusMax;
-    l.trunkTaper = lobes.trunkTaper;
-    l.lean = lobes.lean;
-    l.branchCountMin = lobes.branchCountMin;
-    l.branchCountMax = lobes.branchCountMax;
-    l.branchLengthMin = lobes.branchLengthMin;
-    l.branchLengthMax = lobes.branchLengthMax;
-    l.crownLobeRadiusMin = lobes.crownLobeRadiusMin;
-    l.crownLobeRadiusMax = lobes.crownLobeRadiusMax;
-    l.branchLobeRadiusMin = lobes.branchLobeRadiusMin;
-    l.branchLobeRadiusMax = lobes.branchLobeRadiusMax;
-    l.lobeFlatten = lobes.lobeFlatten;
-    l.normalSpherize = lobes.normalSpherize;
+    applyLanes(l, lobes, kLobeLanesF32);
+    applyLanes(l, lobes, kLobeLanesI32);
     return l;
 }
 
 render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
     const data::ColonizedTreeTuningForm& colonized) {
     render::ColonizedTreeParams c;
-    c.tubeSides = colonized.tubeSides;
-    c.flareAmount = colonized.flareAmount;
-    c.flareHeight = colonized.flareHeight;
-    c.flareLobes = colonized.flareLobes;
-    c.curvePreserve = colonized.curvePreserve;
-    c.curveSubdiv = colonized.curveSubdiv;
-    c.pathJitter = colonized.pathJitter;
-    c.ringIrregularity = colonized.ringIrregularity;
-    c.sideMinFraction = colonized.sideMinFraction;
-    c.segment = colonized.segment;
-    c.killDistance = colonized.killDistance;
-    c.attractorCount = colonized.attractorCount;
-    c.pipeExponent = colonized.pipeExponent;
-    c.tropism = colonized.tropism;
-    c.trunkBaseMin = colonized.trunkBaseMin;
-    c.trunkBaseMax = colonized.trunkBaseMax;
-    c.crownHeightMin = colonized.crownHeightMin;
-    c.crownHeightMax = colonized.crownHeightMax;
-    c.crownRadiusMin = colonized.crownRadiusMin;
-    c.crownRadiusMax = colonized.crownRadiusMax;
-    c.crownTaper = colonized.crownTaper;
-    c.leaderBias = colonized.leaderBias;
-    c.lateralFlatten = colonized.lateralFlatten;
-    c.sprayFoliage = colonized.sprayFoliage;
-    c.tipBallRadius = colonized.tipBallRadius;
-    c.tipOrderFalloff = colonized.tipOrderFalloff;
-    c.tipBallMin = colonized.tipBallMin;
-    c.leafStyle = colonized.leafStyle;
-    c.leafShape = colonized.leafShape;
-    c.autumnTint = colonized.autumnTint;
-    c.seasonality = colonized.seasonality;
-    c.smoothK = colonized.smoothK;
-    c.cardHalfSizeMin = colonized.cardHalfSizeMin;
-    c.cardHalfSizeMax = colonized.cardHalfSizeMax;
-    c.densityGradient = colonized.densityGradient;
-    c.foliageDensity = colonized.foliageDensity;
-    c.leafCount = colonized.leafCount;
-    c.leafSizeMin = colonized.leafSizeMin;
-    c.leafSizeMax = colonized.leafSizeMax;
-    c.leafSolidStart = colonized.leafSolidStart;
-    c.leafSolidEnd = colonized.leafSolidEnd;
-    c.barkTileScale = colonized.barkTileScale;
-    c.barkHexCell = colonized.barkHexCell;
-    c.barkHexSharpness = colonized.barkHexSharpness;
-    c.barkTint = colonized.barkTint;
+    applyLanes(c, colonized, kColonizedLanesF32);
+    applyLanes(c, colonized, kColonizedLanesI32);
+    applyLanes(c, colonized, kColonizedLanesVec3);
     return c;
 }
 
 void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
                                    const data::RcTuningForm& rc) {
     render::RcTuning& t = r.radianceCascades.tuning;
-    t.resolution = rc.resolution;
-    t.fineVoxel = rc.fineVoxel;
-    t.coarseVoxel = rc.coarseVoxel;
-    t.cascadeCount = rc.cascadeCount;
-    t.updateInterval = rc.updateInterval;
+    applyLanes(t, rc, kRcLanesF32);
+    applyLanes(t, rc, kRcLanesI32);
+    applyLanes(t, rc, kRcLanesBool);
+    // The one non-lane field: the Form spells the technique as an i32.
     t.technique = rc.technique == 1 ? render::GiTechnique::RadianceCascades
                                     : render::GiTechnique::Classic;
-    t.intensity = rc.intensity;
-    t.skyFactor = rc.skyFactor;
-    t.emitterBoost = rc.emitterBoost;
-    t.lightSplatBounce = rc.lightSplatBounce;
-    t.pipelined = rc.pipelined;
-    t.asyncCompute = rc.asyncCompute;
-    t.bounceFeedback = rc.bounceFeedback;
-    t.rcOnlyLights = rc.rcOnlyLights;
-    t.interval0 = rc.interval0;
-    t.edgeFade = rc.edgeFade;
-    t.bandCount = rc.bandCount;
-    t.bandAa = rc.bandAa;
-    t.giFloor = rc.giFloor;
-    t.intervalExtension = rc.intervalExtension;
 }
 
 void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
@@ -335,86 +397,23 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
                                      data::RcTuningForm& out) {
     const render::RcTuning& t = r.radianceCascades.tuning;
-    out.resolution = t.resolution;
-    out.fineVoxel = t.fineVoxel;
-    out.coarseVoxel = t.coarseVoxel;
-    out.cascadeCount = t.cascadeCount;
-    out.updateInterval = t.updateInterval;
+    captureLanes(t, out, kRcLanesF32);
+    captureLanes(t, out, kRcLanesI32);
+    captureLanes(t, out, kRcLanesBool);
     out.technique =
         t.technique == render::GiTechnique::RadianceCascades ? 1 : 0;
-    out.intensity = t.intensity;
-    out.skyFactor = t.skyFactor;
-    out.emitterBoost = t.emitterBoost;
-    out.lightSplatBounce = t.lightSplatBounce;
-    out.pipelined = t.pipelined;
-    out.asyncCompute = t.asyncCompute;
-    out.bounceFeedback = t.bounceFeedback;
-    out.rcOnlyLights = t.rcOnlyLights;
-    out.interval0 = t.interval0;
-    out.edgeFade = t.edgeFade;
-    out.bandCount = t.bandCount;
-    out.bandAa = t.bandAa;
-    out.giFloor = t.giFloor;
-    out.intervalExtension = t.intervalExtension;
 }
 
 void RenderTuningIo::captureTreeTuning(
     const render::WorldRenderer& r, data::LobeTreeTuningForm& lobes,
     data::ColonizedTreeTuningForm& colonized) {
     const render::LobeTreeParams& l = r.vegetation.lobeTreeParams;
-    lobes.trunkHeightMin = l.trunkHeightMin;
-    lobes.trunkHeightMax = l.trunkHeightMax;
-    lobes.trunkRadiusMin = l.trunkRadiusMin;
-    lobes.trunkRadiusMax = l.trunkRadiusMax;
-    lobes.trunkTaper = l.trunkTaper;
-    lobes.lean = l.lean;
-    lobes.branchCountMin = l.branchCountMin;
-    lobes.branchCountMax = l.branchCountMax;
-    lobes.branchLengthMin = l.branchLengthMin;
-    lobes.branchLengthMax = l.branchLengthMax;
-    lobes.crownLobeRadiusMin = l.crownLobeRadiusMin;
-    lobes.crownLobeRadiusMax = l.crownLobeRadiusMax;
-    lobes.branchLobeRadiusMin = l.branchLobeRadiusMin;
-    lobes.branchLobeRadiusMax = l.branchLobeRadiusMax;
-    lobes.lobeFlatten = l.lobeFlatten;
-    lobes.normalSpherize = l.normalSpherize;
+    captureLanes(l, lobes, kLobeLanesF32);
+    captureLanes(l, lobes, kLobeLanesI32);
     const render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
-    colonized.tubeSides = c.tubeSides;
-    colonized.flareAmount = c.flareAmount;
-    colonized.flareHeight = c.flareHeight;
-    colonized.flareLobes = c.flareLobes;
-    colonized.curvePreserve = c.curvePreserve;
-    colonized.curveSubdiv = c.curveSubdiv;
-    colonized.pathJitter = c.pathJitter;
-    colonized.ringIrregularity = c.ringIrregularity;
-    colonized.sideMinFraction = c.sideMinFraction;
-    colonized.segment = c.segment;
-    colonized.killDistance = c.killDistance;
-    colonized.attractorCount = c.attractorCount;
-    colonized.pipeExponent = c.pipeExponent;
-    colonized.tropism = c.tropism;
-    colonized.trunkBaseMin = c.trunkBaseMin;
-    colonized.trunkBaseMax = c.trunkBaseMax;
-    colonized.crownHeightMin = c.crownHeightMin;
-    colonized.crownHeightMax = c.crownHeightMax;
-    colonized.crownRadiusMin = c.crownRadiusMin;
-    colonized.crownRadiusMax = c.crownRadiusMax;
-    colonized.tipBallRadius = c.tipBallRadius;
-    colonized.tipOrderFalloff = c.tipOrderFalloff;
-    colonized.smoothK = c.smoothK;
-    colonized.cardHalfSizeMin = c.cardHalfSizeMin;
-    colonized.cardHalfSizeMax = c.cardHalfSizeMax;
-    colonized.densityGradient = c.densityGradient;
-    colonized.foliageDensity = c.foliageDensity;
-    colonized.leafCount = c.leafCount;
-    colonized.leafSizeMin = c.leafSizeMin;
-    colonized.leafSizeMax = c.leafSizeMax;
-    colonized.leafSolidStart = c.leafSolidStart;
-    colonized.leafSolidEnd = c.leafSolidEnd;
-    colonized.barkTileScale = c.barkTileScale;
-    colonized.barkHexCell = c.barkHexCell;
-    colonized.barkHexSharpness = c.barkHexSharpness;
-    colonized.barkTint = c.barkTint;
+    captureLanes(c, colonized, kColonizedLanesF32);
+    captureLanes(c, colonized, kColonizedLanesI32);
+    captureLanes(c, colonized, kColonizedLanesVec3);
 }
 
 } // namespace game

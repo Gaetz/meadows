@@ -1,8 +1,14 @@
 #pragma once
 
+#include <imgui.h>
+
 #include "engine/core/Defines.hpp"
 
 namespace game {
+
+// The editor's shared warning tint (orange) — panels flag missing
+// wiring / dangling refs with it.
+inline constexpr ImVec4 kWarnColor { 1.0f, 0.6f, 0.2f, 1.0f };
 
 // Closed keyword vocabularies of reflected string fields (nobody knows
 // "Regular | Success | Failure" by heart — every

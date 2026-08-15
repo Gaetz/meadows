@@ -1,6 +1,9 @@
 #include "game/ui/AbilityPanel.hpp"
+#include "game/ui/Keywords.hpp"
 
 #include <imgui.h>
+
+#include "game/ui/TestActor.hpp"
 
 #include "engine/reflect/Reflect.hpp"
 #include "game/ui/FormPicker.hpp"
@@ -10,42 +13,9 @@
 namespace game {
 
 namespace {
-constexpr ImVec4 kWarnColor { 1.0f, 0.6f, 0.2f, 1.0f };
 
-void drawAttributeTable(const gameplay::AttributeSet& set,
-                        const gameplay::AbilitySystem& system) {
-    if (!ImGui::BeginTable("attrs", 3, ImGuiTableFlags_SizingStretchProp)) {
-        return;
-    }
-    ImGui::TableSetupColumn("attribute");
-    ImGui::TableSetupColumn("base");
-    ImGui::TableSetupColumn("current");
-    ImGui::TableHeadersRow();
-    reflect::forEachField(
-        gameplay::AttributeSet::staticTypeInfo(),
-        [&](const reflect::FieldInfo& field) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(field.name.c_str());
-            ImGui::TableNextColumn();
-            const auto base =
-                gameplay::baseValueOf(set, gameplay::attr(field.name));
-            ImGui::Text("%.1f", base ? *base : 0.0f);
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f", gameplay::currentValueOf(
-                                    system, gameplay::attr(field.name)));
-        });
-    ImGui::EndTable();
-}
 
 } // namespace
-
-void AbilityPanel::resetActor() {
-    testSet = gameplay::AttributeSet {};
-    testSystem = gameplay::AbilitySystem {};
-    gameplay::initializeCurrent(testSystem, testSet);
-    lastResult.clear();
-}
 
 void AbilityPanel::drawEditor(const core::Guid& abilityId) {
     const auto* type =
@@ -100,12 +70,12 @@ void AbilityPanel::drawEditor(const core::Guid& abilityId) {
         "resolves the RESOLVED database — export + reload to test "
         "session-created effects.");
     if (ImGui::Button("Reset actor")) {
-        resetActor();
+        testActor.reset();
     }
     ImGui::SameLine();
     if (ImGui::Button("Try activate")) {
-        if (testSystem.current.empty()) {
-            resetActor();
+        if (testActor.system.current.empty()) {
+            testActor.reset();
         }
         // Register every tag the activation touches so gates resolve.
         const auto registerEffectTags = [&](const core::Guid& id) {
@@ -115,35 +85,35 @@ void AbilityPanel::drawEditor(const core::Guid& abilityId) {
                      { effect->grantedTag, effect->requiredTag,
                        effect->blockedTag }) {
                     if (!tag.empty()) {
-                        testTags.registerTag(tag);
+                        testActor.tags.registerTag(tag);
                     }
                 }
             }
         };
         for (const str& tag : { ability->requiredTag, ability->blockedTag }) {
             if (!tag.empty()) {
-                testTags.registerTag(tag);
+                testActor.tags.registerTag(tag);
             }
         }
         registerEffectTags(ability->cost);
         registerEffectTags(ability->cooldown);
         registerEffectTags(ability->effect);
-        gameplay::grantAbility(testSystem, abilityId);
-        const gameplay::AbilityContext ctx { forms, testTags };
+        gameplay::grantAbility(testActor.system, abilityId);
+        const gameplay::AbilityContext ctx { forms, testActor.tags };
         const bool activated =
-            gameplay::tryActivate(*ability, testSet, testSystem, testSet,
-                                  testSystem, ctx);
-        lastResult = activated
+            gameplay::tryActivate(*ability, testActor.set, testActor.system, testActor.set,
+                                  testActor.system, ctx);
+        testActor.lastResult = activated
                          ? "activated"
                          : "REFUSED (tags / cooldown / cost — see wiring)";
     }
-    if (!lastResult.empty()) {
+    if (!testActor.lastResult.empty()) {
         ImGui::SameLine();
-        ImGui::TextDisabled("%s — %zu active effect(s)", lastResult.c_str(),
-                            testSystem.activeEffects.size());
+        ImGui::TextDisabled("%s — %zu active effect(s)", testActor.lastResult.c_str(),
+                            testActor.system.activeEffects.size());
     }
-    if (!testSystem.current.empty()) {
-        drawAttributeTable(testSet, testSystem);
+    if (!testActor.system.current.empty()) {
+        drawAttributeTable(testActor.set, testActor.system);
     } else {
         ImGui::TextDisabled("(Reset actor to build the test dummy)");
     }

@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include "game/ui/TestActor.hpp"
+
 #include "engine/reflect/Reflect.hpp"
 #include "game/ui/FieldWidgets.hpp"
 #include "game/ui/Keywords.hpp"
@@ -10,45 +12,12 @@
 namespace game {
 
 namespace {
-constexpr ImVec4 kWarnColor { 1.0f, 0.6f, 0.2f, 1.0f };
 
 // The test actor's attributes, base vs current, straight from the
 // AttributeSet reflection (transient `damage` included on purpose: the
 // meta-attribute route is exactly what a damage effect exercises).
-void drawAttributeTable(const gameplay::AttributeSet& set,
-                        const gameplay::AbilitySystem& system) {
-    if (!ImGui::BeginTable("attrs", 3, ImGuiTableFlags_SizingStretchProp)) {
-        return;
-    }
-    ImGui::TableSetupColumn("attribute");
-    ImGui::TableSetupColumn("base");
-    ImGui::TableSetupColumn("current");
-    ImGui::TableHeadersRow();
-    reflect::forEachField(
-        gameplay::AttributeSet::staticTypeInfo(),
-        [&](const reflect::FieldInfo& field) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(field.name.c_str());
-            ImGui::TableNextColumn();
-            const auto base =
-                gameplay::baseValueOf(set, gameplay::attr(field.name));
-            ImGui::Text("%.1f", base ? *base : 0.0f);
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f", gameplay::currentValueOf(
-                                    system, gameplay::attr(field.name)));
-        });
-    ImGui::EndTable();
-}
 
 } // namespace
-
-void EffectPanel::resetActor() {
-    testSet = gameplay::AttributeSet {};
-    testSystem = gameplay::AbilitySystem {};
-    gameplay::initializeCurrent(testSystem, testSet);
-    lastResult.clear();
-}
 
 void EffectPanel::drawEditor(const core::Guid& effectId) {
     const auto* type =
@@ -145,30 +114,30 @@ void EffectPanel::drawEditor(const core::Guid& effectId) {
     // ---- Test apply: the REAL pipeline on a throwaway actor ----------
     ImGui::SeparatorText("Test apply (throwaway actor)");
     if (ImGui::Button("Reset actor")) {
-        resetActor();
+        testActor.reset();
     }
     ImGui::SameLine();
     if (ImGui::Button("Apply effect")) {
-        if (testSystem.current.empty()) {
-            resetActor();
+        if (testActor.system.current.empty()) {
+            testActor.reset();
         }
         for (const str& tag : { effect->grantedTag, effect->requiredTag,
                                 effect->blockedTag }) {
             if (!tag.empty()) {
-                testTags.registerTag(tag);
+                testActor.tags.registerTag(tag);
             }
         }
-        const bool applied = gameplay::applyEffect(testSet, testSystem,
-                                                   *effect, testTags);
-        lastResult = applied ? "applied" : "REFUSED (required/blocked tags)";
+        const bool applied = gameplay::applyEffect(testActor.set, testActor.system,
+                                                   *effect, testActor.tags);
+        testActor.lastResult = applied ? "applied" : "REFUSED (required/blocked tags)";
     }
-    if (!lastResult.empty()) {
+    if (!testActor.lastResult.empty()) {
         ImGui::SameLine();
-        ImGui::TextDisabled("%s — %zu active effect(s)", lastResult.c_str(),
-                            testSystem.activeEffects.size());
+        ImGui::TextDisabled("%s — %zu active effect(s)", testActor.lastResult.c_str(),
+                            testActor.system.activeEffects.size());
     }
-    if (!testSystem.current.empty()) {
-        drawAttributeTable(testSet, testSystem);
+    if (!testActor.system.current.empty()) {
+        drawAttributeTable(testActor.set, testActor.system);
     } else {
         ImGui::TextDisabled("(Reset actor to build the test dummy)");
     }

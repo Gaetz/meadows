@@ -11,6 +11,12 @@ namespace game {
 // interaction, same active-edit discipline as the grid.
 void textField(data::EditSession& session, const core::Guid& id,
                const char* label, u32 fieldId, const str& current);
+// The raw core under textField, shared with the PropertyGrid: draws the
+// InputText over the single active-edit cache; returns true when the
+// interaction ends with an edit, with the final text in `edited`. The
+// caller decides how to parse/commit it.
+bool rawTextField(const core::Guid& id, u32 fieldId, const char* label,
+                  const str& current, str& edited);
 void floatField(data::EditSession& session, const core::Guid& id,
                 const char* label, u32 fieldId, f32 current,
                 f32 speed = 0.5f);

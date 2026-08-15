@@ -1,5 +1,10 @@
 #include "game/InputActions.hpp"
 
+#include <glm/glm.hpp>
+
+#include "engine/render/FlyCamera.hpp"
+#include "game/Settings.hpp"
+
 namespace game {
 
 using platform::Key;
@@ -32,7 +37,6 @@ ActionMap::ActionMap() {
     set(InputAction::Map, Key::M, MouseButton::Count, PadButton::DPadLeft);
     set(InputAction::Pause, Key::Escape, MouseButton::Count,
         PadButton::Start);
-    // F was free on the keyboard; LB was free on the pad.
     set(InputAction::InteractAlt, Key::F, MouseButton::Count,
         PadButton::LeftShoulder);
 }
@@ -218,6 +222,27 @@ std::optional<PadButton> parsePadButton(std::string_view name) {
         }
     }
     return std::nullopt;
+}
+
+
+void applyLookInput(render::FlyCamera& flyCamera, platform::Input& input,
+                    const Settings* settings, f32 dt) {
+    const f32 mouseSens =
+        flyCamera.lookSensitivity *
+        (settings ? settings->mouseSensitivity : 1.0f);
+    Vec2 look = input.mouseDelta() * mouseSens; // radians; +y = look down
+    if (settings) {
+        const Vec2 stick = input.rightStick(); // +y = stick up = look up
+        look.x += stick.x * settings->stickSensitivity * dt;
+        look.y -= stick.y * settings->stickSensitivity * dt;
+        if (settings->invertLookY) {
+            look.y = -look.y;
+        }
+    }
+    flyCamera.camera.yaw += look.x;
+    flyCamera.camera.pitch =
+        glm::clamp(flyCamera.camera.pitch - look.y, glm::radians(-89.0f),
+                   glm::radians(89.0f));
 }
 
 } // namespace game

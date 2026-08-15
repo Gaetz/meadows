@@ -35,6 +35,10 @@ struct EffectForm;
 struct AbilityForm;
 }
 
+namespace core {
+class Rng;
+}
+
 namespace game {
 
 struct Npc;
@@ -66,7 +70,7 @@ struct PlayerContext {
     const gameplay::AbilityForm* dodgeAbility;
     vector<uptr<Npc>>& npcs;          // melee targets + crime witnesses
     InteractionController& interaction; // fading gate + the crime toast
-    bool overencumbered; // C3: no sprint, no jump (computed at the
+    bool overencumbered; // no sprint, no jump (computed at the
                          //   equipMods site — it also feeds the tick)
     std::function<void()> syncWantedTag; // Crime.Wanted mirror stays with the
                                          //   scene's quest/crime wiring
@@ -75,6 +79,8 @@ struct PlayerContext {
     gameplay::EventBus* eventBus { nullptr };
     // Feedback cues (hit/block/parry) — the FxDirector's registry.
     gameplay::CueRegistry* cues { nullptr };
+    // Injury rolls on landed hits (§8 seeded — the scene's combat RNG).
+    core::Rng& combatRng;
     // The water surface (if any) over a world position — sea
     // level + placed WaterVolumes; the scene owns the geometry, the
     // controller only asks (the TriggerSystem callback pattern).
@@ -184,14 +190,14 @@ private:
     // Fires once per target per swing.
     void applyHit(const PlayerContext& ctx, Npc& target,
                   const data::WeaponForm& weapon);
-    // D2 crime v1: hitting a peaceful NPC in front of a witness raises
-    // the bounty (its own pass — review C2).
+    // Crime v1: hitting a peaceful NPC in front of a witness raises
+    // the bounty.
     void witnessCrime(const PlayerContext& ctx, const Npc& target,
                       const Vec3& playerEye);
 
     uptr<phys::CharacterBody> body_;
     Vec3 velocity { 0.0f };  // smoothed horizontal velocity (m/s)
-    f32 jumpSpeed { 5.0f };  // fallback only — jumpPower stat drives it (C3)
+    f32 jumpSpeed { 5.0f };  // fallback only — the jumpPower stat drives it
     const data::WeaponForm* swingWeapon_ { nullptr };
     f32 sprintCostAccumulator { 0.0f };
     f32 strideAccumulator { 0.0f }; // C4a: grounded meters since last step

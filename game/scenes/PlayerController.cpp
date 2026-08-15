@@ -22,7 +22,7 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing
-#include "gameplay/cue/GameplayCues.hpp"        // Cue.Hit/Block/Parry (C2)
+#include "gameplay/cue/GameplayCues.hpp"        // Cue.Hit/Block/Parry
 #include "world/ai/Perception.hpp"              // sneak attack: unaware gate
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::Bounty
@@ -178,7 +178,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
             gameplay::itemCount(
                 ctx.playerEntity.get<gameplay::Inventory>(),
                 weapon.ammo) <= 0) {
-            LOG_INFO("A7: out of arrows");
+            LOG_INFO("out of arrows");
             return;
         }
         bowCharge_ = 0.0f;
@@ -303,7 +303,7 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
     }
     const gameplay::StrikeContext strike { ctx.gameTags, ctx.derivedStats,
                                            ctx.statsTuning, ctx.eventBus,
-                                           ctx.cues };
+                                           ctx.cues, &ctx.combatRng };
     const gameplay::StrikeOutcome outcome = gameplay::resolveMeleeStrike(
         attacker, defender, ctx.playerEntity, target.entity,
         gameplay::weaponDamageEvent(weapon, attacker.system), geo, strike);
@@ -327,8 +327,7 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
                      gameplay::attr("health")));
     }
 
-    // The strike resolved; the crime pass is its own concern (review C2:
-    // applyHit used to weld the two together).
+    // The strike resolved; the crime pass is its own concern.
     if (!target.hostile) {
         witnessCrime(ctx, target, eye);
     }
@@ -480,7 +479,7 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
             drown.resistPenetration = 1000.0f;
             gameplay::applyDamage(block, drown, ctx.gameTags,
                                   ctx.derivedStats, nullptr, tuning);
-            LOG_INFO("D2b: drowning — {:.0f} damage",
+            LOG_INFO("drowning — {:.0f} damage",
                      tuning.drownDamagePerSecond);
         }
     } else {
@@ -608,26 +607,10 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     const bool staggered = frame.staggered;
     const bool blocking =
         frame.action == gameplay::PlayerAction::Blocking;
-    // Look, always captured in Play (no LMB gymnastics in a game).
-    // Mouse (pixels x base sens x user multiplier) + right stick
-    // (rad/s at full deflection x dt); one invert-Y switch covers both.
+    // Look, always captured in Play (no LMB gymnastics in a game) —
+    // the shared mouselook (applyLookInput, also the mount's).
     render::FlyCamera& flyCamera = ctx.flyCamera;
-    const f32 mouseSens =
-        flyCamera.lookSensitivity *
-        (ctx.settings ? ctx.settings->mouseSensitivity : 1.0f);
-    Vec2 look = input.mouseDelta() * mouseSens; // radians; +y = look down
-    if (ctx.settings) {
-        const Vec2 stick = input.rightStick(); // +y = stick up = look up
-        look.x += stick.x * ctx.settings->stickSensitivity * dt;
-        look.y -= stick.y * ctx.settings->stickSensitivity * dt;
-        if (ctx.settings->invertLookY) {
-            look.y = -look.y;
-        }
-    }
-    flyCamera.camera.yaw += look.x;
-    flyCamera.camera.pitch = glm::clamp(
-        flyCamera.camera.pitch - look.y,
-        glm::radians(-89.0f), glm::radians(89.0f));
+    applyLookInput(flyCamera, input, ctx.settings, dt);
 
     // Camera-relative intent, flattened to the horizontal plane (§ the
     // controller OWNS motion — anims stay in place).
@@ -717,7 +700,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         shiftHeldSeconds = 0.0f;
     }
 
-    // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
+    // Overencumbered = no sprint, no jump (STATS.md §3 Utility).
     // No sprint behind a raised guard either.
     const bool sprinting = moving &&
                            ctx.actions->down(input,
@@ -746,7 +729,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     }
     if (ctx.actions->pressed(input, InputAction::Jump) &&
         !ctx.overencumbered) {
-        // C3: jump velocity from the jumpPower stat (default sheet 104
+        // Jump velocity from the jumpPower stat (default sheet 104
         // → the previous hand-tuned 5.0 m/s via jumpPowerScale3D).
         f32 jump = jumpSpeed; // fallback without a Player actor
         if (ctx.playerEntity.is_alive()) {

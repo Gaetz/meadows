@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/plugins/EditSession.hpp"
+#include "game/ui/TestActor.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -21,14 +22,10 @@ public:
     void drawEditor(const core::Guid& effect);
 
 private:
-    void resetActor();
 
     data::EditSession& session;
     // The test actor (throwaway, editor-only).
-    gameplay::AttributeSet testSet;
-    gameplay::AbilitySystem testSystem;
-    gameplay::GameplayTagRegistry testTags;
-    str lastResult;
+    TestActor testActor; // the "Try it" bench
 };
 
 } // namespace game

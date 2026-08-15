@@ -42,6 +42,20 @@ bool groundAt(const render::TerrainParams& terrain, bool interiorMode,
     return true;
 }
 
+f32 wrapAngle(f32 angle) {
+    while (angle > glm::pi<f32>()) {
+        angle -= glm::two_pi<f32>();
+    }
+    while (angle < -glm::pi<f32>()) {
+        angle += glm::two_pi<f32>();
+    }
+    return angle;
+}
+
+void smoothYawToward(f32& yaw, f32 goalYaw, f32 rate, f32 dt) {
+    yaw += wrapAngle(goalYaw - yaw) * (1.0f - std::exp(-rate * dt));
+}
+
 bool groundNpc(const NpcContext& ctx, Vec3& position) {
     return groundAt(ctx.terrainParams, ctx.interiorMode, ctx.physics,
                     position);
@@ -100,15 +114,7 @@ bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     if (!groundNpc(ctx, transform.position)) {
         transform.position = before; // ledge: hold the edge, keep facing
     }
-    const f32 goalYaw = std::atan2(dir.x, dir.z);
-    f32 delta = goalYaw - npc.yaw;
-    while (delta > glm::pi<f32>()) {
-        delta -= glm::two_pi<f32>();
-    }
-    while (delta < -glm::pi<f32>()) {
-        delta += glm::two_pi<f32>();
-    }
-    npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
+    smoothYawToward(npc.yaw, std::atan2(dir.x, dir.z), 8.0f, dt);
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
     return false;

@@ -80,3 +80,19 @@ std::string_view padButtonName(platform::PadButton button);
 std::optional<platform::PadButton> parsePadButton(std::string_view name);
 
 } // namespace game
+
+namespace render {
+class FlyCamera;
+}
+
+namespace game {
+
+struct Settings;
+
+// The shared first-person mouselook (on foot and mounted): mouse pixels
+// x base sensitivity x user multiplier, right stick rad/s x dt, ONE
+// invert-Y switch covering both, pitch clamped to +/-89 degrees.
+void applyLookInput(render::FlyCamera& flyCamera, platform::Input& input,
+                    const Settings* settings, f32 dt);
+
+} // namespace game

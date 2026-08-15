@@ -1,4 +1,5 @@
 #include "game/scenes/RideController.hpp"
+#include "game/scenes/NpcMovement.hpp"
 
 #include <cmath>
 
@@ -25,16 +26,6 @@ constexpr f32 kCameraBack = 0.5f;     // slight pull-back over the shoulder
 constexpr f32 kDismountSide = 1.2f;   // lateral respawn offset
 constexpr f32 kRideAccel = 8.0f;      // velocity smoothing rate (1/s)
 constexpr f32 kTurnRate = 8.0f;       // mount facing smoothing (1/s)
-
-f32 wrapAngle(f32 a) {
-    while (a > glm::pi<f32>()) {
-        a -= glm::two_pi<f32>();
-    }
-    while (a < -glm::pi<f32>()) {
-        a += glm::two_pi<f32>();
-    }
-    return a;
-}
 
 } // namespace
 
@@ -94,28 +85,9 @@ void RideController::update(f32 dt, const RideContext& ctx) {
         return;
     }
 
-    // Mouselook — duplicated from PlayerController::updateLocomotion (the
-    // mouse + right-stick block). Deliberate for the tech proof: the
-    // ride REPLACES the player update, and sharing the block would mean
-    // touching PlayerController (forbidden here). [cpp-tuning à retoucher
-    // avec le dev: fold into one look helper when mounts become real.]
+    // The shared mouselook (applyLookInput — same feel as on foot).
     render::FlyCamera& flyCamera = ctx.flyCamera;
-    const f32 mouseSens =
-        flyCamera.lookSensitivity *
-        (ctx.settings ? ctx.settings->mouseSensitivity : 1.0f);
-    Vec2 look = ctx.input.mouseDelta() * mouseSens;
-    if (ctx.settings) {
-        const Vec2 stick = ctx.input.rightStick();
-        look.x += stick.x * ctx.settings->stickSensitivity * dt;
-        look.y -= stick.y * ctx.settings->stickSensitivity * dt;
-        if (ctx.settings->invertLookY) {
-            look.y = -look.y;
-        }
-    }
-    flyCamera.camera.yaw += look.x;
-    flyCamera.camera.pitch =
-        glm::clamp(flyCamera.camera.pitch - look.y, glm::radians(-89.0f),
-                   glm::radians(89.0f));
+    applyLookInput(flyCamera, ctx.input, ctx.settings, dt);
 
     // Camera-relative wish, flattened — the same input surface as on
     // foot (platform::moveAxis: WASD + left stick).

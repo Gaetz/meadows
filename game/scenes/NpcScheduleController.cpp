@@ -265,15 +265,7 @@ void NpcScheduleController::followPlayer(f32 dt, const NpcContext& ctx,
     Vec3 to = playerPos - transform.position;
     to.y = 0.0f;
     if (glm::length(to) > 0.1f) {
-        const f32 goalYaw = std::atan2(to.x, to.z);
-        f32 delta = goalYaw - npc.yaw;
-        while (delta > glm::pi<f32>()) {
-            delta -= glm::two_pi<f32>();
-        }
-        while (delta < -glm::pi<f32>()) {
-            delta += glm::two_pi<f32>();
-        }
-        npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
+        smoothYawToward(npc.yaw, std::atan2(to.x, to.z), 8.0f, dt);
         transform.rotation =
             glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     }

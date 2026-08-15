@@ -4,7 +4,7 @@
 
 #include <imgui.h>
 
-#include "data/editor/GraphLayout.hpp"
+#include "game/ui/GraphPanelCommon.hpp"
 #include "game/ui/EventPicker.hpp"
 #include "game/ui/Keywords.hpp"
 #include "quest/Quest.hpp"
@@ -13,7 +13,6 @@ namespace game {
 
 namespace {
 
-constexpr ImVec4 kWarnColor { 1.0f, 0.6f, 0.2f, 1.0f };
 constexpr ImVec4 kSuccessColor { 0.4f, 1.0f, 0.4f, 1.0f };
 constexpr ImVec4 kFailureColor { 1.0f, 0.4f, 0.4f, 1.0f };
 
@@ -156,35 +155,12 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         if (questForm->startState.isValid()) {
             roots.push_back(questForm->startState);
         }
-        const data::GraphLayoutResult layout =
-            data::layoutGraph(nodes, edges, roots);
-        for (const core::Guid& node : nodes) {
-            if (autoLayoutRequested) {
-                const auto it = layout.positions.find(node);
-                if (it != layout.positions.end()) {
-                    canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(questId, node, it->second);
-                }
-                continue;
-            }
-            if (const auto stored = layouts.positionOf(questId, node)) {
-                canvas.setNodePosition(node, *stored);
-            } else if (const auto it = layout.positions.find(node);
-                       it != layout.positions.end()) {
-                canvas.setNodePosition(node, it->second);
-            }
-        }
-        if (autoLayoutRequested) {
-            layouts.save();
-        }
+        applyGraphLayout(canvas, layouts, questId, nodes, edges, roots,
+                         autoLayoutRequested);
         canvasShown = questId;
     }
-    if (pendingPlace.isValid()) {
-        canvas.setNodePosition(pendingPlace, pendingPlacePos);
-        layouts.setPosition(questId, pendingPlace, pendingPlacePos);
-        layouts.save();
-        pendingPlace = {};
-    }
+    placePendingNode(canvas, layouts, questId, pendingPlace,
+                     pendingPlacePos);
 
     for (const auto& [id, state] : data.states) {
         canvas.beginNode(id);
@@ -305,12 +281,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         }
         session.removeCreated(id);
     }
-    for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(questId, node, position);
-    }
-    if (!actions.movedNodes.empty()) {
-        layouts.save();
-    }
+    persistMovedNodes(layouts, questId, actions.movedNodes);
     if (actions.clickedNode.isValid()) {
         selected = actions.clickedNode;
     }

@@ -8,30 +8,11 @@
 
 #include "engine/reflect/Visit.hpp"
 #include "game/ui/EventPicker.hpp"
+#include "game/ui/FieldWidgets.hpp"
 #include "game/ui/FormPicker.hpp"
 #include "game/ui/Keywords.hpp"
 
 namespace game {
-
-namespace {
-
-// ImGui has one active item at a time: a single in-progress edit cache is
-// enough. Committing on deactivate keeps ONE undo step per interaction.
-// (This TU-local mutable is DELIBERATE — it mirrors ImGui's own
-// single-active-item global model, and PropertyGrid is dev tooling, where
-// §8's no-global rule for gameplay determinism does not bite.)
-struct ActiveEdit {
-    core::Guid form;
-    u32 field { 0 };
-    char text[512] {};
-};
-ActiveEdit gActive; // .field == 0 means inactive
-
-bool isActive(const core::Guid& form, u32 field) {
-    return gActive.field == field && gActive.form == form;
-}
-
-} // namespace
 
 // (valueToString / valueFromString live in engine/reflect/ValueText —
 // the CSV importer, the console and this grid share one codec.)
@@ -78,31 +59,17 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 commit(value);
             }
         };
-        // Str and Guid share a text field: inactive fields render from a LOCAL
-        // copy of the committed value; the one active field types into the
-        // shared cache; parse on deactivate (bad guids are dropped silently).
+        // Str and Guid share the FieldWidgets text core (one active-edit
+        // cache for the whole editor); parse on deactivate (bad guids are
+        // dropped silently).
         const auto drawText = [&] {
-            char local[512];
-            const bool active = isActive(id, field.id);
-            char* buffer = active ? gActive.text : local;
-            if (!active) {
-                const str text = valueToString(current);
-                std::snprintf(local, sizeof(local), "%s", text.c_str());
-            }
-            ImGui::InputText("##v", buffer, sizeof(gActive.text));
-            if (ImGui::IsItemActivated()) {
-                gActive.form = id;
-                gActive.field = field.id;
-                std::memcpy(gActive.text, buffer, sizeof(gActive.text));
-            }
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
+            str edited;
+            if (rawTextField(id, field.id, "##v", valueToString(current),
+                             edited)) {
                 if (const auto value =
-                        valueFromString(field.kind, gActive.text)) {
+                        valueFromString(field.kind, edited)) {
                     commit(*value);
                 }
-                gActive = {};
-            } else if (ImGui::IsItemDeactivated()) {
-                gActive = {};
             }
         };
 

@@ -1,10 +1,11 @@
 #include "game/ui/AnimGraphPanel.hpp"
+#include "game/ui/Keywords.hpp"
 
 #include <algorithm>
 
 #include <imgui.h>
 
-#include "data/editor/GraphLayout.hpp"
+#include "game/ui/GraphPanelCommon.hpp"
 #include "data/forms/AnimForms.hpp"
 #include "game/ui/FormPicker.hpp"
 
@@ -12,7 +13,6 @@ namespace game {
 
 namespace {
 
-constexpr ImVec4 kWarnColor { 1.0f, 0.6f, 0.2f, 1.0f };
 
 struct GraphData {
     vector<std::pair<core::Guid, const data::AnimStateForm*>> states;
@@ -144,36 +144,12 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         if (graphForm->initialState.isValid()) {
             roots.push_back(graphForm->initialState);
         }
-        const data::GraphLayoutResult layout =
-            data::layoutGraph(nodes, edges, roots);
-        for (const core::Guid& node : nodes) {
-            if (autoLayoutRequested) {
-                // Explicit re-layout overwrites the stored positions.
-                const auto it = layout.positions.find(node);
-                if (it != layout.positions.end()) {
-                    canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(graphId, node, it->second);
-                }
-                continue;
-            }
-            if (const auto stored = layouts.positionOf(graphId, node)) {
-                canvas.setNodePosition(node, *stored);
-            } else if (const auto it = layout.positions.find(node);
-                       it != layout.positions.end()) {
-                canvas.setNodePosition(node, it->second);
-            }
-        }
-        if (autoLayoutRequested) {
-            layouts.save();
-        }
+        applyGraphLayout(canvas, layouts, graphId, nodes, edges, roots,
+                         autoLayoutRequested);
         canvasShown = graphId;
     }
-    if (pendingPlace.isValid()) {
-        canvas.setNodePosition(pendingPlace, pendingPlacePos);
-        layouts.setPosition(graphId, pendingPlace, pendingPlacePos);
-        layouts.save();
-        pendingPlace = {};
-    }
+    placePendingNode(canvas, layouts, graphId, pendingPlace,
+                     pendingPlacePos);
 
     // "Any State" pseudo-node: output only — transitions with from == 0.
     canvas.beginNode(anyState);
@@ -283,12 +259,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         }
         session.removeCreated(id);
     }
-    for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(graphId, node, position);
-    }
-    if (!actions.movedNodes.empty()) {
-        layouts.save();
-    }
+    persistMovedNodes(layouts, graphId, actions.movedNodes);
     if (actions.clickedNode.isValid() && actions.clickedNode != anyState) {
         selected = actions.clickedNode;
     }
