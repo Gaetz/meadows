@@ -1,5 +1,7 @@
 #include "engine/render/WorldRenderer.hpp"
 
+#include "engine/core/Assert.hpp"
+
 #include <cmath>
 
 #include <algorithm>
@@ -718,6 +720,13 @@ void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
     if (shaders->generation("mesh") != meshShaderGeneration) {
         buildMeshPipeline(frame.device);
     }
+    // meshDraws is indexed by SNAPSHOT POSITION, and the caster pass
+    // recorded into these UBOs earlier this frame under the same
+    // indexing: any reorder/filter of snapshot.meshes between the two
+    // passes would silently shadow one mesh with another's matrix.
+    ENGINE_ASSERT(casterMeshesData == nullptr ||
+                  casterMeshesData == snapshot.meshes.data());
+    casterMeshesData = nullptr;
     if (meshDraws.size() < snapshot.meshes.size()) {
         meshDraws.resize(snapshot.meshes.size());
     }
@@ -1049,7 +1058,10 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
     // Scene meshes: the per-draw UBO is the lit pass's — the caster pass
     // runs first in the frame, so cascade 0 refreshes the model matrix
     // (drawSceneMeshes rewrites the full block later the same frame).
+    // This shared-UBO scheme only works while BOTH passes see the SAME
+    // meshes at the SAME indices — stamped here, asserted by the lit pass.
     if (!snapshot.meshes.empty()) {
+        casterMeshesData = snapshot.meshes.data();
         if (meshDraws.size() < snapshot.meshes.size()) {
             meshDraws.resize(snapshot.meshes.size());
         }

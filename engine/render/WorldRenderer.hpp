@@ -426,6 +426,9 @@ private:
     // crawling edges); lighting keeps the smooth skyState sun.
     Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
     bool saveTuningRequested { false }; // panels' Save button -> the scene
+    // Stamp of the mesh array the caster pass indexed meshDraws with;
+    // the lit pass asserts it saw the same one, then clears it.
+    const void* casterMeshesData { nullptr };
 
     rhi::UniqueBuffer frameUbo;
     rhi::UniqueBindGroup frameBindGroup;
