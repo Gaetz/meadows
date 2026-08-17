@@ -84,6 +84,10 @@ public:
     static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
     static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
     static constexpr u32 kFirstPebble = kFirstMass + kMassVariants;
+    // Shader names, shared by create() (loads), the pipeline builds and
+    // nothing else — the split TUs all see them here.
+    static constexpr const char* kTreeShader = "tree";
+    static constexpr const char* kPropCasterShader = "shadow_prop";
     // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the

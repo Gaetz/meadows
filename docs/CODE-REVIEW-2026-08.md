@@ -1103,10 +1103,29 @@ dans STATS.md.
    snapshot~~ FAIT (2026-08-17 : stamp `casterMeshesData` posé par la passe
    caster, ENGINE_ASSERT dans drawSceneMeshes — un reorder du snapshot entre
    les deux passes est détecté en debug).
-3. **Landscape** : « bake mailbox » ×4 à extraire (le ChunkStreamer a montré la voie) ;
-   double chemin draw()/GPU-driven à sceller par un test comparatif ; Chunk 208 o
-   froid → SoA par variante ; VegetationSystem = 4 métiers (scatter/assets/streaming/
-   rendu) ; PipelineCache<N> pour la classe de bugs hot-reload (2 constatés).
+3. **Landscape** : ~~« bake mailbox » ×4~~ FAIT (étape 5,
+   BakeMailbox.hpp) ; ~~double chemin draw()/GPU-driven~~ FAIT (cas
+   « cull seal » de vksmoke) ; ~~PipelineCache~~ FAIT via
+   ShaderLibrary::Watch (2026-08-17, décision dev : prévention avant
+   symptôme) — RÈGLE actée : Watch pour tout build consommant PLUSIEURS
+   shaders (convertis : PostFx, WaterSystem, FarTerrain, casters de
+   WorldRenderer, et les 1:1 de Terrain/Grass/Vegetation/Sky/Fx pour
+   l'uniformité) ; les refresh à SLOT 1:1 nom-unique (GpuOcclusion,
+   RadianceCascades, LightClusters, mesh/skinned/rain/blit de
+   WorldRenderer) restent tels quels — la dérive n'y est pas exprimable
+   (gate et rebuild dans la même instruction). NB Watch : un watch VIDE
+   ne déclenche jamais — le premier build vient de create().
+   ~~Split 4-métiers de VegetationSystem~~ FAIT (2026-08-17, décision
+   dev) : 2 351 lignes → 4 TUs par métier — VegetationScatter (475,
+   sous golden-test), VegetationAssets (610), VegetationStreaming (252),
+   VegetationSystem = rendu (563) ; le header reste entier, les noms de
+   shaders promus en static constexpr de classe. ~~SoA par variante du Chunk~~
+   MESURÉ ET ARCHIVÉ (2026-08-17, micro-bench du motif mémoire à ring
+   rayon 24 / 700 visibles / 6 passes / 26 variantes : AoS 0,32 ms vs
+   SoA 0,26 ms par frame — gain ≈ 0,06 ms, borne HAUTE, soit <0,1 % de
+   frame) : le refactor ne paie pas son risque d'indices chunk↔lane.
+   Rouvrir si kVariantCount grossit nettement (gain linéaire en
+   variantes × passes) ou si le ring s'étend.
 4. **Terrain** : hillChainWavelength traverse la seam en argument séparé (les tests
    valident une macro sans chaînes de collines) — sa place est MacroParams ;
    GridOps.hpp (bilinéaire/bicubique/chamfer/blur/voisins/bbox) ~200 lignes en moins ;

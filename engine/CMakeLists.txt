@@ -108,6 +108,9 @@ add_library(meadows-render STATIC
     render/landscape/TerrainSystem.cpp
     render/landscape/TreeGenerator.cpp
     render/landscape/SpaceColonizationTree.cpp
+    render/landscape/VegetationAssets.cpp
+    render/landscape/VegetationScatter.cpp
+    render/landscape/VegetationStreaming.cpp
     render/landscape/VegetationSystem.cpp
     render/landscape/WaterSystem.cpp
     rhi/Device.cpp
