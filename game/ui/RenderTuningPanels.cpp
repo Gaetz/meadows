@@ -328,12 +328,12 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
                          render::TerrainSystem::kMaxViewRadius);
         // Coarse 12 km silhouette mesh past the ring (terrain + forest
         // fringe dissolving into the sky).
-        ImGui::Checkbox("Far terrain (silhouettes)", &r.farTerrainUi);
+        ImGui::Checkbox("Far terrain (silhouettes)", &r.tuning.farTerrain);
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
-        ImGui::SliderFloat("Season: autumn", &r.seasonAutumnUi, 0.0f,
+        ImGui::SliderFloat("Season: autumn", &r.tuning.seasonAutumn, 0.0f,
                            1.0f, "%.2f");
-        ImGui::SliderFloat("Season: leaf fall", &r.seasonLeafFallUi,
+        ImGui::SliderFloat("Season: leaf fall", &r.tuning.seasonLeafFall,
                            0.0f, 1.0f, "%.2f");
         // The vegetation draw budget, live
         // (docs/RENDERING.md). Shrinking the ring pops at the edge
@@ -356,12 +356,12 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         ImGui::TextDisabled("(generation knobs: Trees panel)");
     }
     if (ImGui::CollapsingHeader("Culling & debug")) {
-        ImGui::Checkbox("Occlusion culling (A/B)", &r.occlusionUi);
+        ImGui::Checkbox("Occlusion culling (A/B)", &r.tuning.occlusion);
         ImGui::SameLine();
-        ImGui::Checkbox("GPU Hi-Z", &r.gpuOcclusionUi);
+        ImGui::Checkbox("GPU Hi-Z", &r.tuning.gpuOcclusion);
         ImGui::SameLine();
-        ImGui::Checkbox("Indirect draw", &r.gpuIndirectUi);
-        ImGui::Checkbox("Wireframe (LOD debug)", &r.wireframeUi);
+        ImGui::Checkbox("Indirect draw", &r.tuning.gpuIndirect);
+        ImGui::Checkbox("Wireframe (LOD debug)", &r.tuning.wireframe);
     }
 }
 
@@ -513,32 +513,32 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         }
     }
     if (ImGui::CollapsingHeader("Lighting & shadows")) {
-        ImGui::Checkbox("Stylized lighting (BotW A/B)", &r.stylizedUi);
-        if (r.stylizedUi && ImGui::TreeNode("Stylized ramp")) {
+        ImGui::Checkbox("Stylized lighting (BotW A/B)", &r.tuning.stylized);
+        if (r.tuning.stylized && ImGui::TreeNode("Stylized ramp")) {
             ImGui::TextDisabled("Diffuse: shade -> half-tone -> full light");
-            ImGui::SliderFloat("Terminator start", &r.stylizedDiffuseUi.x,
+            ImGui::SliderFloat("Terminator start", &r.tuning.stylizedDiffuse.x,
                                -0.2f, 0.5f, "%.3f");
-            ImGui::SliderFloat("Terminator end", &r.stylizedDiffuseUi.y,
+            ImGui::SliderFloat("Terminator end", &r.tuning.stylizedDiffuse.y,
                                -0.2f, 0.5f, "%.3f");
-            ImGui::SliderFloat("Full-light start", &r.stylizedDiffuseUi.z,
+            ImGui::SliderFloat("Full-light start", &r.tuning.stylizedDiffuse.z,
                                0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Full-light end", &r.stylizedDiffuseUi.w,
+            ImGui::SliderFloat("Full-light end", &r.tuning.stylizedDiffuse.w,
                                0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Half-tone level", &r.stylizedShadowUi.w,
+            ImGui::SliderFloat("Half-tone level", &r.tuning.stylizedShadow.w,
                                0.0f, 1.0f, "%.2f");
             ImGui::TextDisabled("Cast shadows (CSM snap)");
-            ImGui::SliderFloat("Snap window start", &r.stylizedShadowUi.x,
+            ImGui::SliderFloat("Snap window start", &r.tuning.stylizedShadow.x,
                                0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Snap window end", &r.stylizedShadowUi.y,
+            ImGui::SliderFloat("Snap window end", &r.tuning.stylizedShadow.y,
                                0.0f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Shadow floor", &r.stylizedShadowUi.z, 0.0f,
+            ImGui::SliderFloat("Shadow floor", &r.tuning.stylizedShadow.z, 0.0f,
                                0.8f, "%.2f");
             ImGui::TextDisabled("Specular band (characters/props)");
-            ImGui::SliderFloat("Spec strength", &r.stylizedSpecUi.x, 0.0f,
+            ImGui::SliderFloat("Spec strength", &r.tuning.stylizedSpec.x, 0.0f,
                                1.0f, "%.2f");
-            ImGui::SliderFloat("Spec threshold", &r.stylizedSpecUi.y,
+            ImGui::SliderFloat("Spec threshold", &r.tuning.stylizedSpec.y,
                                0.05f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Spec exponent", &r.stylizedSpecUi.z, 4.0f,
+            ImGui::SliderFloat("Spec exponent", &r.tuning.stylizedSpec.z, 4.0f,
                                64.0f, "%.0f");
             ImGui::TreePop();
         }
@@ -546,46 +546,46 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         // (docs/RENDERING.md §5). Needs compute; the checkbox is inert
         // (and the budget stays 24) when the culling pass is absent.
         ImGui::Checkbox("Clustered lights (64-light budget)",
-                        &r.clusteredLightsUi);
-        ImGui::Checkbox("Shadows", &r.shadowsUi);
+                        &r.tuning.clusteredLights);
+        ImGui::Checkbox("Shadows", &r.tuning.shadows);
         ImGui::SameLine();
-        ImGui::Checkbox("Cascade debug tint", &r.cascadeDebugUi);
+        ImGui::Checkbox("Cascade debug tint", &r.tuning.cascadeDebug);
         // A/B: far cascades on alternate frames —
         // off = every cascade every frame.
         ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
-                        &r.shadowRoundRobinUi);
+                        &r.tuning.shadowRoundRobin);
         // Sharpness: texels per cascade side (4096 = 2x definition
         // everywhere, ~150 MB more; the far cascade profits most).
-        int shadowRes = r.shadowResolutionUi >= 4096 ? 2
-                        : r.shadowResolutionUi >= 2048 ? 1 : 0;
+        int shadowRes = r.tuning.shadowResolution >= 4096 ? 2
+                        : r.tuning.shadowResolution >= 2048 ? 1 : 0;
         if (ImGui::Combo("Shadow map resolution", &shadowRes,
                          "1024\0002048\0004096\000")) {
-            r.shadowResolutionUi = shadowRes == 2 ? 4096
+            r.tuning.shadowResolution = shadowRes == 2 ? 4096
                                    : shadowRes == 1 ? 2048 : 1024;
         }
         // A/B: houses/crates/NPCs casting into the sun cascades.
-        ImGui::Checkbox("Mesh shadow casters", &r.meshShadowCastersUi);
-        ImGui::Checkbox("Contact shadows", &r.contactShadowsUi);
-        ImGui::Checkbox("SSAO", &r.ssaoUi);
-        if (r.ssaoUi) {
-            ImGui::SliderFloat("SSAO strength", &r.ssaoStrengthUi, 0.0f,
+        ImGui::Checkbox("Mesh shadow casters", &r.tuning.meshShadowCasters);
+        ImGui::Checkbox("Contact shadows", &r.tuning.contactShadows);
+        ImGui::Checkbox("SSAO", &r.tuning.ssao);
+        if (r.tuning.ssao) {
+            ImGui::SliderFloat("SSAO strength", &r.tuning.ssaoStrength, 0.0f,
                                2.0f);
-            ImGui::SliderFloat("SSAO radius (m)", &r.ssaoRadiusUi, 0.2f,
+            ImGui::SliderFloat("SSAO radius (m)", &r.tuning.ssaoRadius, 0.2f,
                                2.0f);
         }
         const char* ssdmModes[] = { "Off", "Half res", "Full res" };
-        ImGui::Combo("SSDM", &r.ssdmModeUi, ssdmModes, 3);
-        if (r.ssdmModeUi != 0) {
-            ImGui::SliderFloat("SSDM amplitude (m)", &r.ssdmAmpUi,
+        ImGui::Combo("SSDM", &r.tuning.ssdmMode, ssdmModes, 3);
+        if (r.tuning.ssdmMode != 0) {
+            ImGui::SliderFloat("SSDM amplitude (m)", &r.tuning.ssdmAmp,
                                0.02f, 0.30f);
         }
 
         ImGui::SameLine();
-        ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
-        ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors
+        ImGui::Checkbox("Terrain light map", &r.tuning.terrainLight);
+        ImGui::Checkbox("Key light shadow", &r.tuning.keyShadow); // interiors
         // The interior ambient follows the outside (hour + weather).
         ImGui::SliderFloat("Interior daylight coupling",
-                           &r.interiorDaylightWeightUi, 0.0f, 1.0f, "%.2f");
+                           &r.tuning.interiorDaylightWeight, 0.0f, 1.0f, "%.2f");
     }
     if (ImGui::CollapsingHeader("Sun FX")) {
         ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity,
@@ -599,7 +599,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            "%.2f");
         ImGui::SliderFloat("Dust wisps (sparse)", &r.postFx.froxelDustNoise,
                            0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Interior dust", &r.interiorDustDensityUi, 0.0f,
+        ImGui::SliderFloat("Interior dust", &r.tuning.interiorDustDensity, 0.0f,
                            0.12f, "%.3f");
     }
     if (ImGui::CollapsingHeader("Fog & clouds")) {
@@ -628,126 +628,126 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::SeparatorText("Sky clouds (volumetric)");
         // A/B vs the 2D dome layer; coverage/height/scale above drive
         // BOTH implementations (and the ground shadows).
-        ImGui::Checkbox("Volumetric clouds (A/B)", &r.skyCloudsUi);
-        ImGui::SliderFloat("Cloud thickness (m)", &r.skyCloudShapeUi.x,
+        ImGui::Checkbox("Volumetric clouds (A/B)", &r.tuning.skyClouds);
+        ImGui::SliderFloat("Cloud thickness (m)", &r.tuning.skyCloudShape.x,
                            80.0f, 800.0f, "%.0f");
-        ImGui::SliderFloat("Cloud density", &r.skyCloudShapeUi.y, 0.002f,
+        ImGui::SliderFloat("Cloud density", &r.tuning.skyCloudShape.y, 0.002f,
                            0.12f, "%.3f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Cloud erosion", &r.skyCloudShapeUi.z, 0.0f,
+        ImGui::SliderFloat("Cloud erosion", &r.tuning.skyCloudShape.z, 0.0f,
                            0.95f, "%.2f");
         // Thickness follows the weather's coverage: full skies tower
         // (at 4, a full sky multiplies the thickness by 5).
         ImGui::SliderFloat("Cloud thickness<->coverage",
-                           &r.skyCloudShapeUi.w, 0.0f, 4.0f, "%.2f");
+                           &r.tuning.skyCloudShape.w, 0.0f, 4.0f, "%.2f");
         // Body = multi-octave scattering (luminous cores); lining = the
         // direct transmission exp(-tau)*HG — the silver lining. The
         // drama lives in lining gain + lining lobe + a LOW ambient.
-        ImGui::SliderFloat("Cloud body gain", &r.skyCloudLightUi.x, 0.0f,
+        ImGui::SliderFloat("Cloud body gain", &r.tuning.skyCloudLight.x, 0.0f,
                            40.0f, "%.1f");
-        ImGui::SliderFloat("Cloud body lobe g", &r.skyCloudLightUi.y, 0.0f,
+        ImGui::SliderFloat("Cloud body lobe g", &r.tuning.skyCloudLight.y, 0.0f,
                            0.95f, "%.2f");
-        ImGui::SliderFloat("Cloud lining gain", &r.skyCloudLightUi.w, 0.0f,
+        ImGui::SliderFloat("Cloud lining gain", &r.tuning.skyCloudLight.w, 0.0f,
                            60.0f, "%.1f");
-        ImGui::SliderFloat("Cloud lining lobe g", &r.skyCloudLiningLobeUi,
+        ImGui::SliderFloat("Cloud lining lobe g", &r.tuning.skyCloudLiningLobe,
                            0.5f, 0.97f, "%.2f");
-        ImGui::SliderFloat("Cloud powder", &r.skyCloudPowderUi, 0.0f, 1.5f,
+        ImGui::SliderFloat("Cloud powder", &r.tuning.skyCloudPowder, 0.0f, 1.5f,
                            "%.2f");
         // Fractal edge erosion — the cauliflower florets.
-        ImGui::SliderFloat("Cloud puffiness", &r.skyCloudPuffinessUi, 0.0f,
+        ImGui::SliderFloat("Cloud puffiness", &r.tuning.skyCloudPuffiness, 0.0f,
                            1.0f, "%.2f");
         // Silhouette glow where the cloud is thin along the VIEW ray.
-        ImGui::SliderFloat("Cloud rim gain", &r.skyCloudRimGainUi, 0.0f,
+        ImGui::SliderFloat("Cloud rim gain", &r.tuning.skyCloudRimGain, 0.0f,
                            30.0f, "%.1f");
-        ImGui::SliderFloat("Cloud rim lobe g", &r.skyCloudRimLobeUi, 0.5f,
+        ImGui::SliderFloat("Cloud rim lobe g", &r.tuning.skyCloudRimLobe, 0.5f,
                            0.97f, "%.2f");
         // Storm dimming: the whole cloud's ambient falls with coverage
         // (like the ground's), bases hardest. Sun terms stay — dark
         // slabs rimmed with fire.
-        ImGui::SliderFloat("Cloud storm darkening", &r.skyCloudBaseDarkUi,
+        ImGui::SliderFloat("Cloud storm darkening", &r.tuning.skyCloudBaseDark,
                            0.0f, 10.0f, "%.2f");
-        ImGui::SliderFloat("Cloud ambient gain", &r.skyCloudLightUi.z,
+        ImGui::SliderFloat("Cloud ambient gain", &r.tuning.skyCloudLight.z,
                            0.0f, 2.0f, "%.2f");
         ImGui::SeparatorText("Ground mist");
-        ImGui::Checkbox("Mist (A/B)", &r.mistUi);
+        ImGui::Checkbox("Mist (A/B)", &r.tuning.mist);
         ImGui::SliderFloat("Mist density", &atmos.mistDensity, 0.0f, 2.0f,
                            "%.3f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Mist coverage", &atmos.mistCoverage, 0.0f, 1.0f,
                            "%.2f");
-        ImGui::SliderFloat("Mist cover softness", &r.mistCoverageSoftnessUi,
+        ImGui::SliderFloat("Mist cover softness", &r.tuning.mistCoverageSoftness,
                            0.02f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Mist reach (m)", &r.mistReachUi, 200.0f,
+        ImGui::SliderFloat("Mist reach (m)", &r.tuning.mistReach, 200.0f,
                            4000.0f, "%.0f");
-        ImGui::SliderFloat("Mist lift (m)", &r.mistShapeUi.w, 0.0f, 60.0f,
+        ImGui::SliderFloat("Mist lift (m)", &r.tuning.mistShape.w, 0.0f, 60.0f,
                            "%.1f");
-        ImGui::SliderFloat("Mist cover scale", &r.mistShapeUi.x, 0.0005f,
+        ImGui::SliderFloat("Mist cover scale", &r.tuning.mistShape.x, 0.0005f,
                            0.04f, "%.4f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Mist erosion scale", &r.mistShapeUi.y, 0.01f,
+        ImGui::SliderFloat("Mist erosion scale", &r.tuning.mistShape.y, 0.01f,
                            1.6f, "%.3f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Mist erosion strength", &r.mistShapeUi.z, 0.0f,
+        ImGui::SliderFloat("Mist erosion strength", &r.tuning.mistShape.z, 0.0f,
                            0.95f, "%.2f");
         ImGui::SeparatorText("Mist lighting");
-        ImGui::SliderFloat("Mist sun boost", &r.mistSunBoostUi, 0.0f, 16.0f,
+        ImGui::SliderFloat("Mist sun boost", &r.tuning.mistSunBoost, 0.0f, 16.0f,
                            "%.1f");
         // Higher g = tighter, brighter halo hugging the sun direction.
-        ImGui::SliderFloat("Mist sun lobe g", &r.mistLightUi.x, 0.0f,
+        ImGui::SliderFloat("Mist sun lobe g", &r.tuning.mistLight.x, 0.0f,
                            0.95f, "%.2f");
-        ImGui::SliderFloat("Mist backscatter", &r.mistLightUi.y, 0.0f,
+        ImGui::SliderFloat("Mist backscatter", &r.tuning.mistLight.y, 0.0f,
                            1.0f, "%.2f");
         // Lower ambient makes the sun beam pop (the silver-lining
         // contrast is ambient-vs-sun, not sun alone).
-        ImGui::SliderFloat("Mist ambient gain", &r.mistLightUi.z, 0.0f,
+        ImGui::SliderFloat("Mist ambient gain", &r.tuning.mistLight.z, 0.0f,
                            2.0f, "%.2f");
-        ImGui::SliderFloat("Mist shadow floor", &r.mistLightUi.w, 0.0f,
+        ImGui::SliderFloat("Mist shadow floor", &r.tuning.mistLight.w, 0.0f,
                            1.0f, "%.2f");
         // A/B: baked Perlin-Worley volume vs analytic in-shader fbm3.
-        ImGui::Checkbox("Mist noise texture (A/B)", &r.mistNoiseTexUi);
+        ImGui::Checkbox("Mist noise texture (A/B)", &r.tuning.mistNoiseTex);
         ImGui::SliderFloat("Mist detail dropout (m)",
-                           &r.mistDetailDropoutUi, 100.0f, 1200.0f, "%.0f");
+                           &r.tuning.mistDetailDropout, 100.0f, 1200.0f, "%.0f");
         // Fractal edge florets on the patch borders (cloud recipe).
-        ImGui::SliderFloat("Mist puffiness", &r.mistPuffinessUi, 0.0f,
+        ImGui::SliderFloat("Mist puffiness", &r.tuning.mistPuffiness, 0.0f,
                            1.0f, "%.2f");
-        ImGui::SliderInt("Mist steps", &r.mistStepsUi, 8, 32);
+        ImGui::SliderInt("Mist steps", &r.tuning.mistSteps, 8, 32);
         // 1 = accumulation off (A/B); lower = more history.
         ImGui::SliderFloat("Mist temporal blend",
                            &r.postFx.mistTemporalBlend, 0.05f, 1.0f,
                            "%.2f");
     }
     if (ImGui::CollapsingHeader("Water")) {
-        ImGui::Checkbox("Reflections", &r.reflectionsUi);
+        ImGui::Checkbox("Reflections", &r.tuning.reflections);
         // Skip the mirror render when no resident water is in
         // view (A/B — the horizon-sea edge case), and trade its resolution.
         ImGui::SameLine();
-        ImGui::Checkbox("auto-skip", &r.reflectionAutoSkipUi);
-        ImGui::SliderFloat("Reflection scale", &r.reflectionScaleUi, 0.25f,
+        ImGui::Checkbox("auto-skip", &r.tuning.reflectionAutoSkip);
+        ImGui::SliderFloat("Reflection scale", &r.tuning.reflectionScale, 0.25f,
                            0.5f, "%.2f");
-        ImGui::Combo("Debug view", &r.waterDebugUi,
+        ImGui::Combo("Debug view", &r.tuning.waterDebug,
                      "Off\0Flow\0Torrent\0River UV\0Info: surface\0"
                      "Info: depth\0Info: flow\0");
     }
     if (ImGui::CollapsingHeader("Post-processing")) {
-        ImGui::Checkbox("Filmic tonemap (A/B)", &r.tonemapUi);
-        ImGui::SliderFloat("Exposure", &r.exposureUi, 0.25f, 3.0f, "%.2f");
+        ImGui::Checkbox("Filmic tonemap (A/B)", &r.tuning.tonemap);
+        ImGui::SliderFloat("Exposure", &r.tuning.exposure, 0.25f, 3.0f, "%.2f");
         // A/B: eye adaptation; Exposure becomes the bias.
-        ImGui::Checkbox("Auto exposure", &r.autoExposureUi);
-        if (r.autoExposureUi) {
-            ImGui::SliderFloat("Auto-expo min", &r.autoExposureMinUi, 0.1f,
+        ImGui::Checkbox("Auto exposure", &r.tuning.autoExposure);
+        if (r.tuning.autoExposure) {
+            ImGui::SliderFloat("Auto-expo min", &r.tuning.autoExposureMin, 0.1f,
                                1.0f, "%.2f");
-            ImGui::SliderFloat("Auto-expo max", &r.autoExposureMaxUi, 1.0f,
+            ImGui::SliderFloat("Auto-expo max", &r.tuning.autoExposureMax, 1.0f,
                                6.0f, "%.2f");
         }
         ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f,
                            1.5f, "%.2f");
         // A/B: the analytical grade, off by default.
-        ImGui::Checkbox("Grading", &r.gradingUi);
-        if (r.gradingUi) {
-            ImGui::SliderFloat("Vibrance", &r.gradeVibranceUi, 0.0f, 1.0f,
+        ImGui::Checkbox("Grading", &r.tuning.grading);
+        if (r.tuning.grading) {
+            ImGui::SliderFloat("Vibrance", &r.tuning.gradeVibrance, 0.0f, 1.0f,
                                "%.2f");
-            ImGui::SliderFloat("Split tone", &r.gradeSplitToneUi, 0.0f,
+            ImGui::SliderFloat("Split tone", &r.tuning.gradeSplitTone, 0.0f,
                                1.0f, "%.2f");
-            ImGui::SliderFloat("Contrast", &r.gradeContrastUi, 0.8f, 1.4f,
+            ImGui::SliderFloat("Contrast", &r.tuning.gradeContrast, 0.8f, 1.4f,
                                "%.2f");
         }
-        ImGui::Combo("Debug buffer", &r.debugBufferUi,
+        ImGui::Combo("Debug buffer", &r.tuning.debugBuffer,
                      "Off\0Bloom\0God rays\0Volumetric\0Mist\0");
     }
 }

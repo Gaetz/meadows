@@ -7,126 +7,6 @@
 
 namespace game {
 
-void RenderTuningIo::applyTuning(
-    render::WorldRenderer& r, const data::LandscapeTuningForm& tuning,
-    const sptr<const render::HeightPatches>& patches,
-    const sptr<const render::TerrainBase>& base, f32 activeSnowLine) {
-    // Terrain shape + startup values for every live-adjustable knob the
-    // render panel owns (§5: the TOML sets where it all starts; the scene
-    // keeps the atmosphere half in `atmos`).
-    r.terrain.params.seed = tuning.terrainSeed;
-    r.terrain.params.patches = patches;
-    r.terrain.params.base = base;
-    r.terrain.params.hillWavelength = tuning.hillWavelength;
-    r.terrain.params.hillAmplitude = tuning.hillAmplitude;
-    r.terrain.params.octaves = tuning.terrainOctaves;
-    r.terrain.params.lacunarity = tuning.terrainLacunarity;
-    r.terrain.params.gain = tuning.terrainGain;
-    r.terrain.params.mountainWavelength = tuning.mountainWavelength;
-    r.terrain.params.mountainAmplitude = tuning.mountainAmplitude;
-    r.terrain.params.mountainMaskLow = tuning.mountainMaskLow;
-    r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
-    r.terrain.params.seaLevel = tuning.seaLevel;
-    r.terrain.params.snowLine = activeSnowLine;
-    r.terrain.params.treeLineFactor = tuning.treeLineFactor;
-    r.seasonAutumnUi = tuning.seasonAutumn;
-    r.seasonLeafFallUi = tuning.seasonLeafFall;
-    r.terrain.viewRadius =
-        glm::clamp(tuning.terrainViewRadius, 8,
-                   render::TerrainSystem::kMaxViewRadius);
-    r.farTerrainUi = tuning.farTerrain;
-    r.exposureUi = tuning.exposure;
-    // (tuning.ssaoStrength is unused — screen-space AO removed.)
-    r.gradeVibranceUi = tuning.gradeVibrance;
-    r.gradeSplitToneUi = tuning.gradeSplitTone;
-    r.gradeContrastUi = tuning.gradeContrast;
-    r.autoExposureMinUi = tuning.autoExposureMin;
-    r.autoExposureMaxUi = tuning.autoExposureMax;
-    r.stylizedDiffuseUi = { tuning.stylizedDiffuseEdge0Start,
-                            tuning.stylizedDiffuseEdge0End,
-                            tuning.stylizedDiffuseEdge1Start,
-                            tuning.stylizedDiffuseEdge1End };
-    r.stylizedShadowUi = { tuning.stylizedShadowStart,
-                           tuning.stylizedShadowEnd,
-                           tuning.stylizedShadowFloor,
-                           tuning.stylizedHalfTone };
-    r.stylizedSpecUi = { tuning.stylizedSpecStrength,
-                         tuning.stylizedSpecThreshold,
-                         tuning.stylizedSpecExponent, 0.0f };
-    r.shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
-    r.reflectionScaleUi = glm::clamp(tuning.reflectionScale, 0.25f, 0.5f);
-    r.interiorDaylightWeightUi = tuning.interiorDaylightWeight;
-    r.clusteredLightsUi = tuning.clusteredLights;
-    r.postFx.froxelFog = tuning.froxelFog;
-    r.postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
-    r.postFx.froxelDustNoise = tuning.froxelDustNoise;
-    r.interiorDustDensityUi = tuning.interiorDustDensity;
-    r.mistUi = tuning.mistEnabled;
-    r.mistReachUi = tuning.mistReach;
-    r.mistCoverageSoftnessUi = tuning.mistCoverageSoftness;
-    r.mistShapeUi = { tuning.mistCoverageScale, tuning.mistErosionScale,
-                      tuning.mistErosionStrength, tuning.mistLift };
-    r.mistSunBoostUi = tuning.mistSunBoost;
-    r.mistLightUi = { tuning.mistSunLobe, tuning.mistBackscatter,
-                      tuning.mistAmbientGain, tuning.mistShadowFloor };
-    r.mistNoiseTexUi = tuning.mistNoiseTexture;
-    r.mistDetailDropoutUi = tuning.mistDetailDropout;
-    r.mistStepsUi = glm::clamp(tuning.mistSteps, 4, 64);
-    r.postFx.mistTemporalBlend = tuning.mistTemporalBlend;
-    r.mistPuffinessUi = tuning.mistPuffiness;
-    r.skyCloudsUi = tuning.skyCloudsVolumetric;
-    r.skyCloudShapeUi = { tuning.skyCloudThickness, tuning.skyCloudDensity,
-                          tuning.skyCloudErosion,
-                          tuning.skyCloudThicknessSpread };
-    r.skyCloudLightUi = { tuning.skyCloudSunGain, tuning.skyCloudSunLobe,
-                          tuning.skyCloudAmbientGain,
-                          tuning.skyCloudLiningGain };
-    r.skyCloudLiningLobeUi = tuning.skyCloudLiningLobe;
-    r.skyCloudPowderUi = tuning.skyCloudPowder;
-    r.skyCloudPuffinessUi = tuning.skyCloudPuffiness;
-    r.skyCloudRimGainUi = tuning.skyCloudRimGain;
-    r.skyCloudRimLobeUi = tuning.skyCloudRimLobe;
-    r.skyCloudBaseDarkUi = tuning.skyCloudBaseDark;
-    // Vegetation draw budget (clamped — the streamer ring
-    // and the Hi-Z candidate cap size the safe range).
-    r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 24);
-    r.vegetation.highDetailRadius =
-        glm::clamp(tuning.vegHighDetailRadius, 0, 8);
-    r.vegetation.lowDetailRadius =
-        glm::clamp(tuning.vegLowDetailRadius, 2, 12);
-    render::GrassRenderTuning& gr = r.grass.renderTuning;
-    gr.bladeHeight = tuning.grassBladeHeight;
-    gr.bladeHalfWidth = tuning.grassBladeHalfWidth;
-    gr.detailNear = tuning.grassDetailNear;
-    gr.detailFar = tuning.grassDetailFar;
-    gr.thinStart = tuning.grassThinStart;
-    gr.thinEnd = tuning.grassThinEnd;
-    gr.farDensity = tuning.grassFarDensity;
-    gr.widthCompensation = tuning.grassWidthCompensation;
-    gr.fadeStart = tuning.grassFadeStart;
-    gr.fadeEnd = tuning.grassFadeEnd;
-    gr.baseTint = tuning.grassBaseTint;
-    gr.tipTint = tuning.grassTipTint;
-    gr.rootAo = tuning.grassRootAo;
-    gr.sheen = tuning.grassSheen;
-    gr.bladeNormals = tuning.grassBladeNormals;
-    gr.brightMin = tuning.grassBrightMin;
-    gr.brightMax = tuning.grassBrightMax;
-    gr.middleDarken = tuning.grassMiddleDarken;
-    gr.backscatter = tuning.grassBackscatter;
-    // Startup-only mapping: the scatter bake reads these on first
-    // request, no regenerate needed (nothing is resident yet).
-    render::GrassScatterTuning& gs = r.grass.scatterTuning;
-    gs.spacing = tuning.grassSpacing;
-    gs.patchBroadScale = tuning.grassPatchBroadScale;
-    gs.patchDetailScale = tuning.grassPatchDetailScale;
-    gs.patchThresholdLo = tuning.grassPatchThresholdLo;
-    gs.patchThresholdHi = tuning.grassPatchThresholdHi;
-    gs.presenceLo = tuning.grassPresenceLo;
-    gs.presenceHi = tuning.grassPresenceHi;
-    gs.materialCutoff = tuning.grassMaterialCutoff;
-}
-
 namespace {
 
 // ONE field list per Form <-> engine-params pair, walked in BOTH
@@ -258,7 +138,159 @@ constexpr FieldLane<render::RcTuning, data::RcTuningForm, bool> kRcLanesBool[] =
       &data::RcTuningForm::intervalExtension },
 };
 
+
+using RenderTuning = render::WorldRenderer::RenderTuning;
+
+// World-renderer knobs with a 1:1 Form field. Clamped fields, Vec4
+// packing and subsystem scalars stay hand-written in apply/capture.
+constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, f32> kWorldLanesF32[] = {
+    { &RenderTuning::seasonAutumn, &data::LandscapeTuningForm::seasonAutumn },
+    { &RenderTuning::seasonLeafFall, &data::LandscapeTuningForm::seasonLeafFall },
+    { &RenderTuning::exposure, &data::LandscapeTuningForm::exposure },
+    { &RenderTuning::gradeVibrance, &data::LandscapeTuningForm::gradeVibrance },
+    { &RenderTuning::gradeSplitTone, &data::LandscapeTuningForm::gradeSplitTone },
+    { &RenderTuning::gradeContrast, &data::LandscapeTuningForm::gradeContrast },
+    { &RenderTuning::autoExposureMin, &data::LandscapeTuningForm::autoExposureMin },
+    { &RenderTuning::autoExposureMax, &data::LandscapeTuningForm::autoExposureMax },
+    { &RenderTuning::interiorDaylightWeight, &data::LandscapeTuningForm::interiorDaylightWeight },
+    { &RenderTuning::interiorDustDensity, &data::LandscapeTuningForm::interiorDustDensity },
+    { &RenderTuning::mistReach, &data::LandscapeTuningForm::mistReach },
+    { &RenderTuning::mistCoverageSoftness, &data::LandscapeTuningForm::mistCoverageSoftness },
+    { &RenderTuning::mistSunBoost, &data::LandscapeTuningForm::mistSunBoost },
+    { &RenderTuning::mistDetailDropout, &data::LandscapeTuningForm::mistDetailDropout },
+    { &RenderTuning::mistPuffiness, &data::LandscapeTuningForm::mistPuffiness },
+    { &RenderTuning::skyCloudLiningLobe, &data::LandscapeTuningForm::skyCloudLiningLobe },
+    { &RenderTuning::skyCloudPowder, &data::LandscapeTuningForm::skyCloudPowder },
+    { &RenderTuning::skyCloudPuffiness, &data::LandscapeTuningForm::skyCloudPuffiness },
+    { &RenderTuning::skyCloudRimGain, &data::LandscapeTuningForm::skyCloudRimGain },
+    { &RenderTuning::skyCloudRimLobe, &data::LandscapeTuningForm::skyCloudRimLobe },
+    { &RenderTuning::skyCloudBaseDark, &data::LandscapeTuningForm::skyCloudBaseDark },
+};
+constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, bool> kWorldLanesBool[] = {
+    { &RenderTuning::farTerrain, &data::LandscapeTuningForm::farTerrain },
+    { &RenderTuning::clusteredLights, &data::LandscapeTuningForm::clusteredLights },
+    { &RenderTuning::mist, &data::LandscapeTuningForm::mistEnabled },
+    { &RenderTuning::mistNoiseTex, &data::LandscapeTuningForm::mistNoiseTexture },
+    { &RenderTuning::skyClouds, &data::LandscapeTuningForm::skyCloudsVolumetric },
+};
+constexpr FieldLane<render::PostFx, data::LandscapeTuningForm, f32> kPostFxLanesF32[] = {
+    { &render::PostFx::froxelTemporalBlend, &data::LandscapeTuningForm::froxelTemporalBlend },
+    { &render::PostFx::froxelDustNoise, &data::LandscapeTuningForm::froxelDustNoise },
+    { &render::PostFx::mistTemporalBlend, &data::LandscapeTuningForm::mistTemporalBlend },
+};
+constexpr FieldLane<render::PostFx, data::LandscapeTuningForm, bool> kPostFxLanesBool[] = {
+    { &render::PostFx::froxelFog, &data::LandscapeTuningForm::froxelFog },
+};
+constexpr FieldLane<render::GrassRenderTuning, data::LandscapeTuningForm, f32> kGrassRenderLanesF32[] = {
+    { &render::GrassRenderTuning::bladeHeight, &data::LandscapeTuningForm::grassBladeHeight },
+    { &render::GrassRenderTuning::bladeHalfWidth, &data::LandscapeTuningForm::grassBladeHalfWidth },
+    { &render::GrassRenderTuning::detailNear, &data::LandscapeTuningForm::grassDetailNear },
+    { &render::GrassRenderTuning::detailFar, &data::LandscapeTuningForm::grassDetailFar },
+    { &render::GrassRenderTuning::thinStart, &data::LandscapeTuningForm::grassThinStart },
+    { &render::GrassRenderTuning::thinEnd, &data::LandscapeTuningForm::grassThinEnd },
+    { &render::GrassRenderTuning::farDensity, &data::LandscapeTuningForm::grassFarDensity },
+    { &render::GrassRenderTuning::widthCompensation, &data::LandscapeTuningForm::grassWidthCompensation },
+    { &render::GrassRenderTuning::fadeStart, &data::LandscapeTuningForm::grassFadeStart },
+    { &render::GrassRenderTuning::fadeEnd, &data::LandscapeTuningForm::grassFadeEnd },
+    { &render::GrassRenderTuning::rootAo, &data::LandscapeTuningForm::grassRootAo },
+    { &render::GrassRenderTuning::sheen, &data::LandscapeTuningForm::grassSheen },
+    { &render::GrassRenderTuning::bladeNormals, &data::LandscapeTuningForm::grassBladeNormals },
+    { &render::GrassRenderTuning::brightMin, &data::LandscapeTuningForm::grassBrightMin },
+    { &render::GrassRenderTuning::brightMax, &data::LandscapeTuningForm::grassBrightMax },
+    { &render::GrassRenderTuning::middleDarken, &data::LandscapeTuningForm::grassMiddleDarken },
+    { &render::GrassRenderTuning::backscatter, &data::LandscapeTuningForm::grassBackscatter },
+};
+constexpr FieldLane<render::GrassRenderTuning, data::LandscapeTuningForm, Vec3> kGrassRenderLanesVec3[] = {
+    { &render::GrassRenderTuning::baseTint, &data::LandscapeTuningForm::grassBaseTint },
+    { &render::GrassRenderTuning::tipTint, &data::LandscapeTuningForm::grassTipTint },
+};
+constexpr FieldLane<render::GrassScatterTuning, data::LandscapeTuningForm, f32> kGrassScatterLanesF32[] = {
+    { &render::GrassScatterTuning::spacing, &data::LandscapeTuningForm::grassSpacing },
+    { &render::GrassScatterTuning::patchBroadScale, &data::LandscapeTuningForm::grassPatchBroadScale },
+    { &render::GrassScatterTuning::patchDetailScale, &data::LandscapeTuningForm::grassPatchDetailScale },
+    { &render::GrassScatterTuning::patchThresholdLo, &data::LandscapeTuningForm::grassPatchThresholdLo },
+    { &render::GrassScatterTuning::patchThresholdHi, &data::LandscapeTuningForm::grassPatchThresholdHi },
+    { &render::GrassScatterTuning::presenceLo, &data::LandscapeTuningForm::grassPresenceLo },
+    { &render::GrassScatterTuning::presenceHi, &data::LandscapeTuningForm::grassPresenceHi },
+    { &render::GrassScatterTuning::materialCutoff, &data::LandscapeTuningForm::grassMaterialCutoff },
+};
+
 } // namespace
+
+void RenderTuningIo::applyTuning(
+    render::WorldRenderer& r, const data::LandscapeTuningForm& tuning,
+    const sptr<const render::HeightPatches>& patches,
+    const sptr<const render::TerrainBase>& base, f32 activeSnowLine) {
+    // Terrain shape + startup values for every live-adjustable knob the
+    // render panel owns (§5: the TOML sets where it all starts; the scene
+    // keeps the atmosphere half in `atmos`). Terrain shape is apply-only
+    // (never captured back — the world's identity is not a slider).
+    r.terrain.params.seed = tuning.terrainSeed;
+    r.terrain.params.patches = patches;
+    r.terrain.params.base = base;
+    r.terrain.params.hillWavelength = tuning.hillWavelength;
+    r.terrain.params.hillAmplitude = tuning.hillAmplitude;
+    r.terrain.params.octaves = tuning.terrainOctaves;
+    r.terrain.params.lacunarity = tuning.terrainLacunarity;
+    r.terrain.params.gain = tuning.terrainGain;
+    r.terrain.params.mountainWavelength = tuning.mountainWavelength;
+    r.terrain.params.mountainAmplitude = tuning.mountainAmplitude;
+    r.terrain.params.mountainMaskLow = tuning.mountainMaskLow;
+    r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
+    r.terrain.params.seaLevel = tuning.seaLevel;
+    r.terrain.params.snowLine = activeSnowLine;
+    r.terrain.params.treeLineFactor = tuning.treeLineFactor;
+    r.terrain.viewRadius =
+        glm::clamp(tuning.terrainViewRadius, 8,
+                   render::TerrainSystem::kMaxViewRadius);
+
+    // The 1:1 knobs ride the lane tables (captureTuning walks the SAME
+    // tables back). (tuning.ssaoStrength is unused — screen AO removed.)
+    applyLanes(r.tuning, tuning, kWorldLanesF32);
+    applyLanes(r.tuning, tuning, kWorldLanesBool);
+    applyLanes(r.postFx, tuning, kPostFxLanesF32);
+    applyLanes(r.postFx, tuning, kPostFxLanesBool);
+    applyLanes(r.grass.renderTuning, tuning, kGrassRenderLanesF32);
+    applyLanes(r.grass.renderTuning, tuning, kGrassRenderLanesVec3);
+    // Startup-only mapping: the scatter bake reads these on first
+    // request, no regenerate needed (nothing is resident yet).
+    applyLanes(r.grass.scatterTuning, tuning, kGrassScatterLanesF32);
+
+    // Vec4 packing (the Form spells the lanes as scalars) and clamps.
+    r.tuning.stylizedDiffuse = { tuning.stylizedDiffuseEdge0Start,
+                                 tuning.stylizedDiffuseEdge0End,
+                                 tuning.stylizedDiffuseEdge1Start,
+                                 tuning.stylizedDiffuseEdge1End };
+    r.tuning.stylizedShadow = { tuning.stylizedShadowStart,
+                                tuning.stylizedShadowEnd,
+                                tuning.stylizedShadowFloor,
+                                tuning.stylizedHalfTone };
+    r.tuning.stylizedSpec = { tuning.stylizedSpecStrength,
+                              tuning.stylizedSpecThreshold,
+                              tuning.stylizedSpecExponent, 0.0f };
+    r.tuning.mistShape = { tuning.mistCoverageScale, tuning.mistErosionScale,
+                           tuning.mistErosionStrength, tuning.mistLift };
+    r.tuning.mistLight = { tuning.mistSunLobe, tuning.mistBackscatter,
+                           tuning.mistAmbientGain, tuning.mistShadowFloor };
+    r.tuning.skyCloudShape = { tuning.skyCloudThickness,
+                               tuning.skyCloudDensity, tuning.skyCloudErosion,
+                               tuning.skyCloudThicknessSpread };
+    r.tuning.skyCloudLight = { tuning.skyCloudSunGain, tuning.skyCloudSunLobe,
+                               tuning.skyCloudAmbientGain,
+                               tuning.skyCloudLiningGain };
+    r.tuning.shadowResolution =
+        glm::clamp(tuning.shadowResolution, 1024, 4096);
+    r.tuning.reflectionScale =
+        glm::clamp(tuning.reflectionScale, 0.25f, 0.5f);
+    r.tuning.mistSteps = glm::clamp(tuning.mistSteps, 4, 64);
+    // Vegetation draw budget (clamped — the streamer ring
+    // and the Hi-Z candidate cap size the safe range).
+    r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 24);
+    r.vegetation.highDetailRadius =
+        glm::clamp(tuning.vegHighDetailRadius, 0, 8);
+    r.vegetation.lowDetailRadius =
+        glm::clamp(tuning.vegLowDetailRadius, 2, 12);
+}
 
 void RenderTuningIo::applyTreeTuning(
     render::WorldRenderer& r, const data::LobeTreeTuningForm& lobes,
@@ -299,99 +331,50 @@ void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
 
 void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
                                    data::LandscapeTuningForm& out) {
-    out.exposure = r.exposureUi;
-    out.gradeVibrance = r.gradeVibranceUi;
-    out.gradeSplitTone = r.gradeSplitToneUi;
-    out.gradeContrast = r.gradeContrastUi;
-    out.autoExposureMin = r.autoExposureMinUi;
-    out.autoExposureMax = r.autoExposureMaxUi;
-    out.stylizedDiffuseEdge0Start = r.stylizedDiffuseUi.x;
-    out.stylizedDiffuseEdge0End = r.stylizedDiffuseUi.y;
-    out.stylizedDiffuseEdge1Start = r.stylizedDiffuseUi.z;
-    out.stylizedDiffuseEdge1End = r.stylizedDiffuseUi.w;
-    out.stylizedHalfTone = r.stylizedShadowUi.w;
-    out.stylizedShadowStart = r.stylizedShadowUi.x;
-    out.stylizedShadowEnd = r.stylizedShadowUi.y;
-    out.stylizedShadowFloor = r.stylizedShadowUi.z;
-    out.stylizedSpecStrength = r.stylizedSpecUi.x;
-    out.stylizedSpecThreshold = r.stylizedSpecUi.y;
-    out.stylizedSpecExponent = r.stylizedSpecUi.z;
-    out.shadowResolution = r.shadowResolutionUi;
-    out.reflectionScale = r.reflectionScaleUi;
-    out.interiorDaylightWeight = r.interiorDaylightWeightUi;
-    out.clusteredLights = r.clusteredLightsUi;
-    out.froxelFog = r.postFx.froxelFog;
-    out.froxelTemporalBlend = r.postFx.froxelTemporalBlend;
-    out.froxelDustNoise = r.postFx.froxelDustNoise;
-    out.interiorDustDensity = r.interiorDustDensityUi;
-    out.mistEnabled = r.mistUi;
-    out.mistReach = r.mistReachUi;
-    out.mistCoverageSoftness = r.mistCoverageSoftnessUi;
-    out.mistCoverageScale = r.mistShapeUi.x;
-    out.mistErosionScale = r.mistShapeUi.y;
-    out.mistErosionStrength = r.mistShapeUi.z;
-    out.mistLift = r.mistShapeUi.w;
-    out.mistSunBoost = r.mistSunBoostUi;
-    out.mistSunLobe = r.mistLightUi.x;
-    out.mistBackscatter = r.mistLightUi.y;
-    out.mistAmbientGain = r.mistLightUi.z;
-    out.mistShadowFloor = r.mistLightUi.w;
-    out.mistNoiseTexture = r.mistNoiseTexUi;
-    out.mistDetailDropout = r.mistDetailDropoutUi;
-    out.mistSteps = r.mistStepsUi;
-    out.mistTemporalBlend = r.postFx.mistTemporalBlend;
-    out.mistPuffiness = r.mistPuffinessUi;
-    out.skyCloudsVolumetric = r.skyCloudsUi;
-    out.skyCloudThickness = r.skyCloudShapeUi.x;
-    out.skyCloudDensity = r.skyCloudShapeUi.y;
-    out.skyCloudErosion = r.skyCloudShapeUi.z;
-    out.skyCloudSunGain = r.skyCloudLightUi.x;
-    out.skyCloudSunLobe = r.skyCloudLightUi.y;
-    out.skyCloudAmbientGain = r.skyCloudLightUi.z;
-    out.skyCloudLiningGain = r.skyCloudLightUi.w;
-    out.skyCloudLiningLobe = r.skyCloudLiningLobeUi;
-    out.skyCloudPowder = r.skyCloudPowderUi;
-    out.skyCloudThicknessSpread = r.skyCloudShapeUi.w;
-    out.skyCloudPuffiness = r.skyCloudPuffinessUi;
-    out.skyCloudRimGain = r.skyCloudRimGainUi;
-    out.skyCloudRimLobe = r.skyCloudRimLobeUi;
-    out.skyCloudBaseDark = r.skyCloudBaseDarkUi;
+    captureLanes(r.tuning, out, kWorldLanesF32);
+    captureLanes(r.tuning, out, kWorldLanesBool);
+    captureLanes(r.postFx, out, kPostFxLanesF32);
+    captureLanes(r.postFx, out, kPostFxLanesBool);
+    captureLanes(r.grass.renderTuning, out, kGrassRenderLanesF32);
+    captureLanes(r.grass.renderTuning, out, kGrassRenderLanesVec3);
+    captureLanes(r.grass.scatterTuning, out, kGrassScatterLanesF32);
+
+    // Vec4 unpacking + the clamped/subsystem scalars (mirror of
+    // applyTuning's hand-written half; terrain SHAPE stays apply-only).
+    out.stylizedDiffuseEdge0Start = r.tuning.stylizedDiffuse.x;
+    out.stylizedDiffuseEdge0End = r.tuning.stylizedDiffuse.y;
+    out.stylizedDiffuseEdge1Start = r.tuning.stylizedDiffuse.z;
+    out.stylizedDiffuseEdge1End = r.tuning.stylizedDiffuse.w;
+    out.stylizedShadowStart = r.tuning.stylizedShadow.x;
+    out.stylizedShadowEnd = r.tuning.stylizedShadow.y;
+    out.stylizedShadowFloor = r.tuning.stylizedShadow.z;
+    out.stylizedHalfTone = r.tuning.stylizedShadow.w;
+    out.stylizedSpecStrength = r.tuning.stylizedSpec.x;
+    out.stylizedSpecThreshold = r.tuning.stylizedSpec.y;
+    out.stylizedSpecExponent = r.tuning.stylizedSpec.z;
+    out.mistCoverageScale = r.tuning.mistShape.x;
+    out.mistErosionScale = r.tuning.mistShape.y;
+    out.mistErosionStrength = r.tuning.mistShape.z;
+    out.mistLift = r.tuning.mistShape.w;
+    out.mistSunLobe = r.tuning.mistLight.x;
+    out.mistBackscatter = r.tuning.mistLight.y;
+    out.mistAmbientGain = r.tuning.mistLight.z;
+    out.mistShadowFloor = r.tuning.mistLight.w;
+    out.skyCloudThickness = r.tuning.skyCloudShape.x;
+    out.skyCloudDensity = r.tuning.skyCloudShape.y;
+    out.skyCloudErosion = r.tuning.skyCloudShape.z;
+    out.skyCloudThicknessSpread = r.tuning.skyCloudShape.w;
+    out.skyCloudSunGain = r.tuning.skyCloudLight.x;
+    out.skyCloudSunLobe = r.tuning.skyCloudLight.y;
+    out.skyCloudAmbientGain = r.tuning.skyCloudLight.z;
+    out.skyCloudLiningGain = r.tuning.skyCloudLight.w;
+    out.shadowResolution = r.tuning.shadowResolution;
+    out.reflectionScale = r.tuning.reflectionScale;
+    out.mistSteps = r.tuning.mistSteps;
     out.terrainViewRadius = r.terrain.viewRadius;
-    out.seasonAutumn = r.seasonAutumnUi;
-    out.seasonLeafFall = r.seasonLeafFallUi;
-    out.farTerrain = r.farTerrainUi;
     out.vegViewRadius = r.vegetation.viewRadius;
     out.vegHighDetailRadius = r.vegetation.highDetailRadius;
     out.vegLowDetailRadius = r.vegetation.lowDetailRadius;
-    const render::GrassRenderTuning& gr = r.grass.renderTuning;
-    out.grassBladeHeight = gr.bladeHeight;
-    out.grassBladeHalfWidth = gr.bladeHalfWidth;
-    out.grassDetailNear = gr.detailNear;
-    out.grassDetailFar = gr.detailFar;
-    out.grassThinStart = gr.thinStart;
-    out.grassThinEnd = gr.thinEnd;
-    out.grassFarDensity = gr.farDensity;
-    out.grassWidthCompensation = gr.widthCompensation;
-    out.grassFadeStart = gr.fadeStart;
-    out.grassFadeEnd = gr.fadeEnd;
-    out.grassBaseTint = gr.baseTint;
-    out.grassTipTint = gr.tipTint;
-    out.grassRootAo = gr.rootAo;
-    out.grassSheen = gr.sheen;
-    out.grassBladeNormals = gr.bladeNormals;
-    out.grassBrightMin = gr.brightMin;
-    out.grassBrightMax = gr.brightMax;
-    out.grassMiddleDarken = gr.middleDarken;
-    out.grassBackscatter = gr.backscatter;
-    const render::GrassScatterTuning& gs = r.grass.scatterTuning;
-    out.grassSpacing = gs.spacing;
-    out.grassPatchBroadScale = gs.patchBroadScale;
-    out.grassPatchDetailScale = gs.patchDetailScale;
-    out.grassPatchThresholdLo = gs.patchThresholdLo;
-    out.grassPatchThresholdHi = gs.patchThresholdHi;
-    out.grassPresenceLo = gs.presenceLo;
-    out.grassPresenceHi = gs.presenceHi;
-    out.grassMaterialCutoff = gs.materialCutoff;
 }
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,

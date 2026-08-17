@@ -426,11 +426,11 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                            u32 height) {
     if (offscreenFb.id() != 0 && offscreenWidth == width &&
         offscreenHeight == height &&
-        appliedReflectionScale == reflectionScaleUi &&
-        appliedSsdmMode == ssdmModeUi) {
+        appliedReflectionScale == tuning.reflectionScale &&
+        appliedSsdmMode == tuning.ssdmMode) {
         return;
     }
-    appliedSsdmMode = ssdmModeUi;
+    appliedSsdmMode = tuning.ssdmMode;
     destroyOffscreenTarget(device);
     // HDR scene target: the sky/sun palette is linear HDR (sun > 1); the
     // tonemap pass compresses to display range.
@@ -472,13 +472,13 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
             // 0.5 = half res, 0.25 = quarter res (blurrier mirror).
             const u32 reflectionWidth = glm::max(
                 static_cast<u32>(static_cast<f32>(width) *
-                                 reflectionScaleUi),
+                                 tuning.reflectionScale),
                 1u);
             const u32 reflectionHeight = glm::max(
                 static_cast<u32>(static_cast<f32>(height) *
-                                 reflectionScaleUi),
+                                 tuning.reflectionScale),
                 1u);
-            appliedReflectionScale = reflectionScaleUi;
+            appliedReflectionScale = tuning.reflectionScale;
             reflectionColor = { device, device.createTexture(
                 { .width = reflectionWidth,
                   .height = reflectionHeight,
@@ -531,11 +531,11 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     // SSDM chain targets: flow + the halving bounds pyramid, at the
     // mode's resolution (full / half of the scene target / a token 4x4
     // when off — the memory is not free at Retina sizes).
-    const u32 chainW = ssdmModeUi == 2   ? width
-                       : ssdmModeUi == 1 ? glm::max(width / 2, 8u)
+    const u32 chainW = tuning.ssdmMode == 2   ? width
+                       : tuning.ssdmMode == 1 ? glm::max(width / 2, 8u)
                                          : 4u;
-    const u32 chainH = ssdmModeUi == 2   ? height
-                       : ssdmModeUi == 1 ? glm::max(height / 2, 8u)
+    const u32 chainH = tuning.ssdmMode == 2   ? height
+                       : tuning.ssdmMode == 1 ? glm::max(height / 2, 8u)
                                          : 4u;
     ssdmFlowTex = { device, device.createTexture(
         { .width = chainW,
@@ -1196,7 +1196,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         lightClusters.refreshPipeline(frame.device, *shaders);
     }
     if (cfg.terrain) {
-        terrain.setWireframe(wireframeUi, frame.device, *shaders);
+        terrain.setWireframe(tuning.wireframe, frame.device, *shaders);
     }
     if (regenerateRequested) {
         regenerateRequested = false;
@@ -1229,10 +1229,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // CSM resolution knob: recreate on change; the
     // round-robin then re-renders every cascade next frames (the fresh
     // maps start empty — one frame of unshadowed sun at worst).
-    if (static_cast<u32>(shadowResolutionUi) != shadows.resolution()) {
+    if (static_cast<u32>(tuning.shadowResolution) != shadows.resolution()) {
         shadows.destroy(frame.device);
         shadows.create(frame.device,
-                       static_cast<u32>(shadowResolutionUi));
+                       static_cast<u32>(tuning.shadowResolution));
         lastCascadesValid = false; // force a full cascade re-render
     }
     // Terrain sculpt: re-mesh JUST the chunks a stroke touched (in place, no
@@ -1280,7 +1280,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
             mistMap.update(frame.device, terrain.params,
                            view.camera.position);
         }
-        if (cfg.terrain && farTerrainUi) {
+        if (cfg.terrain && tuning.farTerrain) {
             // Distant silhouettes: coarse 12 km mesh, worker-baked.
             core::FrameProbe::Scope probe { *view.probe, "farterrain" };
             farTerrain.update(frame.device, terrain.params,
@@ -1363,7 +1363,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // and soften away under heavy cloud cover (diffuse light casts none).
     const bool shadowsAvailable = shadows.receiverBindGroup().id != 0;
     const f32 shadowStrength =
-        (shadowsUi && shadowsAvailable && !view.interiorMode)
+        (tuning.shadows && shadowsAvailable && !view.interiorMode)
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
                   (1.0f - 0.65f * view.atmos.cloudCoverage)
             : 0.0f;
@@ -1394,7 +1394,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                            shadowSunDirection);
         ++shadowFrame;
         const bool full =
-            !shadowRoundRobinUi || !lastCascadesValid || sunStepped;
+            !tuning.shadowRoundRobin || !lastCascadesValid || sunStepped;
         if (!full) {
             for (u32 i = 1; i < render::ShadowMapper::kCascadeCount; ++i) {
                 cascadeDue[i] = (shadowFrame + i) % 2 == 0;
@@ -1418,8 +1418,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // known miss: sea at the horizon beyond the resident ring (~960 m) —
     // the A/B toggle is there for that exact check.
     bool waterVisible = true;
-    if (cfg.water && reflectionAutoSkipUi && !view.interiorMode &&
-        reflectionsUi) {
+    if (cfg.water && tuning.reflectionAutoSkip && !view.interiorMode &&
+        tuning.reflections) {
         waterVisible = false;
         terrain.collectChunkAabbs(occlusionAabbs);
         const f32 sea = terrain.params.seaLevel;
@@ -1447,7 +1447,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         }
     }
     const bool reflectionsActive =
-        reflectionsUi && reflectionFb.id() != 0 && !view.interiorMode &&
+        tuning.reflections && reflectionFb.id() != 0 && !view.interiorMode &&
         camera.position.y > terrain.params.seaLevel && waterVisible;
 
     // GI: decide this frame's inject + snap the grid origins
@@ -1474,10 +1474,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .interiorMode = view.interiorMode,
         .interiorAmbient = view.interiorAmbient,
         .interiorDaylightWeight =
-            interiorDaylightWeightUi *
+            tuning.interiorDaylightWeight *
             aboveBuried(view.camera.position.y, view.buriedBelowY),
         .froxelFog = cfg.froxels && postFx.froxelFog && postFx.froxelReady(),
-        .interiorDustDensity = interiorDustDensityUi,
+        .interiorDustDensity = tuning.interiorDustDensity,
         .seaLevel = terrain.params.seaLevel,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
@@ -1489,9 +1489,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .pomShadowStrength = view.pomShadowStrength,
         .pomDepth = view.pomDepth,
         .barkEnabled = vegetation.barkLoaded(),
-        .ssaoStrength = ssaoStrengthUi,
-        .ssaoRadius = ssaoRadiusUi,
-        .ssdmAmplitude = ssdmModeUi != 0 ? ssdmAmpUi : 0.0f,
+        .ssaoStrength = tuning.ssaoStrength,
+        .ssaoRadius = tuning.ssaoRadius,
+        .ssdmAmplitude = tuning.ssdmMode != 0 ? tuning.ssdmAmp : 0.0f,
         .shadowFarUvScale = render::ShadowMapper::kFarCascadeScale,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
@@ -1499,7 +1499,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         // ring for the far mesh's sink bias.
         .drawDistance =
             cfg.terrain
-                ? (farTerrainUi && farTerrain.ready()
+                ? (tuning.farTerrain && farTerrain.ready()
                        ? farTerrain.reach()
                        : static_cast<f32>(terrain.viewRadius) *
                              render::TerrainSystem::kChunkSize)
@@ -1509,25 +1509,25 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                       render::TerrainSystem::kChunkSize
                                 : 0.0f,
         .treeFadeEnd = vegetation.treeFadeEnd(),
-        .seasonAutumn = seasonAutumnUi,
-        .seasonLeafFall = seasonLeafFallUi,
+        .seasonAutumn = tuning.seasonAutumn,
+        .seasonLeafFall = tuning.seasonLeafFall,
         .leafSeason = vegetation.leafSeason(),
-        .debugBuffer = debugBufferUi,
-        .stylized = stylizedUi,
-        .tonemap = tonemapUi,
-        .exposure = exposureUi,
-        .cascadeDebug = cascadeDebugUi,
-        .grading = gradingUi,
-        .gradeVibrance = gradeVibranceUi,
-        .gradeSplitTone = gradeSplitToneUi,
-        .gradeContrast = gradeContrastUi,
-        .autoExposure = autoExposureUi,
-        .autoExposureMin = autoExposureMinUi,
-        .autoExposureMax = autoExposureMaxUi,
+        .debugBuffer = tuning.debugBuffer,
+        .stylized = tuning.stylized,
+        .tonemap = tuning.tonemap,
+        .exposure = tuning.exposure,
+        .cascadeDebug = tuning.cascadeDebug,
+        .grading = tuning.grading,
+        .gradeVibrance = tuning.gradeVibrance,
+        .gradeSplitTone = tuning.gradeSplitTone,
+        .gradeContrast = tuning.gradeContrast,
+        .autoExposure = tuning.autoExposure,
+        .autoExposureMin = tuning.autoExposureMin,
+        .autoExposureMax = tuning.autoExposureMax,
         .waterMapInfo = water.poolMapInfo(),
         .terrainLightInfo = terrainLightMap.info(),
         .terrainLightActive =
-            terrainLightUi && !view.interiorMode && terrainLightMap.ready(),
+            tuning.terrainLight && !view.interiorMode && terrainLightMap.ready(),
         .waterSurfaceY = effectiveWaterSurfaceY(snapshot, view),
         .windTime = view.windTime,
         .grassBend = view.grassBend,
@@ -1554,35 +1554,35 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .leafLodInfo = { vegetation.colonizedTreeParams.leafSolidStart,
                          vegetation.colonizedTreeParams.leafSolidEnd, 0.0f,
                          0.0f },
-        .stylizedDiffuseInfo = stylizedDiffuseUi,
-        .stylizedShadowInfo = stylizedShadowUi,
-        .stylizedSpecInfo = stylizedSpecUi,
+        .stylizedDiffuseInfo = tuning.stylizedDiffuse,
+        .stylizedShadowInfo = tuning.stylizedShadow,
+        .stylizedSpecInfo = tuning.stylizedSpec,
         // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),
         .giBandInfo = { radianceCascades.tuning.bandCount,
                         radianceCascades.tuning.bandAa,
                         radianceCascades.tuning.giFloor, 0.0f },
-        .mistActive = mistUi && mistMap.ready(),
-        .mistCoverageSoftness = mistCoverageSoftnessUi,
-        .mistReach = mistReachUi,
-        .mistShapeInfo = mistShapeUi,
+        .mistActive = tuning.mist && mistMap.ready(),
+        .mistCoverageSoftness = tuning.mistCoverageSoftness,
+        .mistReach = tuning.mistReach,
+        .mistShapeInfo = tuning.mistShape,
         .mistMapInfo = mistMap.info(),
-        .mistDetailInfo = { noiseVolume.ready() && mistNoiseTexUi ? 1.0f
+        .mistDetailInfo = { noiseVolume.ready() && tuning.mistNoiseTex ? 1.0f
                                                                   : 0.0f,
-                            static_cast<f32>(mistStepsUi),
-                            mistDetailDropoutUi, mistSunBoostUi },
-        .mistLightInfo = mistLightUi,
-        .cloudVolInfo = { skyCloudsUi && noiseVolume.ready() ? 1.0f : 0.0f,
-                          skyCloudShapeUi.x, skyCloudShapeUi.y,
-                          skyCloudShapeUi.z },
-        .cloudVolLightInfo = skyCloudLightUi,
-        .cloudVolShapeInfo = { skyCloudShapeUi.w, skyCloudLiningLobeUi,
-                               skyCloudPowderUi, skyCloudPuffinessUi },
-        .cloudVolRimInfo = { skyCloudRimGainUi, skyCloudRimLobeUi,
-                             skyCloudBaseDarkUi, 0.0f },
-        .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
-        .waterDebugInfo = { static_cast<f32>(waterDebugUi), 0.0f, 0.0f,
+                            static_cast<f32>(tuning.mistSteps),
+                            tuning.mistDetailDropout, tuning.mistSunBoost },
+        .mistLightInfo = tuning.mistLight,
+        .cloudVolInfo = { tuning.skyClouds && noiseVolume.ready() ? 1.0f : 0.0f,
+                          tuning.skyCloudShape.x, tuning.skyCloudShape.y,
+                          tuning.skyCloudShape.z },
+        .cloudVolLightInfo = tuning.skyCloudLight,
+        .cloudVolShapeInfo = { tuning.skyCloudShape.w, tuning.skyCloudLiningLobe,
+                               tuning.skyCloudPowder, tuning.skyCloudPuffiness },
+        .cloudVolRimInfo = { tuning.skyCloudRimGain, tuning.skyCloudRimLobe,
+                             tuning.skyCloudBaseDark, 0.0f },
+        .mistPuffInfo = { tuning.mistPuffiness, 0.0f, 0.0f, 0.0f },
+        .waterDebugInfo = { static_cast<f32>(tuning.waterDebug), 0.0f, 0.0f,
                             0.0f },
         .waterInfoMapInfo = water.infoMapInfo(),
         .terrainShadeMapInfo = terrainShadeMap.info(),
@@ -1592,7 +1592,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // Clustered forward (docs/RENDERING.md §5): the grid's far reach is
     // the froxel slicing's (interior room scale / exterior CSM reach) so
     // both grids share their z slices by construction.
-    const bool clustered = clusteredLightsUi && lightClusters.ready();
+    const bool clustered = tuning.clusteredLights && lightClusters.ready();
     frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
                               render::volumetricReach(view.interiorMode,
                                                       view.atmos.fogStart),
@@ -1613,7 +1613,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         Mat4 viewProj;
     };
     vector<KeyShadowPick> keyShadowPicks;
-    if (keyShadowUi && meshShadowCastersUi) {
+    if (tuning.keyShadow && tuning.meshShadowCasters) {
         struct KeyCandidate {
             f32 score;
             Vec3 anchor;
@@ -1814,7 +1814,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     }
 
     // The top-down rain occlusion depth (roof + canopy cover).
-    if (cfg.sky && frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {
+    if (cfg.sky && frameData.stormInfo.y > 0.003f && tuning.meshShadowCasters) {
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "rainOcc" };
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
                                     .loadOp = rhi::LoadOp::DontCare,
@@ -1878,7 +1878,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                      /*ultraDetail=*/i > 0);
             }
             // Scene meshes + NPCs join the casters (A/B toggle).
-            if (meshShadowCastersUi) {
+            if (tuning.meshShadowCasters) {
                 drawShadowCasters(frame, snapshot, view, i,
                                   &cascadeFrustum);
             }
@@ -2029,7 +2029,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         // close to ever be ridge-occluded — frustum only). CPU horizon
         // only — the GPU verdict drives the indirect commands directly.
         combinedOccluded.clear();
-        if (occlusionUi && occlusion.occludedSet()) {
+        if (tuning.occlusion && occlusion.occludedSet()) {
             combinedOccluded = *occlusion.occludedSet();
         }
         const std::unordered_set<u64>* occludedSet =
@@ -2045,7 +2045,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 frame.device.caps().midPassTimestamps ? &gpuProbe : nullptr;
             rhi::Device* subDevice =
                 subProbe != nullptr ? &frame.device : nullptr;
-            if (cfg.terrain && farTerrainUi) {
+            if (cfg.terrain && tuning.farTerrain) {
                 // Far silhouettes FIRST: everything nearer overdraws
                 // them by depth; they extend the world past the ring.
                 farTerrain.draw(frame.cmd, frameBindGroup,
@@ -2057,7 +2057,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
             // loops whenever the commands aren't fresh (interiors, first
             // frames, toggle off, candidate overflow).
             const bool indirectDraw =
-                gpuIndirectUi && gpuOcclusionUi &&
+                tuning.gpuIndirect && tuning.gpuOcclusion &&
                 frame.device.caps().multiDrawIndirect &&
                 occlusionCommandsFresh && gpuOcclusion.commandsValid();
             if (cfg.terrain) {
@@ -2231,7 +2231,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         // nearest-wins resolve back into the offscreen target. Crests
         // extrude over their neighbors (sky included); holes fall back
         // to the gather (pits keep digging).
-        if (ssdmModeUi != 0 && useOffscreen &&
+        if (tuning.ssdmMode != 0 && useOffscreen &&
             frame.device.caps().copyTexture &&
             ssdmResolvePipeline.get().id != 0 &&
             sceneColorCopy.id() != 0) {
@@ -2259,7 +2259,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 fullscreen(ssdmBoundsFb[i].get(), ssdmDownPipeline.get(),
                            ssdmBoundsGroup[i].get());
             }
-            if (ssdmModeUi == 1 && ssdmHalfFb.id() != 0) {
+            if (tuning.ssdmMode == 1 && ssdmHalfFb.id() != 0) {
                 // Half mode: resolve at chain res into the intermediate
                 // (alpha = "this pixel moved"), then the edge-aware
                 // upsample rewrites ONLY those pixels at full res.
@@ -2297,7 +2297,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "contact" };
-            if (contactShadowsUi && !view.interiorMode) {
+            if (tuning.contactShadows && !view.interiorMode) {
                 postFx.renderContactShadows(frame.cmd, frameBindGroup,
                                             shadows.receiverBindGroup());
             } else {
@@ -2309,7 +2309,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "ssao" };
-            if (ssaoUi) {
+            if (tuning.ssao) {
                 postFx.renderSsao(frame.cmd, frameBindGroup);
             } else {
                 postFx.clearSsao(frame.cmd);
@@ -2332,7 +2332,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
             }
         }
         // Auto exposure: measure + adapt, before the tonemap taps it.
-        if (autoExposureUi) {
+        if (tuning.autoExposure) {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "autoExpo" };
             postFx.renderAutoExposure(frame.device, frame.cmd,

@@ -218,6 +218,119 @@ public:
     static constexpr u32 kMaxLights = 64;
     static constexpr u32 kFallbackLights = 24;
 
+    // Every live tuning knob in ONE public struct: the dev panels
+    // (game/ui/RenderTuningPanels) and the Forms<->flat-params seam
+    // (game/scenes/RenderTuningIo) edit it in place, render() reads it.
+    // Friendship below remains for what the panels drive BEYOND knobs
+    // (subsystem stats and internals, regen/save requests).
+    struct RenderTuning {
+        bool occlusion { true }; // height-horizon occlusion culling (A/B)
+        // Seasons (until a season system drives them): autumn color blend
+        // and deciduous leaf fall, per-slot weighting from the species.
+        f32 seasonAutumn { 0.0f };
+        f32 seasonLeafFall { 0.0f };
+        bool gpuOcclusion { true }; // Hi-Z compute culling (A/B)
+        // GPU-driven terrain path (docs/RENDERING.md §6.0): the cull's
+        // commands drive drawIndexedIndirect — no CPU verdict on this path.
+        bool gpuIndirect { true };
+        // CSM round-robin (docs/RENDERING.md): cascade 0 renders every
+        // frame, the far cascades alternate. A SKIPPED cascade keeps its
+        // previous matrix (receiver and caster UBOs alike) so the stale
+        // depth still matches; a sun step re-renders everything that frame.
+        bool shadowRoundRobin { true };
+        // CSM sharpness: texels per cascade side — recreate keyed on the
+        // applied value (the reflectionScale pattern).
+        i32 shadowResolution { 2048 };
+        // The planar reflection levers: auto-skip renders it only when a
+        // RESIDENT below-sea chunk is in the frustum (edge case: sea at
+        // the horizon beyond the ring — the A/B toggle exists for exactly
+        // that check), and the resolution scale trades mirror sharpness
+        // for fill rate.
+        bool reflectionAutoSkip { true };
+        f32 reflectionScale { 0.5f };
+        // Clustered-forward light culling (docs/RENDERING.md §5); gates
+        // both the dispatch and the shaders' clustered path.
+        bool clusteredLights { true };
+        bool terrainLight { true }; // worker-baked terrain sun/sky map
+        bool farTerrain { true };   // distant silhouettes (§3.6)
+        bool mist { true };         // ground-mist raymarch (§3.5)
+        // Live mist tuning (panel "Ground mist"); density/coverage are
+        // weather-owned and ride AtmosphereParams instead.
+        f32 mistCoverageSoftness { 0.6f };
+        f32 mistReach { 1200.0f };
+        Vec4 mistShape { 0.0035f, 0.02f, 0.2f, 49.0f };
+        // Volumetric sky clouds (§8): A/B vs the 2D dome layer + the
+        // shape and light knobs (panel "Sky clouds"; thickness/sigma/
+        // erosion — coverage/height/scale stay the weather cloudInfo
+        // lanes).
+        bool skyClouds { true };
+        // x thickness (m), y sigma (1/m), z erosion, w thickness<->coverage.
+        Vec4 skyCloudShape { 440.0f, 0.065f, 0.31f, 3.4f };
+        // x body gain, y body g, z ambient gain, w lining gain.
+        Vec4 skyCloudLight { 19.9f, 0.3f, 0.9f, 30.2f };
+        f32 skyCloudLiningLobe { 0.8f }; // lining HG g (halo tightness)
+        f32 skyCloudPowder { 1.0f };     // dark-edge strength
+        f32 skyCloudPuffiness { 0.5f };  // fractal edge erosion
+        f32 skyCloudRimGain { 25.0f };   // view-thin silhouette glow
+        f32 skyCloudRimLobe { 0.75f };
+        f32 skyCloudBaseDark { 7.4f };   // storm-base ambient occlusion
+        bool mistNoiseTex { true }; // A/B: baked volume vs analytic fbm3
+        f32 mistDetailDropout { 400.0f };
+        i32 mistSteps { 16 }; // per-pixel march steps (EMA covers the rest)
+        f32 mistPuffiness { 0.5f }; // fractal edge florets
+        f32 mistSunBoost { 10.0f }; // sun-beam gain (silver lining)
+        // Light shaping: x = forward HG lobe g, y = backscatter weight,
+        // z = ambient gain, w = ambient floor in shadow.
+        Vec4 mistLight { 0.95f, 0.8f, 1.25f, 0.6f };
+        bool wireframe { false };
+        bool tonemap { true };
+        // BotW step lighting vs classic wrap (A/B). Off: the realistic
+        // terrain-texturing look owns this branch; the panel checkbox
+        // brings the cel ramp back.
+        bool stylized { false };
+        bool shadows { true };
+        bool cascadeDebug { false };
+        bool reflections { true };
+        bool contactShadows { true };
+        // Half-res SSAO (ssao.frag): contact-scale crevice darkening —
+        // the realistic-branch companion of the material relief.
+        bool ssao { true };
+        f32 ssaoStrength { 0.85f };
+        f32 ssaoRadius { 0.7f };
+        // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
+        // alpha-packed relief. Mode: 0 = off, 1 = half-res chain +
+        // edge-aware upsample (~2.4 ms), 2 = full res (~17 ms on M1,
+        // kept for its crispness).
+        i32 ssdmMode { 2 };
+        f32 ssdmAmp { 0.12f }; // world amplitude (m)
+        bool keyShadow { true }; // interiors
+        bool meshShadowCasters { true };
+        // Analytical grade — OFF by default while the GI is tuned (the
+        // grade masks what the light bounces are doing; revisit later);
+        // the A/B checkbox remains.
+        bool grading { false };
+        f32 gradeVibrance { 0.3f };
+        f32 gradeSplitTone { 0.35f };
+        f32 gradeContrast { 1.06f };
+        // Auto-exposure — ON by default; the A/B checkbox remains.
+        bool autoExposure { true };
+        f32 autoExposureMin { 0.4f };
+        f32 autoExposureMax { 2.5f };
+        // Stylized ramp (stylized.glsl lanes; defaults = shipped cel look).
+        Vec4 stylizedDiffuse { 0.02f, 0.09f, 0.32f, 0.40f };
+        Vec4 stylizedShadow { 0.45f, 0.55f, 0.0f, 0.6f };
+        // Character/prop cel specular: strength, threshold, exponent.
+        Vec4 stylizedSpec { 0.35f, 0.35f, 24.0f, 0.0f };
+        f32 interiorDaylightWeight { 0.6f }; // interior<->outside coupling
+        f32 interiorDustDensity { 0.025f };  // uniform dust indoors
+        f32 exposure { 1.0f };
+        i32 debugBuffer { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
+        // Water debug view (panel > Water): 0 off, 1 flow, 2 torrent,
+        // 3 river UV, 4-6 water-info texture channels.
+        i32 waterDebug { 0 };
+    };
+    RenderTuning tuning;
+
 private:
     // Game-side dev UI and tuning seam edit the state below in place.
     friend class ::game::RenderTuningPanels;
@@ -268,16 +381,7 @@ private:
     render::VegetationSystem vegetation;
     render::SkySystem sky;
     render::ChunkOcclusion occlusion;
-    bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
-    // Seasons (until a season system drives them): autumn color blend
-    // and deciduous leaf fall, per-slot weighting from the species.
-    f32 seasonAutumnUi { 0.0f };
-    f32 seasonLeafFallUi { 0.0f };
     render::GpuOcclusion gpuOcclusion;
-    bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
-    // GPU-driven terrain path (docs/RENDERING.md §6.0): the cull's
-    // commands drive drawIndexedIndirect — no CPU verdict on this path.
-    bool gpuIndirectUi { true };
     std::unordered_set<u64> combinedOccluded; // CPU horizon (legacy path)
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;
@@ -286,21 +390,6 @@ private:
     // (returning from an interior invalidates them).
     bool occlusionCommandsFresh { false };
     render::ShadowMapper shadows;
-    // CSM round-robin (docs/RENDERING.md): cascade 0 renders every frame, the
-    // far cascades alternate. A SKIPPED cascade keeps its previous
-    // matrix (receiver and caster UBOs alike) so the stale depth still
-    // matches; a sun step re-renders everything that frame.
-    bool shadowRoundRobinUi { true };
-    // CSM sharpness: texels per cascade side —
-    // recreate keyed on the applied value (the reflectionScale pattern).
-    i32 shadowResolutionUi { 2048 };
-    // The planar reflection levers:
-    // auto-skip renders it only when a RESIDENT below-sea chunk is in
-    // the frustum (edge case: sea at the horizon beyond the ring — the
-    // A/B toggle exists for exactly that check), and the resolution
-    // scale trades mirror sharpness for fill rate.
-    bool reflectionAutoSkipUi { true };
-    f32 reflectionScaleUi { 0.5f };
     f32 appliedReflectionScale { 0.5f };
     render::ShadowMapper::Cascades lastCascades {};
     bool lastCascadesValid { false };
@@ -308,51 +397,18 @@ private:
     render::WaterSystem water;
     render::FxRenderer fx; // the CPU-particle pass
     render::PostFx postFx;
-    // Clustered-forward light culling (docs/RENDERING.md §5); the toggle
-    // gates both the dispatch and the shaders' clustered path.
     render::LightClusters lightClusters;
-    bool clusteredLightsUi { true };
     render::GpuProbe gpuProbe; // per-pass GPU budget (docs/RENDERING.md)
     u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;
-    bool terrainLightUi { true };
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
-    bool farTerrainUi { true };
     // Worker-baked valley data for the ground-mist raymarch (§3.5).
     render::MistMap mistMap;
-    bool mistUi { true };
-    // Live mist tuning (panel "Ground mist"); density/coverage are
-    // weather-owned and ride AtmosphereParams instead.
-    f32 mistCoverageSoftnessUi { 0.6f };
-    f32 mistReachUi { 1200.0f };
-    Vec4 mistShapeUi { 0.0035f, 0.02f, 0.2f, 49.0f };
     // Shared tileable Perlin-Worley volume (mist + sky-cloud erosion).
     render::NoiseVolume noiseVolume;
-    // Volumetric sky clouds (§8): A/B vs the 2D dome layer + the shape
-    // and light knobs (panel "Sky clouds"; thickness/sigma/erosion —
-    // coverage/height/scale stay the shared weather cloudInfo lanes).
-    bool skyCloudsUi { true };
-    // x thickness (m), y sigma (1/m), z erosion, w thickness<->coverage.
-    Vec4 skyCloudShapeUi { 440.0f, 0.065f, 0.31f, 3.4f };
-    // x body gain, y body g, z ambient gain, w lining gain.
-    Vec4 skyCloudLightUi { 19.9f, 0.3f, 0.9f, 30.2f };
-    f32 skyCloudLiningLobeUi { 0.8f }; // lining HG g (halo tightness)
-    f32 skyCloudPowderUi { 1.0f };      // dark-edge strength
-    f32 skyCloudPuffinessUi { 0.5f };   // fractal edge erosion
-    f32 skyCloudRimGainUi { 25.0f };     // view-thin silhouette glow
-    f32 skyCloudRimLobeUi { 0.75f };
-    f32 skyCloudBaseDarkUi { 7.4f };    // storm-base ambient occlusion
-    bool mistNoiseTexUi { true }; // A/B: baked volume vs analytic fbm3
-    f32 mistDetailDropoutUi { 400.0f };
-    i32 mistStepsUi { 16 }; // per-pixel march steps (EMA covers the rest)
-    f32 mistPuffinessUi { 0.5f }; // fractal edge florets
-    f32 mistSunBoostUi { 10.0f }; // sun-beam gain (silver lining strength)
-    // Light shaping: x = forward HG lobe g, y = backscatter weight,
-    // z = ambient gain, w = ambient floor in shadow.
-    Vec4 mistLightUi { 0.95f, 0.8f, 1.25f, 0.6f };
     // The GI voxel clipmap (docs/RENDERING.md) +
     // cascades; its tuning is the render panel's "Global illumination".
     render::RadianceCascades radianceCascades;
@@ -365,57 +421,11 @@ private:
     bool reseedVegetation { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
-    bool wireframeUi { false };
-    bool tonemapUi { true };
-    // BotW step lighting vs classic wrap (A/B). Off: the realistic
-    // terrain-texturing look owns this branch; the panel checkbox
-    // brings the cel ramp back.
-    bool stylizedUi { false };
-    bool shadowsUi { true };
-    bool cascadeDebugUi { false };
-    bool reflectionsUi { true };
-    bool contactShadowsUi { true };
-    // Half-res SSAO (ssao.frag): contact-scale crevice darkening — the
-    // realistic-branch companion of the material relief.
-    bool ssaoUi { true };
-    f32 ssaoStrengthUi { 0.85f };
-    f32 ssaoRadiusUi { 0.7f };
-    // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
-    // alpha-packed relief.
-    // Mode: 0 = off, 1 = half-res chain + edge-aware upsample (~2.4 ms),
-    // 2 = full res (~17 ms on M1, kept for its crispness).
-    i32 ssdmModeUi { 2 };
-    f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
-    bool keyShadowUi { true };      // interiors
-    bool meshShadowCastersUi { true };
     // The hysteresis-quantized sun the shadow cascades follow (a
     // continuously rotating light re-bases the texel snap every frame —
     // crawling edges); lighting keeps the smooth skyState sun.
     Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
-    // Analytical grade — OFF by default while the GI is tuned (the
-    // grade masks what the light bounces are doing; revisit later);
-    // the A/B checkbox remains.
-    bool gradingUi { false };
-    f32 gradeVibranceUi { 0.3f };
-    f32 gradeSplitToneUi { 0.35f };
-    f32 gradeContrastUi { 1.06f };
-    // Auto-exposure — ON by default; the A/B checkbox remains.
-    bool autoExposureUi { true };
-    f32 autoExposureMinUi { 0.4f };
-    f32 autoExposureMaxUi { 2.5f };
-    // Stylized ramp (stylized.glsl lanes; defaults = shipped cel look).
-    Vec4 stylizedDiffuseUi { 0.02f, 0.09f, 0.32f, 0.40f };
-    Vec4 stylizedShadowUi { 0.45f, 0.55f, 0.0f, 0.6f };
-    // Character/prop cel specular: strength, threshold, exponent.
-    Vec4 stylizedSpecUi { 0.35f, 0.35f, 24.0f, 0.0f };
-    f32 interiorDaylightWeightUi { 0.6f }; // H1: interior<->outside coupling
-    f32 interiorDustDensityUi { 0.025f };   // H4: uniform dust indoors
     bool saveTuningRequested { false }; // panels' Save button -> the scene
-    f32 exposureUi { 1.0f };
-    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
-    // Water debug view (panel > Water): 0 off, 1 flow, 2 torrent,
-    // 3 river UV, 4-6 water-info texture channels.
-    i32 waterDebugUi { 0 };
 
     rhi::UniqueBuffer frameUbo;
     rhi::UniqueBindGroup frameBindGroup;
@@ -525,7 +535,7 @@ private:
     array<rhi::UniqueFramebuffer, kSsdmLevels> ssdmBoundsFb;
     array<rhi::UniqueBindGroup, kSsdmLevels> ssdmBoundsGroup;
     rhi::UniqueBindGroup ssdmResolveGroup;
-    // Half mode (ssdmModeUi == 1): the resolve lands in this chain-res
+    // Half mode (tuning.ssdmMode == 1): the resolve lands in this chain-res
     // intermediate (alpha = moved flag), then the upsample rewrites the
     // touched full-res pixels only.
     rhi::UniquePipeline ssdmResolveHalfPipeline;
