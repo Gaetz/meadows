@@ -42,6 +42,13 @@ CPMAddPackage(
 )
 
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
+# SPIR-V reflection for the Vulkan backend's binding remap (single-file lib).
+CPMAddPackage(
+    NAME spirv-reflect
+    GITHUB_REPOSITORY KhronosGroup/SPIRV-Reflect
+    GIT_TAG vulkan-sdk-1.3.290.0
+    OPTIONS "SPIRV_REFLECT_EXECUTABLE OFF" "SPIRV_REFLECT_STATIC_LIB ON"
+)
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage("gh:doctest/doctest@2.5.2")
 CPMAddPackage("gh:marzer/tomlplusplus@3.4.0")

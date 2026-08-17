@@ -15,6 +15,7 @@
 #include <vulkan/vulkan.h>
 
 #include <shaderc/shaderc.h>
+#include <spirv_reflect.h>
 
 // VMA is header-only; this is the single TU that emits its implementation.
 #define VMA_IMPLEMENTATION
@@ -507,12 +508,19 @@ str remapBindings(const str& source, vector<ShaderResource>& resources) {
 // compat.glsl, keyed on the VULKAN macro that shaderc/glslang predefines.
 bool compileToSpv(const str& source, shaderc_shader_kind kind,
                   const str& debugName, vector<u32>& out) {
-    shaderc_compiler_t compiler = shaderc_compiler_initialize();
-    shaderc_compile_options_t options = shaderc_compile_options_initialize();
-    shaderc_compile_options_set_target_env(options, shaderc_target_env_vulkan,
-                                           shaderc_env_version_vulkan_1_2);
-    shaderc_compile_options_set_optimization_level(
-        options, shaderc_optimization_level_performance);
+    // One compiler + options for the whole process (shaderc compilation
+    // is thread-safe on a shared compiler): initializing per STAGE paid
+    // a full glslang bring-up on every stage of every shader, at boot
+    // and on each hot reload.
+    static shaderc_compiler_t compiler = shaderc_compiler_initialize();
+    static shaderc_compile_options_t options = [] {
+        shaderc_compile_options_t o = shaderc_compile_options_initialize();
+        shaderc_compile_options_set_target_env(
+            o, shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
+        shaderc_compile_options_set_optimization_level(
+            o, shaderc_optimization_level_performance);
+        return o;
+    }();
 
     shaderc_compilation_result_t result =
         shaderc_compile_into_spv(compiler, source.c_str(), source.size(), kind,
@@ -530,8 +538,83 @@ bool compileToSpv(const str& source, shaderc_shader_kind kind,
                   shaderc_result_get_error_message(result));
     }
     shaderc_result_release(result);
-    shaderc_compile_options_release(options);
-    shaderc_compiler_release(compiler);
+    return ok;
+}
+
+// Reflects the compiled SPIR-V, records what the stage declares (class,
+// image dim, depth-compare — all authoritative in SPIR-V, no GLSL text
+// parsing) and PATCHES each binding decoration up into its class range
+// (bindingOffset — GL's per-class namespaces do not survive into Vulkan).
+bool reflectAndShiftBindings(vector<u32>& spv,
+                             vector<ShaderResource>& resources,
+                             const str& debugName, const char* stage) {
+    SpvReflectShaderModule module {};
+    if (spvReflectCreateShaderModule(spv.size() * sizeof(u32), spv.data(),
+                                     &module) !=
+        SPV_REFLECT_RESULT_SUCCESS) {
+        LOG_ERROR("Vulkan shader '{}.{}': SPIR-V reflection failed",
+                  debugName, stage);
+        return false;
+    }
+    u32 count = 0;
+    spvReflectEnumerateDescriptorBindings(&module, &count, nullptr);
+    vector<SpvReflectDescriptorBinding*> bindings(count);
+    spvReflectEnumerateDescriptorBindings(&module, &count, bindings.data());
+    bool ok = true;
+    for (SpvReflectDescriptorBinding* b : bindings) {
+        DescriptorClass klass = DescriptorClass::Uniform;
+        ImageDim dim = ImageDim::Any;
+        bool comparison = false;
+        switch (b->descriptor_type) {
+        case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            klass = DescriptorClass::Uniform;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            klass = DescriptorClass::Storage;
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            klass = DescriptorClass::Sampler;
+            comparison = b->image.depth == 1;
+            if (b->image.dim == SpvDimCube) {
+                dim = ImageDim::Cube;
+            } else if (b->image.dim == SpvDim3D) {
+                dim = ImageDim::T3D;
+            } else if (b->image.dim == SpvDim2D) {
+                dim = b->image.arrayed ? ImageDim::T2DArray : ImageDim::T2D;
+            }
+            break;
+        case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            klass = DescriptorClass::StorageImage;
+            if (b->image.dim == SpvDim3D) {
+                dim = ImageDim::T3D;
+            } else if (b->image.dim == SpvDim2D) {
+                dim = ImageDim::T2D;
+            }
+            break;
+        default:
+            LOG_ERROR("Vulkan shader '{}.{}': unsupported descriptor type "
+                      "{} at binding {}",
+                      debugName, stage,
+                      static_cast<int>(b->descriptor_type), b->binding);
+            ok = false;
+            continue;
+        }
+        const u32 shifted = b->binding + bindingOffset(klass);
+        if (spvReflectChangeDescriptorBindingNumbers(
+                &module, b, shifted, SPV_REFLECT_SET_NUMBER_DONT_CHANGE) !=
+            SPV_REFLECT_RESULT_SUCCESS) {
+            LOG_ERROR("Vulkan shader '{}.{}': binding {} shift failed",
+                      debugName, stage, b->binding);
+            ok = false;
+            continue;
+        }
+        resources.push_back({ shifted, klass, comparison, dim });
+    }
+    if (ok) {
+        const u32* code = spvReflectGetCode(&module);
+        spv.assign(code, code + spvReflectGetCodeSize(&module) / sizeof(u32));
+    }
+    spvReflectDestroyShaderModule(&module);
     return ok;
 }
 
@@ -3515,15 +3598,49 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
 
     auto build = [&](const str& source, shaderc_shader_kind kind,
                      const char* stage, VkShaderModule& module) {
-        // Shift each descriptor class into its own binding range (GL's
-        // separate namespaces do not survive into Vulkan) and record what the
-        // stage declares, for the pipeline layout.
-        const str translated =
-            remapBindings(promoteVersion(source), shader.resources);
+        // Compile the ORIGINAL source, then reflect the SPIR-V: the
+        // per-class binding shift (GL's separate namespaces do not
+        // survive into Vulkan) is patched into the decorations, and the
+        // pipeline-layout metadata comes from reflection, not from
+        // parsing GLSL text.
+        const size_t before = shader.resources.size();
         vector<u32> spv;
-        if (!compileToSpv(translated, kind, desc.debugName + "." + stage,
-                          spv)) {
+        if (!compileToSpv(promoteVersion(source), kind,
+                          desc.debugName + "." + stage, spv) ||
+            !reflectAndShiftBindings(spv, shader.resources, desc.debugName,
+                                     stage)) {
             return false;
+        }
+        // Transitional cross-check: the retired GLSL text parser must
+        // agree with the reflection (order-insensitive). Remove with it
+        // once the corpus has cycled through a few releases.
+        vector<ShaderResource> legacy;
+        remapBindings(promoteVersion(source), legacy);
+        auto key = [](const ShaderResource& r) {
+            return (static_cast<u64>(r.binding) << 8) |
+                   (static_cast<u64>(r.klass) << 2) |
+                   (static_cast<u64>(r.comparison) << 1) |
+                   static_cast<u64>(r.dim == ImageDim::Any);
+        };
+        vector<u64> a;
+        for (size_t i = before; i < shader.resources.size(); ++i) {
+            a.push_back(key(shader.resources[i]));
+        }
+        vector<u64> b;
+        for (const ShaderResource& r : legacy) {
+            b.push_back(key(r));
+        }
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        // Subset check: the legacy parser lists DECLARED bindings, the
+        // optimizer strips the unused ones before reflection — smaller
+        // is expected. The alarm is a reflected resource the parser
+        // missed or classified differently.
+        if (!std::includes(b.begin(), b.end(), a.begin(), a.end())) {
+            LOG_ERROR("Vulkan shader '{}.{}': SPIR-V reflection found "
+                      "resources the legacy GLSL parser disagrees on "
+                      "({} reflected vs {} parsed)",
+                      desc.debugName, stage, a.size(), b.size());
         }
         VkShaderModuleCreateInfo info {};
         info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

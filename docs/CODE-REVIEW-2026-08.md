@@ -1059,11 +1059,29 @@ dans STATS.md.
 
 ### Notes d'architecture (collectées, à NE PAS traiter pendant la revue)
 
-1. **Vulkan** : uploads de textures encore synchrones (immediateSubmit wait=true par
-   texture) — étendre la queue d'upload aux images ; politique de destruction
-   hétérogène (différé vs drain) à unifier via pendingX ; remapBindings = parseur
-   texte GLSL (sortie : réflexion SPIR-V) ; shaderc compiler par étage ;
-   kFramesInFlight=2 câblé dans les arrays de l'Impl.
+1. **Vulkan** : ~~uploads de textures synchrones~~ FAIT (2026-08-17 :
+   les 3 sites images — mips offline, mip de base, generateMipmaps —
+   asynchrones ; en frame, v2 : recordImageUpload — ring de staging par
+   slot + CB d'upload de la frame, zéro submit/wait par texture ;
+   fallback staging dédié + submit async parqué hors frame et pour la
+   conversion R16F. Banc vksmoke : 1,77 → 0,63 ms par texture ; à
+   surveiller : le ring garde la taille du pire burst. Le double chemin
+   draw/GPU-driven est scellé au passage : cas « cull seal » dans
+   vksmoke — verdicts GPU vs référence CPU sur depth connue, qui fige
+   AUSSI la marge monde de 16 m des chevaucheurs du near plane).
+   ~~Politique de destruction~~ FAIT (UNE politique — tous les destroy*
+   parquent dans les pendingX stampés frameCounter, drainés par
+   flushPendingFrees ; supprime les vkDeviceWaitIdle INCONDITIONNELS de
+   destroySampler/Framebuffer/Shader/Pipeline — un stall GPU à chaque
+   hot-reload/rebuild de pipeline EN JEU ; le destructeur draine en
+   force après son waitIdle). ~~remapBindings~~ FAIT (SPIRV-Reflect —
+   compile de la source ORIGINALE, réflexion = source de vérité du
+   layout, shift de classe patché dans les décorations ; parseur texte
+   gardé en cross-check sous-ensemble transitoire, corpus entier vert).
+   ~~shaderc par étage~~ FAIT (un compilateur process-wide au lieu d'un
+   init glslang par étage). RESTE : kFramesInFlight=2 câblé — acté
+   comme le bon choix (2 = standard latence/débit) ; paramétrer
+   seulement avec l'intention de changer la valeur.
 2. **WorldRenderer** : ~~render() ~1200 lignes → découpage par passe~~ FAIT
    (2026-08-17 : 9 méthodes extraites en code-motion pur —
    pumpPipelinesAndRequests/pumpStreaming/recordKeyShadowTiles/
