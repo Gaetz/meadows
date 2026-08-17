@@ -154,6 +154,11 @@ struct MacroParams {
     // a sea cliff instead of a beach ramp.
     f32 cliffTierStart { 1.6f };
     f32 cliffTierEnd { 2.4f };
+    // Ridged hill chains of the HILL regime (0 disables — the tests
+    // validate a chain-free macro). The control seam copies its own
+    // value in at the bake (TileBake); part of MacroParams so
+    // synthesizeMacro's input set is ONE struct, not struct + stray arg.
+    f32 hillChainWavelength { 0.0f };
     f32 terraceStep { 40.0f };     // meters between mesa strata
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
     f32 warpWavelength { 3500.0f }; // relief domain warp
@@ -208,7 +213,7 @@ f32 recurveLand(const MacroParams& params, f32 h);
 // or cliff rim from the tier). Deterministic for its full input set.
 MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
-                            u32 seed, f32 hillChainWavelength = 0.0f);
+                            u32 seed);
 
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes

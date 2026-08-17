@@ -34,6 +34,9 @@ struct Lake {
     // 1 = a POND this pipeline placed (confluences, hairpins): its basin
     // does not exist in the eroded terrain — the finalize pass DIGS it.
     // Natural lakes (0) already sit in their depression.
+    // The basin/pond CONTRACT: 1 = placed pond — S5d digs its parabolic
+    // dish; 0 = natural basin — the shore-distance carve owns it. Each
+    // finalize path explicitly skips the other's kind.
     u8 dug { 0 };
 };
 

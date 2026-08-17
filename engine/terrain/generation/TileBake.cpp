@@ -56,36 +56,12 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
         rawCapacity[i] = e.capacityScale;
         rawFine[i] = e.fineScale;
     }
-    // 3x3 box blur, fixed row-major order (deterministic): the ids are
+    // 3x3 box blur (GridOps, deterministic row-major): the ids are
     // nearest-sampled, the blur keeps erosion from stepping at borders.
-    const i32 n = static_cast<i32>(spec.n);
-    const auto blur = [&](const vector<f32>& src) {
-        vector<f32> dst(cells);
-        for (i32 z = 0; z < n; ++z) {
-            for (i32 x = 0; x < n; ++x) {
-                f32 sum = 0.0f;
-                i32 count = 0;
-                for (i32 dz = -1; dz <= 1; ++dz) {
-                    for (i32 dx = -1; dx <= 1; ++dx) {
-                        const i32 cx = x + dx;
-                        const i32 cz = z + dz;
-                        if (cx < 0 || cx >= n || cz < 0 || cz >= n) {
-                            continue;
-                        }
-                        sum += src[static_cast<size_t>(cz) * n + cx];
-                        ++count;
-                    }
-                }
-                dst[static_cast<size_t>(z) * n + x] =
-                    sum / static_cast<f32>(count);
-            }
-        }
-        return dst;
-    };
-    out.erodibility = blur(rawErod);
-    out.talusScale = blur(rawTalus);
-    out.capacityScale = blur(rawCapacity);
-    out.fineScale = blur(rawFine);
+    out.erodibility = boxBlur3(spec, rawErod);
+    out.talusScale = boxBlur3(spec, rawTalus);
+    out.capacityScale = boxBlur3(spec, rawCapacity);
+    out.fineScale = boxBlur3(spec, rawFine);
     return out;
 }
 
@@ -97,10 +73,10 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     controlParams.seed = params.worldSeed;
     const ProceduralControls controls { controlParams };
 
+    MacroParams macroParams = params.macro;
+    macroParams.hillChainWavelength = controlParams.hillChainWavelength;
     const MacroResult macro =
-        synthesizeMacro(controls, out.sim, params.macro,
-                        params.worldSeed,
-                        controlParams.hillChainWavelength);
+        synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
     BiomeCharacter character =
         biomeCharacter(out.sim, macro.biome, params.biomeErosion);
     // Passability corridors soften the erosion locally: softer rock

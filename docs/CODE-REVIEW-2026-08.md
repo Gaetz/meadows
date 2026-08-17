@@ -1126,11 +1126,19 @@ dans STATS.md.
    frame) : le refactor ne paie pas son risque d'indices chunk↔lane.
    Rouvrir si kVariantCount grossit nettement (gain linéaire en
    variantes × passes) ou si le ring s'étend.
-4. **Terrain** : hillChainWavelength traverse la seam en argument séparé (les tests
-   valident une macro sans chaînes de collines) — sa place est MacroParams ;
-   GridOps.hpp (bilinéaire/bicubique/chamfer/blur/voisins/bbox) ~200 lignes en moins ;
-   DensityField linéaire en primitives (grille de hachage le jour des gros donjons) ;
-   résolution canonique de bassin vs mares `dug` (skip explicite à ajouter).
+4. **Terrain** : ~~hillChainWavelength en argument séparé~~ FAIT
+   (2026-08-18 : champ MacroParams, défaut 0 = désactivé — l'input de
+   synthesizeMacro est UN struct ; TileBake copie la valeur du seam de
+   contrôle ; tests bit-verts) ; ~~GridOps à compléter~~ FAIT
+   (bicubicGrid — l'ex-sampleGrid de Finalize — et boxBlur3 — l'ex-
+   lambda de TileBake — rejoignent voisins/bilinéaire/chamfer ; « bbox »
+   examiné : les min/max ad hoc n'ont pas de forme commune, pas
+   d'extraction) ; ~~résolution bassin vs mares dug~~ FAIT (les deux
+   skips explicites existaient déjà — Finalize 439/517 ; le CONTRAT est
+   maintenant pinné au champ Lake::dug) ; RESTE : DensityField linéaire
+   en primitives → grille de hachage — bake-time seulement (suites
+   donjons : 26,5 s au total, mines actuelles OK) ; déclencheur : gros
+   donjons / bond du nombre de primitives.
 5. **Audio** : pas d'API stop pour un one-shot loopé (play() retourne void).
 6. **Anim** : événement au wrap de boucle décalé d'une frame (noté, sans effet actuel).
 7. **game/scenes** : panneaux ImGui mutent l'état depuis drawUi() (idiome assumé,

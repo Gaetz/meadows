@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cmath>
+
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/TerrainBase.hpp" // catmullRom
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Shared grid toolkit of the generation passes: the 8-connected
@@ -48,6 +51,57 @@ inline f32 bilinearWorld(const GridSpec& spec, const vector<f32>& grid,
                          f32 wx, f32 wz) {
     return bilinearGrid(spec, grid, (wx - spec.originX) / spec.texelSize,
                         (wz - spec.originZ) / spec.texelSize);
+}
+
+// Bicubic (Catmull-Rom) sample of an n x n grid at GRID coords,
+// border-clamped taps.
+inline f32 bicubicGrid(const GridSpec& spec, const vector<f32>& grid,
+                       f32 u, f32 v) {
+    const f32 fu = std::floor(u);
+    const f32 fv = std::floor(v);
+    const i32 iu = static_cast<i32>(fu);
+    const i32 iv = static_cast<i32>(fv);
+    const f32 tu = u - fu;
+    const f32 tv = v - fv;
+    const auto at = [&](i32 cx, i32 cz) {
+        cx = glm::clamp(cx, 0, static_cast<i32>(spec.n) - 1);
+        cz = glm::clamp(cz, 0, static_cast<i32>(spec.n) - 1);
+        return grid[static_cast<size_t>(cz) * spec.n +
+                    static_cast<size_t>(cx)];
+    };
+    f32 rows[4];
+    for (i32 j = 0; j < 4; ++j) {
+        const i32 cz = iv - 1 + j;
+        rows[j] = terrain::catmullRom(at(iu - 1, cz), at(iu, cz),
+                                      at(iu + 1, cz), at(iu + 2, cz), tu);
+    }
+    return terrain::catmullRom(rows[0], rows[1], rows[2], rows[3], tv);
+}
+
+// Deterministic 3x3 box blur (row-major, border-shrunk window).
+inline vector<f32> boxBlur3(const GridSpec& spec, const vector<f32>& src) {
+    const i32 n = static_cast<i32>(spec.n);
+    vector<f32> dst(spec.cells());
+    for (i32 z = 0; z < n; ++z) {
+        for (i32 x = 0; x < n; ++x) {
+            f32 sum = 0.0f;
+            i32 count = 0;
+            for (i32 dz = -1; dz <= 1; ++dz) {
+                for (i32 dx = -1; dx <= 1; ++dx) {
+                    const i32 cx = x + dx;
+                    const i32 cz = z + dz;
+                    if (cx < 0 || cx >= n || cz < 0 || cz >= n) {
+                        continue;
+                    }
+                    sum += src[static_cast<size_t>(cz) * n + cx];
+                    ++count;
+                }
+            }
+            dst[static_cast<size_t>(z) * n + x] =
+                sum / static_cast<f32>(count);
+        }
+    }
+    return dst;
 }
 
 // Two-pass 3x3 chamfer relaxation over a SEEDED distance field (0 at the

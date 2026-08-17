@@ -28,29 +28,6 @@ f32 strataBand01(f32 h, f32 warp, f32 period) {
 
 using terrain::catmullRom;
 
-// Bicubic sample of a coarse grid at fractional texel coords, clamped.
-f32 sampleGrid(const GridSpec& spec, const vector<f32>& grid, f32 u,
-               f32 v) {
-    const f32 fu = std::floor(u);
-    const f32 fv = std::floor(v);
-    const i32 iu = static_cast<i32>(fu);
-    const i32 iv = static_cast<i32>(fv);
-    const f32 tu = u - fu;
-    const f32 tv = v - fv;
-    const auto at = [&](i32 cx, i32 cz) {
-        cx = glm::clamp(cx, 0, static_cast<i32>(spec.n) - 1);
-        cz = glm::clamp(cz, 0, static_cast<i32>(spec.n) - 1);
-        return grid[static_cast<size_t>(cz) * spec.n +
-                    static_cast<size_t>(cx)];
-    };
-    f32 rows[4];
-    for (i32 j = 0; j < 4; ++j) {
-        const i32 cz = iv - 1 + j;
-        rows[j] = catmullRom(at(iu - 1, cz), at(iu, cz), at(iu + 1, cz),
-                             at(iu + 2, cz), tu);
-    }
-    return catmullRom(rows[0], rows[1], rows[2], rows[3], tv);
-}
 
 // Chamfer distance (meters) to the nearest set cell of `mask`.
 vector<f32> distanceToMask(const GridSpec& spec, const vector<u8>& mask) {
@@ -202,7 +179,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                 const f32 z = midSpec.z(row);
                 const f32 u = coarseU(x, coarse.originX);
                 const f32 v = coarseU(z, coarse.originZ);
-                mid[i] = sampleGrid(coarse, eroded, u, v);
+                mid[i] = bicubicGrid(coarse, eroded, u, v);
                 // Protection: no carving through river corridors, lake
                 // shores, beaches or the sea floor.
                 const f32 dWater = bilinearGrid(coarse, waterDist, u, v);
@@ -243,7 +220,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                     out.height[static_cast<size_t>(row) *
                                    out.fineSpec.n +
                                col] =
-                        sampleGrid(midSpec, amplified.height, mu, mv);
+                        bicubicGrid(midSpec, amplified.height, mu, mv);
                 }
             }
         }
@@ -264,7 +241,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                 const f32 v =
                     coarseU(out.fineSpec.z(row), coarse.originZ);
                 out.height[static_cast<size_t>(row) * out.fineSpec.n +
-                           col] = sampleGrid(coarse, eroded, u, v);
+                           col] = bicubicGrid(coarse, eroded, u, v);
             }
         }
     }
@@ -338,7 +315,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                      1.0f) *
                     4.0f;
                 const f32 band = strataBand01(
-                    sampleGrid(coarse, eroded, u, v), warp,
+                    bicubicGrid(coarse, eroded, u, v), warp,
                     params.strataPeriod);
                 out.height[static_cast<size_t>(row) * out.fineSpec.n +
                            col] +=

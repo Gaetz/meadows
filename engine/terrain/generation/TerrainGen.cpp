@@ -300,7 +300,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
 
 MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
-                            u32 seed, f32 hillChainWavelength) {
+                            u32 seed) {
     MacroResult out;
     out.spec = spec;
     out.height.resize(spec.cells());
@@ -333,7 +333,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             const f32 land = recurveLand(
                 params,
                 landHeight(params, seed, samples[i],
-                           hillChainWavelength, spec.x(col),
+                           params.hillChainWavelength, spec.x(col),
                            spec.z(row)));
             out.height[i] =
                 coastProfile(params, land, samples[i].tier,
