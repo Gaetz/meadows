@@ -542,8 +542,7 @@ private:
     // for NPCs — invisible at shadow resolution).
     rhi::UniquePipeline meshCasterPipeline;
     rhi::UniquePipeline skinnedCasterPipeline;
-    u64 meshCasterShaderGeneration { 0 };
-    u64 skinnedCasterShaderGeneration { 0 };
+    ShaderLibrary::Watch casterShaderWatch;
     // The interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
     // Key-shadow ATLAS (docs/RENDERING.md §5 B6): one 2048^2 depth target,

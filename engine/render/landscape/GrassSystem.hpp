@@ -6,6 +6,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
 class JobSystem;
@@ -189,7 +190,7 @@ private:
     rhi::UniqueBuffer bladeIndexBuffer;
     u32 bladeIndexCount { 0 };
     rhi::UniquePipeline pipeline;
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic:

@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 #include <glm/glm.hpp>
 
@@ -85,14 +86,14 @@ private:
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     rhi::PipelineHandle pipeline {};
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
 
     rhi::TextureHandle cloudMap {};
     rhi::FramebufferHandle cloudMapFb {};
     rhi::SamplerHandle cloudMapSampler {};
     rhi::BindGroupHandle cloudMapGroup {};
     rhi::PipelineHandle bakePipeline {};
-    u64 bakeShaderGeneration { 0 };
+    ShaderLibrary::Watch bakeWatch;
 };
 
 } // namespace render

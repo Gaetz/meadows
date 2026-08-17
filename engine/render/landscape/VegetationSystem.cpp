@@ -1302,6 +1302,7 @@ VegetationSystem::barkParamsFor(u32 variant) const {
 
 void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
+    shaders.beginWatch();
     pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kTreeShader),
           .vertexBuffers =
@@ -1321,11 +1322,12 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
                      .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back,
           .pushConstantSize = sizeof(BarkPush) }) };
-    shaderGeneration = shaders.generation(kTreeShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void VegetationSystem::buildCasterPipeline(rhi::Device& device,
                                            ShaderLibrary& shaders) {
+    shaders.beginWatch();
     casterPipeline = { device, device.createPipeline( // U3-7
         { .shader = shaders.get(kPropCasterShader),
           .vertexBuffers =
@@ -1351,15 +1353,15 @@ void VegetationSystem::buildCasterPipeline(rhi::Device& device,
           .cull = rhi::CullMode::Back,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f }) };
-    casterShaderGeneration = shaders.generation(kPropCasterShader);
+    casterShaderWatch = shaders.endWatch();
 }
 
 void VegetationSystem::refreshPipeline(rhi::Device& device,
                                        ShaderLibrary& shaders) {
-    if (shaders.generation(kTreeShader) != shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipeline(device, shaders);
     }
-    if (shaders.generation(kPropCasterShader) != casterShaderGeneration) {
+    if (casterShaderWatch.changed(shaders)) {
         buildCasterPipeline(device, shaders);
     }
 }

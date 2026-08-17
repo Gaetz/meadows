@@ -53,6 +53,46 @@ public:
     // Starts at 1; bumps on every successful hot reload of `name`.
     u64 generation(const str& name) const;
 
+    // Hot-reload watch: records the shader names a build pass ACTUALLY
+    // consumed (every get() between begin and end), and the generation
+    // sum that gates its rebuild. Deriving the list from use kills the
+    // drifted-hand-list bug class — a shader feeding a pipeline but
+    // missing from a refresh list meant a silently dead hot reload
+    // (kPassShaders / waterlocal, review 2026-08).
+    // NB: an EMPTY watch never fires (sum 0 == 0) — the first build must
+    // come from create(), the watch only gates rebuilds.
+    struct Watch {
+        vector<str> names;
+        u64 sum { 0 };
+        // True when a watched generation moved; re-arms the sum.
+        bool changed(const ShaderLibrary& shaders) {
+            u64 now = 0;
+            for (const str& name : names) {
+                now += shaders.generation(name);
+            }
+            if (now == sum) {
+                return false;
+            }
+            sum = now;
+            return true;
+        }
+    };
+    // Wrap the BUILD (the get() calls), not the loads: create() loads,
+    // buildPipelines() consumes. Nesting is not supported.
+    void beginWatch() const {
+        watching = true;
+        watchNames.clear();
+    }
+    Watch endWatch() const {
+        watching = false;
+        Watch watch;
+        watch.names = watchNames;
+        for (const str& name : watch.names) {
+            watch.sum += generation(name);
+        }
+        return watch;
+    }
+
     // Call once per frame. Internally throttled to ~2 Hz.
     void pollHotReload(f32 dt);
 
@@ -64,6 +104,11 @@ public:
     };
 
 private:
+    // Watch recording (mutable: get() is const, recording is pure
+    // observability).
+    mutable bool watching { false };
+    mutable vector<str> watchNames;
+
     struct Entry {
         rhi::ShaderHandle handle {};
         u64 generation { 1 };

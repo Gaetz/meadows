@@ -35,25 +35,6 @@ constexpr const char* kLuminanceShader = "luminance"; // auto-exposure
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 
-// Every PostFx pass shader, iterated for the generation checksum (U3-6:
-// build and refresh used to spell the 9-term sum out twice — adding a
-// pass needed edits in three places; this table is the single list).
-constexpr const char* kPassShaders[] = {
-    kPrefilterShader, kDownShader,     kUpShader,
-    kGodRaysShader,   kVolumetricShader, kContactShader,
-    kMistShader,      kSkyCloudsShader, kCopyShader,
-    kBlurShader,      kLuminanceShader, kAdaptShader,
-    kFroxelApplyShader, kSsaoShader,
-    kFroxelInjectShader, kFroxelIntegrateShader,
-};
-
-u64 passGenerationSum(ShaderLibrary& shaders) {
-    u64 sum = 0;
-    for (const char* name : kPassShaders) {
-        sum += shaders.generation(name);
-    }
-    return sum;
-}
 } // namespace
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
@@ -171,6 +152,10 @@ void PostFx::destroy(rhi::Device& device) {
 }
 
 void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
+    // The watch derives the reload gate from the get() calls below — a
+    // pass added here is watched by construction (no hand list to
+    // forget it in).
+    shaders.beginWatch();
     const auto rebuild = [&](rhi::UniquePipeline& pipeline, const char* name,
                              rhi::BlendMode blend) {
         // U3-7: the assignment frees the previous pipeline.
@@ -199,11 +184,11 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
     rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
-    shaderGeneration = passGenerationSum(shaders);
+    shaderWatch = shaders.endWatch();
 }
 
 void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
-    if (passGenerationSum(shaders) != shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipelines(device, shaders);
     }
 }

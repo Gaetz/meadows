@@ -6,6 +6,7 @@
 #include "engine/render/landscape/FxInstance.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace rhi {
 class Device;
@@ -56,7 +57,7 @@ private:
     rhi::UniqueBuffer instances;
     rhi::UniqueBindGroup group;
     u32 capacity { 0 }; // FxInstance slots in the SSBO
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
 };
 
 } // namespace render

@@ -534,6 +534,7 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
 }
 
 void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
+    shaders.beginWatch();
     pipeline = { device, device.createPipeline( // frees the old one
         { .shader = shaders.get(kGrassShader),
           .vertexBuffers =
@@ -564,12 +565,12 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::None }) };
-    shaderGeneration = shaders.generation(kGrassShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void GrassSystem::refreshPipeline(rhi::Device& device,
                                   ShaderLibrary& shaders) {
-    if (shaders.generation(kGrassShader) != shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipeline(device, shaders);
     }
 }

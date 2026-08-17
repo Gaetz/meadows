@@ -7,6 +7,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/terrain/WaterBodies.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
 class JobSystem;
@@ -120,7 +121,7 @@ private:
     rhi::BufferHandle vertexBuffer {};
     rhi::BufferHandle indexBuffer {};
     rhi::PipelineHandle pipeline {};
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
     rhi::TextureHandle poolMap {};
     rhi::SamplerHandle poolMapSampler {};
     rhi::BindGroupHandle poolMapGroup {};

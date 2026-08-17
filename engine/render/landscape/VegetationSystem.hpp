@@ -15,6 +15,7 @@
 #include "engine/render/landscape/TreeGenerator.hpp" // *TreeParams (builder)
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
 class JobSystem;
@@ -494,9 +495,9 @@ private:
     rhi::UniqueSampler leafMaskSampler;
     rhi::UniqueBindGroup leafMaskGroup;
     rhi::UniquePipeline pipeline;
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
     rhi::UniquePipeline casterPipeline;
-    u64 casterShaderGeneration { 0 };
+    ShaderLibrary::Watch casterShaderWatch;
     // Showcase mode (tool scenes): explicit instances of variant 0.
     rhi::UniqueBuffer showcaseInstances;
     u32 showcaseCount { 0 };

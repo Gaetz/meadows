@@ -1002,6 +1002,7 @@ void WorldRenderer::drawWaterVolumes(
 }
 
 void WorldRenderer::buildCasterPipelines(rhi::Device& device) {
+    shaders->beginWatch();
     // Position-only attributes over the FULL vertex strides (same buffers
     // as the lit pass); depth state mirrors terrain/vegetation casters.
     meshCasterPipeline = { device, device.createPipeline(
@@ -1031,8 +1032,7 @@ void WorldRenderer::buildCasterPipelines(rhi::Device& device) {
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
           .cull = rhi::CullMode::Back }) };
-    meshCasterShaderGeneration = shaders->generation("shadow_mesh");
-    skinnedCasterShaderGeneration = shaders->generation("shadow_skinned");
+    casterShaderWatch = shaders->endWatch();
 }
 
 void WorldRenderer::drawShadowCasters(
@@ -1048,9 +1048,7 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                                         rhi::BindGroupHandle casterGroup,
                                         bool refreshUbos,
                                         const render::Frustum* cull) {
-    if (shaders->generation("shadow_mesh") != meshCasterShaderGeneration ||
-        shaders->generation("shadow_skinned") !=
-            skinnedCasterShaderGeneration) {
+    if (casterShaderWatch.changed(*shaders)) {
         buildCasterPipelines(frame.device);
     }
     const bool firstCascade = refreshUbos;

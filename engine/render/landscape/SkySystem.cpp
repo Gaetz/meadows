@@ -192,6 +192,7 @@ void SkySystem::destroy(rhi::Device& device) {
 }
 
 void SkySystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
+    shaders.beginWatch();
     if (pipeline.id != 0) {
         device.destroyPipeline(pipeline);
     }
@@ -203,21 +204,22 @@ void SkySystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .depth = { .testEnable = true,
                      .writeEnable = false,
                      .compare = rhi::CompareFunc::GreaterEqual } });
-    shaderGeneration = shaders.generation(kSkyShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void SkySystem::refreshPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    if (shaders.generation(kSkyShader) != shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipeline(device, shaders);
     }
     if (cloudMapFb.id != 0 &&
-        shaders.generation(kCloudBakeShader) != bakeShaderGeneration) {
+        (bakePipeline.id == 0 || bakeWatch.changed(shaders))) {
         if (bakePipeline.id != 0) {
             device.destroyPipeline(bakePipeline);
         }
+        shaders.beginWatch();
         bakePipeline = device.createPipeline(
             { .shader = shaders.get(kCloudBakeShader) });
-        bakeShaderGeneration = shaders.generation(kCloudBakeShader);
+        bakeWatch = shaders.endWatch();
     }
 }
 

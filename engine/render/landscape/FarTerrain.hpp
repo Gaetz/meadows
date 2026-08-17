@@ -7,6 +7,7 @@
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -88,7 +89,7 @@ private:
     rhi::UniqueBuffer treeBuffer;
     rhi::UniquePipeline pipeline;
     rhi::UniquePipeline treePipeline;
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
     u32 indexCount { 0 };
     u32 treeCount { 0 };
     Vec2 center {};

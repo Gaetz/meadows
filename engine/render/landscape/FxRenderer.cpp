@@ -22,15 +22,15 @@ void FxRenderer::destroy(rhi::Device&) {
     group.reset();
     instances.reset();
     capacity = 0;
-    shaderGeneration = 0;
+    shaderWatch = {};
 }
 
 void FxRenderer::ensurePipelines(rhi::Device& device,
                                  ShaderLibrary& shaders) {
-    if (shaders.generation(kShader) == shaderGeneration &&
-        alphaPipeline.id() != 0) {
+    if (!shaderWatch.changed(shaders) && alphaPipeline.id() != 0) {
         return;
     }
+    shaders.beginWatch();
     const auto make = [&](rhi::BlendMode blend) {
         return rhi::UniquePipeline { device, device.createPipeline(
             { .shader = shaders.get(kShader),
@@ -45,7 +45,7 @@ void FxRenderer::ensurePipelines(rhi::Device& device,
     };
     alphaPipeline = make(rhi::BlendMode::Alpha);
     additivePipeline = make(rhi::BlendMode::Additive);
-    shaderGeneration = shaders.generation(kShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void FxRenderer::drawBatch(engine::FrameContext& frame,

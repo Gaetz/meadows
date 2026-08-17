@@ -56,12 +56,10 @@ void FarTerrain::destroy(rhi::Device& device) {
 
 void FarTerrain::refreshPipeline(rhi::Device& device,
                                  ShaderLibrary& shaders) {
-    if (pipeline.id() != 0 &&
-        shaders.generation(kFarTerrainShader) +
-                shaders.generation(kFarTreeShader) ==
-            shaderGeneration) {
+    if (pipeline.id() != 0 && !shaderWatch.changed(shaders)) {
         return;
     }
+    shaders.beginWatch();
     pipeline = { device, device.createPipeline(
         { .shader = shaders.get(kFarTerrainShader),
           .vertexBuffers = { meshVertexLayout() },
@@ -88,8 +86,7 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::None }) };
-    shaderGeneration = shaders.generation(kFarTerrainShader) +
-                       shaders.generation(kFarTreeShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void FarTerrain::update(rhi::Device& device, const TerrainParams& params,

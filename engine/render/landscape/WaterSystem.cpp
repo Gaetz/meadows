@@ -517,6 +517,7 @@ void WaterSystem::rebuildMaterials(rhi::Device& device) {
 
 void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     if (pipeline.id != 0) {
+    shaders.beginWatch();
         device.destroyPipeline(pipeline);
     }
     pipeline = device.createPipeline(
@@ -569,17 +570,14 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .cull = rhi::CullMode::None,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f });
-    // Sum of both shaders' generations: a reload of either rebuilds both
-    // pipelines (buildPipeline creates the local-volume one too).
-    shaderGeneration = shaders.generation(kWaterShader) +
-                       shaders.generation(kWaterLocalShader);
+    // The watch recorded every shader the build consumed: a reload of
+    // any of them rebuilds both pipelines.
+    shaderWatch = shaders.endWatch();
 }
 
 void WaterSystem::refreshPipeline(rhi::Device& device,
                                   ShaderLibrary& shaders) {
-    if (shaders.generation(kWaterShader) +
-            shaders.generation(kWaterLocalShader) !=
-        shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipeline(device, shaders);
     }
 }

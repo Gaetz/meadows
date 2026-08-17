@@ -13,6 +13,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
 class JobSystem;
@@ -326,9 +327,9 @@ private:
     // lines onto neighboring terrain.
     array<u32, kLodCount> gridIndexCounts {};
     rhi::UniquePipeline pipeline;
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
     rhi::UniquePipeline casterPipeline;
-    u64 casterShaderGeneration { 0 };
+    ShaderLibrary::Watch casterShaderWatch;
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
     // repeat sampler, bound as bind group 1 by draw(). splatTexture is

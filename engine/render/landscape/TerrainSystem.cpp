@@ -631,6 +631,7 @@ void TerrainSystem::freeSlot(u32 lod, u32 slot) {
 }
 
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
+    shaders.beginWatch();
     // U3-7: the assignment frees the previous pipeline.
     pipeline = { device, device.createPipeline(
         { .shader = shaders.get(kTerrainShader),
@@ -640,11 +641,12 @@ void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                      .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back,
           .wireframe = wireframe }) };
-    shaderGeneration = shaders.generation(kTerrainShader);
+    shaderWatch = shaders.endWatch();
 }
 
 void TerrainSystem::buildCasterPipeline(rhi::Device& device,
                                         ShaderLibrary& shaders) {
+    shaders.beginWatch();
     casterPipeline = { device, device.createPipeline(
         { .shader = shaders.get(kTerrainCasterShader),
           .vertexBuffers = { meshVertexPositionLayout() }, // U3-5
@@ -655,15 +657,15 @@ void TerrainSystem::buildCasterPipeline(rhi::Device& device,
           // Polygon offset: the first line of defense against shadow acne.
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f }) };
-    casterShaderGeneration = shaders.generation(kTerrainCasterShader);
+    casterShaderWatch = shaders.endWatch();
 }
 
 void TerrainSystem::refreshPipeline(rhi::Device& device,
                                     ShaderLibrary& shaders) {
-    if (shaders.generation(kTerrainShader) != shaderGeneration) {
+    if (shaderWatch.changed(shaders)) {
         buildPipeline(device, shaders);
     }
-    if (shaders.generation(kTerrainCasterShader) != casterShaderGeneration) {
+    if (casterShaderWatch.changed(shaders)) {
         buildCasterPipeline(device, shaders);
     }
 }

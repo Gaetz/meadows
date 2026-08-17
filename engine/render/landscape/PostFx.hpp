@@ -5,6 +5,7 @@
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -266,7 +267,7 @@ private:
     rhi::UniquePipeline blurPipeline; // contact jitter filter (postblur)
     rhi::UniquePipeline luminancePipeline;
     rhi::UniquePipeline adaptPipeline;
-    u64 shaderGeneration { 0 };
+    ShaderLibrary::Watch shaderWatch;
 };
 
 } // namespace render

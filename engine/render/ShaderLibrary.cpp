@@ -1,5 +1,7 @@
 #include "engine/render/ShaderLibrary.hpp"
 
+#include <algorithm>
+
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
@@ -183,6 +185,11 @@ rhi::ShaderHandle ShaderLibrary::loadCompute(
 }
 
 rhi::ShaderHandle ShaderLibrary::get(const str& name) const {
+    if (watching &&
+        std::find(watchNames.begin(), watchNames.end(), name) ==
+            watchNames.end()) {
+        watchNames.push_back(name);
+    }
     const auto it = entries.find(name);
     return it != entries.end() ? it->second.handle : rhi::ShaderHandle {};
 }
