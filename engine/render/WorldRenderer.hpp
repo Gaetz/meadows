@@ -4,6 +4,7 @@
 
 #include "engine/core/FrameProbe.hpp"
 #include "engine/render/Camera3D.hpp"
+#include "engine/render/Frustum.hpp"
 #include "engine/render/GpuProbe.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
@@ -233,7 +234,8 @@ private:
     void buildCasterPipelines(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame,
                          const render::RenderSnapshot& snapshot,
-                         const RenderView& view);
+                         const RenderView& view,
+                         const render::Frustum* cull = nullptr);
     // The GI chain's per-frame recording — post-CSM slot, or end of
     // frame when pipelined (docs/RENDERING.md PG2).
     void recordGiUpdate(engine::FrameContext& frame,
@@ -245,13 +247,17 @@ private:
                      const render::RenderSnapshot& snapshot);
     void drawWaterVolumes(engine::FrameContext& frame,
                           const render::RenderSnapshot& snapshot);
+    // `cull` = the target volume's frustum (cascade ortho / key tile /
+    // rain window); null draws everything.
     void drawShadowCasters(engine::FrameContext& frame,
                            const render::RenderSnapshot& snapshot,
-                           const RenderView& view, u32 cascade);
+                           const RenderView& view, u32 cascade,
+                           const render::Frustum* cull = nullptr);
     void drawCastersInto(engine::FrameContext& frame,
                          const render::RenderSnapshot& snapshot,
                          const RenderView& view,
-                         rhi::BindGroupHandle casterGroup, bool refreshUbos);
+                         rhi::BindGroupHandle casterGroup, bool refreshUbos,
+                         const render::Frustum* cull = nullptr);
     // The water surface the camera sits under (submersion input).
     f32 effectiveWaterSurfaceY(const render::RenderSnapshot& snapshot,
                                const RenderView& view) const;

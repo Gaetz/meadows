@@ -241,7 +241,19 @@ map) and local lights decorate; indoors the locals ARE the lighting.
   (~0.4°/8 s hysteresis so cascades re-fit rarely), **round-robin**
   (cascade 0 every frame, far cascades alternate; a sun step re-renders
   all), **per-cascade caster culling** (the V8b ÷7 win — the ortho volume
-  includes caster reach, so distant mountain shadows survive).
+  includes caster reach, so distant mountain shadows survive). The cull
+  covers EVERY caster family: terrain/vegetation take the cascade frustum
+  in their drawDepth, and scene meshes (local AABB through the model
+  matrix, `instanceVisible`) + skinned NPCs (conservative 3 m sphere) are
+  tested per cascade, per key tile (perspective frustum), and against the
+  rain window; the main opaque pass culls the same mesh AABBs against the
+  view frustum. Cross-system contract: culling happens in LIGHT space
+  with the very matrices the receivers, the froxel volumetric and the GI
+  inject sample through — inside each ortho/tile volume the map content
+  is bit-identical, and the fitted near plane (kCasterReach 350 m) keeps
+  off-screen towers casting into the slice (pinned by
+  tests/ShadowCullTest.cpp). Not-yet-resident meshes always pass
+  (placeholder box; residency must keep being requested).
 - **Key-shadow atlas** (interior-grade exact shadows): the up-to-4
   best-scored `castsShadow` lights render one 1024² tile each into a
   2048² atlas (one caster UBO per tile); shaders find a light's tile via

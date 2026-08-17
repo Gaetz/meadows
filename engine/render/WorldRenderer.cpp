@@ -38,6 +38,44 @@ struct ModelUniforms {
     Vec4 info { 0.0f }; // x = emissive
 };
 
+// World-space AABB of a mesh instance: the local bounds through the
+// model matrix, corner-expanded. Shared by the caster/main-pass cull
+// and the GI box inject.
+void instanceWorldBounds(const Mat4& transform,
+                         const MeshCache::CpuMesh& cpu, Vec3& lo,
+                         Vec3& hi) {
+    lo = Vec3 { 1e9f };
+    hi = Vec3 { -1e9f };
+    for (u32 corner = 0; corner < 8; ++corner) {
+        const Vec3 local {
+            (corner & 1) ? cpu.boundsMax.x : cpu.boundsMin.x,
+            (corner & 2) ? cpu.boundsMax.y : cpu.boundsMin.y,
+            (corner & 4) ? cpu.boundsMax.z : cpu.boundsMin.z
+        };
+        const Vec3 world = Vec3(transform * Vec4 { local, 1.0f });
+        lo = glm::min(lo, world);
+        hi = glm::max(hi, world);
+    }
+}
+
+// Frustum test for one snapshot mesh. Conservative: a mesh whose CPU
+// bounds are not resident yet (placeholder box while decoding) always
+// passes — resolve() must keep being called so it loads at all.
+bool instanceVisible(const Frustum* frustum, const Mat4& transform,
+                     const MeshCache::CpuMesh* cpu) {
+    if (!frustum || !cpu) {
+        return true;
+    }
+    Vec3 lo;
+    Vec3 hi;
+    instanceWorldBounds(transform, *cpu, lo, hi);
+    return frustum->intersectsAabb(lo, hi);
+}
+
+// Conservative bounding sphere of a skinned NPC (translate x rotation
+// transform, no scale): torso anchor + reach for limbs and weapon.
+constexpr f32 kSkinnedCasterRadius = 3.0f;
+
 // std140 LightsUbo mirror (binding 5 — mirrors locallights.glsl).
 struct LightsUniforms {
     Vec4 count { 0.0f };
@@ -672,7 +710,8 @@ void WorldRenderer::rebuildBlitPipeline(rhi::Device& device) {
 
 void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
                                         const render::RenderSnapshot& snapshot,
-                                        const RenderView& view) {
+                                        const RenderView& view,
+                                        const render::Frustum* cull) {
     if (snapshot.meshes.empty()) {
         return;
     }
@@ -689,6 +728,10 @@ void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
             snapshot.meshes[i];
         const render::MeshCache::Gpu& mesh =
             view.meshCache->resolve(instance.model);
+        if (!instanceVisible(cull, instance.transform,
+                             view.meshCache->cpuMesh(instance.model))) {
+            continue; // its UBO refreshes the frame it comes back
+        }
 
         // Material fields resolved at extract; only the TEXTURE
         // residency lookup stays draw-side (it is a GPU cache).
@@ -985,16 +1028,17 @@ void WorldRenderer::buildCasterPipelines(rhi::Device& device) {
 
 void WorldRenderer::drawShadowCasters(
     engine::FrameContext& frame, const render::RenderSnapshot& snapshot,
-    const RenderView& view, u32 cascade) {
+    const RenderView& view, u32 cascade, const render::Frustum* cull) {
     drawCastersInto(frame, snapshot, view, shadows.casterBindGroup(cascade),
-                    cascade == 0);
+                    cascade == 0, cull);
 }
 
 void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                                         const render::RenderSnapshot& snapshot,
                                         const RenderView& view,
                                         rhi::BindGroupHandle casterGroup,
-                                        bool refreshUbos) {
+                                        bool refreshUbos,
+                                        const render::Frustum* cull) {
     if (shaders->generation("shadow_mesh") != meshCasterShaderGeneration ||
         shaders->generation("shadow_skinned") !=
             skinnedCasterShaderGeneration) {
@@ -1026,9 +1070,16 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                       .dynamic = true },
                     nullptr) };
             }
+            // The matrix refresh stays UNCONDITIONAL: later cascades and
+            // the key tiles reuse this UBO and cull against a DIFFERENT
+            // volume — a mesh culled here may still draw there.
             if (firstCascade) {
                 frame.device.updateBuffer(draw.ubo, &instance.transform,
                                           sizeof(Mat4), 0);
+            }
+            if (!instanceVisible(cull, instance.transform,
+                                 view.meshCache->cpuMesh(instance.model))) {
+                continue;
             }
             if (draw.casterGroup.id() == 0) {
                 draw.casterGroup = { frame.device, frame.device.createBindGroup(
@@ -1050,6 +1101,13 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
         frame.cmd.setBindGroup(1, casterGroup);
         for (const render::RenderSnapshot::SkinnedInstance& instance :
              snapshot.skinned) {
+            if (cull &&
+                !cull->intersectsSphere(
+                    Vec3 { instance.transform[3] } +
+                        Vec3 { 0.0f, 1.0f, 0.0f },
+                    kSkinnedCasterRadius)) {
+                continue;
+            }
             SkinnedDraw* slot = nullptr;
             for (SkinnedDraw& draw : skinnedDraws) {
                 if (draw.entityId == instance.entityId) {
@@ -1746,9 +1804,11 @@ void WorldRenderer::render(engine::FrameContext& frame,
             frame.cmd.setViewport(static_cast<u32>(slot & 1) * 1024,
                                   static_cast<u32>(slot >> 1) * 1024,
                                   1024, 1024);
+            const render::Frustum keyFrustum = render::Frustum::fromViewProj(
+                keyShadowPicks[slot].viewProj);
             drawCastersInto(frame, snapshot, view,
                             keyShadowCasterGroups[slot],
-                            /*refreshUbos=*/slot == 0);
+                            /*refreshUbos=*/slot == 0, &keyFrustum);
         }
         frame.cmd.endRenderPass();
     }
@@ -1759,8 +1819,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
                                     .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::Clear });
+        const render::Frustum rainFrustum = render::Frustum::fromViewProj(
+            frameData.rainOcclusionViewProj);
         drawCastersInto(frame, snapshot, view, rainCasterGroup,
-                        /*refreshUbos=*/true);
+                        /*refreshUbos=*/true, &rainFrustum);
         // Trees shelter too: the vegetation caster path through the
         // top-down matrix. Billboards orient to THEIR pass's matrix
         // (shadow_prop.vert reads the bound ShadowUbo), so cards face up
@@ -1817,7 +1879,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
             }
             // Scene meshes + NPCs join the casters (A/B toggle).
             if (meshShadowCastersUi) {
-                drawShadowCasters(frame, snapshot, view, i);
+                drawShadowCasters(frame, snapshot, view, i,
+                                  &cascadeFrustum);
             }
             frame.cmd.endRenderPass();
         }
@@ -2039,7 +2102,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
                            &viewFrustum);
             }
         }
-        drawSceneMeshes(frame, snapshot, view); // RenderSnapshot.meshes
+        drawSceneMeshes(frame, snapshot, view,
+                        &viewFrustum); // RenderSnapshot.meshes
         drawSkinned(frame, snapshot);        // the Forms-driven skinned NPCs
         if (cfg.sky && !view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
@@ -2350,19 +2414,9 @@ void WorldRenderer::recordGiUpdate(engine::FrameContext& frame,
             if (!cpu) {
                 continue; // not resident yet — next inject picks it up
             }
-            Vec3 lo { 1e9f };
-            Vec3 hi { -1e9f };
-            for (u32 corner = 0; corner < 8; ++corner) {
-                const Vec3 local {
-                    (corner & 1) ? cpu->boundsMax.x : cpu->boundsMin.x,
-                    (corner & 2) ? cpu->boundsMax.y : cpu->boundsMin.y,
-                    (corner & 4) ? cpu->boundsMax.z : cpu->boundsMin.z
-                };
-                const Vec3 world =
-                    Vec3(mesh.transform * Vec4 { local, 1.0f });
-                lo = glm::min(lo, world);
-                hi = glm::max(hi, world);
-            }
+            Vec3 lo;
+            Vec3 hi;
+            instanceWorldBounds(mesh.transform, *cpu, lo, hi);
             if (glm::any(glm::lessThan(hi, clipMin)) ||
                 glm::any(glm::greaterThan(lo, clipMax))) {
                 continue; // outside the coarse clip

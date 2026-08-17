@@ -105,6 +105,7 @@
     SkillsTest.cpp
     SoundResolverTest.cpp
     ScreenStackTest.cpp
+    ShadowCullTest.cpp
     ScriptTest.cpp
     SpatialIndexTest.cpp
     SpawnerTest.cpp
