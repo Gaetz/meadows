@@ -706,9 +706,27 @@ struct VulkanDevice::Impl {
     struct PendingCmd {
         VkCommandBuffer cb; u64 frame;
     };
+    struct PendingSampler {
+        VkSampler sampler; u64 frame;
+    };
+    struct PendingTarget {
+        vector<VkImageView> colorViews; VkImageView depthView; u64 frame;
+    };
+    struct PendingShader {
+        VkShaderModule vertex; VkShaderModule fragment; VkShaderModule compute;
+        u64 frame;
+    };
+    struct PendingPipeline {
+        vector<VkPipeline> variants; VkPipeline compute;
+        VkPipelineLayout layout; VkDescriptorSetLayout setLayout; u64 frame;
+    };
     vector<PendingCmd> pendingCmds; // async transfer cbs (see immediateSubmit)
     vector<PendingTexture> pendingTextures;
     vector<PendingBuffer> pendingBuffers;
+    vector<PendingSampler> pendingSamplers;
+    vector<PendingTarget> pendingTargets;
+    vector<PendingShader> pendingShaders;
+    vector<PendingPipeline> pendingPipelines;
 
     // Persistent-mapped staging ring, one per frame slot: in-frame buffer
     // updates carve linear slices out of it instead of paying a VMA
@@ -751,6 +769,9 @@ struct VulkanDevice::Impl {
     u64 uploadDoneValue { 0 };
     std::array<u64, kFramesInFlight> uploadSlotValue {};
     u64 gfxDoneValue { 0 }; // last graphics timeline value (upload WAR wait)
+    bool recordImageUpload(VkImage image, VkImageAspectFlags aspect,
+                           u32 mipLevels, u32 arrayLayers, const void* data,
+                           u64 size, vector<VkBufferImageCopy> regions);
     bool recordUpload(VkBuffer dst, const void* data, u64 size,
                       u64 dstOffset);
 
@@ -783,6 +804,40 @@ struct VulkanDevice::Impl {
         std::erase_if(pendingCmds, [&](const PendingCmd& c) {
             if (!done(c.frame)) { return false; }
             vkFreeCommandBuffers(device, transferPool, 1, &c.cb);
+            return true;
+        });
+        std::erase_if(pendingSamplers, [&](const PendingSampler& p) {
+            if (!done(p.frame)) { return false; }
+            vkDestroySampler(device, p.sampler, nullptr);
+            return true;
+        });
+        std::erase_if(pendingTargets, [&](const PendingTarget& t) {
+            if (!done(t.frame)) { return false; }
+            for (VkImageView view : t.colorViews) {
+                vkDestroyImageView(device, view, nullptr);
+            }
+            if (t.depthView != VK_NULL_HANDLE) {
+                vkDestroyImageView(device, t.depthView, nullptr);
+            }
+            return true;
+        });
+        std::erase_if(pendingShaders, [&](const PendingShader& sh) {
+            if (!done(sh.frame)) { return false; }
+            vkDestroyShaderModule(device, sh.vertex, nullptr);
+            vkDestroyShaderModule(device, sh.fragment, nullptr);
+            vkDestroyShaderModule(device, sh.compute, nullptr);
+            return true;
+        });
+        std::erase_if(pendingPipelines, [&](const PendingPipeline& p) {
+            if (!done(p.frame)) { return false; }
+            for (VkPipeline variant : p.variants) {
+                vkDestroyPipeline(device, variant, nullptr);
+            }
+            if (p.compute != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device, p.compute, nullptr);
+            }
+            vkDestroyPipelineLayout(device, p.layout, nullptr);
+            vkDestroyDescriptorSetLayout(device, p.setLayout, nullptr);
             return true;
         });
     }
@@ -2006,6 +2061,53 @@ bool VulkanDevice::Impl::recordUpload(VkBuffer dst, const void* data,
     return true;
 }
 
+// Image counterpart of recordUpload: stage through the per-frame ring and
+// record transition + copy on the frame's upload command buffer — zero
+// submits and zero waits per texture. The endFrame submit chain already
+// orders the upload timeline before every reader of the frame.
+bool VulkanDevice::Impl::recordImageUpload(
+    VkImage image, VkImageAspectFlags aspect, u32 mipLevels, u32 arrayLayers,
+    const void* data, u64 size, vector<VkBufferImageCopy> regions) {
+    if (!uploadQueueAvailable || !frameActive || computeRouting) {
+        return false;
+    }
+    if (!uploadRecording) {
+        VkCommandBufferBeginInfo begin {};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (!vkOk(vkBeginCommandBuffer(uploadCbs[frame], &begin),
+                  "vkBeginCommandBuffer(upload)")) {
+            return false;
+        }
+        uploadRecording = true;
+    }
+    VkBuffer staging = VK_NULL_HANDLE;
+    u64 srcOffset = 0;
+    void* mapped = nullptr;
+    if (!ringAlloc(size, staging, srcOffset, &mapped)) {
+        return false;
+    }
+    std::memcpy(mapped, data, size);
+    vmaFlushAllocation(allocator, stagingRings[frame].allocation, srcOffset,
+                       size);
+    // Ring offsets are 256-aligned, so the per-mip block alignment the
+    // regions were built with still holds after the shift.
+    for (VkBufferImageCopy& region : regions) {
+        region.bufferOffset += srcOffset;
+    }
+    VkCommandBuffer cb = uploadCbs[frame];
+    transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
+                     VK_IMAGE_LAYOUT_UNDEFINED,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    vkCmdCopyBufferToImage(cb, staging, image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           static_cast<u32>(regions.size()), regions.data());
+    transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    return true;
+}
+
 // --- Swapchain ---------------------------------------------------------------
 
 bool VulkanDevice::Impl::createSwapchain() {
@@ -2845,14 +2947,11 @@ void VulkanDevice::destroyBuffer(BufferHandle handle) {
     if (it == d.buffers.end()) {
         return;
     }
-    if (d.frameActive) { // recorded-but-unsubmitted commands may reference it
-        d.pendingBuffers.push_back({ it->second.buffer, it->second.allocation,
-                                     d.frameCounter });
-        d.buffers.erase(it);
-        return;
-    }
-    vkDeviceWaitIdle(d.device);
-    vmaDestroyBuffer(d.allocator, it->second.buffer, it->second.allocation);
+    // ONE destruction policy (in-frame or not): park until the frame
+    // slots cycle past every submitted or still-recording reference —
+    // never a device-wide stall in a destroy.
+    d.pendingBuffers.push_back({ it->second.buffer, it->second.allocation,
+                                 d.frameCounter });
     d.buffers.erase(it);
 }
 
@@ -3007,13 +3106,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
     // copy region per mip covering every layer.
     if (pixels != nullptr && desc.pixelsIncludeMips) {
         const u64 size = textureDataBytes(desc);
-        VkBuffer staging = VK_NULL_HANDLE;
-        VmaAllocation stagingAlloc = nullptr;
-        void* mapped = nullptr;
-        if (d.createStaging(size, false, staging, stagingAlloc, &mapped)) {
-            std::memcpy(mapped, pixels, size);
-            vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-
+        {
             vector<VkBufferImageCopy> regions;
             regions.reserve(tex.mipLevels);
             u64 offset = 0;
@@ -3037,22 +3130,47 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
                 w = w > 1 ? w / 2 : 1;
                 h = h > 1 ? h / 2 : 1;
             }
-            d.immediateSubmit([&](VkCommandBuffer cb) {
-                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                 tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                vkCmdCopyBufferToImage(cb, staging, tex.image,
-                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                       static_cast<u32>(regions.size()),
-                                       regions.data());
-                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                 tex.arrayLayers,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            });
-            vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
-            tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            tex.offlineMips = true;
+            // In-frame: the upload queue's ring + command buffer — zero
+            // submits, zero waits. Outside a frame (init, tools): a
+            // dedicated staging + async transfer submit, parked in the
+            // pendings until the slot cycles past the copy.
+            if (d.recordImageUpload(tex.image, tex.aspect, tex.mipLevels,
+                                    tex.arrayLayers, pixels, size,
+                                    regions)) {
+                tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                tex.offlineMips = true;
+            } else {
+                VkBuffer staging = VK_NULL_HANDLE;
+                VmaAllocation stagingAlloc = nullptr;
+                void* mapped = nullptr;
+                if (d.createStaging(size, false, staging, stagingAlloc,
+                                    &mapped)) {
+                    std::memcpy(mapped, pixels, size);
+                    vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
+                    d.immediateSubmit(
+                        [&](VkCommandBuffer cb) {
+                            transitionLayout(
+                                cb, tex.image, tex.aspect, 0, tex.mipLevels,
+                                tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                            vkCmdCopyBufferToImage(
+                                cb, staging, tex.image,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                static_cast<u32>(regions.size()),
+                                regions.data());
+                            transitionLayout(
+                                cb, tex.image, tex.aspect, 0, tex.mipLevels,
+                                tex.arrayLayers,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                        },
+                        /*wait=*/false);
+                    d.pendingBuffers.push_back(
+                        { staging, stagingAlloc, d.frameCounter });
+                    tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    tex.offlineMips = true;
+                }
+            }
         }
     }
     // Upload the base mip of every layer (tightly packed, layer-major).
@@ -3060,10 +3178,27 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
         const u64 texelCount = static_cast<u64>(desc.width) * desc.height *
                                tex.extent.depth * tex.arrayLayers;
         const u64 size = texelCount * bytesPerTexel(desc.format);
-        VkBuffer staging = VK_NULL_HANDLE;
-        VmaAllocation stagingAlloc = nullptr;
-        void* mapped = nullptr;
-        if (d.createStaging(size, false, staging, stagingAlloc, &mapped)) {
+        VkBufferImageCopy baseRegion {};
+        baseRegion.imageSubresource.aspectMask = tex.aspect;
+        baseRegion.imageSubresource.mipLevel = 0;
+        baseRegion.imageSubresource.baseArrayLayer = 0;
+        baseRegion.imageSubresource.layerCount = tex.arrayLayers;
+        baseRegion.imageExtent = tex.extent;
+        // In-frame, non-converted formats ride the upload queue's ring
+        // (R16F needs its f32 -> f16 conversion into a dedicated staging).
+        if (desc.format != TextureFormat::R16F &&
+            d.recordImageUpload(tex.image, tex.aspect, tex.mipLevels,
+                                tex.arrayLayers, pixels, size,
+                                { baseRegion })) {
+            tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        } else if (VkBuffer staging = VK_NULL_HANDLE; true) {
+            VmaAllocation stagingAlloc = nullptr;
+            void* mapped = nullptr;
+            if (!d.createStaging(size, false, staging, stagingAlloc,
+                                 &mapped)) {
+                staging = VK_NULL_HANDLE;
+            }
+            if (staging != VK_NULL_HANDLE) {
             if (desc.format == TextureFormat::R16F) {
                 // RHI contract (matches what the GL driver does with
                 // GL_FLOAT uploads): R16F initial data is packed f32 per
@@ -3079,26 +3214,24 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
                 std::memcpy(mapped, pixels, size);
             }
             vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-            d.immediateSubmit([&](VkCommandBuffer cb) {
+            d.immediateSubmit(
+                [&](VkCommandBuffer cb) {
                 transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
                                  tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                VkBufferImageCopy region {};
-                region.imageSubresource.aspectMask = tex.aspect;
-                region.imageSubresource.mipLevel = 0;
-                region.imageSubresource.baseArrayLayer = 0;
-                region.imageSubresource.layerCount = tex.arrayLayers;
-                region.imageExtent = tex.extent;
                 vkCmdCopyBufferToImage(cb, staging, tex.image,
                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                                       &region);
+                                       &baseRegion);
                 transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
                                  tex.arrayLayers,
                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            });
-            vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
+                },
+                /*wait=*/false);
+            d.pendingBuffers.push_back(
+                { staging, stagingAlloc, d.frameCounter });
             tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
         }
     } else {
         // Render targets and GPU-written volumes start empty; move them out of
@@ -3140,27 +3273,11 @@ void VulkanDevice::destroyTexture(TextureHandle handle) {
     if (it == d.textures.end()) {
         return;
     }
-    if (d.frameActive) {
-        d.pendingTextures.push_back({ it->second.image, it->second.allocation,
-                                      it->second.view,
-                                      it->second.defaultSampler,
-                                      it->second.mipViews,
-                                      d.frameCounter });
-        d.textures.erase(it);
-        return;
-    }
-    // Out-of-frame destruction: nothing tracks in-flight use, drain first.
-    vkDeviceWaitIdle(d.device);
-    for (VkImageView v : it->second.mipViews) {
-        if (v != VK_NULL_HANDLE) {
-            vkDestroyImageView(d.device, v, nullptr);
-        }
-    }
-    vkDestroyImageView(d.device, it->second.view, nullptr);
-    if (it->second.defaultSampler != VK_NULL_HANDLE) {
-        vkDestroySampler(d.device, it->second.defaultSampler, nullptr);
-    }
-    vmaDestroyImage(d.allocator, it->second.image, it->second.allocation);
+    d.pendingTextures.push_back({ it->second.image, it->second.allocation,
+                                  it->second.view,
+                                  it->second.defaultSampler,
+                                  it->second.mipViews,
+                                  d.frameCounter });
     d.textures.erase(it);
 }
 
@@ -3185,7 +3302,10 @@ void VulkanDevice::generateMipmaps(TextureHandle handle) {
     }
 
     const VkImageLayout was = tex->layout;
-    d.immediateSubmit([&](VkCommandBuffer cb) {
+    // Async like the upload itself (no staging here — blits are
+    // image-to-image); the barriers order every later read on the queue.
+    d.immediateSubmit(
+        [&](VkCommandBuffer cb) {
         // Level 0 becomes the blit source; the rest are transfer destinations.
         transitionLayout(cb, tex->image, tex->aspect, 0, 1, tex->arrayLayers,
                          was, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -3229,7 +3349,8 @@ void VulkanDevice::generateMipmaps(TextureHandle handle) {
                          tex->arrayLayers,
                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    });
+        },
+        /*wait=*/false);
     tex->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
@@ -3274,8 +3395,7 @@ void VulkanDevice::destroySampler(SamplerHandle handle) {
     if (it == d.samplers.end()) {
         return;
     }
-    vkDeviceWaitIdle(d.device);
-    vkDestroySampler(d.device, it->second, nullptr);
+    d.pendingSamplers.push_back({ it->second, d.frameCounter });
     d.samplers.erase(it);
 }
 
@@ -3365,13 +3485,8 @@ void VulkanDevice::destroyFramebuffer(FramebufferHandle handle) {
     if (it == d.targets.end()) {
         return;
     }
-    vkDeviceWaitIdle(d.device);
-    for (VkImageView view : it->second.colorViews) {
-        vkDestroyImageView(d.device, view, nullptr);
-    }
-    if (it->second.depthView != VK_NULL_HANDLE) {
-        vkDestroyImageView(d.device, it->second.depthView, nullptr);
-    }
+    d.pendingTargets.push_back({ it->second.colorViews,
+                                 it->second.depthView, d.frameCounter });
     d.targets.erase(it);
 }
 
@@ -3473,10 +3588,8 @@ void VulkanDevice::destroyShader(ShaderHandle handle) {
     if (it == d.shaders.end()) {
         return;
     }
-    vkDeviceWaitIdle(d.device);
-    vkDestroyShaderModule(d.device, it->second.vertex, nullptr);
-    vkDestroyShaderModule(d.device, it->second.fragment, nullptr);
-    vkDestroyShaderModule(d.device, it->second.compute, nullptr);
+    d.pendingShaders.push_back({ it->second.vertex, it->second.fragment,
+                                 it->second.compute, d.frameCounter });
     d.shaders.erase(it);
 }
 
@@ -3817,15 +3930,14 @@ void VulkanDevice::destroyPipeline(PipelineHandle handle) {
     if (it == d.pipelines.end()) {
         return;
     }
-    vkDeviceWaitIdle(d.device);
+    VulkanDevice::Impl::PendingPipeline pending { {}, it->second.computePipeline,
+                              it->second.layout, it->second.setLayout,
+                              d.frameCounter };
+    pending.variants.reserve(it->second.variants.size());
     for (auto& [key, variant] : it->second.variants) {
-        vkDestroyPipeline(d.device, variant, nullptr);
+        pending.variants.push_back(variant);
     }
-    if (it->second.computePipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(d.device, it->second.computePipeline, nullptr);
-    }
-    vkDestroyPipelineLayout(d.device, it->second.layout, nullptr);
-    vkDestroyDescriptorSetLayout(d.device, it->second.setLayout, nullptr);
+    d.pendingPipelines.push_back(std::move(pending));
     d.pipelines.erase(it);
 }
 
