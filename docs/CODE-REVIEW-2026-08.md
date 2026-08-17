@@ -1064,10 +1064,27 @@ dans STATS.md.
    hétérogène (différé vs drain) à unifier via pendingX ; remapBindings = parseur
    texte GLSL (sortie : réflexion SPIR-V) ; shaderc compiler par étage ;
    kFramesInFlight=2 câblé dans les arrays de l'Impl.
-2. **WorldRenderer** : render() ~1200 lignes → découpage par passe si besoin ;
-   ~60 membres `*Ui` = état de panneau → un struct RenderTuning supprimerait les
-   friend ; casters d'ombre non cullés (1er coût qui explosera) ; meshDraws indexé
-   par position du snapshot (invariant à ENGINE_ASSERT).
+2. **WorldRenderer** : ~~render() ~1200 lignes → découpage par passe~~ FAIT
+   (2026-08-17 : 9 méthodes extraites en code-motion pur —
+   pumpPipelinesAndRequests/pumpStreaming/recordKeyShadowTiles/
+   recordRainOcclusion/recordShadowCascades/recordReflection/
+   recordMainPass/recordCopyHizWater/recordPostFx ; render() = 549 lignes,
+   la table des matières du frame + les décisions par frame : fit des
+   cascades, picks key-shadow, composition des uniforms — déjà pure via
+   FrameComposer. Les locals inter-passes circulent en PARAMÈTRES
+   explicites, plus en portée partagée). NOTE 2 ENTIÈREMENT CLOSE ; ~~60 membres `*Ui`~~ FAIT (2026-08-17 :
+   struct public `RenderTuning` — 60 knobs regroupés, commentaires conservés ;
+   les `friend` RESTENT, verdict d'inspection : les panels pilotent aussi les
+   sous-systèmes (terrain/vegetation/grass/postFx/RC/gpuProbe) — la note
+   surestimait ; bonus : applyTuning/captureTuning de RenderTuningIo devenus
+   tables FieldLane ×7 (54 lanes 1:1), seuls clamps/packing Vec4/scalaires de
+   sous-système restent manuels) ; ~~casters d'ombre non cullés~~ FAIT
+   (2026-08-15 : cull AABB des meshes + sphère des skinnés par cascade/tuile
+   key/fenêtre rain, main pass inclus — ShadowCullTest fige le contrat
+   kCasterReach ; doc RENDERING.md §3.1) ; ~~meshDraws indexé par position du
+   snapshot~~ FAIT (2026-08-17 : stamp `casterMeshesData` posé par la passe
+   caster, ENGINE_ASSERT dans drawSceneMeshes — un reorder du snapshot entre
+   les deux passes est détecté en debug).
 3. **Landscape** : « bake mailbox » ×4 à extraire (le ChunkStreamer a montré la voie) ;
    double chemin draw()/GPU-driven à sceller par un test comparatif ; Chunk 208 o
    froid → SoA par variante ; VegetationSystem = 4 métiers (scatter/assets/streaming/

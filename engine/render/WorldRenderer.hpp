@@ -371,6 +371,48 @@ private:
                          const RenderView& view,
                          rhi::BindGroupHandle casterGroup, bool refreshUbos,
                          const render::Frustum* cull = nullptr);
+    // One selected key-shadow light: its anchor (the UBO match key —
+    // the light's original position) and the tile's perspective matrix.
+    struct KeyShadowPick {
+        Vec3 anchor;
+        Mat4 viewProj;
+    };
+    // render()'s pass sequence, one method per pass (pure code motion):
+    // render() itself reads as the frame's table of contents and owns
+    // only the per-frame decisions (cascade fit, key-light picks, the
+    // uniform composition) that the passes consume.
+    void pumpPipelinesAndRequests(engine::FrameContext& frame);
+    void pumpStreaming(engine::FrameContext& frame, const RenderView& view);
+    void recordKeyShadowTiles(engine::FrameContext& frame,
+                              const render::RenderSnapshot& snapshot,
+                              const RenderView& view,
+                              const vector<KeyShadowPick>& keyShadowPicks);
+    void recordRainOcclusion(engine::FrameContext& frame,
+                             const render::RenderSnapshot& snapshot,
+                             const RenderView& view,
+                             const render::FrameUniforms& frameData);
+    void recordShadowCascades(
+        engine::FrameContext& frame,
+        const render::RenderSnapshot& snapshot, const RenderView& view,
+        const render::ShadowMapper::Cascades& cascades,
+        const array<bool, render::ShadowMapper::kCascadeCount>& cascadeDue,
+        f32 shadowStrength);
+    void recordReflection(engine::FrameContext& frame,
+                          const RenderView& view,
+                          const render::FrameUniforms& uniforms,
+                          bool reflectionsActive);
+    void recordMainPass(engine::FrameContext& frame,
+                        const render::RenderSnapshot& snapshot,
+                        const RenderView& view,
+                        const render::Frustum& viewFrustum,
+                        const render::FrameUniforms& frameData,
+                        bool useOffscreen);
+    void recordCopyHizWater(engine::FrameContext& frame,
+                            const RenderView& view, const Mat4& viewProj,
+                            bool useOffscreen);
+    void recordPostFx(engine::FrameContext& frame, const RenderView& view,
+                      const render::FrameUniforms& frameData,
+                      bool useOffscreen);
     // The water surface the camera sits under (submersion input).
     f32 effectiveWaterSurfaceY(const render::RenderSnapshot& snapshot,
                                const RenderView& view) const;
