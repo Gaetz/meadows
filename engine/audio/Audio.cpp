@@ -25,12 +25,14 @@ struct AudioSystem::Impl {
     std::unordered_map<str, uptr<ma_sound_group>> buses;
 
     struct ActiveSound {
+        u64 id { 0 };
         uptr<ma_sound> sound;
         uptr<ma_waveform> waveform; // test tones only
         f32 secondsLeft { 0.0f };   // waveform sounds have no natural end
         bool timed { false };
     };
     vector<ActiveSound> active;
+    u64 nextSoundId { 1 }; // 0 = the failed-play sentinel
 
     // Two music slots for the crossfade.
     uptr<ma_sound> music[2];
@@ -157,19 +159,20 @@ void AudioSystem::setBusVolume(std::string_view bus, f32 volume) {
     } // unknown bus: silently ignored (mods can't crash the mixer)
 }
 
-bool AudioSystem::play(const SoundParams& params) {
+AudioSystem::SoundId AudioSystem::play(const SoundParams& params) {
     if (!pimpl || !pimpl->engineInitialized) {
-        return false;
+        return 0;
     }
     auto& impl = *pimpl;
     Impl::ActiveSound active;
+    active.id = impl.nextSoundId++;
     active.sound = std::make_unique<ma_sound>();
     const ma_uint32 flags = params.is3d ? 0 : MA_SOUND_FLAG_NO_SPATIALIZATION;
     if (ma_sound_init_from_file(&impl.engine, params.file.c_str(), flags,
                                 impl.busOf(params.bus), nullptr,
                                 active.sound.get()) != MA_SUCCESS) {
         LOG_WARN("AudioSystem: cannot play '{}'", params.file);
-        return false;
+        return 0;
     }
     ma_sound_set_volume(active.sound.get(), params.volume);
     ma_sound_set_pitch(active.sound.get(), params.pitch);
@@ -184,8 +187,28 @@ bool AudioSystem::play(const SoundParams& params) {
                                        ma_attenuation_model_linear);
     }
     ma_sound_start(active.sound.get());
+    const SoundId id = active.id;
     impl.active.push_back(std::move(active));
-    return true;
+    return id;
+}
+
+void AudioSystem::stop(SoundId id, f32 fadeSeconds) {
+    if (!pimpl || id == 0) {
+        return;
+    }
+    for (Impl::ActiveSound& active : pimpl->active) {
+        if (active.id != id) {
+            continue;
+        }
+        // Fade to silence, then let update()'s timed reap uninit it —
+        // the same path the test tones already take.
+        ma_sound_set_fade_in_milliseconds(
+            active.sound.get(), -1.0f, 0.0f,
+            static_cast<ma_uint64>(fadeSeconds * 1000.0f));
+        active.timed = true;
+        active.secondsLeft = fadeSeconds;
+        return;
+    }
 }
 
 bool AudioSystem::playMusic(const str& file, f32 fadeSeconds) {

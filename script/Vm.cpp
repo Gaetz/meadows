@@ -425,7 +425,11 @@ void Vm::tickCoroutines(f32 dt) {
             it = impl->coros.erase(it); // finished cleanly
             continue;
         }
-        coro.remaining = static_cast<f32>(result.get<double>(0));
+        // `remaining` is <= 0 here: the tick overshot the wait by that
+        // much. Carrying the deficit into the next wait keeps chained
+        // wait(t) at t-cadence instead of rounding every wait up to the
+        // tick grid.
+        coro.remaining += static_cast<f32>(result.get<double>(0));
         ++it;
     }
 }

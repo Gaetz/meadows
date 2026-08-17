@@ -136,18 +136,24 @@ void GraphInstance::advanceTime(f32 dt, f32 entitySpeed) {
         const AnimClip& clip = desc.clips[state.clip];
         const f32 previous = time;
         time += dt * playbackRate(state, entitySpeed);
+        const f32 unwrapped = time;
+        bool wrapped = false;
+        if (clip.duration > 0.0f && time >= clip.duration) {
+            wrapped = state.loop;
+            time = state.loop ? std::fmod(time, clip.duration)
+                              : clip.duration;
+        }
         if (fireEvents && eventSink &&
             state.clip < desc.clipEvents.size()) {
             for (const AnimEvent& event : desc.clipEvents[state.clip]) {
-                // Crossed this frame (loop wrap handled below by reset).
-                if (event.time > previous && event.time <= time) {
+                // Crossed this frame — including the sliver AFTER a loop
+                // wrap (an event early in the clip used to slip a whole
+                // extra loop when the wrap frame jumped past it).
+                if ((event.time > previous && event.time <= unwrapped) ||
+                    (wrapped && event.time <= time)) {
                     eventSink(event.name);
                 }
             }
-        }
-        if (clip.duration > 0.0f && time >= clip.duration) {
-            time = state.loop ? std::fmod(time, clip.duration)
-                              : clip.duration;
         }
     };
     advance(current, currentTime, true);

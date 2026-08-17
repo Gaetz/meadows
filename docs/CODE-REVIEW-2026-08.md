@@ -1139,8 +1139,15 @@ dans STATS.md.
    en primitives → grille de hachage — bake-time seulement (suites
    donjons : 26,5 s au total, mines actuelles OK) ; déclencheur : gros
    donjons / bond du nombre de primitives.
-5. **Audio** : pas d'API stop pour un one-shot loopé (play() retourne void).
-6. **Anim** : événement au wrap de boucle décalé d'une frame (noté, sans effet actuel).
+5. **Audio** : ~~pas d'API stop~~ FAIT (2026-08-18 : play() retourne un
+   SoundId (0 = échec, bool-compatible pour les appelants existants) ;
+   stop(id, fade) fond au silence puis laisse le reap timed d'update()
+   dé-initialiser — le chemin des test tones. Aucun consommateur encore :
+   le jour où un cue loopé doit s'arrêter, l'API attend).
+6. **Anim** : ~~événement au wrap une frame en retard~~ FAIT
+   (2026-08-18 : la frame du wrap teste AUSSI le sliver [0, temps
+   wrappé] — un événement tôt dans un clip loopé glissait d'une boucle
+   entière ; test AnimTest « loop wrap fires the wrapped sliver »).
 7. **game/scenes** : panneaux ImGui mutent l'état depuis drawUi() (idiome assumé,
    le seam sim/snapshot est respecté) ; make*Context() par frame = motif de sûreté,
    ne pas cacher ; FollowerController routeur épais 1460 lignes (split Combat/Social
@@ -1152,6 +1159,10 @@ dans STATS.md.
    décision garder/couper à prendre.
 8. **quest** : Quest/Dialogue balaient la FormDatabase par événement — indexer
    state→branches→tasks après résolution quand le volume mordra.
-9. **Vm** : temps résiduel des coroutines perdu à la reprise (si des wait(0.05)
-   chaînés apparaissent).
+9. **VM Lua** : ~~temps résiduel des coroutines perdu~~ FAIT
+   (2026-08-18 : le déficit du tick (remaining <= 0 à la reprise) se
+   reporte sur l'attente suivante — les wait(t) chaînés tiennent la
+   cadence t au lieu d'arrondir chaque attente à la grille du tick ;
+   test ScriptTest « chained waits keep their cadence » : 10×wait(0.05)
+   sous tick 0.03 finit en <=18 ticks, pas 20).
 

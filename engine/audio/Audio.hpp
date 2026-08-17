@@ -53,8 +53,14 @@ public:
     void setListener(const Vec3& position, const Vec3& forward);
     void setBusVolume(std::string_view bus, f32 volume);
 
-    // Fire-and-forget (or looping) sound. False if the file failed.
-    bool play(const SoundParams& params);
+    // Fire-and-forget (or looping) sound. 0 if the file failed; the
+    // nonzero id is only needed to stop() a LOOP (one-shots reap
+    // themselves at end).
+    using SoundId = u64;
+    SoundId play(const SoundParams& params);
+    // Stops a playing sound (loops included) with a short fade; unknown
+    // or already-finished ids are ignored.
+    void stop(SoundId id, f32 fadeSeconds = 0.05f);
 
     // Music slot with crossfade: the previous track fades out while the
     // new one fades in over `fadeSeconds`.

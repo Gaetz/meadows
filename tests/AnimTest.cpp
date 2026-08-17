@@ -77,6 +77,29 @@ TEST_CASE("model matrices chain parents; skin matrices invert the bind") {
     CHECK(model[1][3][1] == doctest::Approx(1.0f));
 }
 
+TEST_CASE("loop wrap fires the wrapped sliver's events the same frame") {
+    // An event EARLY in a looping clip (0.02 s) must fire during the
+    // frame whose tick jumps past the wrap (0.98 -> 1.03 == 0.03), not
+    // one whole loop later.
+    anim::GraphDesc desc;
+    desc.clips.push_back(armSwingClip()); // duration 1.0
+    desc.clipEvents.push_back({ { 0.02f, "Sliver" }, { 0.99f, "Tail" } });
+    desc.states.push_back({ 0, 1.0f, true, 0.0f });
+    anim::GraphInstance instance { desc };
+    u32 sliver = 0;
+    u32 tail = 0;
+    instance.setEventSink([&](std::string_view name) {
+        if (name == "Sliver") { ++sliver; }
+        if (name == "Tail") { ++tail; }
+    });
+    instance.update(0.98f); // 0 -> 0.98: crosses Sliver's first pass
+    CHECK(sliver == 1);
+    CHECK(tail == 0);
+    instance.update(0.05f); // 0.98 -> wrap -> 0.03: Tail AND Sliver again
+    CHECK(tail == 1);
+    CHECK(sliver == 2);
+}
+
 TEST_CASE("graph transitions fire on params and blend over time") {
     anim::GraphDesc desc;
     desc.clips.push_back(armSwingClip());

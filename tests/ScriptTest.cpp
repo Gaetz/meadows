@@ -208,6 +208,26 @@ struct CoroWorldFixture {
 
 } // namespace
 
+TEST_CASE("script: chained waits keep their cadence (residual carried)") {
+    CoroWorldFixture f;
+    ecs::Entity actor = f.makeActor();
+
+    Vm vm;
+    // Ten chained 0.05 s waits under a 0.03 s tick. Without the residual
+    // carry each wait rounds up to the tick grid (2 ticks = 0.06 s) and
+    // the chain needs 20 ticks; with it, ~17 ticks (0.5 s + slack).
+    vm.startCoroutine("for i = 1, 10 do wait(0.05) steps = i end",
+                      f.contextFor(actor), script::ScriptContext {});
+    u32 ticks = 0;
+    while (vm.pendingCoroutines() > 0 && ticks < 40) {
+        vm.tickCoroutines(0.03f);
+        ++ticks;
+    }
+    REQUIRE(vm.getNumber("steps").has_value());
+    CHECK(*vm.getNumber("steps") == 10.0);
+    CHECK(ticks <= 18); // 0.5 s / 0.03 rounded up, +1 slack — not 20
+}
+
 TEST_CASE("script: a coroutine is abandoned when its entity dies mid-wait") {
     CoroWorldFixture f;
     ecs::Entity actor = f.makeActor();

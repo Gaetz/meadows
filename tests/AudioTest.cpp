@@ -16,6 +16,12 @@ TEST_CASE("audio system lifecycle on the null backend") {
 
     // Missing file: graceful false, no crash.
     CHECK_FALSE(system.play({ .file = "does-not-exist.wav" }));
+    // stop(): unknown/zero ids are safe no-ops (a failed play
+    // returns 0 and callers may stop() it blindly).
+    system.stop(0);
+    system.stop(12345);
+    system.update(0.1f);
+
 
     // Generated tone: plays (null backend consumes it) and reaps on time.
     system.playTestTone(0.05f);
