@@ -707,6 +707,88 @@ void testGpuCullVsCpu(rhi::Device& device) {
     cull.destroy(device);
 }
 
+
+// Upload-order seal: a texture created WITH DATA inside a frame, its mip
+// chain generated the same frame, sampled the same frame — the
+// fern/rock albedo pattern. This is the ordering that broke when the
+// ring upload (submitted at endFrame) let generateMipmaps' IMMEDIATE
+// blits run first and build the chain from garbage (magenta props):
+// LOD 1 only holds the uploaded color if the base mip landed before
+// the blits. Read back through a compute so the verdict is a pixel,
+// not a timing.
+void testUploadOrdering(rhi::Device& device) {
+    const str computeSource = R"(#version 460 core
+layout(local_size_x = 1) in;
+layout(binding = 0) uniform sampler2D uTex;
+layout(std430, binding = 1) buffer Out { vec4 outColor; };
+void main() { outColor = textureLod(uTex, vec2(0.5), 1.0); }
+)";
+    const rhi::ShaderHandle shader = device.createShader(
+        { .debugName = "vksmoke.uploadseal",
+          .computeSource = computeSource });
+    const rhi::PipelineHandle pipeline =
+        device.createComputePipeline({ .shader = shader });
+    const rhi::BufferHandle out = device.createBuffer(
+        { .usage = rhi::BufferUsage::Storage,
+          .size = 4 * sizeof(f32),
+          .readback = true },
+        nullptr);
+    const rhi::SamplerHandle sampler = device.createSampler({});
+    check(pipeline.id != 0 && out.id != 0,
+          "upload seal: pipeline + readback buffer");
+    if (pipeline.id == 0 || out.id == 0) {
+        return;
+    }
+
+    constexpr u32 kSize = 8;
+    vector<u32> pixels(kSize * kSize, 0xFF0000FFu); // RGBA bytes: red
+
+    auto& cmd = device.beginFrame();
+    const rhi::TextureHandle tex = device.createTexture(
+        { .width = kSize,
+          .height = kSize,
+          .mipLevels = 4,
+          .format = rhi::TextureFormat::RGBA8,
+          .filter = rhi::FilterMode::Linear },
+        pixels.data());
+    device.generateMipmaps(tex);
+    const rhi::BindGroupHandle group = device.createBindGroup(
+        { .entries = { { .binding = 0, .texture = tex, .sampler = sampler },
+                       { .binding = 1, .buffer = out, .storage = true } } });
+    cmd.setPipeline(pipeline);
+    cmd.setBindGroup(0, group);
+    cmd.dispatch(1);
+    cmd.memoryBarrier();
+    cmd.beginRenderPass({ .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
+    cmd.endRenderPass();
+    device.endFrame();
+    const rhi::FenceHandle fence = device.insertFence();
+
+    bool retired = false;
+    for (u32 tries = 0; tries < 8 && !retired; ++tries) {
+        retired = device.fenceReady(fence);
+        if (!retired) {
+            auto& idle = device.beginFrame();
+            idle.beginRenderPass(
+                { .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
+            idle.endRenderPass();
+            device.endFrame();
+        }
+    }
+    f32 rgba[4] = {};
+    device.readBuffer(out, rgba, sizeof(rgba), 0);
+    check(retired && rgba[0] > 0.9f && rgba[1] < 0.1f && rgba[3] > 0.9f,
+          "upload seal: in-frame mip chain samples the uploaded color");
+
+    device.destroyBindGroup(group);
+    device.destroyTexture(tex);
+    device.destroySampler(sampler);
+    device.destroyBuffer(out);
+    device.destroyPipeline(pipeline);
+    device.destroyShader(shader);
+    device.destroyFence(fence);
+}
+
 int main(int argc, char** argv) {
     core::Log::init();
 
@@ -750,6 +832,9 @@ int main(int argc, char** argv) {
 
     LOG_INFO("vksmoke: V6 markers + compute");
     testMarkersAndCompute(*device);
+
+    LOG_INFO("vksmoke: upload-order seal (in-frame mips readback)");
+    testUploadOrdering(*device);
 
     LOG_INFO("vksmoke: GPU cull vs CPU reference (dual-path seal)");
     testGpuCullVsCpu(*device);

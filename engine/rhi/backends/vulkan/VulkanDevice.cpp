@@ -3269,7 +3269,12 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
         baseRegion.imageExtent = tex.extent;
         // In-frame, non-converted formats ride the upload queue's ring
         // (R16F needs its f32 -> f16 conversion into a dedicated staging).
-        if (desc.format != TextureFormat::R16F &&
+        // Runtime-mip textures may NOT: their generateMipmaps blits
+        // submit immediately, while the upload CB lands at endFrame —
+        // the ring would generate the chain from garbage (the magenta
+        // ferns/rocks). They keep the immediate async submit, whose
+        // queue order with the blits is guaranteed.
+        if (desc.format != TextureFormat::R16F && tex.mipLevels == 1 &&
             d.recordImageUpload(tex.image, tex.aspect, tex.mipLevels,
                                 tex.arrayLayers, pixels, size,
                                 { baseRegion })) {
