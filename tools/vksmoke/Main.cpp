@@ -21,6 +21,8 @@
 #include <filesystem>
 
 #include "engine/core/Clock.hpp"
+#include "engine/render/Camera3D.hpp"
+#include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
@@ -165,6 +167,49 @@ void testTextures(rhi::Device& device) {
           .usage = rhi::TextureUsage_Sampled | rhi::TextureUsage_RenderAttachment },
         nullptr);
     check(hdr.id != 0, "createTexture RGBA16F render target");
+
+    // Upload bench: game-sized textures (1024² RGBA8 + mips ≈ one cooked
+    // material layer) created WITH data — times the synchronous upload
+    // path (immediateSubmit wait per texture) the streaming ring pays
+    // mid-play. Re-run after the async-upload chantier to compare.
+    {
+        constexpr u32 kBenchSize = 1024;
+        constexpr u32 kBenchCount = 24;
+        vector<u32> benchPixels(kBenchSize * kBenchSize, 0xFF808080u);
+        f64 total = 0.0;
+        f64 worst = 0.0;
+        vector<rhi::TextureHandle> benchTextures;
+        benchTextures.reserve(kBenchCount);
+        // One create per FRAME — the streaming pattern (a texture lands,
+        // the frame's submit and the pending drains follow); timed part =
+        // what the main thread pays inside the frame.
+        for (u32 i = 0; i < kBenchCount; ++i) {
+            auto& cmd = device.beginFrame();
+            (void)cmd;
+            const core::TimePoint t0 = core::clockNow();
+            const rhi::TextureHandle t =
+                device.createTexture({ .width = kBenchSize,
+                                       .height = kBenchSize,
+                                       .mipLevels = 11, // 1024 -> 1
+                                       .format = rhi::TextureFormat::RGBA8,
+                                       .filter = rhi::FilterMode::Linear },
+                                     benchPixels.data());
+            device.generateMipmaps(t);
+            const f64 ms = core::millisecondsSince(t0);
+            total += ms;
+            worst = std::max(worst, ms);
+            benchTextures.push_back(t); // destroyed OUTSIDE the timing:
+            device.endFrame();          // streaming creates and KEEPS
+        }
+        for (const rhi::TextureHandle t : benchTextures) {
+            device.destroyTexture(t);
+        }
+        LOG_INFO("upload bench: {} x {}² RGBA8+mips — total {:.2f} ms, "
+                 "avg {:.2f} ms, max {:.2f} ms per texture",
+                 kBenchCount, kBenchSize, total,
+                 total / static_cast<f64>(kBenchCount), worst);
+        check(true, "upload bench ran");
+    }
 
     // Samplers, including the comparison sampler shadow PCF needs.
     const rhi::SamplerHandle linear = device.createSampler(
@@ -546,6 +591,122 @@ struct UiDemo {
 
 } // namespace
 
+
+// Dual draw-path seal (docs/RENDERING.md §6.0): the GPU cull's
+// verdict (chunk_cull.comp) checked against a CPU reference on known
+// boxes and a KNOWN depth (a plain clear — far: nothing occludes; near:
+// everything does). Candidates sit far from the guard-band thresholds so
+// the reference needs no exact guard value. If the compute shader and
+// the CPU selection rules ever diverge, this fails before the game does.
+void testGpuCullVsCpu(rhi::Device& device) {
+    if (!device.caps().computeShaders || !device.caps().copyTexture) {
+        LOG_INFO("  (skipped: no compute/copy caps)");
+        return;
+    }
+    render::ShaderLibrary shaders(device);
+    render::GpuOcclusion cull;
+    cull.create(device, shaders);
+    cull.refreshPipelines(device, shaders);
+    cull.resize(device, 512, 512);
+    check(cull.ready(), "cull seal: GpuOcclusion pipelines ready");
+    if (!cull.ready()) {
+        return;
+    }
+
+    const rhi::TextureHandle depth = device.createTexture(
+        { .width = 512,
+          .height = 512,
+          .format = rhi::TextureFormat::Depth32F,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    const rhi::FramebufferHandle fb = device.createFramebuffer(
+        { .depthAttachment = { .texture = depth } });
+
+    // Camera at the origin looking down -Z (reversed-Z projection).
+    render::Camera3D camera;
+    const Mat4 viewProj = camera.viewProj(1.0f);
+
+    // Candidates, group-sorted (the contract): [0] on screen (g0),
+    // [1] far off to the left (g0), [2] on screen (g1), [3] far behind
+    // the camera (g1), [4] straddling the near plane (g1), [5] just
+    // behind the camera (g1) — INSIDE the 16 m world margin the plane
+    // branch grants near-plane straddlers, so it stays visible: the
+    // margin is part of the contract this test pins.
+    const auto box = [](Vec3 center, f32 half, u32 group,
+                        u32 indexCount) {
+        return render::GpuOcclusion::Candidate {
+            center - Vec3 { half }, center + Vec3 { half }, group,
+            indexCount, 0, 1, 0
+        };
+    };
+    vector<render::GpuOcclusion::Candidate> candidates {
+        box({ 0.0f, 0.0f, -10.0f }, 1.0f, 0, 111),
+        box({ -80.0f, 0.0f, -10.0f }, 1.0f, 0, 222),
+        box({ 2.0f, 1.0f, -20.0f }, 1.0f, 1, 333),
+        box({ 0.0f, 0.0f, 30.0f }, 1.0f, 1, 444),
+        box({ 0.0f, 0.0f, 0.0f }, 1.5f, 1, 555), // spans the camera
+        box({ 0.0f, 0.0f, 10.0f }, 1.0f, 1, 666), // in the 16 m margin
+    };
+
+    struct Cmd {
+        u32 indexCount, instanceCount, firstIndex;
+        i32 vertexOffset;
+        u32 firstInstance;
+    };
+    const auto runScenario = [&](f32 clearDepth, const char* label,
+                                 const array<bool, 6>& expected) {
+        auto& cmd = device.beginFrame();
+        cmd.beginRenderPass({ .framebuffer = fb,
+                              .loadOp = rhi::LoadOp::DontCare,
+                              .depthLoadOp = rhi::LoadOp::Clear,
+                              .clearDepth = clearDepth });
+        cmd.endRenderPass();
+        const bool ran = cull.run(cmd, device, depth, viewProj, candidates);
+        device.endFrame();
+        check(ran, "cull seal: dispatch recorded");
+        // Let the dispatch land, then read the fresh (read-side) commands.
+        for (int i = 0; i < 3; ++i) {
+            auto& idle = device.beginFrame();
+            (void)idle;
+            device.endFrame();
+        }
+        vector<Cmd> out(candidates.size());
+        device.readBuffer(cull.commandBuffer(), out.data(),
+                          out.size() * sizeof(Cmd), 0);
+        bool all = true;
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            const bool visible = out[i].instanceCount != 0;
+            if (visible != expected[i]) {
+                LOG_ERROR("cull seal {}: candidate {} — GPU {} vs CPU ref {}",
+                          label, i, visible, expected[i]);
+                all = false;
+            }
+            if (visible && out[i].indexCount != candidates[i].indexCount) {
+                LOG_ERROR("cull seal {}: candidate {} indexCount {} != {}", label,
+                          i, out[i].indexCount, candidates[i].indexCount);
+                all = false;
+            }
+        }
+        check(all, label);
+        check(cull.groupFirst()[0] == 0 && cull.groupCount()[0] == 2 &&
+                  cull.groupFirst()[1] == 2 && cull.groupCount()[1] == 4,
+              "cull seal: per-group command ranges");
+    };
+    // Far clear (reversed-Z 0): nothing occludes — pure frustum verdict.
+    // The near-straddler is kept by the plane test (projection unusable).
+    runScenario(0.0f, "cull seal: far depth = frustum verdict",
+                { true, false, true, false, true, true });
+    // Near clear (1): everything projectable is occluded; only the
+    // straddler survives (its branch never samples the Hi-Z).
+    runScenario(1.0f, "cull seal: near depth = all occluded but straddlers",
+                { false, false, false, false, true, true });
+
+    device.destroyFramebuffer(fb);
+    device.destroyTexture(depth);
+    cull.destroy(device);
+}
+
 int main(int argc, char** argv) {
     core::Log::init();
 
@@ -589,6 +750,9 @@ int main(int argc, char** argv) {
 
     LOG_INFO("vksmoke: V6 markers + compute");
     testMarkersAndCompute(*device);
+
+    LOG_INFO("vksmoke: GPU cull vs CPU reference (dual-path seal)");
+    testGpuCullVsCpu(*device);
 
     LOG_INFO("vksmoke: V4 graphics path");
     TriangleDemo triangle;
