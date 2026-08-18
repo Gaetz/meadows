@@ -591,7 +591,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     // Tree bark: shared data→renderer wiring (RendererAssets — the
     // TreeCreationScene loads the same sets, so the builder shows the
     // trunks the forest will show).
-    loadTreeBark(device, renderer, assetDb);
+    loadTreeBark(device, renderer, assetDb, forms);
 
     // The RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).

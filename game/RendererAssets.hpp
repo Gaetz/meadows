@@ -44,6 +44,7 @@ void packDispIntoNormalAlpha(assets::Image& normal,
 // mean-centered normal-height alpha) and hands them to the vegetation
 // system. Call AFTER renderer.create().
 void loadTreeBark(rhi::Device& device, render::WorldRenderer& renderer,
-                  const assets::AssetDatabase& assetDb);
+                  const assets::AssetDatabase& assetDb,
+                  const data::FormDatabase& forms);
 
 } // namespace game

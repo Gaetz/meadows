@@ -72,14 +72,14 @@ void applyCookedTerrainPaths(render::RendererConfig& config,
 }
 
 void loadTreeBark(rhi::Device& device, render::WorldRenderer& renderer,
-                  const assets::AssetDatabase& assetDb) {
-    const auto oakGuid = core::Guid::fromString(
-        "52035a3f-8246-419a-aa69-a686b0c2e834");
-    const auto pineGuid = core::Guid::fromString(
-        "8244825d-a9a7-4a30-a8e7-996670193884");
-    const auto oakPath = oakGuid ? assetDb.resolve(*oakGuid) : std::nullopt;
-    const auto pinePath =
-        pineGuid ? assetDb.resolve(*pineGuid) : std::nullopt;
+                  const assets::AssetDatabase& assetDb,
+                  const data::FormDatabase& forms) {
+    // Bark sources come from the tuning form like the terrain arrays —
+    // moddable through §5, defaults = the shipped scans.
+    const data::LandscapeTuningForm tuning =
+        data::resolveLandscapeTuning(forms);
+    const auto oakPath = assetDb.resolve(tuning.barkOakDiffuse);
+    const auto pinePath = assetDb.resolve(tuning.barkPineDiffuse);
     // Per bark: albedo + a PACKED normal-height image (nor_gl RGB,
     // displacement in alpha — sibling files of the diffuse).
     const auto loadBark = [](const std::filesystem::path& diffPath,

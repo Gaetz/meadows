@@ -88,7 +88,7 @@ void TreeCreationScene::onEnter() {
         game::buildAssetDatabase(pluginStack);
     game::applyCookedTerrainPaths(rendererConfig, forms, assetDb);
     renderer.create(device, engine->getJobSystem(), rendererConfig);
-    game::loadTreeBark(device, renderer, assetDb);
+    game::loadTreeBark(device, renderer, assetDb, forms);
 
     // The showcased specimen: variant 0 at the origin, no distance fade.
     const f32 ground = render::terrain::height(params, 0.0f, 0.0f);

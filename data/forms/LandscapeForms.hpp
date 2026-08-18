@@ -32,6 +32,15 @@ struct LandscapeTuningForm : Form {
     i32 terrainViewRadius { 30 };
     // Distant silhouettes past the ring (FarTerrain, ~12 km coarse mesh).
     bool farTerrain { true };
+    // Tree-bark source textures (diffuse guid; the _nor_gl_/_disp_
+    // siblings are derived by filename). Moddable like the terrain
+    // arrays — defaults = the shipped oak/pine scans.
+    core::Guid barkOakDiffuse {
+        *core::Guid::fromString("52035a3f-8246-419a-aa69-a686b0c2e834")
+    };
+    core::Guid barkPineDiffuse {
+        *core::Guid::fromString("8244825d-a9a7-4a30-a8e7-996670193884")
+    };
     // Terrain materials.
     f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
@@ -268,6 +277,8 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(terrainViewRadius)
         REFLECT_FIELD(farTerrain)
+        REFLECT_FIELD(barkOakDiffuse)
+        REFLECT_FIELD(barkPineDiffuse)
         REFLECT_FIELD(snowLine)
         REFLECT_FIELD(splatUvScale)
         REFLECT_FIELD(splatBlendDepth)
