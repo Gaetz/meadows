@@ -1148,17 +1148,31 @@ dans STATS.md.
    (2026-08-18 : la frame du wrap teste AUSSI le sliver [0, temps
    wrappé] — un événement tôt dans un clip loopé glissait d'une boucle
    entière ; test AnimTest « loop wrap fires the wrapped sliver »).
-7. **game/scenes** : panneaux ImGui mutent l'état depuis drawUi() (idiome assumé,
-   le seam sim/snapshot est respecté) ; make*Context() par frame = motif de sûreté,
-   ne pas cacher ; FollowerController routeur épais 1460 lignes (split Combat/Social
-   = chantier) ; joueur monté invisible du combat (à trancher avec les montures) ;
-   forEachVisible sans index dans tout l'éditeur (le point d'index futur est
-   EditSession, pas les panneaux) ; guids d'écorce en dur (migrer vers
-   LandscapeTuningForm le jour venu) ; surface 2D résiduelle (AiController,
-   Pathfinding/GridNavigator/Steering, Collision XY) maintenue par les tests —
-   décision garder/couper à prendre.
-8. **quest** : Quest/Dialogue balaient la FormDatabase par événement — indexer
-   state→branches→tasks après résolution quand le volume mordra.
+7. **game/scenes** : ~~FollowerController routeur épais~~ FAIT
+   (2026-08-18 : split par métier, header intact — Core 661 lignes
+   (lifecycle, sweep, commandes), FollowerCombat 214 (adoption d'aggro,
+   disengage, revive), FollowerSocial 681 (banter/affinité/preview/
+   perk/forge/mercenaire/enterrement) ; 5 helpers partagés promus en
+   statiques privées, buryFollower devient le membre partagé ; les 43
+   cas FollowersTest traversent les trois TUs) ; ~~AiController mort~~
+   SUPPRIMÉ (décision dev actée — zéro consommateur) ; ~~guids d'écorce
+   en dur~~ FAIT (barkOak/PineDiffuse dans LandscapeTuningForm, défauts
+   = scans livrés — moddable §5 comme les arrays terrain) ; RESTENT
+   décisions : joueur monté invisible du combat (à trancher AVEC le
+   chantier montures — options : cible = la monture, cible = le
+   cavalier, ou démonter-sous-le-feu) ; forEachVisible sans index dans
+   l'éditeur — le point d'indexation est EditSession, déclencheur : le
+   volume de contenu qui rend les panneaux poussifs ; surface 2D
+   résiduelle restante (Pathfinding/GridNavigator/Steering, collision
+   XY) : GARDÉE — c'est le fallback sanctionné du seam nav (§2.10) et
+   les scènes 2D de banc l'utilisent.
+8. **quest** : ~~balayages FormDatabase par événement~~ FAIT
+   (2026-08-18, décision dev : prévention avant volume) — QuestIndex
+   (state→branches, branch→tasks, startEvent→quests) construit une fois
+   après résolution, possédé par QuestDirector (rebuild lazy si la
+   FormDatabase change, invalidé par reset()) ; les balayages Dialogue
+   passent sur data::childrenOf (DialogueNodeForm.parent — le bucket de
+   l'étape 3). Suites Quest/Dialogue/QuestSave vertes.
 9. **VM Lua** : ~~temps résiduel des coroutines perdu~~ FAIT
    (2026-08-18 : le déficit du tick (remaining <= 0 à la reprise) se
    reporte sur l'attente suivante — les wait(t) chaînés tiennent la

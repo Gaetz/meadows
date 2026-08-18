@@ -13,64 +13,71 @@ namespace quest {
 namespace {
 
 // Is a branch complete (all its tasks at or past `required`, and it has tasks)?
-bool branchComplete(const data::FormDatabase& forms, const core::Guid& branchId,
+bool branchComplete(const QuestIndex& index, const core::Guid& branchId,
                     const QuestProgress& progress) {
-    bool hasTask = false;
-    bool allDone = true;
-    data::forEach<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
-        if (task.branch != branchId) {
-            return;
-        }
-        hasTask = true;
-        const auto it = progress.taskProgress.find(task.id);
+    const auto bucket = index.tasksOfBranch.find(branchId);
+    if (bucket == index.tasksOfBranch.end() || bucket->second.empty()) {
+        return false;
+    }
+    for (const QuestTaskForm* task : bucket->second) {
+        const auto it = progress.taskProgress.find(task->id);
         const i32 current = it != progress.taskProgress.end() ? it->second : 0;
-        if (current < task.required) {
-            allDone = false;
+        if (current < task->required) {
+            return false;
         }
-    });
-    return hasTask && allDone;
+    }
+    return true;
 }
 
 // Advances every task of the current state that matches the event.
-void progressTasks(const data::FormDatabase& forms, QuestProgress& progress,
+void progressTasks(const QuestIndex& index, QuestProgress& progress,
                    const gameplay::Event& event,
                    const gameplay::GameplayTagRegistry& tags) {
-    data::forEach<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
-        if (branch.state != progress.currentState) {
-            return;
+    const auto branches = index.branchesOfState.find(progress.currentState);
+    if (branches == index.branchesOfState.end()) {
+        return;
+    }
+    for (const QuestBranchForm* branch : branches->second) {
+        const auto tasks = index.tasksOfBranch.find(branch->id);
+        if (tasks == index.tasksOfBranch.end()) {
+            continue;
         }
-        data::forEach<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
-            if (task.branch != branch.id ||
-                gameplay::eventKind(task.event) != event.kind) {
-                return;
+        for (const QuestTaskForm* task : tasks->second) {
+            if (gameplay::eventKind(task->event) != event.kind) {
+                continue;
             }
-            if (!task.filterTag.empty()) {
-                const auto filter = tags.find(task.filterTag);
+            if (!task->filterTag.empty()) {
+                const auto filter = tags.find(task->filterTag);
                 if (!filter || !tags.isA(event.tag, *filter)) {
-                    return;
+                    continue;
                 }
             }
-            i32& count = progress.taskProgress[task.id];
-            if (count < task.required) {
+            i32& count = progress.taskProgress[task->id];
+            if (count < task->required) {
                 ++count;
             }
-        });
-    });
+        }
+    }
 }
 
 // Takes the first complete branch of the current state, entering its
 // destination (and finishing the quest if that state is Success/Failure).
 void advanceCompletedBranch(const data::FormDatabase& forms,
+                            const QuestIndex& index,
                             QuestProgress& progress) {
     core::Guid destination;
     bool transition = false;
-    data::forEach<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
-        if (!transition && branch.state == progress.currentState &&
-            branchComplete(forms, branch.id, progress)) {
-            transition = true;
-            destination = branch.destination;
+    if (const auto branches =
+            index.branchesOfState.find(progress.currentState);
+        branches != index.branchesOfState.end()) {
+        for (const QuestBranchForm* branch : branches->second) {
+            if (branchComplete(index, branch->id, progress)) {
+                transition = true;
+                destination = branch->destination;
+                break;
+            }
         }
-    });
+    }
     if (!transition) {
         return;
     }
@@ -128,33 +135,51 @@ void beginQuest(QuestLog& log, const data::FormDatabase& forms,
 
 vector<const QuestForm*> startQuestsOn(QuestLog& log,
                                        const data::FormDatabase& forms,
+                                       const QuestIndex& index,
                                        const gameplay::Event& event) {
     vector<const QuestForm*> started;
-    data::forEach<QuestForm>(forms, [&](const QuestForm& quest) {
-        if (quest.startEvent.empty() ||
-            gameplay::eventKind(quest.startEvent) != event.kind) {
-            return;
-        }
+    const auto bucket = index.questsByStartEvent.find(event.kind);
+    if (bucket == index.questsByStartEvent.end()) {
+        return started;
+    }
+    for (const QuestForm* quest : bucket->second) {
         // Once in the log, never again — an abandoned/failed/succeeded
         // quest keeps its entry, so a re-fired event can't restart it.
-        if (log.quests.contains(quest.id)) {
-            return;
+        if (log.quests.contains(quest->id)) {
+            continue;
         }
-        beginQuest(log, forms, quest.id);
-        started.push_back(&quest);
-    });
+        beginQuest(log, forms, quest->id);
+        started.push_back(quest);
+    }
     return started;
 }
 
+QuestIndex buildQuestIndex(const data::FormDatabase& forms) {
+    QuestIndex index;
+    data::forEach<QuestBranchForm>(forms, [&](const QuestBranchForm& b) {
+        index.branchesOfState[b.state].push_back(&b);
+    });
+    data::forEach<QuestTaskForm>(forms, [&](const QuestTaskForm& t) {
+        index.tasksOfBranch[t.branch].push_back(&t);
+    });
+    data::forEach<QuestForm>(forms, [&](const QuestForm& q) {
+        if (!q.startEvent.empty()) {
+            index.questsByStartEvent[gameplay::eventKind(q.startEvent)]
+                .push_back(&q);
+        }
+    });
+    return index;
+}
+
 void onQuestEvent(QuestLog& log, const data::FormDatabase& forms,
-                  const gameplay::Event& event,
+                  const QuestIndex& index, const gameplay::Event& event,
                   const gameplay::GameplayTagRegistry& tags) {
     for (auto& [questId, progress] : log.quests) {
         if (progress.status != QuestStatus::Active) {
             continue;
         }
-        progressTasks(forms, progress, event, tags);
-        advanceCompletedBranch(forms, progress);
+        progressTasks(index, progress, event, tags);
+        advanceCompletedBranch(forms, index, progress);
     }
 }
 

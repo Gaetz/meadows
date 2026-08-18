@@ -47,7 +47,18 @@ void QuestDirector::beginScene(const QuestContext& ctx, bool loadedFromSave) {
     }
 }
 
+const quest::QuestIndex& QuestDirector::indexFor(
+    const data::FormDatabase& forms) {
+    if (indexedForms_ != &forms) {
+        questIndex_ = quest::buildQuestIndex(forms);
+        indexedForms_ = &forms;
+    }
+    return questIndex_;
+}
+
 void QuestDirector::reset() {
+    indexedForms_ = nullptr; // the index references the OLD database
+    questIndex_ = {};
     dialogueRunner_.reset(); // references `forms`, reset before re-resolve
     dialoguePartner_ = ecs::Entity {};
     easternQuest_ = nullptr; // points into `forms`
@@ -125,7 +136,8 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
     // begins now (never re-begins: the log keeps finished entries). The
     // old per-quest C++ subscription (acceptDemoQuest) is gone.
     const auto started =
-        quest::startQuestsOn(questLog_, ctx.forms, event);
+        quest::startQuestsOn(questLog_, ctx.forms, indexFor(ctx.forms),
+                             event);
     std::unordered_set<core::Guid> startedIds;
     for (const quest::QuestForm* quest : started) {
         startedIds.insert(quest->id);
@@ -149,7 +161,8 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
         before.emplace(id,
                        std::make_pair(progress.currentState, progress.status));
     }
-    quest::onQuestEvent(questLog_, ctx.forms, event, ctx.gameTags);
+    quest::onQuestEvent(questLog_, ctx.forms, indexFor(ctx.forms), event,
+                        ctx.gameTags);
     syncQuestTags(ctx);
     for (const auto& [id, progress] : questLog_.quests) {
         if (startedIds.contains(id)) {

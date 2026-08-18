@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/FormQuery.hpp" // data::forEach
+#include "data/forms/FormQuery.hpp" // data::childrenOf
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "gameplay/event/EventBus.hpp"
@@ -56,12 +56,13 @@ const DialogueNodeForm* DialogueRunner::currentLine() const {
 std::vector<const DialogueNodeForm*> DialogueRunner::options(
     const gameplay::EvalContext& context) const {
     std::vector<const DialogueNodeForm*> result;
-    data::forEach<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
-        if (node.parent == current && isPlayer(node) &&
-            gameplay::conditionsPass(forms, node.id, context)) {
-            result.push_back(&node);
-        }
-    });
+    data::childrenOf<DialogueNodeForm>(
+        forms, current, [&](const DialogueNodeForm& node) {
+            if (isPlayer(node) &&
+                gameplay::conditionsPass(forms, node.id, context)) {
+                result.push_back(&node);
+            }
+        });
     std::stable_sort(result.begin(), result.end(),
                      [](const DialogueNodeForm* a, const DialogueNodeForm* b) {
                          return a->order < b->order;
@@ -78,13 +79,12 @@ void DialogueRunner::select(const DialogueNodeForm& option) {
     }
     // Advance to the NPC reply that follows this option (lowest order), if any.
     const DialogueNodeForm* reply = nullptr;
-    data::forEach<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
-        if (node.parent == option.id && !isPlayer(node)) {
-            if (!reply || node.order < reply->order) {
+    data::childrenOf<DialogueNodeForm>(
+        forms, option.id, [&](const DialogueNodeForm& node) {
+            if (!isPlayer(node) && (!reply || node.order < reply->order)) {
                 reply = &node;
             }
-        }
-    });
+        });
     if (reply) {
         enter(reply->id);
     } else {

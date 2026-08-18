@@ -92,6 +92,20 @@ struct QuestProgress {
 };
 
 // The player's quest journal (runtime state).
+// Built ONCE after plugin resolution (forms are immutable at runtime,
+// §2.2): the per-event sweeps walk these buckets instead of the whole
+// FormDatabase. Rebuild after any re-resolve (pointers reference the
+// resolved database).
+struct QuestIndex {
+    std::unordered_map<core::Guid, vector<const QuestBranchForm*>>
+        branchesOfState;
+    std::unordered_map<core::Guid, vector<const QuestTaskForm*>>
+        tasksOfBranch;
+    std::unordered_map<gameplay::EventKind, vector<const QuestForm*>>
+        questsByStartEvent;
+};
+QuestIndex buildQuestIndex(const data::FormDatabase& forms);
+
 struct QuestLog {
     std::unordered_map<core::Guid, QuestProgress> quests; // quest id → progress
 };
@@ -105,12 +119,13 @@ void beginQuest(QuestLog& log, const data::FormDatabase& forms,
 // call, for the caller's toasts/tag sync.
 vector<const QuestForm*> startQuestsOn(QuestLog& log,
                                        const data::FormDatabase& forms,
+                                       const QuestIndex& index,
                                        const gameplay::Event& event);
 
 // Advances the tasks of every active quest whose current state matches the
 // event, taking a branch (and transitioning / finishing) when its tasks complete.
 void onQuestEvent(QuestLog& log, const data::FormDatabase& forms,
-                  const gameplay::Event& event,
+                  const QuestIndex& index, const gameplay::Event& event,
                   const gameplay::GameplayTagRegistry& tags);
 
 // Dev/console jump (the `setstage` command): forces the quest

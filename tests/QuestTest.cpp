@@ -72,18 +72,18 @@ TEST_CASE("quest: tasks progress on matching events and the quest completes") {
     };
 
     // Wrong tag → no progress.
-    onQuestEvent(log, db, { gameplay::eventKind("OnDeath"), {}, {}, guard }, tags);
+    onQuestEvent(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnDeath"), {}, {}, guard }, tags);
     CHECK(taskProgress(log, kQuest, kTask) == 0);
 
     // Wrong event kind → no progress.
-    onQuestEvent(log, db, { gameplay::eventKind("OnHit"), {}, {}, bandit }, tags);
+    onQuestEvent(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnHit"), {}, {}, bandit }, tags);
     CHECK(taskProgress(log, kQuest, kTask) == 0);
 
-    onQuestEvent(log, db, banditDeath(), tags);
+    onQuestEvent(log, db, quest::buildQuestIndex(db), banditDeath(), tags);
     CHECK(taskProgress(log, kQuest, kTask) == 1);
     CHECK(isActive(log, kQuest)); // need 2
 
-    onQuestEvent(log, db, banditDeath(), tags);
+    onQuestEvent(log, db, quest::buildQuestIndex(db), banditDeath(), tags);
     CHECK(questStatus(log, kQuest) == QuestStatus::Succeeded);
     CHECK_FALSE(isActive(log, kQuest));
     CHECK(questState(log, kQuest) == kDone);
@@ -100,13 +100,13 @@ TEST_CASE("startQuestsOn begins matching quests once, never restarts") {
     QuestLog log;
     // A foreign event starts nothing.
     const auto none = startQuestsOn(
-        log, db, { gameplay::eventKind("OnSomethingElse") });
+        log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnSomethingElse") });
     CHECK(none.empty());
     CHECK_FALSE(log.quests.contains(kQuest));
 
     // The matching event starts it (and reports it to the caller).
     const auto started =
-        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+        startQuestsOn(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnAcceptSlay") });
     REQUIRE(started.size() == 1);
     CHECK(started[0]->id == kQuest);
     CHECK(isActive(log, kQuest));
@@ -114,11 +114,11 @@ TEST_CASE("startQuestsOn begins matching quests once, never restarts") {
 
     // Re-firing never re-begins — active or finished, the entry stays.
     const auto again =
-        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+        startQuestsOn(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnAcceptSlay") });
     CHECK(again.empty());
     log.quests[kQuest].status = QuestStatus::Succeeded;
     const auto after =
-        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+        startQuestsOn(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnAcceptSlay") });
     CHECK(after.empty());
     CHECK(questStatus(log, kQuest) == QuestStatus::Succeeded);
 }
@@ -127,7 +127,7 @@ TEST_CASE("startQuestsOn ignores quests without a startEvent") {
     const data::FormDatabase db = buildQuestDb(); // startEvent = ""
     QuestLog log;
     const auto started =
-        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+        startQuestsOn(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnAcceptSlay") });
     CHECK(started.empty());
     CHECK(log.quests.empty());
 }
@@ -167,7 +167,7 @@ TEST_CASE("a branch into a Failure state fails the quest") {
     beginQuest(log, db, kQuest);
     REQUIRE(isActive(log, kQuest));
 
-    onQuestEvent(log, db, { gameplay::eventKind("OnBetray") }, tags);
+    onQuestEvent(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnBetray") }, tags);
     CHECK(questStatus(log, kQuest) == QuestStatus::Failed);
     CHECK_FALSE(isActive(log, kQuest));
     CHECK(questState(log, kQuest) == kFailed);
@@ -175,7 +175,7 @@ TEST_CASE("a branch into a Failure state fails the quest") {
     auto* quest = const_cast<QuestForm*>(db.find<QuestForm>(kQuest));
     quest->startEvent = "OnAcceptSlay";
     const auto started =
-        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+        startQuestsOn(log, db, quest::buildQuestIndex(db), { gameplay::eventKind("OnAcceptSlay") });
     CHECK(started.empty());
 }
 

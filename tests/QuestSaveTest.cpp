@@ -83,7 +83,7 @@ TEST_CASE("quest save: mid-quest progress round-trips through a plugin") {
     // Session 1: one of two kills done.
     quest::QuestLog log;
     quest::beginQuest(log, db, kQuest);
-    quest::onQuestEvent(log, db,
+    quest::onQuestEvent(log, db, quest::buildQuestIndex(db),
                         { gameplay::eventKind("OnDeath"), {}, {}, bandits },
                         tags);
     REQUIRE(quest::taskProgress(log, kQuest, kTask) == 1);
@@ -108,7 +108,7 @@ TEST_CASE("quest save: mid-quest progress round-trips through a plugin") {
           guid("60000000-0000-4000-8000-000000000011"));
 
     // The second kill finishes it — the machine picks up where it left.
-    quest::onQuestEvent(restored, db2,
+    quest::onQuestEvent(restored, db2, quest::buildQuestIndex(db2),
                         { gameplay::eventKind("OnDeath"), {}, {}, bandits },
                         tags);
     CHECK(quest::questStatus(restored, kQuest) ==

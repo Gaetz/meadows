@@ -70,6 +70,7 @@ public:
     // onExit: drop the runner + demo-quest pointer + log (all point into
     // `forms`, reset before re-resolve).
     void reset();
+    const quest::QuestIndex& indexFor(const data::FormDatabase& forms);
 
     // Quest / crime state mirrored into PLAYER tags.
     void syncQuestTags(const QuestContext& ctx);
@@ -95,6 +96,10 @@ public:
 
 private:
     quest::QuestLog questLog_;
+    // Built lazily against the CURRENT resolved database (reset() clears
+    // it before a re-resolve) — the per-event bucket walks (§ note 8).
+    quest::QuestIndex questIndex_;
+    const data::FormDatabase* indexedForms_ { nullptr };
     const quest::QuestForm* easternQuest_ { nullptr };
     uptr<quest::DialogueRunner> dialogueRunner_;
     ecs::Entity dialoguePartner_ {}; // who [E] Talk opened (the barter vendor)
