@@ -132,6 +132,19 @@ public:
     // The one teleport routine (travel arrivals AND the follow package's
     // too-far case): grounded next to `anchor` (groundAt — collision probe
     // in interiors), path cleared.
+    // Shared helpers of the three TUs (core / combat / social).
+    static const data::ActorForm* followerActorForm(
+        const FollowerContext& ctx, ecs::Entity follower);
+    static void toast(const FollowerContext& ctx, str line);
+    static str followerDisplayName(const FollowerContext& ctx,
+                                   ecs::Entity follower);
+    static gameplay::PartyCounts countActiveParty(
+        const FollowerContext& ctx);
+    static bool playerSneaking(const FollowerContext& ctx);
+    // The shared burial core: persistent grave reference + inventory
+    // move + corpse removal; true when the corpse entity was destructed.
+    static bool buryFollower(const FollowerContext& ctx, ecs::Entity corpse,
+                             const Vec3& gravePos);
     static void teleportNear(const Vec3& anchor,
                              const render::TerrainParams& terrain,
                              bool interiorMode, phys::PhysicsWorld* physics,

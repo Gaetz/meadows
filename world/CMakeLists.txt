@@ -18,7 +18,6 @@ add_library(meadows-world STATIC
     scene/SpatialIndex.cpp
     ai/Pathfinding.cpp
     ai/Perception.cpp
-    ai/AiController.cpp
     ai/GridNavigator.cpp
     ai/InteriorNavigator.cpp
     ai/TerrainNavigator.cpp
