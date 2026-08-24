@@ -92,14 +92,15 @@ ValleyField valleyField(u32 seed, f32 x, f32 z, f32 wavelength) {
         out.axisSin = gx / out.gradLen;
     }
     // Normalized gradient (units of amplitude per wavelength) —
-    // band-passed. Low tail: near the potential's extrema the
-    // meters-distance to a stripe (~1/|grad|) is ill-conditioned, the
-    // valleys must be OFF before it shimmers. High tail: a steep
-    // field packs stripes over-dense and pushes the equidistant
-    // depth handover into the profile — fade there too.
+    // band-passed. The masks live in PHASE space (smooth in phi), so
+    // the band only bounds the METRIC width of a valley: at the low
+    // end the phase stalls and a stripe balloons into a crater-wide
+    // patch, at the high end it pinches into a slit — both fade out
+    // instead. Kept as open as those bounds allow: the fleuve
+    // corridors need CONNECTED valleys to drain along.
     const f32 gn = out.gradLen * wavelength;
-    out.strength = noise::smoothstep01(0.15f, 0.4f, gn) *
-                   (1.0f - noise::smoothstep01(0.9f, 1.4f, gn));
+    out.strength = noise::smoothstep01(0.08f, 0.2f, gn) *
+                   (1.0f - noise::smoothstep01(1.0f, 1.5f, gn));
     return out;
 }
 

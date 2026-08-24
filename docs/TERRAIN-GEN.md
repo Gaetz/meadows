@@ -750,3 +750,37 @@ continu » 1-D remonte à 875/700 m (crêtes allongées = murs plus longs
 sur une ligne droite ; les cols tous les 4-5 km ne sont pas sur la
 ligne) — recalibrage B6 (colSpacing, largeur de strate ψ, seuil
 rangeNeed). Caches v34/v39, sidecar TS16.
+
+### B5 — Étage 0 : réseau hydrologique maître (2026-08-24)
+
+`MasterNetwork.{hpp,cpp}` : routage grossier PUR par super-région
+(24,6 km + apron 8,2 km, texel 128 m) sur `macroHeightAnalytic` —
+`priorityFloodFill` + `routeFlow` réutilisés tels quels — extraction
+des cours dont l'aire de drainage VRAIE dépasse `fleuveArea`.
+Propriété par cellule-mère de la TÊTE (deux appelants bit-identiques),
+continuation tracée jusqu'à ~8 km au-delà (la couture inter-super
+complète reste le différé connu). Aucun état, sûr sur les workers ;
+`masterRiversNear(aabb)` pour S4/scoring/chemins. Doctests :
+déterminisme bit-exact, surfaces monotones aval, têtes dans le cœur,
+accord entre deux requêtes ; diagnostic caché `master network`.
+AUCUN changement de bake par le module lui-même ; en revanche le
+band-pass de force des vallées B4 a été rouvert (0,08-0,2 / 1,0-1,5 —
+les masques en phase n'ont plus le cisaillement qui l'avait fait
+resserrer) : fonds 5,8 %, creusé 11,7 %, continuité 0,289 < 0,3 ✓.
+Caches v35/v40.
+
+**CONSTAT DE CONCEPTION (mesuré, arbitrage dev demandé)** : dans la
+macro ACTUELLE (mer 29 %, continent λ 4 km), les bassins versants
+sont courts et côtiers — en ±24 km : 51 systèmes atteignant la mer
+(un par ~7 km — deux fois la densité cible), plus long cours 10,9 km,
+et 4,5 % seulement des nœuds sur les corridors trunk (les dépressions
+de 40-80 m sur ~6 % de couverture ne captent pas le drainage). **Le
+« fleuve-frontière intérieure tous les 10-15 km » n'émerge pas de
+cette macro**, quel que soit le seuil d'aire. Trois options :
+(a) fleuves CÔTIERS assumés — larges (≥ 20 m de demi-largeur),
+courts, un estuaire majeur par ~10 km de côte ; la structure de
+voyage intérieure reste les vallées maîtresses (sans fleuve dedans) ;
+(b) retune macro pour de vrais bassins longs (continentWavelength ↑,
+seaThreshold ↓, trunks plus profonds/couvrants) — grosse conséquence
+visuelle, à faire en B6 avec validation en jeu ;
+(c) hybride : (a) court terme + retune (b) mesuré en B6.

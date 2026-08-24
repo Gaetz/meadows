@@ -76,6 +76,7 @@
     LevelEditorTest.cpp
     LocTextTest.cpp
     MapRasterTest.cpp
+    MasterNetworkTest.cpp
     MeleeStrikeTest.cpp
     MeleeSwingTest.cpp
     MovementTest.cpp
