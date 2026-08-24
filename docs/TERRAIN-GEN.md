@@ -389,3 +389,244 @@ décision GPU), plaque d'eau bbox / éviction sandboxLakes / spawn initial
   Devenu facile à déclencher : les sommets (1000-1300 m) percent la
   couche (800-1000 m). À corriger dans le chantier ciel : le dôme/bake
   nuages doit rester rendu vu de dessus.
+
+---
+
+# Cible paysage & peuplement — biome tempéré (VALIDÉE dev 2026-08-24)
+
+La description du terrain que le générateur doit viser pour le biome
+tempéré (palette 0) — écrite AVANT de retoucher les paramètres, pour que
+chaque réglage ait un critère de réussite mesurable. Constat de départ
+(retour dev + mesures seed 1337, diagnostics `variety transect` /
+`vista` de `SpawnDiagnosticTest`) : le terrain actuel est **trop érodé,
+trop bas et uniformément haché** — relief médian 24-56 m par fenêtre de
+250 m, 13-20 % de pentes >30°, 51 lacs sur la tuile de spawn, horizon
+bouché à 0,3-1 km sur presque tous les azimuts, sommets réels (1250-
+1350 m) à 25-30 km donc jamais vus. La variété statistique existe (un
+« événement » tous les ~320-365 m) mais c'est toujours LE MÊME
+événement : une ravine. Le problème n'est pas la quantité de relief,
+c'est son ABSENCE DE HIÉRARCHIE.
+
+## 1. Le principe : trois échelles emboîtées, chacune lisible
+
+Référentiel de rythme : course de base 5,5 m/s (`movementSpeed` ~110 ×
+1/20), sprint 11 m/s, monture 9 m/s. **45 s de course = ~250 m** —
+l'unité de « changement pertinent » demandée.
+
+- **Micro (50-250 m) — l'incident.** Un ruisseau, un bosquet, un
+  affleurement rocheux, une butte, une clairière, une ruine. C'est
+  l'échelle du scatter et des POI, PAS celle du relief : le sol des
+  zones habitables reste calme (relief < 15 m par fenêtre de 250 m)
+  pour que l'incident se détache au lieu de se noyer dans les ravines.
+- **Méso (250 m - 1,5 km) — la forme de paysage.** À tout moment le
+  joueur peut nommer où il est : UN fond de vallée, UN versant, UNE
+  crête, UN rebord de plateau, UN bassin de lac, UNE gorge. Une seule
+  forme à la fois, composée — pas un hachis isotrope. C'est l'échelle
+  qui doit changer toutes les ~1-3 fenêtres de 45 s.
+- **Macro (1,5-10 km) — la région et ses OBJECTIFS superposés.**
+  Arbitrage dev : le vrai manque de l'ancien terrain était le nombre
+  d'**objectifs sur la carte**. La cible combine l'intime et
+  l'héroïque, à la Skyrim, en DEUX couches simultanées :
+  - *intime* : des collines ou vallées marquantes à ~3 km (le but de
+    la demi-heure) ;
+  - *héroïque* : un **sommet alpin à ~6 km** (le but de la session,
+    600-900 m, visible depuis les vallées) ;
+  des plaines et plateaux peuvent exister entre les deux. Les très
+  hauts massifs (1200-1400 m) restent des ancres d'horizon à 15-30 km.
+  Depuis tout point de voyage : au moins un amer de chaque couche
+  visible.
+
+## 2. La hiérarchie du relief (le correctif « trop érodé »)
+
+Le budget de dissection n'est plus uniforme ; il se répartit en trois
+familles de terrain avec un CARACTÈRE par famille. Répartition choisie
+par le dev : **40 / 35 / 25** — un monde franchement montagneux, où le
+voyage se négocie par les passages et où les vues dominent :
+
+- **Socles calmes (~40 % des terres)** : fonds de vallées, plaines,
+  dessus de plateaux. Pentes < 10°, relief < 15 m / 250 m, dissection
+  fine ÉTEINTE (le mécanisme `gentle` existe — l'étendre aux socles,
+  pas seulement aux corridors). C'est là que vivent le peuplement, les
+  chemins et les incidents micro.
+- **Versants travaillés (~35 %)** : les liaisons entre socles. C'est
+  ICI que la dissection actuelle est belle et doit se concentrer —
+  ravines, éboulis, épaulements. Pentes 10-30°, franchissables mais
+  coûteux hors passages.
+- **Drame (~25 %)** : rebords de plateau, gorges, falaises, hauts
+  sommets. Pentes > 30°, infranchissable hors cols/échancrures — c'est
+  le relief qui FERME et qui oriente (et qui donne les vues).
+
+Conséquence verticale : le relief de session remonte — depuis n'importe
+où, un sommet alpin de 600-900 m atteignable à ~6 km ET des collines/
+vallées marquantes à ~3 km (les deux couches d'objectifs du §1), les
+1200-1400 m réservés aux ancres régionales. L'érosion ne
+« ramène plus tout bas » : elle sculpte les versants, les socles hauts
+gardent leur altitude (le hook `plateauKeep` existe — l'étendre).
+
+## 3. Les vues (le correctif « pas de beaux paysages »)
+
+- **Lignes de fuite** : les vallées des socles calmes sont ORIENTÉES
+  (largeur 500-1500 m, axes de plusieurs km) — depuis le fond, la vue
+  porte le long de l'axe au lieu de buter sur la ravine d'en face.
+- **Belvédères** : tout rebord de plateau, col et crête de versant est
+  un point de révélation : la région suivante se découvre d'un coup
+  (le moment BotW). Les chemins CRÊTENT à ces points (§5).
+- **Amers** : cf. macro §1. Silhouettes à composer : pic isolé, mesa à
+  rebord franc, échine allongée — reconnaissables, pas interchangeables.
+- Critères mesurables (diagnostic `vista`, aux points de voyage plutôt
+  qu'au spawn actuel) : ≥ 30/72 azimuts avec horizon au-delà de 2 km ;
+  ≥ 1 amer à élévation > 2° situé à plus de 3 km ; depuis un
+  belvédère, profondeur de vue médiane > 6 km.
+
+## 4. L'eau hiérarchisée (le correctif « 51 lacs »)
+
+Quatre niveaux de cours d'eau (arbitrage dev), chacun avec son rôle de
+gameplay — le rang découle de l'aire de drainage, comme la largeur
+actuelle (√A), mais avec des CARACTÈRES discrets, pas un continuum :
+
+- **Ruisseau** : l'incident micro, tous les ~500-800 m sur les
+  versants ; enjambable partout, à peine creusé.
+- **Rivière** : une par vallée maîtresse, nettement PLUS CREUSÉE
+  (berges lisibles, lit encaissé) ; franchissable aux gués/ponts tous
+  les 800-1500 m, nage facile.
+- **Fleuve** : le véritable obstacle — **un par région, tous les
+  ~10-15 km** : une frontière naturelle qu'on longe souvent et
+  franchit rarement. Nage possible mais **dérive forte** (le
+  `waterFlowAt` + `swimDriftFactor` existants) ; franchissements
+  aménagés (ponts aux villes/villages, bacs ou gués ailleurs) tous les
+  ~2-4 km. Les villes naissent à ses ponts et à son embouchure.
+- **Embouchure — selon la côte** (la lithologie décide) : **delta**
+  (plaine tressée, bras multiples, marais) sur côte basse/molle ;
+  **estuaire / entrée de mer** (bras unique élargi, encaissé, profond)
+  sur côte dure.
+
+Et les plans d'eau :
+
+- **Lacs rares et signifiants** : 2-6 par tuile de 4 km (aujourd'hui
+  51) — un lac est une DESTINATION (bassin méso avec berges lisibles),
+  plus une flaque de dissection. Relever `minLakeDepth`/`minLakeCells`
+  et amortir la micro-dépression sur les socles.
+- **Océan à deux étages** (aujourd'hui : fond plat à −30 m) :
+  **plateau côtier −5..−25 m** (baies lisibles, plongée, épaves,
+  mouillages des ports) puis **talus vers −100..−150 m au large** —
+  l'eau foncée du large se lit depuis les falaises et donne sa
+  profondeur visuelle à l'horizon marin. Les baies abritées + un
+  arrière-pays plat = sites de ports (§5) ; les côtes dures gardent
+  leurs falaises plongeantes.
+
+## 5. Peuplement : emplacements, distances, chemins
+
+Hiérarchie des lieux — chaque niveau a son site type, sa taille de
+plateforme (pad `alterElevation`, primitive déjà livrée en B12) et son
+espacement cible (en course de base ; diviser par ~1,6 à monture) :
+
+| Niveau | Bâtiments | Espacement | Temps | Site type | Pad |
+|---|---|---|---|---|---|
+| Hameau | 3-8 | 0,8-1,2 km | 2-4 min | replat de socle, source/ruisseau < 200 m | ~60×60 m, pente < 5° |
+| Village | 10-25 | 2,5-4 km | 8-12 min | confluence, tête de pont, rive de lac, croisée de chemins | ~150×150 m |
+| Ville | 30+ | 8-12 km | 25-35 min | grande confluence, estuaire, butte de plaine, rebord défensif | ~300×300 m |
+| Port | ville/village côtier | 10-15 km de côte | — | baie abritée, plateau d'eau peu profonde + arrière-pays plat | quai + pente d'accès |
+
+- **Entre les lieux, la curiosité** : un POI non habité (ruine, donjon
+  — générateur cyclique déjà livré —, sanctuaire, camp) à ~400-900 m de
+  tout point de chemin, légèrement HORS chemin (visible, pas dessus).
+- **Chemins** — le réseau suit la praticabilité (le champ `gentle`
+  devient le champ de coût des routes) :
+  - *sentier* (hameau↔hameau) : épouse le terrain, gués ;
+  - *chemin* (village↔village) : fond de vallée d'abord, franchit aux
+    cols, ponts aux rivières maîtresses ;
+  - *route* (ville↔ville) : pente tenue ≤ 8-10 % (lacets, déblais),
+    crête aux belvédères — la route EST la visite guidée des vues §3.
+- **Passages** : toute chaîne/rebord est percé d'un col ou d'une
+  échancrure tous les ~3-5 km de linéaire — jamais de cul-de-sac
+  régional ; le drame §2 ferme localement, jamais globalement.
+- Placement : scoring sur les champs existants (pente, eau, socle,
+  connectivité aux corridors, visibilité depuis les approches) —
+  sélection déterministe par seed, pads via Authoring, records ancrés
+  monde (le contrat sandbox §5 du CLAUDE.md tient tel quel).
+
+## 6. Critères d'acceptation (diagnostics à re-passer)
+
+Sur `variety transect` (transects de 16 km, fenêtres 250 m) :
+- relief médian par fenêtre : **18-30 m** (au lieu de 24-56 — plus
+  haut que la première proposition, cohérent avec le 40/35/25) ;
+- fenêtres plates < 8 m : **15-35 %** (concentrées sur les socles) ;
+- pentes > 30° : **< 15 %** des échantillons, et « infranchissable
+  continu » jamais > 400 m sans passage ;
+- espacement moyen des événements ≤ 500 m, pire trou ≤ 1200 m — ET
+  alternance des TYPES d'événements (relief / régime / eau / lieu),
+  plus une seule famille dominante.
+
+Sur `vista` (aux points de voyage) : les seuils du §3, PLUS les deux
+couches d'objectifs — un amer intime (colline/vallée marquante) à
+~3 km et un sommet alpin à ~6 km visibles depuis la majorité des
+points de voyage. Sur l'hydrologie : 2-6 lacs/tuile ; ruisseaux ~tous
+les 500-800 m ; 1 rivière creusée par vallée maîtresse ; fleuves
+espacés de 10-15 km avec franchissement aménagé tous les 2-4 km ;
+embouchures delta/estuaire selon la dureté de la côte ; océan −5..−25 m
+sur le plateau, −100..−150 m après le talus. Sur le peuplement :
+espacements du tableau §5 respectés à ±30 % le long des chemins.
+
+Statut : **VALIDÉE par le dev (2026-08-24)**. Arbitrages actés :
+familles de relief **40/35/25** (monde franchement montagneux) ;
+objectifs superposés intime ~3 km + alpin ~6 km (le manque
+d'OBJECTIFS était le vrai défaut, pas le manque de variété brute) ;
+espacements de peuplement du tableau §5 tels quels ; **périmètre en
+deux chantiers** — celui-ci livre relief hiérarchisé + eau + scoring
+des sites (emplacements réservés, mesurables), le chantier peuplement
+pose ensuite hameaux/villages/chemins dessus ; hiérarchie d'eau à
+quatre niveaux et océan à deux étages (§4). Les nombres restent des
+cibles de départ à retoucher en jeu ; l'implémentation se planifie
+brique par brique.
+
+Arbitrages d'implémentation (plan approuvé 2026-08-24, 14 briques
+B0-B13) : **étage 0 régional intégré au chantier** — réseau
+hydrologique maître par super-région ~24-32 km, grille 128 m sur la
+macro analytique (priorityFloodFill + routeFlow réutilisés) → tracés
+réels des fleuves, aires vraies, niveaux partagés aux frontières ;
+il imprime les vallées maîtresses en S1 et servira de couche de
+coût/routage aux chemins. Delta v1 = bras élargi + marais (tressage
+différé) ; variantes de silhouettes de pics (cône/mesa/échine) dès la
+brique objectifs ; scoring de sites analytique (pas sur tuiles
+bakées) ; pads mirrorés dans `macroHeightAnalytic` ; gués par motif
+déterministe sur l'abscisse curviligne ; événements « lieu » comptés
+dans l'alternance dès le scoring.
+
+## Journal du chantier
+
+### B0 — Instruments (2026-08-24)
+
+Diagnostics étendus (`variety transect` / `vista`,
+tests/SpawnDiagnosticTest.cpp) : classification des fenêtres de 250 m
+en familles socle/versant/drame (pente médiane des pas + relief),
+« infranchissable continu » (plus long tronçon contenant un pas > 30°
+sans appui < 15°), typage/alternance des événements, croisements
+d'eau par km, lacs/rivières par tuile ; vista re-basée sur 8-12
+**points de voyage** (grille jitterée déterministe 8 km, hash
+splitmix local — std::hash non portable) avec les deux couches
+d'objectifs (sommet > 500 m à ≤ 8 km ; colline marquante = max local
+de son disque de 500 m ET > 120 m au-dessus de son anneau de 1 km,
+à ≤ 4 km).
+
+**Baseline seed 1337 (avant toute retouche)** :
+- Transects 2×16 km : familles E-O **19/67/14**, N-S **41/50/9**
+  (cible 40/35/25 — les versants ravinés dominent tout) ; relief
+  médian 56 / 24 m ; plates 9 / 33 % ; pentes > 30° : 20 / 13 % ;
+  infranchissable max 350 / 425 m ; événements dominés par le type
+  relief (64 / 61 %), espacement moyen 320 / 365 m, pire trou
+  2000 m ; croisements d'eau 0,31/km.
+- Hydrologie : **10-63 lacs/tuile** (moy. ~38 ; cible 2-6), 22-89
+  rivières/tuile.
+- Vista aux 9 points de voyage : horizon ouvert (≥ 30 azimuts au-delà
+  de 2 km) : **1/9** ; amer > 2° au-delà de 3 km : 7/9 ; « sommet »
+  > 500 m à ≤ 8 km : 8/9 — mais ce sont des dômes arrondis 500-600 m
+  sans silhouette ; colline marquante à ≤ 4 km : 9/9 **à ~0,5 km
+  partout** — la couche intime existe mais sans AUCUNE hiérarchie
+  (des bosses omniprésentes ≈ zéro amer nommable). Confirme le
+  diagnostic : le manque n'est pas la variété brute, c'est la
+  hiérarchie et les objectifs.
+
+NB build Windows : le test d'or scatter
+(`vegetation scatter: instance buffers are frozen`) échoue sous MSVC
+(hash golden capturé sous clang/Fedora — math flottante différente) ;
+préexistant au chantier, ne pas re-capturer sous MSVC.

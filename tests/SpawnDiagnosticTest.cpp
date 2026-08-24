@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/WaterBodies.hpp"
@@ -741,6 +742,417 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
         softer.fluvial.iterations = iterations;
         stats("fluvial reduced     ", softer);
     }
+    CHECK(true);
+}
+
+// Variety along a walk: bakes two 16 km transects through the spawn
+// (E-W and N-S), then scores 250 m windows — the distance a player runs
+// in ~45 s (movementSpeed ~110 x 1/20 = 5.5 m/s). A window is an
+// "event" when the relief regime flips, water is crossed, or local
+// relief exceeds 25 m. Answers "does the landscape change often enough
+// while walking".
+//   meadows-tests '-tc=variety transect*' -ns
+TEST_CASE("variety transect diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 seaLevel = params.macro.seaLevel;
+    const f32 px = 2038.28f; // the game's confirmed spawn
+    const f32 pz = 1614.13f;
+
+    struct BakedTiles {
+        render::TerrainParams tp;
+        render::WaterBodies bodies;
+        vector<River> rivers;
+    };
+    // Bake every tile the two transects touch, share (0, 0).
+    std::map<std::pair<i32, i32>, TileBakeResult> tiles;
+    const auto tileOf = [&](f32 x, f32 z) {
+        return std::make_pair(
+            static_cast<i32>(std::floor(x / params.tileSize)),
+            static_cast<i32>(std::floor(z / params.tileSize)));
+    };
+    const f32 kHalf = 8000.0f;
+    const f32 kStep = 25.0f;
+    for (f32 d = -kHalf; d <= kHalf; d += kStep) {
+        for (const auto& key : { tileOf(px + d, pz), tileOf(px, pz + d) }) {
+            if (!tiles.count(key)) {
+                MESSAGE("baking tile (", key.first, ", ", key.second, ")");
+                tiles.emplace(key,
+                              bakeTile(params, key.first, key.second));
+            }
+        }
+    }
+    BakedTiles world;
+    auto base = std::make_shared<render::TerrainBase>();
+    world.bodies.seaLevel = seaLevel;
+    for (const auto& [key, baked] : tiles) {
+        MESSAGE("tile (", key.first, ", ", key.second, "): ",
+                baked.lakes.size(), " lakes, ", baked.rivers.size(),
+                " rivers");
+        base->regions.push_back(baked.region);
+        for (const Lake& lake : baked.lakes) {
+            render::LakeSurface surface;
+            surface.level = lake.level;
+            surface.minX = lake.minX;
+            surface.minZ = lake.minZ;
+            surface.maxX = lake.maxX;
+            surface.maxZ = lake.maxZ;
+            surface.maskWidth = lake.maskWidth;
+            surface.maskHeight = lake.maskHeight;
+            surface.maskTexel = lake.maskTexel;
+            surface.mask = lake.mask;
+            world.bodies.lakes.push_back(std::move(surface));
+        }
+        world.rivers.insert(world.rivers.end(), baked.rivers.begin(),
+                            baked.rivers.end());
+    }
+    world.tp.base = base;
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls = controlParams;
+    sandbox->macro = params.macro;
+    world.tp.sandbox = sandbox;
+
+    const auto wetAt = [&](f32 x, f32 z, f32 h) {
+        if (h < seaLevel + 0.5f) {
+            return true;
+        }
+        if (render::terrain::waterSurfaceAt(world.bodies, x, z, h + 1.0f)
+                .has_value()) {
+            return true;
+        }
+        for (const River& river : world.rivers) {
+            for (const RiverPoint& p : river.points) {
+                const f32 reach = glm::max(p.halfWidth, 4.0f);
+                if (std::abs(p.x - x) < reach &&
+                    std::abs(p.z - z) < reach) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    const auto regimeOf = [&](f32 x, f32 z) -> int {
+        const ControlSample s = controls.at(x, z);
+        if (s.sea) {
+            return 0;
+        }
+        if (s.uplift > 0.35f) {
+            return 3;
+        }
+        if (s.hillRelief > 25.0f || s.plateau > 80.0f) {
+            return 2;
+        }
+        return 1;
+    };
+    const auto runTransect = [&](const char* label, f32 dirX, f32 dirZ) {
+        constexpr u32 kWindow = 10; // 10 x 25 m = 250 m = ~45 s of run
+        constexpr f32 kTan10 = 0.1763f;
+        constexpr f32 kTan15 = 0.2679f;
+        constexpr f32 kTan30 = 0.5774f;
+        f32 minH = 1.0e9f, maxH = -1.0e9f;
+        f64 meanH = 0.0;
+        u32 samples = 0, steep15 = 0, steep30 = 0;
+        vector<f32> windowRelief;
+        u32 flatWindows = 0, reliefEvents = 0, regimeEvents = 0,
+            waterEvents = 0;
+        // Terrain-family census of the 250 m windows (the 40/35/25
+        // target): socle = gentle and low-relief, drame = wall-steep.
+        u32 socleWindows = 0, versantWindows = 0, drameWindows = 0;
+        // Longest stretch containing a >30° step and no <15° foothold.
+        f32 maxImpassable = 0.0f, sinceFoothold = 0.0f;
+        bool wallInRun = false;
+        vector<u8> eventTypes; // 0 relief, 1 regime, 2 water
+        f32 lastEventD = -kHalf;
+        f32 worstGap = 0.0f;
+        f64 gapSum = 0.0;
+        u32 gapCount = 0;
+        int prevRegime = -1;
+        bool prevWet = false;
+        f32 wMin = 1.0e9f, wMax = -1.0e9f;
+        u32 inWindow = 0;
+        f32 prevH = 0.0f;
+        vector<f32> windowSlopes;
+        for (f32 d = -kHalf; d <= kHalf; d += kStep) {
+            const f32 x = px + dirX * d;
+            const f32 z = pz + dirZ * d;
+            const f32 h = render::terrain::height(world.tp, x, z);
+            minH = glm::min(minH, h);
+            maxH = glm::max(maxH, h);
+            meanH += h;
+            if (samples > 0) {
+                const f32 slope = std::abs(h - prevH) / kStep;
+                if (slope > kTan30) {
+                    ++steep30;
+                } else if (slope > kTan15) {
+                    ++steep15;
+                }
+                windowSlopes.push_back(slope);
+                if (slope < kTan15) {
+                    if (wallInRun) {
+                        maxImpassable =
+                            glm::max(maxImpassable, sinceFoothold);
+                    }
+                    sinceFoothold = 0.0f;
+                    wallInRun = false;
+                } else {
+                    sinceFoothold += kStep;
+                    wallInRun = wallInRun || slope > kTan30;
+                }
+            }
+            prevH = h;
+            ++samples;
+            wMin = glm::min(wMin, h);
+            wMax = glm::max(wMax, h);
+            if (++inWindow < kWindow) {
+                continue;
+            }
+            // One 250 m window closes here.
+            const f32 relief = wMax - wMin;
+            windowRelief.push_back(relief);
+            std::sort(windowSlopes.begin(), windowSlopes.end());
+            const f32 medianSlope =
+                windowSlopes.empty()
+                    ? 0.0f
+                    : windowSlopes[windowSlopes.size() / 2];
+            windowSlopes.clear();
+            if (medianSlope > kTan30) {
+                ++drameWindows;
+            } else if (medianSlope < kTan10 && relief < 15.0f) {
+                ++socleWindows;
+            } else {
+                ++versantWindows;
+            }
+            const f32 cx = px + dirX * (d - 125.0f);
+            const f32 cz = pz + dirZ * (d - 125.0f);
+            const int regime = regimeOf(cx, cz);
+            const bool wet =
+                wetAt(cx, cz, render::terrain::height(world.tp, cx, cz));
+            bool event = false;
+            if (relief < 8.0f) {
+                ++flatWindows;
+            }
+            if (relief > 25.0f) {
+                ++reliefEvents;
+                eventTypes.push_back(0);
+                event = true;
+            }
+            if (prevRegime >= 0 && regime != prevRegime) {
+                ++regimeEvents;
+                eventTypes.push_back(1);
+                event = true;
+            }
+            if (wet && !prevWet) {
+                ++waterEvents;
+                eventTypes.push_back(2);
+                event = true;
+            }
+            prevRegime = regime;
+            prevWet = wet;
+            if (event) {
+                const f32 gap = d - lastEventD;
+                worstGap = glm::max(worstGap, gap);
+                gapSum += gap;
+                ++gapCount;
+                lastEventD = d;
+            }
+            wMin = 1.0e9f;
+            wMax = -1.0e9f;
+            inWindow = 0;
+        }
+        worstGap = glm::max(worstGap, kHalf - lastEventD);
+        if (wallInRun) {
+            maxImpassable = glm::max(maxImpassable, sinceFoothold);
+        }
+        std::sort(windowRelief.begin(), windowRelief.end());
+        const f32 medianRelief =
+            windowRelief.empty()
+                ? 0.0f
+                : windowRelief[windowRelief.size() / 2];
+        const u32 windows = static_cast<u32>(windowRelief.size());
+        u32 typeCounts[3] = { 0, 0, 0 };
+        for (const u8 type : eventTypes) {
+            ++typeCounts[type];
+        }
+        const u32 dominantType =
+            glm::max(typeCounts[0], glm::max(typeCounts[1], typeCounts[2]));
+        MESSAGE(std::string(label), ": h [", minH, ", ", maxH, "] mean ",
+                meanH / samples, " (sea ", seaLevel, ")");
+        MESSAGE("  windows(250m)=", windows, "  flat(<8m relief) ",
+                100.0f * static_cast<f32>(flatWindows) / windows,
+                "%  median relief ", medianRelief, " m");
+        MESSAGE("  families: socle ",
+                100.0f * static_cast<f32>(socleWindows) / windows,
+                "%, versant ",
+                100.0f * static_cast<f32>(versantWindows) / windows,
+                "%, drame ",
+                100.0f * static_cast<f32>(drameWindows) / windows,
+                "%  (target 40/35/25)");
+        MESSAGE("  events: relief>25m ", reliefEvents, ", regime ",
+                regimeEvents, ", water ", waterEvents,
+                "  | mean event spacing ",
+                gapCount ? gapSum / gapCount : 16000.0, " m, worst gap ",
+                worstGap, " m  | dominant type ",
+                eventTypes.empty()
+                    ? 0.0f
+                    : 100.0f * static_cast<f32>(dominantType) /
+                          static_cast<f32>(eventTypes.size()),
+                "%");
+        MESSAGE("  slope: >15° ",
+                100.0f * static_cast<f32>(steep15) / samples, "%, >30° ",
+                100.0f * static_cast<f32>(steep30) / samples,
+                "%  | max impassable stretch ", maxImpassable,
+                " m  | water crossings/km ",
+                static_cast<f32>(waterEvents) / (2.0f * kHalf / 1000.0f));
+    };
+    runTransect("E-W", 1.0f, 0.0f);
+    runTransect("N-S", 0.0f, 1.0f);
+    CHECK(true);
+}
+
+// Distant views from TRAVEL POINTS (a deterministic jittered grid of
+// walkable spots, not just the spawn): per point, the analytic horizon
+// on 72 azimuths to 18 km, plus the two objective layers of the target
+// (an alpine summit reachable at ~6 km, a marked hill at ~3 km).
+// Acceptance: >= 30/72 open azimuths, a landmark > 2° beyond 3 km,
+// both layers present from most points.
+//   meadows-tests '-tc=vista diagnostic' -ns
+TEST_CASE("vista diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 sea = params.macro.seaLevel;
+    const auto ha = [&](f32 x, f32 z) {
+        return macroHeightAnalytic(controls, params.macro, x, z);
+    };
+    // Deterministic per-cell hash (splitmix-style; std::hash is not
+    // portable across toolchains).
+    const auto hash01 = [&](i32 cx, i32 cz, u32 salt) {
+        u64 v = (static_cast<u64>(static_cast<u32>(cx)) << 32) ^
+                static_cast<u32>(cz) ^ (static_cast<u64>(salt) << 17) ^
+                params.worldSeed;
+        v ^= v >> 30;
+        v *= 0xbf58476d1ce4e5b9ull;
+        v ^= v >> 27;
+        v *= 0x94d049bb133111ebull;
+        v ^= v >> 31;
+        return static_cast<f32>(v & 0xffffffu) / 16777215.0f;
+    };
+
+    // Travel points: jittered 8 km cells over +/-16 km around the
+    // spawn, kept when they land on walkable ground (dry, below the
+    // alpine band) — where a player actually journeys.
+    struct Travel {
+        f32 x, z, h;
+    };
+    vector<Travel> points;
+    for (i32 cz = -2; cz <= 1 && points.size() < 12; ++cz) {
+        for (i32 cx = -2; cx <= 1 && points.size() < 12; ++cx) {
+            const f32 x = 2038.28f +
+                          (static_cast<f32>(cx) + 0.2f +
+                           0.6f * hash01(cx, cz, 11)) *
+                              8000.0f;
+            const f32 z = 1614.13f +
+                          (static_cast<f32>(cz) + 0.2f +
+                           0.6f * hash01(cx, cz, 23)) *
+                              8000.0f;
+            const f32 h = ha(x, z);
+            if (h > sea + 8.0f && h < sea + 320.0f) {
+                points.push_back({ x, z, h });
+            }
+        }
+    }
+    MESSAGE("travel points kept: ", points.size(), "/16");
+
+    u32 openOk = 0, landmarkOk = 0, summitOk = 0, hillOk = 0;
+    for (const Travel& p : points) {
+        const f32 eye = p.h + 1.7f;
+        u32 openAzimuths = 0;
+        bool landmark = false;
+        for (u32 a = 0; a < 72; ++a) {
+            const f32 azimuth = static_cast<f32>(a) * (6.2831853f / 72.0f);
+            const f32 dx = std::cos(azimuth);
+            const f32 dz = std::sin(azimuth);
+            f32 bestAngle = -90.0f;
+            f32 bestDist = 0.0f;
+            for (f32 dist = 300.0f; dist <= 18000.0f; dist += 100.0f) {
+                const f32 h = ha(p.x + dx * dist, p.z + dz * dist);
+                const f32 angle = std::atan2(h - eye, dist) * 57.29578f;
+                if (angle > bestAngle) {
+                    bestAngle = angle;
+                    bestDist = dist;
+                }
+            }
+            if (bestDist > 2000.0f) {
+                ++openAzimuths;
+            }
+            if (bestAngle > 2.0f && bestDist > 3000.0f) {
+                landmark = true;
+            }
+        }
+        // Objective layer 1: an alpine summit (>500 m over sea) within
+        // 8 km. Layer 2: a marked hill (>120 m over its 1 km ring)
+        // within 4 km.
+        f32 dSummit = 1.0e9f;
+        for (f32 sz = -8000.0f; sz <= 8000.0f; sz += 250.0f) {
+            for (f32 sx = -8000.0f; sx <= 8000.0f; sx += 250.0f) {
+                if (ha(p.x + sx, p.z + sz) > sea + 500.0f) {
+                    dSummit =
+                        glm::min(dSummit, std::hypot(sx, sz));
+                }
+            }
+        }
+        f32 dHill = 1.0e9f;
+        for (f32 sz = -4000.0f; sz <= 4000.0f; sz += 250.0f) {
+            for (f32 sx = -4000.0f; sx <= 4000.0f; sx += 250.0f) {
+                const f32 top = ha(p.x + sx, p.z + sz);
+                if (top < sea + 60.0f) {
+                    continue;
+                }
+                // A MARKED hill dominates its 500 m disc (not a ravine
+                // rim) and stands 120 m over its 1 km ring.
+                f32 ring = 0.0f;
+                bool localMax = true;
+                for (u32 k = 0; k < 8; ++k) {
+                    const f32 angle =
+                        static_cast<f32>(k) * (6.2831853f / 8.0f);
+                    const f32 kx = std::cos(angle);
+                    const f32 kz = std::sin(angle);
+                    ring += ha(p.x + sx + kx * 1000.0f,
+                               p.z + sz + kz * 1000.0f);
+                    if (ha(p.x + sx + kx * 500.0f,
+                           p.z + sz + kz * 500.0f) > top) {
+                        localMax = false;
+                        break;
+                    }
+                }
+                if (localMax && top - ring / 8.0f > 120.0f) {
+                    dHill = glm::min(dHill, std::hypot(sx, sz));
+                }
+            }
+        }
+        const bool open = openAzimuths >= 30;
+        const bool summit = dSummit <= 8000.0f;
+        const bool hill = dHill <= 4000.0f;
+        openOk += open;
+        landmarkOk += landmark;
+        summitOk += summit;
+        hillOk += hill;
+        MESSAGE("point (", p.x, ", ", p.z, ") h=", p.h, ": open az ",
+                openAzimuths, "/72",
+                std::string(landmark ? "" : "  NO-LANDMARK"), "  summit ",
+                dSummit < 1.0e9f ? dSummit / 1000.0f : -1.0f,
+                " km  hill ",
+                dHill < 1.0e9f ? dHill / 1000.0f : -1.0f, " km");
+    }
+    const u32 n = glm::max<u32>(1, static_cast<u32>(points.size()));
+    MESSAGE("summary: open>=30az ", openOk, "/", n, "  landmark>2°@3km ",
+            landmarkOk, "/", n, "  alpine summit<=8km ", summitOk, "/",
+            n, "  marked hill<=4km ", hillOk, "/", n);
     CHECK(true);
 }
 
