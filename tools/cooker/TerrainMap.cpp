@@ -36,6 +36,9 @@ int terrainMap(char** argv, int argc) {
         controlParams.continentCarrierAmp =
             static_cast<f32>(std::atof(argv[9]));
     }
+    if (argc >= 11) {
+        controlParams.continentLayout = std::atoi(argv[10]) != 0;
+    }
     const ProceduralControls controls { controlParams };
     const MacroParams macro;
     const vector<u8> pixels = renderTerrainMap(controls, macro, params);

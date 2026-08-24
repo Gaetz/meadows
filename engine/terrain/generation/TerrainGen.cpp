@@ -35,6 +35,125 @@ constexpr u32 kSaltTrunk = 0x77201c00u;
 constexpr u32 kSaltCol = 0xc0110000u;
 constexpr u32 kSaltAxialWarp = 0x51deca5eu;
 constexpr u32 kSaltContinentCarrier = 0xc0471e47u;
+constexpr u32 kSaltLayout = 0x1a70a700u;
+constexpr u32 kSaltLayoutWarpX = 0x1a70a7a1u;
+constexpr u32 kSaltLayoutWarpZ = 0x1a70a7b2u;
+
+// Design-forced continent layout: [0,1] landmass field from a jittered
+// mega grid of elliptical kernels (one continent per cell, 1 main + 2
+// satellite lobes so nothing reads as a circle; a second sparser grid
+// scatters large islands), evaluated at a ~60 km domain-warped
+// position so silhouettes wander. Cell (0, 0) keeps its jitter small:
+// the world origin — the sandbox start — is GUARANTEED to sit on its
+// continent.
+f32 layoutKernels(const ProceduralControlParams& p, f32 x, f32 z) {
+    const auto lobe = [](f32 dx, f32 dz, f32 radius, f32 aspect,
+                         f32 theta) {
+        const f32 ct = std::cos(theta);
+        const f32 st = std::sin(theta);
+        const f32 u = (ct * dx + st * dz) / (radius * aspect);
+        const f32 v = (-st * dx + ct * dz) / radius;
+        const f32 n = std::sqrt(u * u + v * v);
+        return 1.0f - noise::smoothstep01(0.62f, 1.0f, n);
+    };
+    f32 best = 0.0f;
+    // Continents. Cell centers sit ON multiples of cellSize (rounded
+    // indexing) so cell (0, 0)'s continent is centered at the world
+    // origin — the start guarantee, not a corner case.
+    {
+        const f32 cell = p.continentCellSize;
+        const i32 cx =
+            static_cast<i32>(std::floor(x / cell + 0.5f));
+        const i32 cz =
+            static_cast<i32>(std::floor(z / cell + 0.5f));
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const i32 gx = cx + dx;
+                const i32 gz = cz + dz;
+                const auto jitter = [&](u32 k) {
+                    return noise::lattice(
+                        (p.seed ^ kSaltLayout) + k * 0x9e3779b9u, gx,
+                        gz);
+                };
+                const bool startCell = gx == 0 && gz == 0;
+                const f32 radius =
+                    glm::mix(p.continentRadiusMin,
+                             p.continentRadiusMax, jitter(2));
+                f32 px, pz;
+                if (startCell) {
+                    // Start guarantee, coastal flavor: the origin sits
+                    // in the continent's COASTAL BELT (not its heart —
+                    // the interior is the adventure's future), so the
+                    // near world keeps its bays and straits.
+                    const f32 toCenter = jitter(0) * 6.2831853f;
+                    px = std::cos(toCenter) * radius * 0.72f;
+                    pz = std::sin(toCenter) * radius * 0.72f;
+                } else {
+                    px = (static_cast<f32>(gx) +
+                          0.5f * (jitter(0) - 0.5f)) *
+                         cell;
+                    pz = (static_cast<f32>(gz) +
+                          0.5f * (jitter(1) - 0.5f)) *
+                         cell;
+                }
+                const f32 theta = jitter(3) * 3.14159265f;
+                const f32 aspect = 1.0f + 0.8f * jitter(4);
+                best = glm::max(
+                    best, lobe(x - px, z - pz, radius, aspect, theta));
+                // Satellite lobes stretch the silhouette.
+                for (u32 s = 0; s < 2; ++s) {
+                    const f32 sa = jitter(5 + s * 3) * 6.2831853f;
+                    const f32 sd =
+                        radius * glm::mix(0.35f, 0.7f,
+                                          jitter(6 + s * 3));
+                    const f32 sr =
+                        radius * glm::mix(0.4f, 0.65f,
+                                          jitter(7 + s * 3));
+                    best = glm::max(
+                        best,
+                        lobe(x - (px + std::cos(sa) * sd),
+                             z - (pz + std::sin(sa) * sd), sr,
+                             1.0f + 0.5f * jitter(8 + s), theta));
+                }
+            }
+        }
+    }
+    // Large islands (sparser, smaller).
+    {
+        const f32 cell = p.islandCellSize;
+        const i32 cx = static_cast<i32>(std::floor(x / cell));
+        const i32 cz = static_cast<i32>(std::floor(z / cell));
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const i32 gx = cx + dx;
+                const i32 gz = cz + dz;
+                const auto jitter = [&](u32 k) {
+                    return noise::lattice((p.seed ^ kSaltLayout ^
+                                           0x51ab5eedu) +
+                                              k * 0x9e3779b9u,
+                                          gx, gz);
+                };
+                if (jitter(9) > p.islandChance) {
+                    continue;
+                }
+                const f32 px = (static_cast<f32>(gx) + 0.25f +
+                                0.5f * jitter(0)) *
+                               cell;
+                const f32 pz = (static_cast<f32>(gz) + 0.25f +
+                                0.5f * jitter(1)) *
+                               cell;
+                const f32 radius = glm::mix(p.islandRadiusMin,
+                                            p.islandRadiusMax,
+                                            jitter(2));
+                best = glm::max(
+                    best, lobe(x - px, z - pz, radius,
+                               1.0f + 0.9f * jitter(3),
+                               jitter(4) * 3.14159265f));
+            }
+        }
+    }
+    return best;
+}
 
 struct TierBlend {
     f32 altitude;
@@ -366,6 +485,34 @@ f32 ProceduralControls::continentalness(f32 x, f32 z) const {
     // detail is compressed, so continent interiors keep their lakes
     // rare and open oceans their islands rare. The coast detail
     // belongs to the coastal belts. Off (0) = legacy bit-exact.
+    f32 lift = 0.0f;
+    f32 liftScale = 0.0f;
+    // Layout first: its rim belt decides where the regional carrier
+    // may speak at full volume (coast detail belongs to the coasts —
+    // deep continent and open ocean get half of it, so the guaranteed
+    // masses stay masses).
+    f32 carrierGain = 1.0f;
+    if (p.continentLayout) {
+        // Kernels evaluated at a ~55 km domain-warped position so no
+        // coast remembers the ellipse it came from.
+        const f32 lx =
+            x + (noise::fbm(p.seed ^ kSaltLayoutWarpX, x, z,
+                            1.0f / 140000.0f, 2, 2.0f, 0.5f) *
+                     2.0f -
+                 1.0f) *
+                    55000.0f;
+        const f32 lz =
+            z + (noise::fbm(p.seed ^ kSaltLayoutWarpZ, x, z,
+                            1.0f / 140000.0f, 2, 2.0f, 0.5f) *
+                     2.0f -
+                 1.0f) *
+                    55000.0f;
+        const f32 layout = layoutKernels(p, lx, lz);
+        lift += (layout * 2.0f - 1.0f) * p.layoutAmp;
+        liftScale += p.layoutAmp;
+        const f32 rim = 1.0f - std::abs(layout * 2.0f - 1.0f);
+        carrierGain = glm::mix(0.5f, 1.0f, rim);
+    }
     if (p.continentCarrierWavelength > 1.0f) {
         // Contrasted: raw fbm hugs its midline, which would leave most
         // of the map in the undecided belt — the remap pushes it to
@@ -395,11 +542,13 @@ f32 ProceduralControls::continentalness(f32 x, f32 z) const {
                              2.0f, 0.5f);
         }
         const f32 carrier = noise::smoothstep01(0.38f, 0.62f, raw);
-        const f32 lift =
-            (carrier - 0.5f) * 2.0f * p.continentCarrierAmp;
+        lift += (carrier - 0.5f) * 2.0f * p.continentCarrierAmp *
+                carrierGain;
+        liftScale += p.continentCarrierAmp * carrierGain;
+    }
+    if (liftScale > 0.0f) {
         const f32 decided = noise::smoothstep01(
-            0.3f * p.continentCarrierAmp, 0.9f * p.continentCarrierAmp,
-            std::abs(lift));
+            0.3f * liftScale, 0.9f * liftScale, std::abs(lift));
         c = 0.5f + (c - 0.5f) * (1.0f - 0.6f * decided) + lift;
     }
     return c;

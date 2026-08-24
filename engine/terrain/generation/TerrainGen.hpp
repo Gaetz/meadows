@@ -102,6 +102,21 @@ struct ProceduralControlParams {
     // 0 = off (bit-identical legacy world).
     f32 continentCarrierWavelength { 0.0f };
     f32 continentCarrierAmp { 0.3f };
+    // CONTINENT LAYOUT (design-forced, default off): a jittered mega
+    // grid of warped multi-lobe kernels GUARANTEES the world shape —
+    // the start sits on a continental island, another continent lies
+    // within ~a cell, large islands scatter between. The regional
+    // carrier above keeps articulating coasts, straits and inland
+    // seas on top; this layer only decides where land masses are.
+    bool continentLayout { false };
+    f32 continentCellSize { 700000.0f };
+    f32 continentRadiusMin { 160000.0f };
+    f32 continentRadiusMax { 260000.0f };
+    f32 islandCellSize { 280000.0f };
+    f32 islandChance { 0.45f };
+    f32 islandRadiusMin { 30000.0f };
+    f32 islandRadiusMax { 80000.0f };
+    f32 layoutAmp { 0.34f }; // continentalness lift inside/-outside
     f32 seaThreshold { 0.42f }; // continentalness below -> open sea
     f32 tierSpread { 0.22f };   // continentalness span of the tier ramp
     f32 maxTier { 3.0f };

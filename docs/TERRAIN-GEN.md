@@ -811,3 +811,33 @@ fenêtre de 100 km — recommandée : garde des côtes riches pour les
 ports) ; 60 km/0,35 (quasi tout continent). Adoption = décision dev ;
 si adoptée : activation dans les params par défaut, bump caches,
 re-calibration B6 sur la nouvelle macro (proportions/spawn/fit).
+
+### Layout continental forcé (2026-08-24, choix dev : caractère 20k/0,30)
+
+Verdict dev sur les variantes : **20 km/0,30 = le paysage** (masses
+franches de 15-30 km, détroits, grande variété). Mais mesuré sur les
+cartes 1000 km : aucune porteuse 20-60 km ne fait de continents
+(chaque bande n'organise que sa propre échelle) — et le dev veut, PAR
+DESIGN : départ sur une grande île continentale, un autre continent
+dans les ~1000 km, quelques grandes îles. Réponse : **le layout
+forcé** (`continentLayout` + params, défaut OFF), le patron grille
+jitterée des amers B3 porté à l'échelle méga :
+- grille de continents (cellules 700 km) : noyaux elliptiques
+  1 principal + 2 lobes satellites, évalués à une position warpée
+  ~55 km (aucune côte ne se souvient de son ellipse) ; rayons
+  160-260 km ; **la cellule (0,0) est ancrée sur l'origine du monde**
+  (indexation arrondie — première version au coin de quatre cellules,
+  spawn en plein océan) et son centre est posé à **0,72·rayon de
+  l'origine** : le départ est DANS la ceinture côtière (golfe à îles
+  et détroits à ~10 km), l'intérieur du continent est le futur de
+  l'aventure (0,55 laissait la mer à 40-60 km ; centrer noyait le
+  caractère côtier au cœur d'un continent plein) ;
+- grille d'îles (280 km, ~1/2), rayons 30-80 km ;
+- lift ±`layoutAmp` (0,34) sur la continentalité, la porteuse
+  régionale 20k/0,30 par-dessus avec un **gain modulé par la ceinture**
+  (plein volume sur les rives, ×0,5 en plein cœur/plein océan — sans
+  quoi ses creux perforaient les continents en tapis, mesuré) ;
+- même compression « decided » que la porteuse (échelles cumulées).
+Cartes de référence : `terrain-maps/layout_{100,300,1000}km.png`.
+Reste OFF par défaut ; l'activation (avec 20k/0,30) est LA config
+candidate du monde — décision d'adoption au début de B6.
