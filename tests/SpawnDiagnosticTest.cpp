@@ -861,6 +861,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         // Terrain-family census of the 250 m windows (the 40/35/25
         // target): socle = gentle and low-relief, drame = wall-steep.
         u32 socleWindows = 0, versantWindows = 0, drameWindows = 0;
+        u32 seaWindows = 0;
         // Longest stretch containing a >30° step and no <15° foothold.
         f32 maxImpassable = 0.0f, sinceFoothold = 0.0f;
         bool wallInRun = false;
@@ -909,7 +910,21 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
             if (++inWindow < kWindow) {
                 continue;
             }
-            // One 250 m window closes here.
+            // One 250 m window closes here. Fully open-water windows
+            // leave the census (they would read as flat socle) and
+            // pause the event clock: crossing a gulf is its own
+            // continuous experience, not landscape monotony.
+            if (wMax < seaLevel + 0.5f) {
+                ++seaWindows;
+                lastEventD = d;
+                prevRegime = -1;
+                prevWet = true;
+                windowSlopes.clear();
+                wMin = 1.0e9f;
+                wMax = -1.0e9f;
+                inWindow = 0;
+                continue;
+            }
             const f32 relief = wMax - wMin;
             windowRelief.push_back(relief);
             std::sort(windowSlopes.begin(), windowSlopes.end());
@@ -980,7 +995,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
             glm::max(typeCounts[0], glm::max(typeCounts[1], typeCounts[2]));
         MESSAGE(std::string(label), ": h [", minH, ", ", maxH, "] mean ",
                 meanH / samples, " (sea ", seaLevel, ")");
-        MESSAGE("  windows(250m)=", windows, "  flat(<8m relief) ",
+        MESSAGE("  windows(250m)=", windows, " land (", seaWindows,
+                " sea)  flat(<8m relief) ",
                 100.0f * static_cast<f32>(flatWindows) / windows,
                 "%  median relief ", medianRelief, " m");
         MESSAGE("  families: socle ",
@@ -1061,7 +1077,7 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
                            0.6f * hash01(cx, cz, 23)) *
                               8000.0f;
             const f32 h = ha(x, z);
-            if (h > sea + 8.0f && h < sea + 320.0f) {
+            if (h > sea + 8.0f && h < sea + 450.0f) {
                 points.push_back({ x, z, h });
             }
         }

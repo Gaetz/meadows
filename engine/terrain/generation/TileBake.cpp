@@ -223,7 +223,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
                 continue;
             }
             out.eroded[i] = glm::mix(out.eroded[i], mean[i],
-                                     0.65f * macro.calm[i]);
+                                     0.75f * macro.calm[i]);
         }
     }
     // Valley floors join the calm-socle family here: they only exist

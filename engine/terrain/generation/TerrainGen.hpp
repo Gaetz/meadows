@@ -120,7 +120,7 @@ struct ProceduralControlParams {
     // adoption: the layout lift creates LAND, the ramp must not turn
     // all of it into high country — the coastal belt keeps its plains
     // and hills, the alpine tiers live deep inland.
-    f32 tierSpread { 0.5f };
+    f32 tierSpread { 0.35f };
     f32 maxTier { 3.0f };
     f32 upliftWavelength { 6500.0f };
     f32 upliftMaskLow { 0.38f };
@@ -169,7 +169,7 @@ struct ProceduralControlParams {
     f32 hillHeightMin { 120.0f };
     f32 hillHeightMax { 250.0f };
     f32 hillRadiusMin { 600.0f };
-    f32 hillRadiusMax { 1200.0f };
+    f32 hillRadiusMax { 1600.0f };
     // Valley orientation field: per ~cell angle, smoothly interpolated
     // — the local axis relief stretches along (sightlines) and the
     // trunk valleys run along.
@@ -178,11 +178,11 @@ struct ProceduralControlParams {
     // ~spacing transverse to nothing in particular — the future fleuve
     // corridors. Their floor joins calm/gentle; crossing a range they
     // read as gorges (kept steep by the uplift, softened by gentle).
-    f32 trunkSpacing { 12000.0f };
+    f32 trunkSpacing { 9500.0f };
     f32 trunkDepthMin { 40.0f };
     f32 trunkDepthMax { 80.0f };
-    f32 trunkFloorHalfWidth { 600.0f };
-    f32 trunkShoulder { 1500.0f };
+    f32 trunkFloorHalfWidth { 900.0f };
+    f32 trunkShoulder { 2100.0f };
     // Guaranteed cols: transverse gentle corridors combed along the
     // axis every ~spacing so no range is a regional wall.
     f32 colSpacing { 4000.0f };

@@ -868,11 +868,41 @@ devrait compter comme événement continu ; instrument à revoir), vista
 ne garde que 3/16 points de voyage (filtre < 320 m trop bas pour ce
 monde — instrument à élargir).
 
-**Réglage 1 — `tierSpread` 0,22 → 0,5** : le lift du layout saturait
-la rampe de tier (continent entier en haut étage : census tuile-pic
-0 % socle / 32 % drame / médiane 238 m ; plaines 13,6 %). La rampe
-élargie étage la côte (carte b6_tier050_100km : étagement vert
-littoral, continent intact, spawn sur une baie à îles) ; effet
-proportions modeste (+2 % plaines) — le déficit de plaines vient des
-gates régime/houle, à traiter au réglage suivant si les transects le
-confirment.
+**Réglage 1 — `tierSpread` 0,22 → 0,5 → 0,35** : le lift du layout
+saturait la rampe de tier (census tuile-pic 0 % socle / médiane
+238 m) ; 0,5 étageait bien la côte (carte b6_tier050_100km) mais
+basculait la ceinture trop douce ; **0,35 retenu**.
+
+**CORRECTION D'INSTRUMENT (invalide les comparaisons précédentes)** :
+les fenêtres de transect entièrement en mer comptaient comme socle
+plat (~45 % des fenêtres sur ces lignes !) — désormais exclues du
+recensement, et l'horloge d'événements est en PAUSE sur l'eau (la
+traversée d'un golfe n'est pas de la monotonie). Vista : filtre des
+points de voyage 320 → 450 m. Les chiffres terre-seulement du monde
+adopté : socle 6-22 %, médiane 56-70 m — le budget 40/35/25 TERRESTRE
+reste le grand tuning ouvert.
+
+**Réglage 2 — élargisseurs de socle** : trunkSpacing 12 000 → 9 500,
+trunkFloorHalfWidth 600 → 900, trunkShoulder 1 500 → 2 100,
+hillRadiusMax 1 200 → 1 600 (clairières), relaxation calm 0,65 →
+0,75. Transect E-O : socle 5,7 → 17 %, drame 25,7 ✓, infranchissable
+475 m ✓ ; N-S : variance forte (un mur de 1 650 m sur la ligne) —
+**deux lignes droites ne suffisent plus pour calibrer ce monde
+hétérogène : l'instrument suivant est le tour du dev en jeu.**
+
+**Bench** : 26,5 s/tuile (18,2 avant adoption) — le `at()` porte
+maintenant landmarks (2×9 cellules), valleyField (5 fbm), layout
+(9+9 noyaux + warp), porteuse. Piste claire pour la brique B6-perf :
+échantillonner les CONTRÔLES sur une grille grossière (64-128 m,
+tous les nouveaux champs ont ≥ 3,5 km de longueur d'onde) et
+interpoler — gain attendu ×3-4 sur le poste contrôles. Re-fit
+analytique complet également en reste (le doctest d'accord au rim
+reste vert ; la correction par morceaux se re-calera après le
+verdict en jeu sur les hauteurs).
+
+**État B6 au checkpoint** : monde continental adopté et mesuré,
+familles terrestres en progression (17/57/26 sur la ligne étalon),
+lacs 13-56/tuile, fleuves 41 km, pic héroïque à 4 km du spawn,
+érosion −7,5 % de moyenne seulement (massifs respectés). PROCHAINE
+ÉTAPE : tour dev en jeu (valide B2-B6 d'un coup et guide le
+fine-tuning famille/hauteurs bien mieux que les transects).
