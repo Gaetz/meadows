@@ -674,3 +674,33 @@ v32/v37 ; `erosion calibration` re-passé : le fit a dérivé
 périmètre B6 comme prévu au plan ; le doctest d'accord au rim
 (fallback vs tuiles) reste vert, la couture proche n'est pas
 affectée.
+
+### B3 — Objectifs : grilles d'amers jitterées (2026-08-24)
+
+`landmarkLayer` (TerrainGen.cpp) : grille jitterée déterministe par
+couche — le fbm ne garantit pas d'espacement, la grille borne la
+distance au plus proche amer, et le miroir analytique est automatique
+(même chemin `controls.at` → `landHeight`). Par cellule, le hash
+(`noise::lattice`) décide position (jitter 0,2-0,8), hauteur, rayon,
+orientation/élongation et VARIANTE de silhouette :
+- **couche alpine** (cellules 7 km, +600-900 m sur `plateau`, rayons
+  1,2-2 km) : cône / échine allongée (aspect 2,8-4,5) / mesa à rebord
+  franc — ajoutée au socle de base donc protégée par le `keep`
+  (sommet conservé, flancs disséqués = le caractère alpin), atténuée
+  sous les ancres houle/massif (plateau > 450-750) et gatée inland ;
+- **couche intime** (cellules 3,5 km, 120-250 m, rayons 0,6-1,2 km) :
+  2/3 dôme-colline (atténué en pays de chaînes), 1/3 **clairière** —
+  bol de suppression du relief via le nouveau
+  `ControlSample::reliefScale` (multiplie les porteuses oscillantes
+  dans `landHeight`, jamais le socle) + `calm` → 1 ; gatée uplift
+  (sur l'orogenèse active, les replats sont le rôle des corridors).
+
+Mesures : doctest « landmark guarantee » — pire distance à un haut
+relief > 500 m depuis 171 points intérieurs = **4,6 km** ✓ ;
+vista : sommet ≤ 8 km depuis **5/5** points de voyage (0,5-4,3 km),
+colline marquante ≤ 4 km 5/5 ; transect N-S : max 583 → **701 m**,
+moyenne +48 m (un pic sur la ligne) ; massif étalon sain (1299/782).
+L'horizon reste fermé (1/5 points ouverts) — attendu, c'est B4/B5.
+Bench bake : 18,2 s/tuile sur la machine Windows/MSVC (~15 s
+pré-chantier sur la machine dev) — ajouts du chantier ≈ 1-2 s, passe
+perf au périmètre B6. Caches v33/v38.

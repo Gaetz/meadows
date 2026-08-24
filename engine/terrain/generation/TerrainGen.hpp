@@ -44,6 +44,10 @@ struct ControlSample {
     // family post-erosion in the tile bake (they are unknowable
     // pointwise). Superset of `gentle`.
     f32 calm { 0.0f };
+    // Multiplier on the OSCILLATING relief carriers (tier relief, hill
+    // chains) in landHeight — never on the tier floor or the base
+    // lift. Landmark clearings flatten with it; 1 = legacy.
+    f32 reliefScale { 1.0f };
     // Lithology [0,1]: rock hardness. Hard rock erodes slow, holds
     // steeper scree, and cliffs into the sea (calanques); soft rock
     // rolls gentle and beaches. 0.5 = neutral (painted/test default).
@@ -112,6 +116,21 @@ struct ProceduralControlParams {
     // Calm-socle breakup: the band field that keeps SOME plains rugged
     // so the habitable family never reads as one uniform carpet.
     f32 calmWavelength { 2600.0f };
+    // Objective layers — jittered landmark grids (fbm cannot promise
+    // spacing; the grid bounds the distance to the nearest landmark).
+    // ALPINE: a 600-900 m summit reachable from anywhere (~6 km),
+    // silhouette variants per hash (cone / elongated ridge / rimmed
+    // mesa). INTIMATE: a marked hill or an open clearing at ~3 km.
+    f32 peakCellSize { 7000.0f };
+    f32 peakHeightMin { 600.0f };
+    f32 peakHeightMax { 900.0f };
+    f32 peakRadiusMin { 1200.0f };
+    f32 peakRadiusMax { 2000.0f };
+    f32 hillCellSize { 3500.0f };
+    f32 hillHeightMin { 120.0f };
+    f32 hillHeightMax { 250.0f };
+    f32 hillRadiusMin { 600.0f };
+    f32 hillRadiusMax { 1200.0f };
     // Lithology: "countries" of rock character between the regime and
     // the carriers — hard pockets keep sharp relief and sea cliffs,
     // soft pockets roll, with no per-case exceptions.

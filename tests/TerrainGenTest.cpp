@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Stage S1 (macro synthesis): elevation tiers, terracing, coast profile.
@@ -355,4 +356,59 @@ TEST_CASE("calm socles: plains and plateau tops join, ranges stay out") {
     const ProceduralControls again { params };
     CHECK(again.at(1234.0f, -5678.0f).calm ==
           controls.at(1234.0f, -5678.0f).calm);
+}
+
+TEST_CASE("landmark guarantee: an alpine summit within reach of any "
+          "inland point") {
+    ProceduralControlParams params;
+    params.seed = 1337;
+    const ProceduralControls controls { params };
+
+    // Deterministic sample points spread over the world; keep the
+    // INLAND ones (the layers are inland-gated like the swell).
+    u32 tested = 0;
+    f32 worst = 0.0f;
+    for (i32 k = 0; k < 400 && tested < 200; ++k) {
+        const f32 x = -45000.0f +
+                      90000.0f * render::noise::lattice(11u, k, 3);
+        const f32 z = -45000.0f +
+                      90000.0f * render::noise::lattice(23u, k, 7);
+        const ControlSample s = controls.at(x, z);
+        if (s.sea || s.tier < 1.2f) {
+            continue;
+        }
+        ++tested;
+        // Nearest alpine landmark: scan for the peak field's own
+        // maximum by probing a coarse ring grid around the point (the
+        // kernel is analytic — a probe on a 500 m grid within 8.5 km
+        // cannot miss a >=1.2 km-radius footprint).
+        f32 nearest = 1.0e9f;
+        for (f32 dz = -8500.0f; dz <= 8500.0f; dz += 500.0f) {
+            for (f32 dx = -8500.0f; dx <= 8500.0f; dx += 500.0f) {
+                const ControlSample probe = controls.at(x + dx, z + dz);
+                // A peak footprint shows as base lift well above what
+                // swell (<= swellHeight) plus massif can explain ONLY
+                // via its kernel — detect by the lift the layers add.
+                if (probe.plateau > 500.0f && !probe.sea) {
+                    nearest =
+                        glm::min(nearest, std::hypot(dx, dz));
+                }
+            }
+        }
+        worst = glm::max(worst, nearest);
+    }
+    MESSAGE("inland points tested: ", tested,
+            ", worst distance to a >500 m base-lift landmark: ", worst,
+            " m");
+    CHECK(tested >= 100);
+    // The jittered grid bounds the spacing: from anywhere inland, high
+    // ground within ~a cell and a half.
+    CHECK(worst < 9000.0f);
+
+    // Determinism of the layer.
+    const ProceduralControls again { params };
+    CHECK(again.at(4321.0f, 8765.0f).plateau ==
+          controls.at(4321.0f, 8765.0f).plateau);
+    CHECK(again.at(4321.0f, 8765.0f).reliefScale ==
+          controls.at(4321.0f, 8765.0f).reliefScale);
 }

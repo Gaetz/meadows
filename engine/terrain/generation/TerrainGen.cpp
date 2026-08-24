@@ -28,6 +28,8 @@ constexpr u32 kSaltSwell = 0x5e110000u;
 constexpr u32 kSaltGentle = 0x6e97e155u;
 constexpr u32 kSaltHardness = 0x11780c1cu;
 constexpr u32 kSaltCalm = 0xca1a90c1u;
+constexpr u32 kSaltPeakAlpine = 0xa1b13e00u;
+constexpr u32 kSaltPeakHill = 0x811c0113u;
 
 struct TierBlend {
     f32 altitude;
@@ -51,6 +53,74 @@ TierBlend blendTiers(const MacroParams& p, f32 tier) {
              glm::mix(a.reliefAmplitude, b.reliefAmplitude, tt),
              glm::mix(a.reliefWavelength, b.reliefWavelength, tt),
              glm::mix(a.terrace, b.terrace, tt) };
+}
+
+// One objective layer: a jittered grid of landmark kernels (alpine
+// summits, marked hills, open clearings). fbm cannot promise spacing —
+// the grid gives a hard bound on the distance to the nearest landmark,
+// stays a pure function of (seed, x, z), and the analytic silhouette
+// mirrors it for free (same controls path). The per-cell hash decides
+// position, size and SILHOUETTE VARIANT: landmarks must be
+// recognizable, not interchangeable.
+struct LandmarkSample {
+    f32 add { 0.0f };      // meters of base lift (onto plateau)
+    f32 clearing { 0.0f }; // [0,1] relief-suppression bowl
+};
+
+LandmarkSample landmarkLayer(u32 seed, f32 x, f32 z, f32 cellSize,
+                             f32 heightMin, f32 heightMax, f32 radiusMin,
+                             f32 radiusMax, bool clearings) {
+    LandmarkSample out;
+    const i32 cellX = static_cast<i32>(std::floor(x / cellSize));
+    const i32 cellZ = static_cast<i32>(std::floor(z / cellSize));
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            const i32 gx = cellX + dx;
+            const i32 gz = cellZ + dz;
+            const auto jitter = [&](u32 k) {
+                return noise::lattice(seed + k * 0x9e3779b9u, gx, gz);
+            };
+            const f32 px =
+                (static_cast<f32>(gx) + 0.2f + 0.6f * jitter(0)) *
+                cellSize;
+            const f32 pz =
+                (static_cast<f32>(gz) + 0.2f + 0.6f * jitter(1)) *
+                cellSize;
+            const f32 height = glm::mix(heightMin, heightMax, jitter(2));
+            const f32 radius = glm::mix(radiusMin, radiusMax, jitter(3));
+            const f32 variant = jitter(4);
+            const bool mesa = !clearings && variant >= 0.7f;
+            const bool ridge = !clearings && variant >= 0.4f && !mesa;
+            const f32 aspect = ridge
+                                   ? glm::mix(2.8f, 4.5f, jitter(5))
+                                   : 1.0f + 0.4f * jitter(5);
+            const f32 theta = jitter(6) * 3.14159265f;
+            const f32 ct = std::cos(theta);
+            const f32 st = std::sin(theta);
+            const f32 rx = x - px;
+            const f32 rz = z - pz;
+            const f32 u = (ct * rx + st * rz) / (radius * aspect);
+            const f32 v = (-st * rx + ct * rz) / radius;
+            const f32 n2 = u * u + v * v;
+            if (n2 >= 1.0f) {
+                continue;
+            }
+            if (clearings && variant < 0.3333f) {
+                const f32 bowl = (1.0f - n2) * (1.0f - n2);
+                out.clearing = glm::max(out.clearing, bowl);
+                continue;
+            }
+            // Dome/ridge: C1 kernel the erosion carves into flanks;
+            // mesa: flat top with a short rim (terrace-free — the
+            // kernel shape IS the stratum).
+            const f32 n = std::sqrt(n2);
+            const f32 k =
+                mesa ? 1.0f - noise::smoothstep01(0.55f, 0.9f, n)
+                     : (1.0f - n2) * (1.0f - n2);
+            out.add = glm::max(out.add, height * k);
+        }
+    }
+    return out;
 }
 
 // Land surface before the coast profile: tier floor + warped relief +
@@ -77,7 +147,7 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
                                    0.5f) *
                             2.0f -
                         1.0f) *
-                       t.reliefAmplitude;
+                       t.reliefAmplitude * s.reliefScale;
     f32 h = t.altitude + relief + s.plateau;
     if (s.hillRelief > 0.0f && hillChainWavelength > 1.0f) {
         // Ridged chains: elongated crests, the erosion pass rounds
@@ -85,7 +155,7 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         h += noise::ridgedFbm(seed ^ kSaltHillChain, wx, wz,
                               1.0f / hillChainWavelength, 3, 2.0f,
                               0.5f) *
-             s.hillRelief;
+             s.hillRelief * s.reliefScale;
     }
     if (t.terrace > 0.0f && p.terraceStep > 0.0f) {
         // Soft quantization: flat strata with a short warped slope at
@@ -301,6 +371,32 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     sample.calm =
         glm::max(sample.gentle,
                  glm::max(plainW, plateauTopW) * calmBand);
+    // Objective layers (jittered landmark grids): added to the base
+    // lift so the erosion keep protects the summit while the flanks
+    // stay carved (the alpine character). Faded where the swell/massif
+    // anchors already carry high ground, inland-gated like the swell.
+    // NOTE: calm above reads the PRE-landmark plateau on purpose — a
+    // cone summit is not a calm plateau top.
+    const LandmarkSample alpinePeaks = landmarkLayer(
+        p.seed ^ kSaltPeakAlpine, x, z, p.peakCellSize, p.peakHeightMin,
+        p.peakHeightMax, p.peakRadiusMin, p.peakRadiusMax, false);
+    const LandmarkSample hillMarks = landmarkLayer(
+        p.seed ^ kSaltPeakHill, x, z, p.hillCellSize, p.hillHeightMin,
+        p.hillHeightMax, p.hillRadiusMin, p.hillRadiusMax, true);
+    sample.plateau +=
+        alpinePeaks.add * inland *
+            (1.0f - noise::smoothstep01(450.0f, 750.0f, sample.plateau)) +
+        hillMarks.add * inland *
+            (1.0f - noise::smoothstep01(60.0f, 120.0f, sample.hillRelief));
+    // A clearing is a DESIGNED socle: flatten the relief carriers in
+    // the bowl and hand the ground to the calm family. Walk-scale
+    // country only — on active orogeny the flat shelves are the
+    // `gentle` corridors' job, never a decree against the fastscape.
+    const f32 clearing =
+        hillMarks.clearing * inland *
+        (1.0f - noise::smoothstep01(0.25f, 0.5f, sample.uplift));
+    sample.reliefScale = 1.0f - 0.75f * clearing;
+    sample.calm = glm::max(sample.calm, clearing);
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
     const f32 temperature =
