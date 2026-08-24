@@ -371,11 +371,30 @@ f32 ProceduralControls::continentalness(f32 x, f32 z) const {
         // of the map in the undecided belt — the remap pushes it to
         // its extremes (solid continent / open ocean) with a narrow
         // coastal transition band where the local detail lives.
-        const f32 carrier = noise::smoothstep01(
-            0.38f, 0.62f,
-            noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
-                       1.0f / p.continentCarrierWavelength, 3, 2.0f,
-                       0.5f));
+        // A single band organizes only its own scale (measured on the
+        // 1000 km maps: a 30 km carrier is still a uniform carpet up
+        // there). Continent-scale wavelengths therefore STACK a
+        // regional band at lambda/8 under the same remap — continents
+        // at the top, the 30-40 km region structure preserved inside
+        // them. Small carriers stay single-band.
+        f32 raw;
+        if (p.continentCarrierWavelength > 100000.0f) {
+            raw = 0.62f *
+                      noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
+                                 1.0f / p.continentCarrierWavelength,
+                                 4, 2.0f, 0.5f) +
+                  0.38f *
+                      noise::fbm(
+                          p.seed ^ kSaltContinentCarrier ^ 0x9e3779b9u,
+                          x, z,
+                          8.0f / p.continentCarrierWavelength, 3, 2.0f,
+                          0.5f);
+        } else {
+            raw = noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
+                             1.0f / p.continentCarrierWavelength, 3,
+                             2.0f, 0.5f);
+        }
+        const f32 carrier = noise::smoothstep01(0.38f, 0.62f, raw);
         const f32 lift =
             (carrier - 0.5f) * 2.0f * p.continentCarrierAmp;
         const f32 decided = noise::smoothstep01(

@@ -125,7 +125,10 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
         px[2] = static_cast<u8>(c.b * 255.0f);
     };
 
-    if (params.drawRivers) {
+    // Beyond ~200 m/px the courses are sub-pixel and the master-network
+    // sweep (one routing per 24 km super cell) dominates the runtime —
+    // continent-scale maps skip them.
+    if (params.drawRivers && texel <= 200.0f) {
         MasterNetworkParams network;
         network.seaLevel = sea;
         const auto rivers = masterRiversNear(
