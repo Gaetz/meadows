@@ -86,6 +86,8 @@ struct TileStage1 {
     vector<f32> seaDist; // macro coast field (beach mask)
     vector<u8> biome;    // macro biome ids
     vector<f32> gentle;  // passability corridors (fine-erosion damp)
+    vector<f32> calm;    // calm-socle family, control calm fused with
+                         //   post-erosion valley floors (erosion damp)
 };
 
 struct TileBakeResult {
@@ -128,8 +130,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 30;
-constexpr u32 kTileBakeVersion = 35;
+constexpr u32 kStage1Version = 31;
+constexpr u32 kTileBakeVersion = 36;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

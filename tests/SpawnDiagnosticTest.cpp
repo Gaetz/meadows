@@ -1156,6 +1156,38 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+// Calm-family coverage on a REAL tile: how much of the spawn tile's dry
+// ground the stage-1 `calm` field claims (control level + valley-floor
+// fusion) — the input B2 damps erosion with. Watch it against the ~40%
+// socle budget.
+//   meadows-tests '-tc=calm coverage*' -ns
+TEST_CASE("calm coverage diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    const TileStage1 s1 = bakeTileStage1(params, 0, 0);
+    u64 dry = 0, calm06 = 0, calm03 = 0, fromControl = 0;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    for (u32 row = 0; row < s1.sim.n; row += 2) {
+        for (u32 col = 0; col < s1.sim.n; col += 2) {
+            const size_t i = static_cast<size_t>(row) * s1.sim.n + col;
+            if (s1.eroded[i] <= params.macro.seaLevel) {
+                continue;
+            }
+            ++dry;
+            calm06 += s1.calm[i] > 0.6f;
+            calm03 += s1.calm[i] > 0.3f;
+            fromControl +=
+                controls.at(s1.sim.x(col), s1.sim.z(row)).calm > 0.6f;
+        }
+    }
+    MESSAGE("spawn tile stage-1: dry cells ", dry, "  calm>0.6 ",
+            100.0 * calm06 / dry, "%  calm>0.3 ", 100.0 * calm03 / dry,
+            "%  control-only calm>0.6 ", 100.0 * fromControl / dry, "%");
+    CHECK(dry > 0);
+}
+
 // UV health of the scanned rocks (docs/GRASS-REDO.md props): per model,
 // the per-triangle texel-stretch distribution (world area vs uv area)
 // BEFORE and AFTER decimation — the striped-face hunt (the texture

@@ -38,6 +38,12 @@ struct ControlSample {
     // rock -> gentle equilibrium slopes, no fine ravines) — mountain
     // passes and walkable gaps between hills, drama kept elsewhere.
     f32 gentle { 0.0f };
+    // Calm socles [0,1]: the habitable terrain family (true plains,
+    // highland plateau tops, corridors) — dissection is damped here so
+    // the ground stays walkable and readable. Valley floors join the
+    // family post-erosion in the tile bake (they are unknowable
+    // pointwise). Superset of `gentle`.
+    f32 calm { 0.0f };
     // Lithology [0,1]: rock hardness. Hard rock erodes slow, holds
     // steeper scree, and cliffs into the sea (calanques); soft rock
     // rolls gentle and beaches. 0.5 = neutral (painted/test default).
@@ -103,6 +109,9 @@ struct ProceduralControlParams {
     // SOFTENS erosion (never the heights) — cols through ranges,
     // gentle passages between hills. ~quarter of the land.
     f32 gentleWavelength { 1375.0f };
+    // Calm-socle breakup: the band field that keeps SOME plains rugged
+    // so the habitable family never reads as one uniform carpet.
+    f32 calmWavelength { 2600.0f };
     // Lithology: "countries" of rock character between the regime and
     // the carriers — hard pockets keep sharp relief and sea cliffs,
     // soft pockets roll, with no per-case exceptions.
@@ -183,6 +192,7 @@ struct MacroResult {
     vector<f32> seaDist; // signed meters to the sea mask (+ on land)
     vector<u8> biome;
     vector<f32> gentle;  // [0,1] passability corridors (erosion softener)
+    vector<f32> calm;    // [0,1] calm-socle family (ControlSample::calm)
     // Regime + swell base lift (m): what the erosion `keep` protects so
     // swelled highlands and old-massif plateaus survive the stream power
     // instead of being carved back toward sea base level.

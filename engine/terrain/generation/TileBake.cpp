@@ -179,6 +179,37 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
             out.deposit[i] += eroded.deposit[i];
         }
     }
+    // Valley floors join the calm-socle family here: they only exist
+    // after erosion carved them. A floor = low local relief (mean
+    // absolute deviation from a ~160 m box mean) and not the pit of a
+    // lake basin (those belong to the water). Pure gathers — the
+    // stage-1 determinism contract holds.
+    out.calm = macro.calm;
+    {
+        vector<f32> mean = out.eroded;
+        for (u32 pass = 0; pass < 10; ++pass) {
+            mean = boxBlur3(out.sim, mean);
+        }
+        vector<f32> dev(out.sim.cells());
+        for (size_t i = 0; i < dev.size(); ++i) {
+            dev[i] = std::abs(out.eroded[i] - mean[i]);
+        }
+        for (u32 pass = 0; pass < 3; ++pass) {
+            dev = boxBlur3(out.sim, dev);
+        }
+        const vector<f32> filled = priorityFloodFill(
+            out.sim, out.eroded, params.macro.seaLevel, 1.0e-4f);
+        for (size_t i = 0; i < out.calm.size(); ++i) {
+            if (out.eroded[i] <= params.macro.seaLevel) {
+                continue;
+            }
+            const f32 floor =
+                (1.0f - glm::smoothstep(2.5f, 6.0f, dev[i])) *
+                (1.0f -
+                 glm::smoothstep(1.5f, 3.0f, filled[i] - out.eroded[i]));
+            out.calm[i] = glm::max(out.calm[i], floor);
+        }
+    }
     out.seaDist = std::move(macro.seaDist);
     out.biome = std::move(macro.biome);
     out.gentle = std::move(macro.gentle);

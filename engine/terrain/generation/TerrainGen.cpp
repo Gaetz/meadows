@@ -27,6 +27,7 @@ constexpr u32 kSaltHillChain = 0x91c0ffeeu;
 constexpr u32 kSaltSwell = 0x5e110000u;
 constexpr u32 kSaltGentle = 0x6e97e155u;
 constexpr u32 kSaltHardness = 0x11780c1cu;
+constexpr u32 kSaltCalm = 0xca1a90c1u;
 
 struct TierBlend {
     f32 altitude;
@@ -280,6 +281,26 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     sample.hardness =
         noise::fbm(p.seed ^ kSaltHardness, x, z,
                    1.0f / p.hardnessWavelength, 3, 2.0f, 0.5f);
+    // Calm socles: the habitable family — true plains (no orogeny, no
+    // hill chains, softish rock) thinned by a slow band so some plains
+    // stay rugged, plus the flat tops of swelled highland plateaus.
+    // Corridors are members by definition. Valley floors join after
+    // erosion (tile bake) — they are unknowable pointwise.
+    const f32 plainW =
+        (1.0f - noise::smoothstep01(0.03f, 0.12f, sample.uplift)) *
+        (1.0f - noise::smoothstep01(25.0f, 60.0f, sample.hillRelief)) *
+        (1.0f - noise::smoothstep01(0.62f, 0.8f, sample.hardness));
+    const f32 calmBand = noise::smoothstep01(
+        0.36f, 0.52f,
+        noise::fbm(p.seed ^ kSaltCalm, x, z, 1.0f / p.calmWavelength, 3,
+                   2.0f, 0.5f));
+    const f32 plateauTopW =
+        noise::smoothstep01(90.0f, 200.0f, sample.plateau) *
+        (1.0f - noise::smoothstep01(35.0f, 80.0f, sample.hillRelief)) *
+        (1.0f - noise::smoothstep01(0.15f, 0.4f, sample.uplift));
+    sample.calm =
+        glm::max(sample.gentle,
+                 glm::max(plainW, plateauTopW) * calmBand);
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
     const f32 temperature =
@@ -307,6 +328,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.uplift.resize(spec.cells());
     out.biome.resize(spec.cells());
     out.gentle.resize(spec.cells());
+    out.calm.resize(spec.cells());
     out.plateau.resize(spec.cells());
     out.hillRelief.resize(spec.cells());
     out.hardness.resize(spec.cells());
@@ -321,6 +343,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.uplift[i] = s.sea ? 0.0f : s.uplift;
             out.biome[i] = s.biome;
             out.gentle[i] = s.gentle;
+            out.calm[i] = s.sea ? 0.0f : s.calm;
             out.plateau[i] = s.sea ? 0.0f : s.plateau;
             out.hillRelief[i] = s.sea ? 0.0f : s.hillRelief;
             out.hardness[i] = s.hardness;

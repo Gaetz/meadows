@@ -5,6 +5,7 @@
 
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/terrain/SandboxTerrain.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 
 // Sandbox tiles: deterministic bakes, the stage-1/stage-2 seam, and
@@ -301,4 +302,62 @@ TEST_CASE("border basins publish once: no stacked duplicate sheets") {
         }
     }
     CHECK(duplicates == 0);
+}
+
+TEST_CASE("stage-1 calm: valley floors join the family, deterministic") {
+    const TileBakeParams params = testParams();
+    // Pick a tile with actual land — the 512 m tile at the origin can
+    // be all sea for this seed.
+    TileStage1 a;
+    bool found = false;
+    for (const auto& [tx, tz] :
+         { std::pair<i32, i32> { 1, 1 }, { 0, 0 }, { 2, -1 }, { -2, 2 },
+           { 3, 2 } }) {
+        a = bakeTileStage1(params, tx, tz);
+        u64 dryCells = 0;
+        for (const f32 h : a.eroded) {
+            dryCells += h > params.macro.seaLevel;
+        }
+        if (dryCells > 500) {
+            found = true;
+            const TileStage1 b = bakeTileStage1(params, tx, tz);
+            CHECK(a.calm == b.calm); // bit-exact (cache contract)
+            break;
+        }
+    }
+    REQUIRE(found);
+    REQUIRE(a.calm.size() == a.sim.cells());
+
+    // Calm never loses the control-level family and covers a sane
+    // share of the dry cells once valley floors joined.
+    u64 dry = 0, calmish = 0;
+    f64 calmDev = 0.0, roughDev = 0.0;
+    u64 calmCount = 0, roughCount = 0;
+    // Local relief proxy for the split check: |h - 3x3 mean|.
+    const vector<f32> mean = boxBlur3(a.sim, a.eroded);
+    for (size_t i = 0; i < a.calm.size(); ++i) {
+        if (a.seaDist[i] > 0.0f) { // land by control decree
+            CHECK(a.calm[i] >= a.gentle[i] - 1.0e-6f);
+        }
+        if (a.eroded[i] <= params.macro.seaLevel) {
+            continue; // sea zeroes calm (like plateau), gentle is raw
+        }
+        ++dry;
+        const f32 dev = std::abs(a.eroded[i] - mean[i]);
+        if (a.calm[i] > 0.6f) {
+            ++calmish;
+            calmDev += dev;
+            ++calmCount;
+        } else if (a.calm[i] < 0.2f) {
+            roughDev += dev;
+            ++roughCount;
+        }
+    }
+    MESSAGE("stage-1 calm>0.6: ", 100.0 * calmish / dry, "% of dry cells");
+    CHECK(calmish > 0);
+    // Calm ground is measurably smoother than the rough family.
+    if (calmCount > 100 && roughCount > 100) {
+        CHECK(calmDev / static_cast<f64>(calmCount) <
+              roughDev / static_cast<f64>(roughCount));
+    }
 }

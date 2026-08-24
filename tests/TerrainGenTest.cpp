@@ -314,3 +314,45 @@ TEST_CASE("hard-rock coasts cliff into the sea, soft coasts beach") {
     CHECK(at(neutral, 80.0f, 0.0f) ==
           doctest::Approx(at(soft, 80.0f, 0.0f)));
 }
+
+TEST_CASE("calm socles: plains and plateau tops join, ranges stay out") {
+    ProceduralControlParams params;
+    params.seed = 1337;
+    const ProceduralControls controls { params };
+
+    u64 land = 0, calmish = 0;
+    f64 calmSum = 0.0;
+    for (f32 z = -40000.0f; z <= 40000.0f; z += 200.0f) {
+        for (f32 x = -40000.0f; x <= 40000.0f; x += 200.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                continue;
+            }
+            ++land;
+            calmSum += s.calm;
+            if (s.calm > 0.6f) {
+                ++calmish;
+            }
+            // The family is a superset of the corridors.
+            CHECK(s.calm >= s.gentle - 1.0e-6f);
+            // Strong orogeny is never a calm socle unless a corridor
+            // or a plateau top says otherwise.
+            if (s.uplift > 0.4f && s.gentle < 0.05f &&
+                s.plateau < 90.0f) {
+                CHECK(s.calm < 0.7f);
+            }
+        }
+    }
+    const f64 share = 100.0 * calmish / static_cast<f64>(land);
+    MESSAGE("control-level calm>0.6: ", share, "% of land (mean ",
+            calmSum / static_cast<f64>(land), ")");
+    // Valley floors are added post-erosion in the bake; the control
+    // level alone stays a meaningful minority share.
+    CHECK(share > 10.0);
+    CHECK(share < 60.0);
+
+    // Deterministic: same params, same field.
+    const ProceduralControls again { params };
+    CHECK(again.at(1234.0f, -5678.0f).calm ==
+          controls.at(1234.0f, -5678.0f).calm);
+}
