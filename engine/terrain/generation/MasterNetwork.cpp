@@ -65,8 +65,11 @@ MasterNetwork computeMasterNetwork(const ProceduralControls& controls,
             out.grid.x(static_cast<u32>(head % n));
         const f32 hz =
             out.grid.z(static_cast<u32>(head / n));
-        if (hx < coreMinX || hx > coreMinX + coreMax ||
-            hz < coreMinZ || hz > coreMinZ + coreMax) {
+        // HALF-OPEN core: a head exactly on the boundary must belong
+        // to ONE super cell, or two owners trace it through different
+        // windows and publish two truncations of the same river.
+        if (hx < coreMinX || hx >= coreMinX + coreMax ||
+            hz < coreMinZ || hz >= coreMinZ + coreMax) {
             continue; // apron head: the neighbour cell owns it
         }
         MasterRiver river;

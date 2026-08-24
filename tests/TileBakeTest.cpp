@@ -306,25 +306,46 @@ TEST_CASE("border basins publish once: no stacked duplicate sheets") {
 
 TEST_CASE("stage-1 calm: valley floors join the family, deterministic") {
     const TileBakeParams params = testParams();
-    // Pick a tile with actual land — the 512 m tile at the origin can
-    // be all sea for this seed.
+    // Pick a tile with actual land — 512 m tiles near the origin can
+    // all be wet (the coastal-belt start guarantee promises land
+    // NEARBY, not under every small tile). Probe the analytic first:
+    // baking is the expensive part.
     TileStage1 a;
     bool found = false;
-    for (const auto& [tx, tz] :
-         { std::pair<i32, i32> { 1, 1 }, { 0, 0 }, { 2, -1 }, { -2, 2 },
-           { 3, 2 } }) {
-        a = bakeTileStage1(params, tx, tz);
-        u64 dryCells = 0;
-        for (const f32 h : a.eroded) {
-            dryCells += h > params.macro.seaLevel;
-        }
-        if (dryCells > 500) {
-            found = true;
-            const TileStage1 b = bakeTileStage1(params, tx, tz);
-            CHECK(a.calm == b.calm); // bit-exact (cache contract)
-            break;
+    ProceduralControlParams probeParams = params.controls;
+    probeParams.seed = params.worldSeed;
+    const ProceduralControls probe { probeParams };
+    u32 probedDry = 0;
+    for (i32 ring = 0; ring <= 30 && !found; ++ring) {
+        for (i32 tz = -ring; tz <= ring && !found; ++tz) {
+            for (i32 tx = -ring; tx <= ring && !found; ++tx) {
+                if (glm::max(std::abs(tx), std::abs(tz)) != ring) {
+                    continue;
+                }
+                const f32 cx =
+                    (static_cast<f32>(tx) + 0.5f) * params.tileSize;
+                const f32 cz =
+                    (static_cast<f32>(tz) + 0.5f) * params.tileSize;
+                if (macroHeightAnalytic(probe, params.macro, cx, cz) <
+                    params.macro.seaLevel + 15.0f) {
+                    continue;
+                }
+                ++probedDry;
+                a = bakeTileStage1(params, tx, tz);
+                u64 dryCells = 0;
+                for (const f32 h : a.eroded) {
+                    dryCells += h > params.macro.seaLevel;
+                }
+                if (dryCells > 500) {
+                    found = true;
+                    const TileStage1 b = bakeTileStage1(params, tx, tz);
+                    CHECK(a.calm == b.calm); // bit-exact (cache)
+                }
+            }
         }
     }
+    MESSAGE("calm tile search: analytic-dry candidates probed: ",
+            probedDry);
     REQUIRE(found);
     REQUIRE(a.calm.size() == a.sim.cells());
 

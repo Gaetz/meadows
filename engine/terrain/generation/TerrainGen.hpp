@@ -93,22 +93,20 @@ struct ProceduralControlParams {
     // shrinking it makes full-size massifs RARER without touching their
     // size. Below ~4000 the landmasses crumble into an archipelago.
     f32 continentWavelength { 4000.0f };
-    // CONTINENTAL CARRIER (experiment, default off): a very slow field
-    // added onto continentalness — it decides WHERE the land masses
-    // and the open seas are, while the 4 km fbm keeps drawing the
-    // local coastline character. High zones become solid continents
-    // (long drainage basins, real fleuves), low zones open ocean —
-    // the macro-scale hierarchy the 100 km map showed was missing.
-    // 0 = off (bit-identical legacy world).
-    f32 continentCarrierWavelength { 0.0f };
+    // REGIONAL CARRIER (adopted 2026-08-24 with the layout below —
+    // THE world config): a slow field added onto continentalness,
+    // remapped to its extremes — it decides where the 15-30 km land
+    // masses and straits are, while the 4 km fbm keeps drawing the
+    // local coastline character. 0 = off (legacy carpet world).
+    f32 continentCarrierWavelength { 20000.0f };
     f32 continentCarrierAmp { 0.3f };
-    // CONTINENT LAYOUT (design-forced, default off): a jittered mega
-    // grid of warped multi-lobe kernels GUARANTEES the world shape —
-    // the start sits on a continental island, another continent lies
-    // within ~a cell, large islands scatter between. The regional
-    // carrier above keeps articulating coasts, straits and inland
-    // seas on top; this layer only decides where land masses are.
-    bool continentLayout { false };
+    // CONTINENT LAYOUT (design-forced): a jittered mega grid of warped
+    // multi-lobe kernels GUARANTEES the world shape — the start sits
+    // on the coastal belt of a continental island, another continent
+    // lies within ~a cell, large islands scatter between. The
+    // regional carrier above keeps articulating coasts, straits and
+    // inland seas on top; this layer only decides where masses are.
+    bool continentLayout { true };
     f32 continentCellSize { 700000.0f };
     f32 continentRadiusMin { 160000.0f };
     f32 continentRadiusMax { 260000.0f };
@@ -118,7 +116,11 @@ struct ProceduralControlParams {
     f32 islandRadiusMax { 80000.0f };
     f32 layoutAmp { 0.34f }; // continentalness lift inside/-outside
     f32 seaThreshold { 0.42f }; // continentalness below -> open sea
-    f32 tierSpread { 0.22f };   // continentalness span of the tier ramp
+    // Continentalness span of the tier ramp. Wide since the layout
+    // adoption: the layout lift creates LAND, the ramp must not turn
+    // all of it into high country — the coastal belt keeps its plains
+    // and hills, the alpine tiers live deep inland.
+    f32 tierSpread { 0.5f };
     f32 maxTier { 3.0f };
     f32 upliftWavelength { 6500.0f };
     f32 upliftMaskLow { 0.38f };

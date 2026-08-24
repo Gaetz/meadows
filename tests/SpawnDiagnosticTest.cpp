@@ -586,8 +586,8 @@ TEST_CASE("erosion calibration" * doctest::skip()) {
                     buckets[b].count, ")");
         }
     };
-    sampleTile(-6, 5); // the tallest measured massif
-    sampleTile(-1, 0); // the spawn lowlands
+    sampleTile(-7, -3); // the tallest measured massif (adopted world)
+    sampleTile(2, -1); // the spawn tile (adopted world)
     CHECK(true);
 }
 
@@ -600,10 +600,10 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
     params.worldSeed = 1337;
     // The current probe spawn (run "spawn diagnostic" if this drifts;
     // the game's mist-map log confirms it: center ~(2032, 1608)).
-    const f32 px = 2038.28f;
-    const f32 pz = 1614.13f;
+    const f32 px = 12244.2f;
+    const f32 pz = -1959.39f;
 
-    const TileBakeResult b = bakeTile(params, 0, 0);
+    const TileBakeResult b = bakeTile(params, 2, -1);
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(b.region);
@@ -692,7 +692,7 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
 //   meadows-tests '-tc=erosion strength*' -ns
 TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
     const auto stats = [](const char* label, TileBakeParams params) {
-        const TileBakeResult r = bakeTile(params, -6, 5);
+        const TileBakeResult r = bakeTile(params, -7, -3);
         vector<f32> above;
         const f32 sea = params.macro.seaLevel;
         f32 maxH = 0.0f;
@@ -759,8 +759,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
     controlParams.seed = params.worldSeed;
     const ProceduralControls controls { controlParams };
     const f32 seaLevel = params.macro.seaLevel;
-    const f32 px = 2038.28f; // the game's confirmed spawn
-    const f32 pz = 1614.13f;
+    const f32 px = 12244.2f; // the game's confirmed spawn (adopted world)
+    const f32 pz = -1959.39f;
 
     struct BakedTiles {
         render::TerrainParams tp;
@@ -1052,11 +1052,11 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
     vector<Travel> points;
     for (i32 cz = -2; cz <= 1 && points.size() < 12; ++cz) {
         for (i32 cx = -2; cx <= 1 && points.size() < 12; ++cx) {
-            const f32 x = 2038.28f +
+            const f32 x = 12244.2f +
                           (static_cast<f32>(cx) + 0.2f +
                            0.6f * hash01(cx, cz, 11)) *
                               8000.0f;
-            const f32 z = 1614.13f +
+            const f32 z = -1959.39f +
                           (static_cast<f32>(cz) + 0.2f +
                            0.6f * hash01(cx, cz, 23)) *
                               8000.0f;
@@ -1164,7 +1164,7 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
 TEST_CASE("family census diagnostic" * doctest::skip()) {
     TileBakeParams params;
     params.worldSeed = 1337;
-    const TileBakeResult baked = bakeTile(params, 0, 0);
+    const TileBakeResult baked = bakeTile(params, 2, -1);
     const auto& r = baked.region;
     constexpr f32 kWindow = 250.0f;
     const u32 stride = static_cast<u32>(kWindow / r.texelSize);
@@ -1232,7 +1232,7 @@ TEST_CASE("family census diagnostic" * doctest::skip()) {
 TEST_CASE("calm coverage diagnostic" * doctest::skip()) {
     TileBakeParams params;
     params.worldSeed = 1337;
-    const TileStage1 s1 = bakeTileStage1(params, 0, 0);
+    const TileStage1 s1 = bakeTileStage1(params, 2, -1);
     u64 dry = 0, calm06 = 0, calm03 = 0, fromControl = 0;
     ProceduralControlParams controlParams = params.controls;
     controlParams.seed = params.worldSeed;

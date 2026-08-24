@@ -841,3 +841,38 @@ jitterée des amers B3 porté à l'échelle méga :
 Cartes de référence : `terrain-maps/layout_{100,300,1000}km.png`.
 Reste OFF par défaut ; l'activation (avec 20k/0,30) est LA config
 candidate du monde — décision d'adoption au début de B6.
+
+### B6 — ADOPTION + calibration (ouverture 2026-08-24)
+
+**Config adoptée par le dev** : `continentLayout = true` + porteuse
+20 km/0,30 par défaut. Caches v36/v41. Retombées corrigées à
+l'adoption : propriété des têtes du réseau maître passée en cœur
+DEMI-OUVERT (une tête pile sur la frontière z=0 était possédée par
+deux super-régions → deux troncatures du même fleuve, débusquée par
+le doctest « two callers agree » instrumenté) ; le test calm stage-1
+cherche sa tuile sèche par sonde analytique en spirale (l'origine
+d'une seed de test peut être en zone humide de ceinture).
+
+**Baseline du monde adopté (seed 1337)** : spawn sonde
+(12244, −1959) puis (8197, 230) après élargissement de rampe (la
+sonde suit l'analytique — re-ancrage final des diagnostics en fin de
+B6) ; mer 22,6 % ; réseau maître : plus long cours **41,6 km** (10,9
+avant), 690 km de linéaire fleuve (149) ; sommets bakés 1534 m à
+~4 km du spawn / 1692 m au massif étalon (−7,−3) ; 23 lacs sur la
+tuile spawn (51 avant, sans retouche hydrologique !). Transect (v1
+adoptée) : familles **42/41/17** et **41/47/12,5** (cible 40/35/25),
+relief médian **25,5/22,6 m** (cible 18-30 ✓), plates ~30 % ✓ —
+restes : plaines 13,6 % (cible 25), pentes >30° 17/14 %,
+infranchissable 875 m, trou de 6,8 km (traversée du golfe — l'eau
+devrait compter comme événement continu ; instrument à revoir), vista
+ne garde que 3/16 points de voyage (filtre < 320 m trop bas pour ce
+monde — instrument à élargir).
+
+**Réglage 1 — `tierSpread` 0,22 → 0,5** : le lift du layout saturait
+la rampe de tier (continent entier en haut étage : census tuile-pic
+0 % socle / 32 % drame / médiane 238 m ; plaines 13,6 %). La rampe
+élargie étage la côte (carte b6_tier050_100km : étagement vert
+littoral, continent intact, spawn sur une baie à îles) ; effet
+proportions modeste (+2 % plaines) — le déficit de plaines vient des
+gates régime/houle, à traiter au réglage suivant si les transects le
+confirment.

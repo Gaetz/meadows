@@ -67,8 +67,22 @@ TEST_CASE("master network: two callers agree through masterRiversNear") {
                                     -4000.0f, 20000.0f, 20000.0f);
     for (const MasterRiver& ra : a) {
         for (const MasterRiver& rb : b) {
+            // Identity = head AND second node (grid-aligned head
+            // coordinates can collide across super cells; two rivers
+            // sharing two consecutive nodes would have merged).
             if (ra.nodes.front().x == rb.nodes.front().x &&
-                ra.nodes.front().z == rb.nodes.front().z) {
+                ra.nodes.front().z == rb.nodes.front().z &&
+                ra.nodes[1].x == rb.nodes[1].x &&
+                ra.nodes[1].z == rb.nodes[1].z) {
+                if (ra.nodes.size() != rb.nodes.size()) {
+                    MESSAGE("mismatch: head (", ra.nodes.front().x,
+                            ", ", ra.nodes.front().z, ") sizes ",
+                            ra.nodes.size(), " vs ", rb.nodes.size(),
+                            " mouths (", ra.nodes.back().x, ", ",
+                            ra.nodes.back().z, ") vs (",
+                            rb.nodes.back().x, ", ",
+                            rb.nodes.back().z, ")");
+                }
                 REQUIRE(ra.nodes.size() == rb.nodes.size());
                 CHECK(ra.nodes.back().x == rb.nodes.back().x);
                 CHECK(ra.nodes.back().surface ==
