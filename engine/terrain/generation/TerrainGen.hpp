@@ -93,6 +93,15 @@ struct ProceduralControlParams {
     // shrinking it makes full-size massifs RARER without touching their
     // size. Below ~4000 the landmasses crumble into an archipelago.
     f32 continentWavelength { 4000.0f };
+    // CONTINENTAL CARRIER (experiment, default off): a very slow field
+    // added onto continentalness — it decides WHERE the land masses
+    // and the open seas are, while the 4 km fbm keeps drawing the
+    // local coastline character. High zones become solid continents
+    // (long drainage basins, real fleuves), low zones open ocean —
+    // the macro-scale hierarchy the 100 km map showed was missing.
+    // 0 = off (bit-identical legacy world).
+    f32 continentCarrierWavelength { 0.0f };
+    f32 continentCarrierAmp { 0.3f };
     f32 seaThreshold { 0.42f }; // continentalness below -> open sea
     f32 tierSpread { 0.22f };   // continentalness span of the tier ramp
     f32 maxTier { 3.0f };

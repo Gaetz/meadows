@@ -28,6 +28,14 @@ int terrainMap(char** argv, int argc) {
 
     ProceduralControlParams controlParams;
     controlParams.seed = seed;
+    if (argc >= 9) {
+        controlParams.continentCarrierWavelength =
+            static_cast<f32>(std::atof(argv[8]));
+    }
+    if (argc >= 10) {
+        controlParams.continentCarrierAmp =
+            static_cast<f32>(std::atof(argv[9]));
+    }
     const ProceduralControls controls { controlParams };
     const MacroParams macro;
     const vector<u8> pixels = renderTerrainMap(controls, macro, params);

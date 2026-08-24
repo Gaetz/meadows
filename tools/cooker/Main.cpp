@@ -57,9 +57,10 @@ int usage() {
         "     (albedo BC7, normal BC5, ORM BC7, height R16), 512^2,\n"
         "     offline mips. Source paths are manifest-relative\n"
         "  cooker terrain-map <seed> <centerX> <centerZ> <spanMeters> "
-        "<out.png> [sizePx=1000]\n"
+        "<out.png> [sizePx=1000] [carrierWavelength] [carrierAmp]\n"
         "     top-down PNG of the analytic sandbox macro (hypsometric\n"
-        "     tints, hillshade, master rivers, center cross)\n"
+        "     tints, hillshade, master rivers, center cross); carrier*\n"
+        "     overrides the continental-carrier experiment knobs\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
         "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
@@ -372,7 +373,7 @@ int main(int argc, char** argv) {
     if (command == "cook-terrain-materials" && argc == 4) {
         return cooker::cookTerrainMaterials(argv[2], argv[3]);
     }
-    if (command == "terrain-map" && (argc == 7 || argc == 8)) {
+    if (command == "terrain-map" && argc >= 7 && argc <= 10) {
         return cooker::terrainMap(argv, argc);
     }
     return usage();

@@ -34,6 +34,7 @@ constexpr u32 kSaltValleyAxis = 0x7a11e7a5u;
 constexpr u32 kSaltTrunk = 0x77201c00u;
 constexpr u32 kSaltCol = 0xc0110000u;
 constexpr u32 kSaltAxialWarp = 0x51deca5eu;
+constexpr u32 kSaltContinentCarrier = 0xc0471e47u;
 
 struct TierBlend {
     f32 altitude;
@@ -356,8 +357,33 @@ f32 ProceduralControls::continentalness(f32 x, f32 z) const {
                  2.0f -
              1.0f) *
                 p.warpStrength;
-    return noise::fbm(p.seed ^ kSaltContinent, wx, wz,
-                      1.0f / p.continentWavelength, 4, 2.0f, 0.5f);
+    f32 c = noise::fbm(p.seed ^ kSaltContinent, wx, wz,
+                       1.0f / p.continentWavelength, 4, 2.0f, 0.5f);
+    // Continental carrier: the very slow field deciding WHERE the
+    // land masses and open seas are; the fbm above keeps drawing the
+    // local coastline character on top — and only there: where the
+    // carrier is decided (well above or below its midline) the local
+    // detail is compressed, so continent interiors keep their lakes
+    // rare and open oceans their islands rare. The coast detail
+    // belongs to the coastal belts. Off (0) = legacy bit-exact.
+    if (p.continentCarrierWavelength > 1.0f) {
+        // Contrasted: raw fbm hugs its midline, which would leave most
+        // of the map in the undecided belt — the remap pushes it to
+        // its extremes (solid continent / open ocean) with a narrow
+        // coastal transition band where the local detail lives.
+        const f32 carrier = noise::smoothstep01(
+            0.38f, 0.62f,
+            noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
+                       1.0f / p.continentCarrierWavelength, 3, 2.0f,
+                       0.5f));
+        const f32 lift =
+            (carrier - 0.5f) * 2.0f * p.continentCarrierAmp;
+        const f32 decided = noise::smoothstep01(
+            0.3f * p.continentCarrierAmp, 0.9f * p.continentCarrierAmp,
+            std::abs(lift));
+        c = 0.5f + (c - 0.5f) * (1.0f - 0.6f * decided) + lift;
+    }
+    return c;
 }
 
 ControlSample ProceduralControls::at(f32 x, f32 z) const {

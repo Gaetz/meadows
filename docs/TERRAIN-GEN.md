@@ -784,3 +784,30 @@ voyage intérieure reste les vallées maîtresses (sans fleuve dedans) ;
 seaThreshold ↓, trunks plus profonds/couvrants) — grosse conséquence
 visuelle, à faire en B6 avec validation en jeu ;
 (c) hybride : (a) court terme + retune (b) mesuré en B6.
+
+### Expérience « porteuse continentale » (2026-08-24, cartes à l'appui)
+
+Outil `cooker terrain-map` livré (MapExport : hypsométrie + hillshade
++ réseau maître + croix centrale), cartes 100 km comparées dans
+`terrain-maps/`. La carte de l'état actuel confirme le diagnostic à
+l'échelle macro : **tapis d'archipel statistiquement uniforme**, zéro
+région nommable. Expérience (knobs `continentCarrierWavelength/Amp`
+de ProceduralControlParams, **défaut 0 = OFF, monde bit-identique**,
+aucun bump) : une porteuse très lente ADDITIVE sur la continentalité.
+Trois leçons d'itération :
+1. additive brute → les continents se forment mais criblés de lacs
+   (le fbm local plonge sous le seuil partout) ;
+2. compression du détail local gatée par |lift| → inopérante : le fbm
+   porteur traîne autour de sa médiane, presque tout le monde reste
+   dans la bande molle ;
+3. **remap contrasté du porteur (smoothstep 0,38-0,62) + compression
+   ×0,6 du détail dans les zones tranchées** → continents FRANCS aux
+   côtes articulées, océans ouverts avec îles, ceinture côtière qui
+   garde tout le caractère local — et surtout le réseau maître se met
+   à produire des cours de 10-30 km dendritiques avec confluences :
+   **les fleuves de la cible émergent d'eux-mêmes** de cette macro.
+Variantes générées : 40 km/0,30 (un continent + un océan + îles par
+fenêtre de 100 km — recommandée : garde des côtes riches pour les
+ports) ; 60 km/0,35 (quasi tout continent). Adoption = décision dev ;
+si adoptée : activation dans les params par défaut, bump caches,
+re-calibration B6 sur la nouvelle macro (proportions/spawn/fit).
