@@ -27,6 +27,7 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "TerrainMap.hpp"
 #include "data/plugins/Validate.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
@@ -55,6 +56,10 @@ int usage() {
         "     PNG material maps -> the four terrain .mtex arrays\n"
         "     (albedo BC7, normal BC5, ORM BC7, height R16), 512^2,\n"
         "     offline mips. Source paths are manifest-relative\n"
+        "  cooker terrain-map <seed> <centerX> <centerZ> <spanMeters> "
+        "<out.png> [sizePx=1000]\n"
+        "     top-down PNG of the analytic sandbox macro (hypsometric\n"
+        "     tints, hillshade, master rivers, center cross)\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
         "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
@@ -366,6 +371,9 @@ int main(int argc, char** argv) {
     }
     if (command == "cook-terrain-materials" && argc == 4) {
         return cooker::cookTerrainMaterials(argv[2], argv[3]);
+    }
+    if (command == "terrain-map" && (argc == 7 || argc == 8)) {
+        return cooker::terrainMap(argv, argc);
     }
     return usage();
 }
