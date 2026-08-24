@@ -117,9 +117,9 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
 }
 
 // Stage-1 cache: the per-tile eroded coarse terrain the stage-2 water
-// pass composes across neighbourhoods. "TS15": spec + eroded + uplift
-// + deposit + seaDist + biome + gentle + calm.
-constexpr char kStage1Magic[4] = { 'T', 'S', '1', '5' };
+// pass composes across neighbourhoods. "TS16": spec + eroded + uplift
+// + deposit + seaDist + biome + gentle + calm + trunk.
+constexpr char kStage1Magic[4] = { 'T', 'S', '1', '6' };
 
 bool writeStage1File(const std::filesystem::path& path,
                      const render::terraingen::TileStage1& s1) {
@@ -155,6 +155,9 @@ bool writeStage1File(const std::filesystem::path& path,
     file.write(reinterpret_cast<const char*>(s1.calm.data()),
                static_cast<std::streamsize>(s1.calm.size() *
                                             sizeof(f32)));
+    file.write(reinterpret_cast<const char*>(s1.trunk.data()),
+               static_cast<std::streamsize>(s1.trunk.size() *
+                                            sizeof(f32)));
     return static_cast<bool>(file);
 }
 
@@ -186,6 +189,7 @@ std::optional<render::terraingen::TileStage1> readStage1File(
     s1.biome.resize(cells);
     s1.gentle.resize(cells);
     s1.calm.resize(cells);
+    s1.trunk.resize(cells);
     file.read(reinterpret_cast<char*>(s1.eroded.data()),
               static_cast<std::streamsize>(cells * sizeof(f32)));
     file.read(reinterpret_cast<char*>(s1.uplift.data()),
@@ -199,6 +203,8 @@ std::optional<render::terraingen::TileStage1> readStage1File(
     file.read(reinterpret_cast<char*>(s1.gentle.data()),
               static_cast<std::streamsize>(cells * sizeof(f32)));
     file.read(reinterpret_cast<char*>(s1.calm.data()),
+              static_cast<std::streamsize>(cells * sizeof(f32)));
+    file.read(reinterpret_cast<char*>(s1.trunk.data()),
               static_cast<std::streamsize>(cells * sizeof(f32)));
     if (!file) {
         return std::nullopt;

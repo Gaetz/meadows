@@ -30,6 +30,10 @@ constexpr u32 kSaltHardness = 0x11780c1cu;
 constexpr u32 kSaltCalm = 0xca1a90c1u;
 constexpr u32 kSaltPeakAlpine = 0xa1b13e00u;
 constexpr u32 kSaltPeakHill = 0x811c0113u;
+constexpr u32 kSaltValleyAxis = 0x7a11e7a5u;
+constexpr u32 kSaltTrunk = 0x77201c00u;
+constexpr u32 kSaltCol = 0xc0110000u;
+constexpr u32 kSaltAxialWarp = 0x51deca5eu;
 
 struct TierBlend {
     f32 altitude;
@@ -53,6 +57,50 @@ TierBlend blendTiers(const MacroParams& p, f32 tier) {
              glm::mix(a.reliefAmplitude, b.reliefAmplitude, tt),
              glm::mix(a.reliefWavelength, b.reliefWavelength, tt),
              glm::mix(a.terrace, b.terrace, tt) };
+}
+
+// Valley potential: ONE smooth scalar field drives the whole valley
+// system — the trunk valleys are its ISOLINE stripes (continuous
+// curves by construction, they wander with the field; the stripe
+// index is a global valley identity so one hash rules a valley end to
+// end), and the local axis is the isoline direction (perp of the
+// gradient). Everything is a pure smooth function of (x, z):
+// translation-invariant, no cells, no frames — the earlier
+// rotated-frame formulation tore the field apart far from the origin
+// (a locally varying angle sweeps r*dTheta of coordinates).
+struct ValleyField {
+    f32 phi { 0.0f };      // potential [0,1]
+    f32 gradLen { 0.0f };  // |grad phi| (per meter)
+    f32 axisCos { 1.0f };  // isoline direction (undirected)
+    f32 axisSin { 0.0f };
+    f32 strength { 0.0f }; // fades at the potential's extrema
+};
+
+ValleyField valleyField(u32 seed, f32 x, f32 z, f32 wavelength) {
+    const auto phiAt = [&](f32 px, f32 pz) {
+        return noise::fbm(seed, px, pz, 1.0f / wavelength, 2, 2.0f,
+                          0.5f);
+    };
+    ValleyField out;
+    out.phi = phiAt(x, z);
+    const f32 e = 150.0f;
+    const f32 gx = (phiAt(x + e, z) - phiAt(x - e, z)) / (2.0f * e);
+    const f32 gz = (phiAt(x, z + e) - phiAt(x, z - e)) / (2.0f * e);
+    out.gradLen = std::sqrt(gx * gx + gz * gz);
+    if (out.gradLen > 1.0e-9f) {
+        out.axisCos = -gz / out.gradLen;
+        out.axisSin = gx / out.gradLen;
+    }
+    // Normalized gradient (units of amplitude per wavelength) —
+    // band-passed. Low tail: near the potential's extrema the
+    // meters-distance to a stripe (~1/|grad|) is ill-conditioned, the
+    // valleys must be OFF before it shimmers. High tail: a steep
+    // field packs stripes over-dense and pushes the equidistant
+    // depth handover into the profile — fade there too.
+    const f32 gn = out.gradLen * wavelength;
+    out.strength = noise::smoothstep01(0.15f, 0.4f, gn) *
+                   (1.0f - noise::smoothstep01(0.9f, 1.4f, gn));
+    return out;
 }
 
 // One objective layer: a jittered grid of landmark kernels (alpine
@@ -142,7 +190,27 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
                  2.0f -
              1.0f) *
                 p.warpStrength;
-    const f32 relief = (noise::fbm(seed ^ kSaltRelief, wx, wz,
+    // Anisotropy: smear the oscillating carriers ALONG the local
+    // valley axis with an axial domain warp — a LOCAL displacement, so
+    // it stays translation-invariant (a rotated/scaled frame with a
+    // varying angle tears far from the origin). Strength 0 (tests,
+    // painted sources) = legacy.
+    f32 awx = wx;
+    f32 awz = wz;
+    if (s.axisStrength > 0.0f && p.valleyStretch > 1.0f) {
+        const f32 amp = t.reliefWavelength * 0.6f *
+                        (p.valleyStretch - 1.0f) * s.axisStrength;
+        const f32 slide =
+            (noise::fbm(seed ^ kSaltAxialWarp, x, z,
+                        1.0f / (t.reliefWavelength * 1.7f), 2, 2.0f,
+                        0.5f) *
+                 2.0f -
+             1.0f) *
+            amp;
+        awx += s.axisCos * slide;
+        awz += s.axisSin * slide;
+    }
+    const f32 relief = (noise::fbm(seed ^ kSaltRelief, awx, awz,
                                    1.0f / t.reliefWavelength, 4, 2.0f,
                                    0.5f) *
                             2.0f -
@@ -152,10 +220,17 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
     if (s.hillRelief > 0.0f && hillChainWavelength > 1.0f) {
         // Ridged chains: elongated crests, the erosion pass rounds
         // them into rolling hill country.
-        h += noise::ridgedFbm(seed ^ kSaltHillChain, wx, wz,
+        h += noise::ridgedFbm(seed ^ kSaltHillChain, awx, awz,
                               1.0f / hillChainWavelength, 3, 2.0f,
                               0.5f) *
              s.hillRelief * s.reliefScale;
+    }
+    // Master-valley depression: a wide flat floor dug into whatever
+    // stands here (a gorge through a range), fading out near the sea
+    // so no inland trough floods below the waterline.
+    if (s.trunkDepth > 0.0f) {
+        h -= s.trunkDepth *
+             noise::smoothstep01(40.0f, 90.0f, h - p.seaLevel);
     }
     if (t.terrace > 0.0f && p.terraceStep > 0.0f) {
         // Soft quantization: flat strata with a short warped slope at
@@ -335,6 +410,73 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
         noise::fbm(p.seed ^ kSaltSwell, x, z, 1.0f / p.swellWavelength,
                    3, 2.0f, 0.5f));
     sample.plateau += swell * inland * p.swellHeight;
+    // Valley potential: the axis relief elongates along and the trunk
+    // valleys follow — see valleyField (isoline stripes, translation-
+    // invariant).
+    const ValleyField valley = valleyField(
+        p.seed ^ kSaltValleyAxis, x, z, p.valleyAxisWavelength);
+    sample.axisCos = valley.axisCos;
+    sample.axisSin = valley.axisSin;
+    sample.axisStrength = valley.strength;
+    // Master (trunk) valleys: isoline stripes of the potential, one
+    // every ~trunkSpacing (in meters, via the local gradient). The
+    // stripe index is the valley's identity end to end. Inland-gated;
+    // through a range the depression reads as a gorge (uplift keeps
+    // the walls, gentle keeps the floor walkable).
+    {
+        // Stripe step chosen so the typical ISOLINE spacing (dPhi /
+        // |grad|) lands near trunkSpacing at the field's typical
+        // gradient (~0.35 amplitude per wavelength).
+        const f32 stripeStep =
+            0.35f * p.trunkSpacing / p.valleyAxisWavelength;
+        const f32 phase = valley.phi / stripeStep;
+        const i32 stripe =
+            static_cast<i32>(std::floor(phase));
+        // Distance to the NEAREST neighbouring valley line, measured
+        // and masked IN PHASE UNITS — a meters conversion through the
+        // local gradient is ill-conditioned where the gradient bends
+        // (the 1/|grad| term shears the mask into visible steps). In
+        // phase space everything is a smooth function of phi; the
+        // metric width of a valley then breathes with the local
+        // gradient (wide floors where the field is flat, narrow in
+        // steep zones), bounded by the strength band-pass. Checking
+        // the three candidate stripes keeps both sides of a stripe
+        // boundary in agreement (per-stripe centers differ).
+        f32 distPhase = 1.0e9f;
+        i32 owner = stripe;
+        for (i32 k = stripe - 1; k <= stripe + 1; ++k) {
+            const f32 center =
+                static_cast<f32>(k) + 0.35f +
+                0.3f * noise::lattice(p.seed ^ kSaltTrunk, k, 7);
+            const f32 d = std::abs(phase - center);
+            if (d < distPhase) {
+                distPhase = d;
+                owner = k;
+            }
+        }
+        const f32 floorPhase =
+            p.trunkFloorHalfWidth / p.trunkSpacing;
+        const f32 shoulderPhase = p.trunkShoulder / p.trunkSpacing;
+        const f32 profile = 1.0f - noise::smoothstep01(
+                                       floorPhase, shoulderPhase,
+                                       distPhase);
+        const f32 depth = glm::mix(
+            p.trunkDepthMin, p.trunkDepthMax,
+            noise::lattice(p.seed ^ kSaltTrunk ^ 0x5bd1e995u, owner,
+                           113));
+        // Own WIDE inland ramp: the shared `inland` gate rides the
+        // warped continent field and snaps 0->1 within tens of meters
+        // at the coast — fine for additive lifts, a visible tear for
+        // a mask. A full tier of ramp spreads it over ~a kilometer.
+        const f32 trunkInland =
+            noise::smoothstep01(0.3f, 1.3f, sample.tier);
+        const f32 gate = trunkInland * valley.strength;
+        sample.trunk = (1.0f - noise::smoothstep01(
+                                   floorPhase * 0.8f,
+                                   floorPhase * 1.3f, distPhase)) *
+                       gate;
+        sample.trunkDepth = depth * profile * gate;
+    }
     // Passability corridors: erosion softeners, never height. Banded so
     // roughly a quarter of the land is a gentle passage — except in the
     // ranges, where the band widens with the uplift the walker must
@@ -345,6 +487,23 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
         0.55f - 0.18f * rangeNeed, 0.7f - 0.18f * rangeNeed,
         noise::fbm(p.seed ^ kSaltGentle, x, z,
                    1.0f / p.gentleWavelength, 3, 2.0f, 0.5f));
+    // Guaranteed cols: thin stripes of a SECOND potential cut across
+    // the country every ~colSpacing wherever ranges rise — no range is
+    // ever a regional wall. And the trunk floor is itself a corridor:
+    // the walkway of the future fleuve.
+    {
+        const f32 psi = noise::fbm(p.seed ^ kSaltCol, x, z,
+                                   1.0f / (p.colSpacing * 3.2f), 2,
+                                   2.0f, 0.5f);
+        const f32 colPhase = psi * 3.2f;
+        const f32 frac = colPhase - std::floor(colPhase);
+        const f32 colK =
+            1.0f -
+            noise::smoothstep01(0.045f, 0.13f, std::abs(frac - 0.5f));
+        sample.gentle =
+            glm::max(sample.gentle, colK * rangeNeed);
+    }
+    sample.gentle = glm::max(sample.gentle, 0.9f * sample.trunk);
     // Lithology: a slow hardness field — hard pockets keep sharp
     // relief and cliff coasts, soft pockets roll. Plain fbm: the mean
     // sits at neutral, the tails are the drama.
@@ -395,7 +554,10 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     const f32 clearing =
         hillMarks.clearing * inland *
         (1.0f - noise::smoothstep01(0.25f, 0.5f, sample.uplift));
-    sample.reliefScale = 1.0f - 0.75f * clearing;
+    // Trunk floors flatten their carriers too — a master valley floor
+    // is open ground, not a corrugated trench.
+    sample.reliefScale =
+        (1.0f - 0.75f * clearing) * (1.0f - 0.6f * sample.trunk);
     sample.calm = glm::max(sample.calm, clearing);
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
@@ -425,6 +587,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.biome.resize(spec.cells());
     out.gentle.resize(spec.cells());
     out.calm.resize(spec.cells());
+    out.trunk.resize(spec.cells());
     out.plateau.resize(spec.cells());
     out.hillRelief.resize(spec.cells());
     out.hardness.resize(spec.cells());
@@ -440,6 +603,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.biome[i] = s.biome;
             out.gentle[i] = s.gentle;
             out.calm[i] = s.sea ? 0.0f : s.calm;
+            out.trunk[i] = s.sea ? 0.0f : s.trunk;
             out.plateau[i] = s.sea ? 0.0f : s.plateau;
             out.hillRelief[i] = s.sea ? 0.0f : s.hillRelief;
             out.hardness[i] = s.hardness;

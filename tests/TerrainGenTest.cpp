@@ -412,3 +412,60 @@ TEST_CASE("landmark guarantee: an alpine summit within reach of any "
     CHECK(again.at(4321.0f, 8765.0f).reliefScale ==
           controls.at(4321.0f, 8765.0f).reliefScale);
 }
+
+TEST_CASE("valley axis and trunk valleys: continuous, bounded, inland") {
+    ProceduralControlParams params;
+    params.seed = 1337;
+    const ProceduralControls controls { params };
+
+    // Continuity: the trunk field and the axis-stretched output never
+    // jump between neighbouring samples (the doubled-angle blend and
+    // the phase interpolation are C1; a tear here would print a wall
+    // into the terrain).
+    u64 land = 0, floorCells = 0, dugCells = 0;
+    f32 worstStep = 0.0f;
+    for (f32 z = -30000.0f; z <= 30000.0f; z += 1000.0f) {
+        f32 prevTrunk = -1.0f;
+        for (f32 x = -30000.0f; x <= 30000.0f; x += 20.0f) {
+            const ControlSample s = controls.at(x, z);
+            CHECK(s.trunk >= 0.0f);
+            CHECK(s.trunk <= 1.0f);
+            CHECK(s.trunkDepth <= params.trunkDepthMax + 1.0e-3f);
+            if (s.sea) {
+                CHECK(s.trunk == 0.0f);
+            }
+            if (prevTrunk >= 0.0f) {
+                worstStep = glm::max(worstStep,
+                                     std::abs(s.trunk - prevTrunk));
+            }
+            prevTrunk = s.trunk;
+            if (!s.sea) {
+                ++land;
+                floorCells += s.trunk > 0.5f;
+                dugCells += s.trunkDepth > 10.0f;
+            }
+        }
+    }
+    MESSAGE("trunk floor>0.5: ", 100.0 * floorCells / land,
+            "% of land, dug>10m: ", 100.0 * dugCells / land,
+            "%, worst 20 m trunk step: ", worstStep);
+    // ~1.2 km of floor per 12 km spacing -> the floor family is a
+    // bounded minority, and it exists.
+    CHECK(floorCells > 0);
+    CHECK(100.0 * floorCells / land < 25.0);
+    // 20 m sampling never sees a hard jump: the strength band-pass
+    // keeps the narrowest surviving floor ramp >= ~120 m of metric
+    // width, so a 20 m step crosses at most ~a quarter of it.
+    CHECK(worstStep < 0.3f);
+
+    // The trunk floor is a corridor by contract.
+    const ControlSample probe = controls.at(4230.0f, -7615.0f);
+    CHECK(probe.gentle >= 0.9f * probe.trunk - 1.0e-6f);
+
+    // Determinism.
+    const ProceduralControls again { params };
+    CHECK(again.at(-3111.0f, 9222.0f).trunk ==
+          controls.at(-3111.0f, 9222.0f).trunk);
+    CHECK(again.at(-3111.0f, 9222.0f).axisCos ==
+          controls.at(-3111.0f, 9222.0f).axisCos);
+}

@@ -48,6 +48,19 @@ struct ControlSample {
     // chains) in landHeight — never on the tier floor or the base
     // lift. Landmark clearings flatten with it; 1 = legacy.
     f32 reliefScale { 1.0f };
+    // Valley axis (undirected, mod pi): landHeight stretches the
+    // relief carriers along it so crests and valleys elongate into
+    // sightlines. Strength 0 = isotropic legacy (the default keeps
+    // painted/test control sources unchanged).
+    f32 axisCos { 1.0f };
+    f32 axisSin { 0.0f };
+    f32 axisStrength { 0.0f };
+    // Master-valley (trunk) transverse profile: [0,1] floorness (1 on
+    // the flat valley floor — future fleuve beds, site scoring) and
+    // the depression depth in meters landHeight digs (already faded
+    // by profile/inland/axis strength; 0 = none).
+    f32 trunk { 0.0f };
+    f32 trunkDepth { 0.0f };
     // Lithology [0,1]: rock hardness. Hard rock erodes slow, holds
     // steeper scree, and cliffs into the sea (calanques); soft rock
     // rolls gentle and beaches. 0.5 = neutral (painted/test default).
@@ -131,6 +144,22 @@ struct ProceduralControlParams {
     f32 hillHeightMax { 250.0f };
     f32 hillRadiusMin { 600.0f };
     f32 hillRadiusMax { 1200.0f };
+    // Valley orientation field: per ~cell angle, smoothly interpolated
+    // — the local axis relief stretches along (sightlines) and the
+    // trunk valleys run along.
+    f32 valleyAxisWavelength { 9000.0f };
+    // Master (trunk) valleys: wide flat-floored depressions every
+    // ~spacing transverse to nothing in particular — the future fleuve
+    // corridors. Their floor joins calm/gentle; crossing a range they
+    // read as gorges (kept steep by the uplift, softened by gentle).
+    f32 trunkSpacing { 12000.0f };
+    f32 trunkDepthMin { 40.0f };
+    f32 trunkDepthMax { 80.0f };
+    f32 trunkFloorHalfWidth { 600.0f };
+    f32 trunkShoulder { 1500.0f };
+    // Guaranteed cols: transverse gentle corridors combed along the
+    // axis every ~spacing so no range is a regional wall.
+    f32 colSpacing { 4000.0f };
     // Lithology: "countries" of rock character between the regime and
     // the carriers — hard pockets keep sharp relief and sea cliffs,
     // soft pockets roll, with no per-case exceptions.
@@ -187,6 +216,9 @@ struct MacroParams {
     // value in at the bake (TileBake); part of MacroParams so
     // synthesizeMacro's input set is ONE struct, not struct + stray arg.
     f32 hillChainWavelength { 0.0f };
+    // Anisotropy of the relief carriers along ControlSample's valley
+    // axis (1 = isotropic; applied at the sample's axisStrength).
+    f32 valleyStretch { 2.5f };
     f32 terraceStep { 40.0f };     // meters between mesa strata
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
     f32 warpWavelength { 3500.0f }; // relief domain warp
@@ -212,6 +244,7 @@ struct MacroResult {
     vector<u8> biome;
     vector<f32> gentle;  // [0,1] passability corridors (erosion softener)
     vector<f32> calm;    // [0,1] calm-socle family (ControlSample::calm)
+    vector<f32> trunk;   // [0,1] master-valley floorness (fleuve beds)
     // Regime + swell base lift (m): what the erosion `keep` protects so
     // swelled highlands and old-massif plateaus survive the stream power
     // instead of being carved back toward sea base level.

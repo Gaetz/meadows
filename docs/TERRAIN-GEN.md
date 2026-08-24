@@ -704,3 +704,49 @@ L'horizon reste fermé (1/5 points ouverts) — attendu, c'est B4/B5.
 Bench bake : 18,2 s/tuile sur la machine Windows/MSVC (~15 s
 pré-chantier sur la machine dev) — ajouts du chantier ≈ 1-2 s, passe
 perf au périmètre B6. Caches v33/v38.
+
+### B4 — Vallées orientées, vallées maîtresses, cols (2026-08-24)
+
+**Architecture retenue (leçon de quatre échecs de continuité
+successifs, doctest à l'appui)** : tout est fonction lisse et
+INVARIANTE PAR TRANSLATION de (x, z) — un `ValleyField` : potentiel φ
+(fbm 2 oct, `valleyAxisWavelength` 9 km — n.b. le champ porte le
+double rôle rythme/orientation), axe local = perpendiculaire de ∇φ,
+force = band-pass sur |∇φ| normalisé (0,15-0,4 / 0,9-1,4).
+- **Vallées maîtresses = strates d'isolignes de φ** : continues par
+  construction, elles serpentent avec le champ ; l'index de strate est
+  l'identité GLOBALE de la vallée (un hash règle profondeur/phase de
+  bout en bout). Masques mesurés EN UNITÉS DE PHASE (la conversion en
+  mètres par 1/|∇φ| cisaille aux inflexions) ; distance au plus proche
+  des trois centres candidats (accord des deux côtés d'une frontière
+  de strate) ; gate inland PROPRE à rampe large (~1 km — le `inland`
+  partagé claque en dizaines de mètres au trait de côte warpé : c'était
+  LA déchirure finale). Profondeur 40-80 m creusée dans `landHeight`
+  avec fondu sous 90 m d'altitude (pas de fosse sous le niveau de
+  mer) ; fond → `trunk` [0,1] exporté (ControlSample, MacroResult,
+  TileStage1, sidecar TS16) → gentle ≥ 0,9·trunk, calm suit,
+  reliefScale ×(1−0,6·trunk).
+- **Étirement anisotrope = warp AXIAL local** dans `landHeight`
+  (déplacement le long de l'axe, ampli ∝ (valleyStretch−1)) — la
+  formulation en repère tourné/contracté est mathématiquement fausse
+  dans un monde infini (θ variable × rayon = balayage de coordonnées).
+- **Cols garantis = strates fines d'un second potentiel ψ**
+  (~colSpacing), gatées `rangeNeed` — statistique, plus de peigne en
+  repère.
+
+Échecs documentés pour la suite : (1) repère (u,v) global tourné →
+déchirure ∝ distance à l'origine ; (2) distance métrique via 1/|∇φ| →
+cisaillement aux inflexions ; (3) hash par strate asymétrique aux
+frontières ; (4) gate inland partagé trop raide. Le doctest « valley
+axis and trunk valleys » (continuité < 0,3 par pas de 20 m sur 61 km
+de lignes, bornes, sur-ensemble gentle, déterminisme) pince tout ça.
+
+Mesures : fonds de tronc 4,8 % des terres / creusé 10,5 % (léger —
+élargissement en B6 via trunkSpacing/floorHalfWidth) ; transect :
+pentes > 30° en baisse nette (E-O 20→15 %, drame 15,6→12,5 %),
+médianes 49,5→46 / 31,9 ; vista : amer > 2° au-delà de 3 km **5/5**
+points (4/5 avant). **Régression assumée** : « infranchissable
+continu » 1-D remonte à 875/700 m (crêtes allongées = murs plus longs
+sur une ligne droite ; les cols tous les 4-5 km ne sont pas sur la
+ligne) — recalibrage B6 (colSpacing, largeur de strate ψ, seuil
+rangeNeed). Caches v34/v39, sidecar TS16.

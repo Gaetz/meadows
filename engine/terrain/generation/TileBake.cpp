@@ -261,6 +261,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     out.biome = std::move(macro.biome);
     out.gentle = std::move(macro.gentle);
     out.uplift = std::move(macro.uplift);
+    out.trunk = macro.trunk;
     return out;
 }
 
