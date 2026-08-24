@@ -1156,6 +1156,74 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+// 2-D family census on the spawn tile: every 250 m window of the baked
+// region classified socle/versant/drame with its relief — the fair
+// instrument for the 40/35/25 budget (a straight transect over- or
+// under-samples one family), and the proof that calm ground is calm.
+//   meadows-tests '-tc=family census*' -ns
+TEST_CASE("family census diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    const TileBakeResult baked = bakeTile(params, 0, 0);
+    const auto& r = baked.region;
+    constexpr f32 kWindow = 250.0f;
+    const u32 stride = static_cast<u32>(kWindow / r.texelSize);
+    u32 socle = 0, versant = 0, drame = 0, wet = 0;
+    vector<f32> socleRelief, versantRelief, allRelief;
+    for (u32 wz = 0; wz + stride < r.height; wz += stride) {
+        for (u32 wx = 0; wx + stride < r.width; wx += stride) {
+            f32 minH = 1.0e9f, maxH = -1.0e9f;
+            vector<f32> slopes;
+            for (u32 row = wz; row < wz + stride; row += 2) {
+                for (u32 col = wx; col < wx + stride; col += 2) {
+                    const size_t i =
+                        static_cast<size_t>(row) * r.width + col;
+                    const f32 h = r.heights[i];
+                    minH = glm::min(minH, h);
+                    maxH = glm::max(maxH, h);
+                    if (col + 2 < wx + stride) {
+                        slopes.push_back(
+                            std::abs(r.heights[i + 2] - h) /
+                            (2.0f * r.texelSize));
+                    }
+                }
+            }
+            if (maxH < params.macro.seaLevel + 0.5f) {
+                ++wet;
+                continue;
+            }
+            const f32 relief = maxH - minH;
+            allRelief.push_back(relief);
+            std::sort(slopes.begin(), slopes.end());
+            const f32 medianSlope = slopes[slopes.size() / 2];
+            if (medianSlope > 0.5774f) {
+                ++drame;
+            } else if (medianSlope < 0.1763f && relief < 15.0f) {
+                ++socle;
+                socleRelief.push_back(relief);
+            } else {
+                ++versant;
+                versantRelief.push_back(relief);
+            }
+        }
+    }
+    const auto median = [](vector<f32>& v) {
+        if (v.empty()) {
+            return 0.0f;
+        }
+        std::sort(v.begin(), v.end());
+        return v[v.size() / 2];
+    };
+    const f32 land = static_cast<f32>(socle + versant + drame);
+    MESSAGE("spawn tile 250m windows: socle ", 100.0f * socle / land,
+            "%, versant ", 100.0f * versant / land, "%, drame ",
+            100.0f * drame / land, "%  (", wet, " wet)  target 40/35/25");
+    MESSAGE("median relief: all ", median(allRelief), " m, socle ",
+            median(socleRelief), " m, versant ", median(versantRelief),
+            " m");
+    CHECK(land > 0.0f);
+}
+
 // Calm-family coverage on a REAL tile: how much of the spawn tile's dry
 // ground the stage-1 `calm` field claims (control level + valley-floor
 // fusion) — the input B2 damps erosion with. Watch it against the ~40%

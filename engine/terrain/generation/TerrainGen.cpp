@@ -387,8 +387,11 @@ f32 macroHeightAnalytic(const ProceduralControls& controls,
     // Piecewise-linear fit of the baked-vs-analytic calibration
     // (tests: 'erosion calibration'): heights are kept up to a keep-
     // dependent threshold, then compressed to the measured tail slope.
-    const f32 keep =
-        glm::min(kPlateauKeepMax, s.plateau * kPlateauKeepCoef);
+    const f32 calmHigh =
+        s.calm * glm::smoothstep(150.0f, 400.0f, h - params.seaLevel);
+    const f32 keep = glm::min(kPlateauKeepMax,
+                              s.plateau * kPlateauKeepCoef +
+                                  calmHigh * kCalmKeep);
     const f32 threshold = 80.0f + 1100.0f * keep;
     const f32 rel = h - params.seaLevel;
     if (rel <= threshold) {

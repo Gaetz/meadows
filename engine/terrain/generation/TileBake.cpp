@@ -128,6 +128,26 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
                     glm::mix(1.6f, 0.55f, hard);
                 character.talusScale[i] *= glm::mix(0.9f, 1.25f, hard);
             }
+            // Calm socles equilibrate flat and shed gentle: HIGHER
+            // erodibility lowers the fastscape equilibrium slope
+            // (S = U/(k*A^m) — same direction as the corridor and
+            // plain factors), a softer talus rounds what remains.
+            // LOW socles only — high calm ground is protected by the
+            // kCalmKeep instead (its keep is often already capped, so
+            // extra erodibility would only pull the plateau down).
+            if (i < macro.calm.size()) {
+                const f32 calm = macro.calm[i];
+                const f32 low =
+                    1.0f - glm::smoothstep(
+                               150.0f, 400.0f,
+                               macro.height[i] - params.macro.seaLevel);
+                character.erodibility[i] *= 1.0f + 0.8f * calm * low;
+                character.talusScale[i] *= 1.0f - 0.2f * calm;
+                // Sediment fills the low socle floors flat: LOWER
+                // capacity makes the flux drop its load here
+                // (deposition fires where flux exceeds capacity).
+                character.capacityScale[i] *= 1.0f - 0.5f * calm * low;
+            }
             character.erodibility[i] =
                 glm::clamp(character.erodibility[i], 0.4f, 3.0f);
             character.talusScale[i] =
@@ -142,8 +162,16 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     // back toward sea base level and summits lose most of the lift.
     vector<f32> keep(macro.plateau.size());
     for (size_t i = 0; i < macro.plateau.size(); ++i) {
-        keep[i] =
-            glm::min(kPlateauKeepMax, macro.plateau[i] * kPlateauKeepCoef);
+        // High calm socles resist the carve too (kCalmKeep) — the
+        // habitable high ground survives; the analytic mirror in
+        // macroHeightAnalytic applies the same formula.
+        const f32 calmHigh =
+            macro.calm[i] *
+            glm::smoothstep(150.0f, 400.0f,
+                            macro.height[i] - params.macro.seaLevel);
+        keep[i] = glm::min(kPlateauKeepMax,
+                           macro.plateau[i] * kPlateauKeepCoef +
+                               calmHigh * kCalmKeep);
     }
     const FluvialResult eroded = erodeFluvial(
         out.sim, macro.height, macro.uplift, fluvial,
@@ -177,6 +205,25 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     if (!eroded.deposit.empty()) {
         for (size_t i = 0; i < out.deposit.size(); ++i) {
             out.deposit[i] += eroded.deposit[i];
+        }
+    }
+    // Calm relaxation: the socle family is calm at the COARSE scale
+    // too — the erodibility hooks only tilt the fastscape slopes, they
+    // never remove the ravines. Blend toward the ~160 m box mean where
+    // the CONTROL family claims the ground (the derived valley-floor
+    // calm would be circular here); versants keep full dissection.
+    // Sibling of roundRidges: a weighted relaxation, gathers only.
+    {
+        vector<f32> mean = out.eroded;
+        for (u32 pass = 0; pass < 10; ++pass) {
+            mean = boxBlur3(out.sim, mean);
+        }
+        for (size_t i = 0; i < out.eroded.size(); ++i) {
+            if (out.eroded[i] <= params.macro.seaLevel) {
+                continue;
+            }
+            out.eroded[i] = glm::mix(out.eroded[i], mean[i],
+                                     0.65f * macro.calm[i]);
         }
     }
     // Valley floors join the calm-socle family here: they only exist
@@ -465,12 +512,17 @@ TileBakeResult bakeTileStage2(
     // fine ravines too — a pass stays walkable at every scale.
     BiomeCharacter character =
         biomeCharacter(sim, self.biome, params.biomeErosion);
-    if (!self.gentle.empty()) {
+    // The calm family (corridors + socles + valley floors) damps the
+    // fine ravines to near zero: the habitable ground stays readable;
+    // dissection concentrates on the slopes between socles.
+    const vector<f32>& fineDamp =
+        self.calm.empty() ? self.gentle : self.calm;
+    if (!fineDamp.empty()) {
         if (character.fineScale.empty()) {
             character.fineScale.assign(sim.cells(), 1.0f);
         }
-        for (size_t i = 0; i < self.gentle.size(); ++i) {
-            character.fineScale[i] *= 1.0f - 0.8f * self.gentle[i];
+        for (size_t i = 0; i < fineDamp.size(); ++i) {
+            character.fineScale[i] *= 1.0f - 0.95f * fineDamp[i];
         }
     }
     // Lowland soil creep: the sharp fine gullies belong to orogeny

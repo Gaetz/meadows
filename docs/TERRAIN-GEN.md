@@ -630,3 +630,47 @@ NB build Windows : le test d'or scatter
 (`vegetation scatter: instance buffers are frozen`) échoue sous MSVC
 (hash golden capturé sous clang/Fedora — math flottante différente) ;
 préexistant au chantier, ne pas re-capturer sous MSVC.
+
+### B1 — Champ « calm » (2026-08-24)
+
+`ControlSample::calm` [0,1] : plaines vraies (sans orogenèse/chaînes/
+roche dure, éclaircies par la bande `kSaltCalm` — certaines plaines
+restent rugueuses) + dessus de plateaux soulevés (gatés uplift) +
+corridors (sur-ensemble de `gentle`). En stage 1, fusion des fonds de
+vallées post-érosion (déviation ~160 m faible + hors cuvette de lac).
+Export `TileStage1.calm`, sidecar TS15. Tuile spawn : calm>0.6 =
+39,6 % des cellules sèches. Caches v31/v36.
+
+### B2 — Budget d'érosion par famille (2026-08-24)
+
+Quatre mécanismes, tous des extensions de hooks existants :
+- `fineScale ×= 1−0,95·calm` (stage 2 — remplace le terme gentle) ;
+- socles BAS (< 150-400 m) : érodibilité ×(1+0,8·calm·low)
+  (S = U/(k·A^m) — MONTER k aplanit : même sens que les facteurs
+  plain/gentle, le plan de brique avait le signe inverse), capacité
+  sédimentaire ×(1−0,5·calm·low) (baisser la capacité fait déposer :
+  les fonds se comblent), talus ×(1−0,2·calm) ;
+- socles HAUTS (> 150-400 m) : `keep` étendu (`kCalmKeep` 0,25,
+  mirroré dans `macroHeightAnalytic`) — le plateau garde l'altitude au
+  lieu d'être disséqué (gate d'abord posé à 60-250 m : le re-mix du
+  macro brut rendait les terres moyennes PLUS rugueuses, remonté à
+  150-400) ;
+- **relaxation calm** (stage 1, sœur de roundRidges) : blend 0,65·calm
+  vers la moyenne 160 m — l'érodibilité ne fait qu'incliner les
+  ravines, la relaxation les efface sur les socles.
+
+Mesures (spawn) : massif étalon intact (max 1238 vs 1260, moyenne 780
+inchangée) ; altitude moyenne des transects +8/+18 m ; **fenêtres
+socle : médiane 12,4 m < 15 ✓ — là où elles existent**. Mais le
+recensement 2-D (nouveau diagnostic `family census`) montre le vrai
+état : 6,4 % de fenêtres socle / 79 % versant sur la tuile spawn,
+médiane globale 118 m — le calm est FRAGMENTÉ sous les 250 m (fonds
+de vallées étroits). Élargir les socles = structurellement B4
+(vallées orientées) et B5 (vallées maîtresses à fond de 800-1500 m) ;
+le budget 40/35/25 se joue là, pas dans les hooks d'érosion. Caches
+v32/v37 ; `erosion calibration` re-passé : le fit a dérivé
+(sous-promesse jusqu'à ~175 m sur le massif étalon, sur-promesse
+~230 m sur une bande rare de piémont) — le re-fit complet est du
+périmètre B6 comme prévu au plan ; le doctest d'accord au rim
+(fallback vs tuiles) reste vert, la couture proche n'est pas
+affectée.

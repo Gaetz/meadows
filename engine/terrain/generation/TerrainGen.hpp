@@ -210,6 +210,11 @@ struct MacroResult {
 // re-blends back, so swelled highlands survive the stream power.
 constexpr f32 kPlateauKeepCoef = 0.0008f; // per meter of base lift
 constexpr f32 kPlateauKeepMax = 0.5f;
+// High calm socles (plateau tops, elevated plains) also resist the
+// carve: keep fraction added per unit of altitude-gated calm, so the
+// habitable high ground stays high instead of being dissected back to
+// base level. Shared by TileBake stage 1 and the analytic mirror.
+constexpr f32 kCalmKeep = 0.25f;
 
 // The MacroParams elevation recurve applied to one land height (meters):
 // monotone PCHIP through (0,0), (1/4, low), (1/2, mid), (3/4, high),
