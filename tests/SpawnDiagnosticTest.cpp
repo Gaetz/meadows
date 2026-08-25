@@ -1348,12 +1348,17 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
     };
     const auto biomeSetFor = [](const Config& c) {
         auto set = std::make_shared<render::BiomeSet>();
-        set->table.resize(5);
+        set->table.resize(6);
         set->table[4].rockiness = 0.35f;
         set->table[4].grassPresence = 0.55f;
         set->table[4].snowLineOffset = -60.0f;
         set->table[4].temperature = -0.2f;
         set->table[4].wetness = 0.25f;
+        set->table[5].sandiness = 0.35f;
+        set->table[5].grassPresence = 0.6f;
+        set->table[5].snowLineOffset = 80.0f;
+        set->table[5].temperature = 0.35f;
+        set->table[5].wetness = 0.15f;
         set->table[1].sandiness = 0.7f;
         set->table[1].grassPresence = 0.25f;
         set->table[1].snowLineOffset = c.arid;

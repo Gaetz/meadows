@@ -32,7 +32,7 @@ namespace render::terraingen {
 
 // Per-biome erosion character, indexed by the biome palette contract
 // (TerrainGen.hpp: 0 temperate, 1 arid, 2 alpine, 3 tundra,
-// 4 subalpine). The
+// 4 subalpine, 5 steppe). The
 // vegetation-cohesion idea: temperate cover holds soil together, arid
 // terrain gullies deep, alpine rock stands steeper. capacityScale and
 // fineScale feed the sediment-deposition and fine-erosion passes.
@@ -98,6 +98,7 @@ struct TileBakeParams {
         { 0.75f, 1.25f, 1.0f, 1.0f }, // alpine
         { 1.0f, 0.9f, 1.2f, 0.7f },   // tundra
         { 0.85f, 1.1f, 1.05f, 0.9f }, // subalpine (temperate->alpine mid)
+        { 1.15f, 0.9f, 0.85f, 1.25f }, // steppe (temperate->arid mid)
     };
 };
 
@@ -157,8 +158,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 40;
-constexpr u32 kTileBakeVersion = 45;
+constexpr u32 kStage1Version = 41;
+constexpr u32 kTileBakeVersion = 46;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

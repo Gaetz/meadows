@@ -140,7 +140,8 @@ struct ProceduralControlParams {
     f32 warpStrength { 440.0f };    // scaled with the continent wave
     // Climate fields deciding the biome id (must match the BiomeForm
     // palette shipped in data: 0 temperate, 1 arid, 2 alpine, 3 tundra,
-    // 4 subalpine — the temperate->alpine transition belt).
+    // 4 subalpine, 5 steppe — the temperate->alpine and
+    // temperate->arid transition belts).
     f32 climateWavelength { 350.0f };
     // Relief regimes: a type-selector field sorts the land into three
     // characters — HILL-CHAIN country (low, rolling ridged hills, no

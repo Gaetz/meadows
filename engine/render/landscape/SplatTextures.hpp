@@ -49,7 +49,11 @@ constexpr u32 kFrostGrassLayer = 21;
 // the color shift IS the transition.
 constexpr u32 kHeathLayerA = 22;
 constexpr u32 kHeathLayerB = 23;
-constexpr u32 kSplatArrayLayers = 24;
+// Steppe dry grass: deposits per-pixel over the green grass as the
+// blended biome sandiness rises (temperate -> steppe -> arid) — the
+// arid interior's ground state. Same deposition rules as the heath.
+constexpr u32 kSteppeGrassLayer = 24;
+constexpr u32 kSplatArrayLayers = 25;
 constexpr u32 grassVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Grass : SplatLayer_Count + variant - 1;
 }

@@ -266,3 +266,14 @@ normal = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_NormalGL.png"
 ao = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_Roughness.png"
 height = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_Displacement.png"
+
+[[material]]
+name = "steppe-grass"           # layer 24 — herbe fanée (dépôt par pixel
+                                # clé sur la sandiness blendée ; PAS
+                                # d'harmonize, le jaunissement EST la
+                                # transition tempéré->steppe->aride)
+albedo = "../../../../assets-src/terrain/withered_grass/withered_grass_Color.png"
+normal = "../../../../assets-src/terrain/withered_grass/withered_grass_NormalGL.png"
+ao = "../../../../assets-src/terrain/withered_grass/withered_grass_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/withered_grass/withered_grass_Roughness.png"
+height = "../../../../assets-src/terrain/withered_grass/withered_grass_Displacement.png"

@@ -132,6 +132,15 @@ void main() {
                    snowLine + snowOffset - 80.0, h + wander * 26.0);
     float heathPatch =
         heathBand > 0.001 ? snowPatch01(vWorldPos.xz * 0.31) : 0.5;
+    // Steppe dry-grass band: the blended biome SANDINESS is the per-
+    // pixel aridity signal (temperate 0 -> steppe -> arid): the
+    // withered-grass ground (24) deposits over the green grass as the
+    // climate dries, so the arid interior reads as dry steppe instead
+    // of lush lawn. Same deposition recipe as the heath — never a
+    // per-vertex variant flip (off-color cells paint the hex lattice).
+    float dryBand = smoothstep(0.12, 0.55, shade1.b);
+    float dryPatch =
+        dryBand > 0.001 ? snowPatch01(vWorldPos.xz * 0.23 + 57.0) : 0.5;
     float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
     // Cliff variant panel (24 m) — every cliff fetch (height, albedo,
     // POM) must agree on it.
@@ -293,6 +302,7 @@ void main() {
         vec2 layerN;
         bool overlayHere = i == 0 && overlayBand > 0.001;
         bool heathHere = i == 0 && heathBand > 0.001;
+        bool dryHere = i == 0 && dryBand > 0.001;
         if (i <= 3) {
             layer = vec3(0.0);
             layerN = vec2(0.0);
@@ -303,6 +313,8 @@ void main() {
             vec2 snowN = vec2(0.0);
             vec3 heathA = vec3(0.0);
             vec2 heathN = vec2(0.0);
+            vec3 dryA = vec3(0.0);
+            vec2 dryN = vec2(0.0);
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
@@ -323,9 +335,21 @@ void main() {
                     // single-tap version re-exposed the 4 m tile grid
                     // as visible lines), at slightly detuned scales so
                     // nothing aligns with the grass tiles either.
-                    // The heath deposit rides the SAME hex taps as the
-                    // frost (single-tap = visible 4 m grid, measured);
-                    // only the CHOICE between the two heaths is
+                    // Deposit taps ride the SAME hex offsets as the
+                    // grass (single-tap = visible 4 m grid, measured),
+                    // at detuned scales so nothing aligns.
+                    if (dryHere) {
+                        dryA += hexW[t] *
+                                texture(uSplat,
+                                        vec3(tapUv * 0.77, 24.0)).rgb;
+                        dryN +=
+                            hexW[t] *
+                            (texture(uSplatNormal,
+                                     vec3(tapUv * 0.77, 24.0)).rg *
+                                 2.0 -
+                             1.0);
+                    }
+                    // Only the CHOICE between the two heaths is
                     // per-vertex — they share one chromatic family.
                     if (heathHere) {
                         float hl = heathLayerOf(hexV[t]);
@@ -361,10 +385,26 @@ void main() {
                     }
                 }
             }
-            // The subalpine heath settles FIRST (under the frost): a
-            // feathered per-pixel coverage shaped by its own coarser
-            // patch instance — the transition-biome ground emerges in
-            // gnawed pools, never in lattice cells.
+            // The steppe dry grass is the climate's ground state: it
+            // settles first, heath then frost then snow stack above.
+            if (dryHere) {
+                float dryRelief = hs[0] - 0.5;
+                float dryCover = smoothstep(
+                    0.08, 0.75,
+                    dryBand * 1.05 - dryPatch * 0.45 - dryRelief * 0.3);
+                layer = mix(layer, dryA, dryCover);
+                layerN = mix(layerN, dryN, dryCover);
+                if (wantOrm) {
+                    layerOrm = mix(
+                        layerOrm,
+                        texture(uSplatOrm, vec3(baseUv, 24.0)).rg,
+                        dryCover);
+                }
+            }
+            // The subalpine heath settles under the frost: a feathered
+            // per-pixel coverage shaped by its own coarser patch
+            // instance — the transition-biome ground emerges in gnawed
+            // pools, never in lattice cells.
             if (heathHere) {
                 float heathRelief = hs[0] - 0.5;
                 float heathCover = smoothstep(

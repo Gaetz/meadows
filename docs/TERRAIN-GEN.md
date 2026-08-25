@@ -1111,4 +1111,29 @@ spéculaire, prochain levier = biais roughness par couche au cook.
 **Validation visuelle dev EN ATTENTE** (monter vers une ligne de
 neige : les cellules de lande doivent apparaître progressivement,
 sans lattice) ; restes M3b : steppe (transition aride) si besoin,
-couplage racines de brins.
+couplage racines de brins. [NB : le constat roughness ci-dessus est
+caduc depuis l'audit — l'ORM du dépôt lande est le tap unique de la
+couche 22, le turf brillant n'atteint pas le shading. Lande + talus
+VALIDÉS dev après le passage au dépôt et l'ancrage ORM du scree.]
+
+**M3b-3 — steppe (2026-08-25)** : le second interbiome, patron du
+subalpin avec les leçons appliquées d'emblée (dépôt par pixel,
+jamais de flip). **Sol** : herbe fanée `withered_grass` (Poly
+Haven — sans risque ici : un dépôt n'exige pas d'ancrage de
+moyennes), couche 24, kSplatArrayLayers 25. **Signal par pixel** :
+la SANDINESS blendée (shade1.b) est l'aridité continue depuis M4
+(tempéré 0 → steppe 0,35 → aride 0,7) — `dryBand =
+smoothstep(0,12, 0,55, sandiness)`, couverture = bande × instance
+dédiée du champ de patchs (×0,23) × relief de tuile, déposée SOUS
+lande/givre/neige (l'état de base du climat). Effet bonus voulu :
+l'intérieur aride, jusqu'ici en gazon vert, lit enfin en steppe
+sèche. **Palette id 5** : bande moisture < 0,46 ∧
+temperature > 0,54 (l'altitude gagne : les checks tier passent
+avant), BiomeForm (sandiness 0,35, grassPresence 0,6,
+snowLineOffset +80, temperature 0,35), érosion intermédiaire
+tempéré↔aride dans BiomeErosion. Caches v41/v46. Suite 665/666 ;
+couverture neige intacte (5,79 % vs 6,14 % référence) ; GLSL validé
+offline. **Validation visuelle dev EN ATTENTE** (chercher une
+frange aride : le gazon doit jaunir en nappes rongées vers le cœur
+sec) ; reste M3b : couplage racines de brins sur les sols de
+transition.

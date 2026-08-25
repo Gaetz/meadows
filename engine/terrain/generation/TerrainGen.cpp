@@ -783,6 +783,10 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
         return 4; // subalpine — the transition belt below the alpine
                   // tiers (heath ground, milder snow accent)
     }
+    if (moisture < 0.46f && temperature > 0.54f) {
+        return 5; // steppe — the drying fringe around the arid core
+                  // (elevation wins: the tier checks run first)
+    }
     return 0;
 }
 
