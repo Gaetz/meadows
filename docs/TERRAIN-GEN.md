@@ -547,9 +547,22 @@ espacement cible (en course de base ; diviser par ~1,6 à monture) :
 
 ## 6. Critères d'acceptation (diagnostics à re-passer)
 
-Sur `variety transect` (transects de 16 km, fenêtres 250 m) :
-- relief médian par fenêtre : **18-30 m** (au lieu de 24-56 — plus
-  haut que la première proposition, cohérent avec le 40/35/25) ;
+**Amendement 2026-08-25 (demande dev)** : tous les budgets de familles
+sont **TERRE-SEULEMENT** — la mer se compte à part (part mondiale
+cible ~20-25 % ; la part « vue de session » autour du départ peut être
+plus haute, c'est le golfe voulu). Les fenêtres d'instruments
+entièrement marines sont exclues du recensement et mettent l'horloge
+d'événements en pause (traverser un golfe n'est pas de la monotonie).
+Les **plateaux sont première classe** : les socles hauts
+(plateau > 80 m) se comptent à part (socle-plaine / socle-plateau)
+pour rester visibles dans le budget — le 40 % de socle les inclut.
+Avec 25 % de drame assumé, la médiane de relief TERRESTRE cible passe
+à **20-40 m** (l'ancienne 18-30 datait de l'instrument pollué par la
+mer).
+
+Sur `variety transect` (transects de 16 km, fenêtres 250 m, terre
+seulement) :
+- relief médian par fenêtre : **20-40 m** ;
 - fenêtres plates < 8 m : **15-35 %** (concentrées sur les socles) ;
 - pentes > 30° : **< 15 %** des échantillons, et « infranchissable
   continu » jamais > 400 m sans passage ;

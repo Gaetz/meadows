@@ -861,6 +861,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         // Terrain-family census of the 250 m windows (the 40/35/25
         // target): socle = gentle and low-relief, drame = wall-steep.
         u32 socleWindows = 0, versantWindows = 0, drameWindows = 0;
+        u32 plateauWindows = 0;
         u32 seaWindows = 0;
         // Longest stretch containing a >30° step and no <15° foothold.
         f32 maxImpassable = 0.0f, sinceFoothold = 0.0f;
@@ -933,15 +934,21 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                     ? 0.0f
                     : windowSlopes[windowSlopes.size() / 2];
             windowSlopes.clear();
+            const f32 cx = px + dirX * (d - 125.0f);
+            const f32 cz = pz + dirZ * (d - 125.0f);
             if (medianSlope > kTan30) {
                 ++drameWindows;
             } else if (medianSlope < kTan10 && relief < 15.0f) {
                 ++socleWindows;
+                // The dev likes his plateaus: count the high socles
+                // apart so the budget shows them instead of melting
+                // them into the plains.
+                if (controls.at(cx, cz).plateau > 80.0f) {
+                    ++plateauWindows;
+                }
             } else {
                 ++versantWindows;
             }
-            const f32 cx = px + dirX * (d - 125.0f);
-            const f32 cz = pz + dirZ * (d - 125.0f);
             const int regime = regimeOf(cx, cz);
             const bool wet =
                 wetAt(cx, cz, render::terrain::height(world.tp, cx, cz));
@@ -1001,11 +1008,13 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 "%  median relief ", medianRelief, " m");
         MESSAGE("  families: socle ",
                 100.0f * static_cast<f32>(socleWindows) / windows,
-                "%, versant ",
+                "% (dont plateau ",
+                100.0f * static_cast<f32>(plateauWindows) / windows,
+                "%), versant ",
                 100.0f * static_cast<f32>(versantWindows) / windows,
                 "%, drame ",
                 100.0f * static_cast<f32>(drameWindows) / windows,
-                "%  (target 40/35/25)");
+                "%  (target 40/35/25, land only)");
         MESSAGE("  events: relief>25m ", reliefEvents, ", regime ",
                 regimeEvents, ", water ", waterEvents,
                 "  | mean event spacing ",
@@ -1180,11 +1189,14 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
 TEST_CASE("family census diagnostic" * doctest::skip()) {
     TileBakeParams params;
     params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
     const TileBakeResult baked = bakeTile(params, 2, 0);
     const auto& r = baked.region;
     constexpr f32 kWindow = 250.0f;
     const u32 stride = static_cast<u32>(kWindow / r.texelSize);
-    u32 socle = 0, versant = 0, drame = 0, wet = 0;
+    u32 socle = 0, versant = 0, drame = 0, wet = 0, plateau = 0;
     vector<f32> socleRelief, versantRelief, allRelief;
     for (u32 wz = 0; wz + stride < r.height; wz += stride) {
         for (u32 wx = 0; wx + stride < r.width; wx += stride) {
@@ -1217,6 +1229,16 @@ TEST_CASE("family census diagnostic" * doctest::skip()) {
             } else if (medianSlope < 0.1763f && relief < 15.0f) {
                 ++socle;
                 socleRelief.push_back(relief);
+                if (controls
+                        .at(r.originX +
+                                (static_cast<f32>(wx) + stride * 0.5f) *
+                                    r.texelSize,
+                            r.originZ +
+                                (static_cast<f32>(wz) + stride * 0.5f) *
+                                    r.texelSize)
+                        .plateau > 80.0f) {
+                    ++plateau;
+                }
             } else {
                 ++versant;
                 versantRelief.push_back(relief);
@@ -1232,8 +1254,10 @@ TEST_CASE("family census diagnostic" * doctest::skip()) {
     };
     const f32 land = static_cast<f32>(socle + versant + drame);
     MESSAGE("spawn tile 250m windows: socle ", 100.0f * socle / land,
-            "%, versant ", 100.0f * versant / land, "%, drame ",
-            100.0f * drame / land, "%  (", wet, " wet)  target 40/35/25");
+            "% (dont plateau ", 100.0f * plateau / land, "%), versant ",
+            100.0f * versant / land, "%, drame ",
+            100.0f * drame / land, "%  (", wet,
+            " wet)  target 40/35/25, land only");
     MESSAGE("median relief: all ", median(allRelief), " m, socle ",
             median(socleRelief), " m, versant ", median(versantRelief),
             " m");
