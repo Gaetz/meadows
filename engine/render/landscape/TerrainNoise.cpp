@@ -109,7 +109,7 @@ f32 wanderLattice(i32 x, i32 y) {
     return static_cast<f32>(h) * (1.0f / 4294967295.0f);
 }
 
-f32 borderWander(f32 px, f32 py) {
+f32 wanderValue01(f32 px, f32 py) {
     const f32 fx = std::floor(px);
     const f32 fy = std::floor(py);
     const f32 tx = px - fx;
@@ -122,10 +122,17 @@ f32 borderWander(f32 px, f32 py) {
     const f32 v10 = wanderLattice(x0 + 1, y0);
     const f32 v01 = wanderLattice(x0, y0 + 1);
     const f32 v11 = wanderLattice(x0 + 1, y0 + 1);
-    const f32 n = glm::mix(glm::mix(v00, v10, ux), glm::mix(v01, v11, ux),
-                           uy);
-    return -0.31f + (n - 0.5f) * 0.2f;
+    return glm::mix(glm::mix(v00, v10, ux), glm::mix(v01, v11, ux), uy);
 }
+
+f32 borderWander(f32 px, f32 py) {
+    return -0.31f + (wanderValue01(px, py) - 0.5f) * 0.2f;
+}
+
+// NB: the grass->snow transition look (snowPatch01, frost/snow
+// deposition) is shader-only (terrain.frag) — it never moves the
+// WEIGHTS, so the scatter follows the plain weight ramp and no CPU
+// mirror is needed.
 
 // terrain_zones.glsl mirror — see GrassZone in the header.
 constexpr f32 kGrassZoneSize = 3.0f;
@@ -166,7 +173,12 @@ MaterialWeights materialWeightsCore(const WeightRuleInputs& in) {
         glm::smoothstep(0.18f - in.rockShift, 0.35f - in.rockShift,
                         in.slope) *
         (1.0f - weights.cliff);
-    weights.snow = glm::smoothstep(in.snowLine - 12.0f, in.snowLine + 42.0f,
+    // Weight-level snow = the HIGH handoff only (terrain_weights.glsl
+    // lockstep): the visible grass->snow transition below it is the
+    // deposition overlay in terrain.frag — snow composited over the
+    // grass the way snow lies on rock.
+    weights.snow = glm::smoothstep(in.snowLine - 20.0f,
+                                   in.snowLine + 80.0f,
                                    in.height + in.wander * 26.0f) *
                    (1.0f - glm::smoothstep(0.25f, 0.45f, in.slope));
     weights.sand =
@@ -304,6 +316,21 @@ RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {
     RegionFields fields;
     fields.rockiness = biome.rockiness;
     fields.snowLineOffset = biome.snowLineOffset;
+    // Biome ids resolve nearest-texel, so their borders are crisp — and
+    // the snow-line offset is the one field whose jump (up to ~300 m
+    // between palette entries) paints a razor snow/grass border along
+    // them. Averaged over a small cross, the jump becomes a ~60 m ramp
+    // the snow patches and the frost band can dress. Shared by the
+    // ShadeMap bake and every CPU consumer — the lockstep holds by
+    // construction.
+    if (params.biomes && !params.biomes->table.empty()) {
+        f32 sum = fields.snowLineOffset * 2.0f;
+        sum += biomeAt(params, x + 32.0f, z).snowLineOffset;
+        sum += biomeAt(params, x - 32.0f, z).snowLineOffset;
+        sum += biomeAt(params, x, z + 32.0f).snowLineOffset;
+        sum += biomeAt(params, x, z - 32.0f).snowLineOffset;
+        fields.snowLineOffset = sum / 6.0f;
+    }
     fields.sandiness = biome.sandiness;
     fields.grassPresence = biome.grassPresence;
     fields.temperature = biome.temperature;

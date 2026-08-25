@@ -64,33 +64,38 @@ int hexVariantOf(ivec2 v) {
 
 // Per-FAMILY variant layer at a lattice vertex (SplatTextures.hpp is
 // the layer table): grass 4-way (0/5/6/7 — its own hash, the CPU
-// scatter mirror depends on it), rock 4-way (1/8/9/10), snow 3-way
-// (2/11/12), sand 4-way (3/13/14/15); cliff stays single (strata
-// modulation instead). Distinct salts per family so the patchworks
-// never correlate.
-// `screeBias` (sand family only): the rock-foot talus flips the pick to
-// the dedicated scree layer (16) with rising probability — its fringe
-// hex-blends with the ordinary sand variants, and the weight rule's
-// falloff carries it into grass or water.
-float hexFamilyLayer(int family, ivec2 v, float screeBias) {
+// scatter mirror depends on it), rock 5-way (1/8/9/10/19), snow 4-way
+// (2/11/12/20), sand 4-way (3/13/14/15); cliff 3-way in 24 m PANELS
+// (4/17/18 — per-hex-cell picks would patchwork a continuous wall).
+// Distinct salts per family so the patchworks never correlate.
+// `bias` = the sand family's scree flip to layer 16 (rock-foot talus).
+// The frost-grass layer (21) is NOT a per-vertex flip — a binary cell
+// decision at high contrast paints the hex lattice (measured in game);
+// terrain.frag DEPOSITS it per-pixel over the blended grass instead,
+// filling the tile's hollows first.
+float hexFamilyLayer(int family, ivec2 v, float bias) {
     if (family == 0) {
         int g = hexVariantOf(v);
         return g == 0 ? 0.0 : float(4 + g);
     }
     if (family >= 4) {
-        return float(family);
+        ivec2 vc = ivec2(floor(vec2(v) / 8.0)); // ~24 m panels
+        uint hc = zoneHash(uint(vc.x) * 0x9e3779b9u ^
+                           uint(vc.y) * 0x85ebca6bu);
+        int g = int(hc % 3u);
+        return g == 0 ? 4.0 : float(16 + g); // 17..18
     }
     uint h = zoneHash(uint(v.x) * (0x68e31da4u + uint(family) * 977u) ^
                       uint(v.y) * (0xb5297a4du + uint(family) * 331u));
     if (family == 1) {
-        int g = int(h & 3u);
-        return g == 0 ? 1.0 : float(7 + g); // 8..10
+        int g = int(h % 5u);
+        return g == 0 ? 1.0 : (g == 4 ? 19.0 : float(7 + g)); // 8..10, 19
     }
     if (family == 2) {
-        int g = int(h % 3u);
-        return g == 0 ? 2.0 : float(10 + g); // 11..12
+        int g = int(h & 3u);
+        return g == 0 ? 2.0 : (g == 3 ? 20.0 : float(10 + g)); // 11..12, 20
     }
-    if (float((h >> 8) & 255u) * (1.0 / 255.0) < screeBias) {
+    if (float((h >> 8) & 255u) * (1.0 / 255.0) < bias) {
         return 16.0; // scree
     }
     int g = int(h & 3u);

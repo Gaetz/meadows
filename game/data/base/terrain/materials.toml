@@ -174,3 +174,59 @@ normal = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_NormalG
 ao = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Roughness.png"
 height = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Displacement.png"
+
+# --- M3 enrichment (2026-08-25): cliff variants (the only mono-variant
+# family), mossy temperate rock, windswept snow, and the frost-grass
+# transition layer the snow-patch rule biases toward. Layer order
+# contract: 17 cliff-var1, 18 cliff-var2, 19 rock-var4, 20 snow-var3,
+# 21 grass-snowy (SplatTextures.hpp / terrain_zones.glsl mirrors).
+
+[[material]]
+name = "cliff-var1"             # layer 17 — paroi fissurée patinée
+albedo = "../../../../assets-src/terrain/rock_face_03/rock_face_03_Color.png"
+normal = "../../../../assets-src/terrain/rock_face_03/rock_face_03_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_face_03/rock_face_03_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_face_03/rock_face_03_Roughness.png"
+height = "../../../../assets-src/terrain/rock_face_03/rock_face_03_Displacement.png"
+harmonize = true
+harmonizeWith = 4
+
+[[material]]
+name = "cliff-var2"             # layer 18 — faces fracturées grossières
+albedo = "../../../../assets-src/terrain/aerial_rocks_02/aerial_rocks_02_Color.png"
+normal = "../../../../assets-src/terrain/aerial_rocks_02/aerial_rocks_02_NormalGL.png"
+ao = "../../../../assets-src/terrain/aerial_rocks_02/aerial_rocks_02_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/aerial_rocks_02/aerial_rocks_02_Roughness.png"
+height = "../../../../assets-src/terrain/aerial_rocks_02/aerial_rocks_02_Displacement.png"
+harmonize = true
+harmonizeWith = 4
+
+[[material]]
+name = "rock-var4"              # layer 19 — roche moussue (relief, pas couleur)
+albedo = "../../../../assets-src/terrain/mossy_rock/mossy_rock_Color.png"
+normal = "../../../../assets-src/terrain/mossy_rock/mossy_rock_NormalGL.png"
+ao = "../../../../assets-src/terrain/mossy_rock/mossy_rock_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/mossy_rock/mossy_rock_Roughness.png"
+height = "../../../../assets-src/terrain/mossy_rock/mossy_rock_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "snow-var3"              # layer 20 — congères soufflées
+albedo = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_Displacement.png"
+harmonize = true
+harmonizeWith = 2
+
+[[material]]
+name = "grass-snowy"            # layer 21 — herbe givrée (transition) ; PAS
+                                # d'harmonize : sa neige reste blanche (le
+                                # scree a le même privilège)
+albedo = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Displacement.png"

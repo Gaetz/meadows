@@ -99,6 +99,13 @@ struct RenderView {
     f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
     f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
     f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
+    // Terrain surface response: per-material AO (cooked ORM) and the
+    // wet/snow sheen — the stylized terrain's only specular, gated to
+    // wet or snowy ground so dry land keeps its pure diffuse.
+    f32 surfAoStrength { 0.7f };
+    f32 wetDarken { 0.6f };
+    f32 wetSheen { 0.5f };
+    f32 snowSheen { 0.04f };
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
     // H3: the active worldspace's buried threshold (-1e9 = rule off).
     f32 buriedBelowY { -1.0e9f };

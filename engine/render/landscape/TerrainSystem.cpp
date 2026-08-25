@@ -351,6 +351,10 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
               .usage = rhi::TextureUsage_Sampled },
             normalPixels.data()) };
     }
+    // Binding 9 = the cooked ORM (AO/roughness for the surface
+    // response). The procedural fallback has none — the normal array
+    // stands in as a placeholder and the uSurfSheenInfo knobs are
+    // zeroed by the renderer, so it is never actually read.
     splatBindGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = splatTexture,
@@ -360,6 +364,10 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
                          .sampler = splatSampler },
                        { .binding = 8,
                          .texture = materialNormal,
+                         .sampler = splatSampler },
+                       { .binding = 9,
+                         .texture = cookedMaterials ? materialOrm.get()
+                                                    : materialNormal.get(),
                          .sampler = splatSampler } } }) };
 }
 

@@ -4257,6 +4257,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .splatVariety = tuning.splatVariety,
         .pomShadowStrength = tuning.pomShadowStrength,
         .pomDepth = tuning.pomDepth,
+        .surfAoStrength = tuning.surfAoStrength,
+        .wetDarken = tuning.wetDarken,
+        .wetSheen = tuning.wetSheen,
+        .snowSheen = tuning.snowSheen,
         .interiorAmbient = tuning.interiorAmbient,
         .buriedBelowY = buriedBelowY,
         .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,
@@ -4491,6 +4495,15 @@ void LandscapeScene::drawUi() {
                                &tuning.pomShadowStrength, 0.0f, 1.0f);
             ImGui::SliderFloat("POM relief depth",
                                &tuning.pomDepth, 0.0f, 0.12f);
+            ImGui::SeparatorText("Surface response (0 = A/B off)");
+            ImGui::SliderFloat("Material AO (ambient)",
+                               &tuning.surfAoStrength, 0.0f, 1.0f);
+            ImGui::SliderFloat("Wetness darkening",
+                               &tuning.wetDarken, 0.0f, 1.0f);
+            ImGui::SliderFloat("Wet sheen",
+                               &tuning.wetSheen, 0.0f, 1.0f);
+            ImGui::SliderFloat("Snow sheen",
+                               &tuning.snowSheen, 0.0f, 1.0f);
         }
     });
     rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
@@ -4550,6 +4563,10 @@ void LandscapeScene::saveRenderTuning() {
     tuning.splatVariety = this->tuning.splatVariety;
     tuning.pomShadowStrength = this->tuning.pomShadowStrength;
     tuning.pomDepth = this->tuning.pomDepth;
+    tuning.surfAoStrength = this->tuning.surfAoStrength;
+    tuning.wetDarken = this->tuning.wetDarken;
+    tuning.wetSheen = this->tuning.wetSheen;
+    tuning.snowSheen = this->tuning.snowSheen;
     tuning.fogDensity = atmos.fogDensity;
     tuning.fogHeightFalloff = atmos.fogHeightFalloff;
     tuning.fogLowBoost = atmos.fogLowBoost;

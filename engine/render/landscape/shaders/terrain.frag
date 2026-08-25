@@ -17,6 +17,10 @@ layout(binding = 5) uniform sampler2D uTerrainShade1;
 // Per-layer tangent normals: rg = xy*0.5+0.5, z reconstructed (BC5 cooked
 // or RGBA8 procedural — one decode path).
 layout(binding = 8) uniform sampler2DArray uSplatNormal;
+// Cooked ORM (r = AO, g = roughness): the surface response — AO on the
+// ambient, roughness shaping the wet/snow sheen. The procedural
+// fallback binds a placeholder here and zeroes uSurfSheenInfo.
+layout(binding = 9) uniform sampler2DArray uSplatOrm;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
@@ -61,7 +65,12 @@ void main() {
                              : vec4(0.0, 128.0 / 255.0, 0.0, 0.0);
     float rockShift = 0.1 * shade1.r;
     float snowOffset = (shade1.g * 255.0 - 128.0) * 8.0;
-    vec3 tint = shadeValid ? texture(uTerrainShade0, suv).rgb : vec3(1.0);
+    vec4 shade0 = shadeValid ? texture(uTerrainShade0, suv)
+                             : vec4(1.0, 1.0, 1.0, 0.0);
+    vec3 tint = shade0.rgb;
+    // Baked ground wetness (rivers, lakes, the v4 incisions) — the
+    // per-pixel half of what uStormInfo.y does globally.
+    float wetMask = shadeValid ? shade0.a : 0.0;
 
     // vColor.r carries the baked rock-exposure mask (TerrainSystem
     // vertex build) — bare cliff faces claim the steepest slopes.
@@ -101,7 +110,21 @@ void main() {
     // screeFactor — the same band that grew the sand apron).
     float screeMix =
         clamp(screeFactor(slope, vColor.r, wander) * 1.6, 0.0, 1.0);
+    // Grass->snow transition = a two-stage DEPOSITION over the meadow
+    // (the snow-on-rock recipe transposed): frost first, then white
+    // snow, both composited per-pixel in the albedo loop with the
+    // grass tile's own relief poking through and the fractal patch
+    // field shaping tongues and bays — never a weight threshold (hard
+    // cutouts) nor a per-vertex flip (hex lattice), both measured.
+    float overlayBand =
+        smoothstep(snowLine + snowOffset - 90.0,
+                   snowLine + snowOffset + 60.0, h + wander * 26.0);
+    float overlayPatch =
+        overlayBand > 0.001 ? snowPatch01(vWorldPos.xz) : 0.5;
     float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
+    // Cliff variant panel (24 m) — every cliff fetch (height, albedo,
+    // POM) must agree on it.
+    float cliffLayer = hexFamilyLayer(4, hexV[hexDom], 0.0);
 
     // Height-blend the rule weights: only layers the rule already admits
     // fetch their displacement (2-3 typical), the winner's micro-relief
@@ -127,7 +150,8 @@ void main() {
                 }
             }
         } else {
-            hs[i] = texture(uSplatHeight, vec3(uv, float(i))).r;
+            hs[i] = texture(uSplatHeight,
+                            vec3(uv, i == 4 ? cliffLayer : float(i))).r;
         }
     }
     float b[kSplatLayers];
@@ -174,7 +198,7 @@ void main() {
         dominant <= 3
             ? hexFamilyLayer(dominant, hexV[hexDom],
                              dominant == 3 ? screeMix : 0.0)
-            : float(dominant);
+            : (dominant == 4 ? cliffLayer : float(dominant));
     vec2 pomShift = dominant <= 3 ? hexOff[hexDom] : vec2(0.0);
     vec2 pomUv = uv + pomShift;
     float pomSelfShadow = 1.0;
@@ -238,19 +262,33 @@ void main() {
 
     vec3 albedo = vec3(0.0);
     vec2 nxy = vec2(0.0);
+    // ORM rides the SAME weighted taps as the albedo (a single-tap
+    // sample painted the hex lattice into the ambient — any per-pixel
+    // term must blend exactly like the color it modulates).
+    bool wantOrm =
+        uSurfSheenInfo.x + uSurfSheenInfo.z + uSurfSheenInfo.w > 0.0;
+    vec2 ormAcc = vec2(0.0);
     for (int i = 0; i < kSplatLayers; ++i) {
         if (b[i] <= 0.0) {
             continue;
         }
         // Families 0-3 are 3-tap hex blends (variant + offset per
-        // lattice vertex); the cliff fetches itself at the unshifted uv.
+        // lattice vertex); the cliff fetches its PANEL variant at the
+        // unshifted uv.
         vec2 baseUv = pomUv - pomShift;
-        float fetchLayer = i == 0 ? grassLayerA : float(i);
+        float fetchLayer =
+            i == 0 ? grassLayerA : (i == 4 ? cliffLayer : float(i));
         vec3 layer;
         vec2 layerN;
+        bool overlayHere = i == 0 && overlayBand > 0.001;
         if (i <= 3) {
             layer = vec3(0.0);
             layerN = vec2(0.0);
+            vec2 layerOrm = vec2(0.0);
+            vec3 frostA = vec3(0.0);
+            vec2 frostN = vec2(0.0);
+            vec3 snowA = vec3(0.0);
+            vec2 snowN = vec2(0.0);
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
@@ -262,12 +300,77 @@ void main() {
                               (texture(uSplatNormal,
                                        vec3(tapUv, lyr)).rg * 2.0 -
                                1.0);
+                    if (wantOrm) {
+                        layerOrm +=
+                            hexW[t] *
+                            texture(uSplatOrm, vec3(tapUv, lyr)).rg;
+                    }
+                    // Overlay taps ride the SAME hex offsets (their
+                    // single-tap version re-exposed the 4 m tile grid
+                    // as visible lines), at slightly detuned scales so
+                    // nothing aligns with the grass tiles either.
+                    if (overlayHere) {
+                        frostA += hexW[t] *
+                                  texture(uSplat,
+                                          vec3(tapUv * 0.83, 21.0)).rgb;
+                        frostN +=
+                            hexW[t] *
+                            (texture(uSplatNormal,
+                                     vec3(tapUv * 0.83, 21.0)).rg *
+                                 2.0 -
+                             1.0);
+                        snowA += hexW[t] *
+                                 texture(uSplat,
+                                         vec3(tapUv * 1.19, 2.0)).rgb;
+                        snowN +=
+                            hexW[t] *
+                            (texture(uSplatNormal,
+                                     vec3(tapUv * 1.19, 2.0)).rg *
+                                 2.0 -
+                             1.0);
+                    }
                 }
             }
+            // Two-stage snow DEPOSITION over the blended grass: frost
+            // (21) settles first, white snow (2) buries it — hollows
+            // of the tile relief first, feathered coverage, tongues
+            // and bays from the fractal patch field. The weight-level
+            // snow only takes over ABOVE, once this is fully white.
+            if (overlayHere) {
+                float reliefBias = hs[0] - 0.5;
+                float frostCover = smoothstep(
+                    0.05, 0.6,
+                    overlayBand * 1.15 - overlayPatch * 0.3 -
+                        reliefBias * 0.55);
+                float snowCover = smoothstep(
+                    0.4, 0.95,
+                    overlayBand * 1.25 - overlayPatch * 0.5 -
+                        reliefBias * 0.8);
+                layer = mix(mix(layer, frostA, frostCover), snowA,
+                            snowCover);
+                layerN = mix(mix(layerN, frostN, frostCover), snowN,
+                             snowCover);
+                if (wantOrm) {
+                    // ORM stays a single tap: its low-frequency AO/
+                    // roughness never shows the tile grid.
+                    layerOrm = mix(
+                        mix(layerOrm,
+                            texture(uSplatOrm, vec3(baseUv, 21.0)).rg,
+                            frostCover),
+                        texture(uSplatOrm, vec3(baseUv, 2.0)).rg,
+                        snowCover);
+                }
+            }
+            ormAcc += layerOrm * b[i];
         } else {
             layer = texture(uSplat, vec3(baseUv, fetchLayer)).rgb;
             layerN = texture(uSplatNormal,
                              vec3(baseUv, fetchLayer)).rg * 2.0 - 1.0;
+            if (wantOrm) {
+                ormAcc += texture(uSplatOrm, vec3(baseUv, fetchLayer))
+                              .rg *
+                          b[i];
+            }
         }
         // Anti-repetition (brief phase 5, cheap variant): a second tap at
         // a NON-HARMONIC frequency (0.37x, per-layer phase) drifts the
@@ -313,10 +416,18 @@ void main() {
     albedo *= mix(vec3(1.0), tint, uSplatDetailInfo.y);
 
     albedo *= cascadeDebugTint(vWorldPos);
-    // Wetness: rain darkens the ground (global for now — the roof
-    // keeps the DROPS out via the occlusion map; per-pixel dry patches
-    // under cover are a later refinement).
-    albedo *= mix(1.0, 0.72, clamp(uStormInfo.y, 0.0, 1.0));
+    // Wetness darkens the ground: the global rain term (roofs keep the
+    // DROPS out via the occlusion map) combined with the baked
+    // per-pixel mask — river banks and fresh incisions read damp.
+    float wet = max(wetMask * uSurfSheenInfo.y,
+                    clamp(uStormInfo.y, 0.0, 1.0));
+    albedo *= mix(1.0, 0.72, wet);
+    // Surface response from the weight-blended ORM accumulation.
+    vec2 aoRough = vec2(1.0, 0.8);
+    if (wantOrm) {
+        vec2 orm = ormAcc / total;
+        aoRough = vec2(mix(1.0, orm.x, uSurfSheenInfo.x), orm.y);
+    }
     // The mapped normal drives the DIRECT terms only (sun diffuse, local
     // lights); shadow bias and GI keep the analytic normal — the RC
     // inject baked it, and the stylized shadow pools must not crawl with
@@ -331,8 +442,25 @@ void main() {
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
-    vec3 lit = albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
-                         uSunColor.rgb * (diffuse * shadow * tl.x));
+    // Per-material AO shapes the AMBIENT only: crevices deepen in the
+    // shade, the stylized sun term keeps its flat readability.
+    vec3 lit =
+        albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) *
+                      aoRough.x +
+                  uSunColor.rgb * (diffuse * shadow * tl.x));
+    // The wet/snow sheen — the terrain's ONLY specular, gated to wet
+    // or snowy ground: incisions glisten, snow sparkles, dry land
+    // stays pure stylized diffuse.
+    float sheenAmt =
+        wet * uSurfSheenInfo.z + (ws[2] / total) * uSurfSheenInfo.w;
+    if (sheenAmt > 0.001) {
+        vec3 viewDir = normalize(uCameraPos.xyz - vWorldPos);
+        vec3 hv = normalize(uSunDirection.xyz + viewDir);
+        float spec = pow(max(dot(shadedN, hv), 0.0),
+                         mix(64.0, 8.0, aoRough.y)) *
+                     (1.0 - 0.6 * aoRough.y);
+        lit += uSunColor.rgb * spec * sheenAmt * shadow * tl.x;
+    }
     // Direct local lights, CLUSTERED PATH ONLY (docs/RENDERING.md §5 B4):
     // the ground is fullscreen — the per-cluster list is what makes the
     // cost bearable. Off = the historical sun+GI-only terrain.

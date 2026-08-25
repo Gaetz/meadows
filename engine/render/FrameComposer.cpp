@@ -119,6 +119,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // lower-left quarter of far layers — ShadowMapper contract).
     base.ssaoInfo = { in.ssaoStrength, in.ssaoRadius, in.ssdmAmplitude,
                       in.shadowFarUvScale };
+    base.surfSheenInfo = { in.surfAoStrength, in.wetDarken, in.wetSheen,
+                           in.snowSheen };
     for (u32 i = 0; i < render::kGrassSpeciesCount; ++i) {
         base.grassSpeciesShape[i] = { kGrassSpeciesShape[i][0],
                                       kGrassSpeciesShape[i][1],

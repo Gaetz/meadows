@@ -66,6 +66,14 @@ struct LandscapeTuningForm : Form {
     f32 pomShadowStrength { 0.6f };
     // Parallax relief depth (uv units): how far the POM march displaces.
     f32 pomDepth { 0.03f };
+    // Terrain surface response: per-material AO from the cooked ORM
+    // (ambient only), wetness darkening (per-pixel baked mask), and the
+    // wet/snow sheen — the stylized terrain's only specular, gated to
+    // wet or snowy ground.
+    f32 surfAoStrength { 0.7f };
+    f32 wetDarken { 0.6f };
+    f32 wetSheen { 0.5f };
+    f32 snowSheen { 0.04f };
     // Cooked terrain material arrays (.mtex asset guids, one per map —
     // docs/AUDIT/TERRAIN-TEXTURING.md §4). 0 = procedural splat tiles.
     // Vulkan-only path (caps.textureCompressionBC).
@@ -288,6 +296,10 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(splatVariety)
         REFLECT_FIELD(pomShadowStrength)
         REFLECT_FIELD(pomDepth)
+        REFLECT_FIELD(surfAoStrength)
+        REFLECT_FIELD(wetDarken)
+        REFLECT_FIELD(wetSheen)
+        REFLECT_FIELD(snowSheen)
         REFLECT_FIELD(terrainAlbedoArray)
         REFLECT_FIELD(terrainNormalArray)
         REFLECT_FIELD(terrainOrmArray)

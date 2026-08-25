@@ -2067,6 +2067,13 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .splatVariety = view.splatVariety,
         .pomShadowStrength = view.pomShadowStrength,
         .pomDepth = view.pomDepth,
+        // AO/sheen read the cooked ORM: the procedural fallback binds
+        // a placeholder there, so the knobs must go dark with it.
+        .surfAoStrength =
+            terrain.hasCookedMaterials() ? view.surfAoStrength : 0.0f,
+        .wetDarken = view.wetDarken,
+        .wetSheen = terrain.hasCookedMaterials() ? view.wetSheen : 0.0f,
+        .snowSheen = terrain.hasCookedMaterials() ? view.snowSheen : 0.0f,
         .barkEnabled = vegetation.barkLoaded(),
         .ssaoStrength = tuning.ssaoStrength,
         .ssaoRadius = tuning.ssaoRadius,

@@ -939,3 +939,29 @@ lacs 13-56/tuile, fleuves 41 km, pic héroïque à 4 km du spawn,
 érosion −7,5 % de moyenne seulement (massifs respectés). PROCHAINE
 ÉTAPE : tour dev en jeu (valide B2-B6 d'un coup et guide le
 fine-tuning famille/hauteurs bien mieux que les transects).
+
+**Checkpoint matériaux M1-M3 (2026-08-25)** : livré et commité en
+l'état — M1 (array ORM enfin bindé : AO sur l'ambiante GI, roughness
+au spéculaire, accumulé à travers les 3 taps hex — un tap unique
+dessinait le lattice), M2 (wetness par pixel via l'alpha du shade map
++ sheen mouillé/neige, knobs `uSurfSheenInfo` A/B-ables à 0), M3
+(17 → 22 couches : roche moussue, 2 falaises, neige compacte,
+herbe givrée — sources CC0 ambientCG/Poly Haven dans `assets-src/`,
+gitignoré, recook `terrain_*.mtex`). **Transition herbe↔neige,
+4 itérations sur screenshots dev (bug-neige 1-4)** ; leçons durables :
+(1) tout terme par-pixel doit passer par les 3 taps hex pondérés,
+sinon le lattice ou la grille 4 m transparaît (prouvé 3× : ORM,
+flip givre par-vertex, overlay mono-tap) ; (2) la règle physique du
+dev — « l'herbe se dépose sur la roche, la neige sur l'herbe » —
+donne le bon mécanisme : composite de DÉPÔT par pixel utilisant la
+hauteur blendée de la tile (creux d'abord, bords feathered, champ de
+patches fractal 55/9/3 m), le poids neige ne gardant que le handoff
+haut ; (3) un seuil de patch au niveau des poids découpe des formes
+blanches dures (mesuré, retiré). **Reste ouvert** (bug-neige4, damier
+rectangulaire de biomes) : cause structurelle = ids de biome à seuils
+durs + échantillonnage nearest 64 m de la grille grossière B6-perf.
+Traité par le volet suivant : **M4 « continuité des biomes »**
+(S1 poids continus par biome + fix du nearest ; S3 ligne de neige en
+champ continu lent, offsets par biome réduits), puis **M3b « biomes
+de transition »** (textures dédiées, l'idée autotile grande échelle
+du dev).

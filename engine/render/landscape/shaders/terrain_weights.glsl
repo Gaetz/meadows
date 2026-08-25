@@ -34,7 +34,7 @@ float wanderLattice(int x, int y) {
     return float(h) * (1.0 / 4294967295.0);
 }
 
-float borderWander(vec2 p) {
+float wanderValue01(vec2 p) {
     vec2 f = floor(p);
     vec2 t = p - f;
     vec2 u = t * t * (3.0 - 2.0 * t);
@@ -44,8 +44,27 @@ float borderWander(vec2 p) {
     float v10 = wanderLattice(x0 + 1, y0);
     float v01 = wanderLattice(x0, y0 + 1);
     float v11 = wanderLattice(x0 + 1, y0 + 1);
-    float n = mix(mix(v00, v10, u.x), mix(v01, v11, u.x), u.y);
-    return -0.31 + (n - 0.5) * 0.2;
+    return mix(mix(v00, v10, u.x), mix(v01, v11, u.x), u.y);
+}
+
+float borderWander(vec2 p) {
+    return -0.31 + (wanderValue01(p) - 0.5) * 0.2;
+}
+
+// Snow-patch field [0,1] (world meters): two incommensurate octaves of
+// the wander lattice — the snow line dissolves into patches of FULL
+// snow over grass instead of a translucent 50/50 veil. Mirrored by
+// TerrainNoise.cpp snowPatchAt.
+float snowPatch01(vec2 worldXz) {
+    // Three incommensurate octaves: the BIG one (~55 m) makes whole
+    // areas flip early or late — snow tongues overflowing the line
+    // downhill, grass bays reaching up — while the fine ones draw the
+    // patch detail without a lattice rhythm. Contrast-stretched so
+    // the threshold remap keeps real bite.
+    float n = 0.5 * wanderValue01(worldXz * (1.0 / 55.0) + 13.0) +
+              0.3 * wanderValue01(worldXz * (1.0 / 9.0) + 37.0) +
+              0.2 * wanderValue01(worldXz * (1.0 / 3.1) + 91.0);
+    return clamp((n - 0.5) * 1.8 + 0.5, 0.0, 1.0);
 }
 
 // Scree apron (talus): the slope band just BELOW the rock threshold —
@@ -72,7 +91,12 @@ TerrainWeights terrainWeights(float h, float slope, float wander,
     w.cliff = smoothstep(0.30, 0.55, slope) * rockExposure;
     w.rock = smoothstep(0.18 - rockShift, 0.35 - rockShift, slope) *
              (1.0 - w.cliff);
-    w.snow = smoothstep(snowLine - 12.0, snowLine + 42.0,
+    // The WEIGHT-level snow is the high handoff only: below it, the
+    // whole grass->snow transition is the DEPOSITION overlay in
+    // terrain.frag (snow composited over the grass like snow lies on
+    // rock — relief pokes through, feathered edges). A weight-level
+    // patch threshold cut hard white shapes instead (measured).
+    w.snow = smoothstep(snowLine - 20.0, snowLine + 80.0,
                         h + wander * 26.0) *
              (1.0 - smoothstep(0.25, 0.45, slope));
     w.sand = (1.0 - smoothstep(seaLevel + 1.0 + 6.0 * sandiness,

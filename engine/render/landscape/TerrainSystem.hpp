@@ -115,6 +115,10 @@ public:
     Vec3 layerAlbedoBase(u32 layer) const {
         return layerBases[glm::min<u32>(layer, SplatLayer_Count - 1)];
     }
+    // Cooked material arrays resident (Vulkan path): the ORM-driven
+    // surface response (AO, wet/snow sheen) only exists then — the
+    // renderer zeroes those knobs on the procedural fallback.
+    bool hasCookedMaterials() const { return cookedMaterials; }
 
     // Streaming pump — main thread, once per frame, top of render: drains
     // finished meshes (budgeted uploads), requests missing chunks around the

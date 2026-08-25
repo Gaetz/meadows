@@ -151,4 +151,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGrassSpeciesBase[6];
     vec4 uGrassSpeciesTip[6];
     vec4 uSsaoInfo;
+    // Terrain surface response: x = per-material AO strength, y =
+    // wetness darkening, z = wet sheen, w = snow sheen.
+    vec4 uSurfSheenInfo;
 };

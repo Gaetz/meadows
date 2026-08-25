@@ -14,8 +14,14 @@
 
 TEST_CASE("neutral biome weights equal the legacy weights") {
     render::TerrainParams params; // no biomes set
+    // Heights OUTSIDE the snow transition band: inside it the
+    // positioned path (materialWeightsAt) applies the snow-patch
+    // field while the position-less legacy path keeps the neutral
+    // 0.5 — they diverge there BY DESIGN (patches of full snow over
+    // grass instead of a translucent veil). 300 m = full snow on
+    // both paths (the patch remap is exact 0/1 outside the band).
     for (const f32 x : { 0.0f, 400.0f }) {
-        for (const f32 h : { 10.0f, 60.0f, 170.0f }) {
+        for (const f32 h : { 10.0f, 60.0f, 300.0f }) {
             const Vec3 n =
                 glm::normalize(Vec3 { 0.2f, 1.0f, 0.1f });
             const auto legacy =

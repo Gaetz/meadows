@@ -208,6 +208,11 @@ struct FrameUniforms {
     Vec4 grassSpeciesTip[6] {};  // rgb tint, w free
     // SSAO (ssao.frag): x = strength, y = world radius (m), zw reserved.
     Vec4 ssaoInfo { 0.85f, 0.7f, 0.0f, 0.0f };
+    // Terrain surface response: x = per-material AO strength (cooked
+    // ORM), y = wetness darkening, z = wet sheen, w = snow sheen. The
+    // sheen is the only specular the stylized terrain has — it lives
+    // exclusively on wet/snowy ground, dry land stays pure diffuse.
+    Vec4 surfSheenInfo { 0.7f, 0.6f, 0.5f, 0.04f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -287,7 +292,8 @@ static_assert(offsetof(FrameUniforms, grassSpeciesShape) == 1744);
 static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1840);
 static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1936);
 static_assert(offsetof(FrameUniforms, ssaoInfo) == 2032);
-static_assert(sizeof(FrameUniforms) == 2048,
+static_assert(offsetof(FrameUniforms, surfSheenInfo) == 2048);
+static_assert(sizeof(FrameUniforms) == 2064,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

@@ -54,6 +54,12 @@ struct FrameComposerInputs {
     f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
     f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
     f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
+    // Terrain surface response (uSurfSheenInfo): AO needs the cooked
+    // ORM array — the renderer zeroes it on the procedural fallback.
+    f32 surfAoStrength { 0.7f };
+    f32 wetDarken { 0.6f };
+    f32 wetSheen { 0.5f };
+    f32 snowSheen { 0.04f };
     bool barkEnabled { false }; // tree bark textures resident
     f32 ssaoStrength { 0.85f }; // ssao.frag lanes
     f32 ssaoRadius { 0.7f };    // world radius (m)
