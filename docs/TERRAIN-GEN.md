@@ -1068,6 +1068,18 @@ existants :
    hash) ; les racines de brins gardent la couleur de leur variante
    sous-jacente — acceptable v1 (brins raréfiés là-haut par
    grassPresence), à coupler si visible.
+   **CORRECTION (bug-subalpin.png, même jour)** : la v1 en flip de
+   variante par cellule a peint le lattice — Ground037 est franchement
+   jaune sur l'herbe, la faute du givre re-commise. La règle
+   GRASS-REDO est générale : le flip de variante est réservé aux
+   couches de MÊME famille chromatique harmonisées (le premier
+   passage des variantes d'herbe avait été rejeté pour ça) ; tout sol
+   d'une autre couleur passe par la recette du DÉPÔT par pixel.
+   Refait ainsi : la lande se dépose sous le givre via les 3 taps hex
+   à échelle ×0,71, couverture = bande × instance grossière (×0,31)
+   du champ de patchs × relief de tuile ; seul le choix 22-vs-23
+   (peu contrastées entre elles) reste par sommet (heathLayerOf).
+   hexFamilyLayer famille 0 est revenu à l'identique.
 2. **Biome subalpin (palette id 4)** : bande tier 1,7-2,1 sous
    l'alpin dans `biomeIdAt`, BiomeForm dédié (rockiness 0,35,
    grassPresence 0,55, snowLineOffset −60, temperature −0,2),
