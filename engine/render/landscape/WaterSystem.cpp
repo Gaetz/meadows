@@ -199,10 +199,11 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
     if (!bodies || (bodies->lakes.empty() && bodies->rivers.empty())) {
         return;
     }
-    // Layout: pos (3) + flow dir*speed (2) + {halfWidth, lateral,
-    // arcLength, endDist} (4) — the RIVER UV SPACE the shared shading
-    // uses for flow mapping, bank foam and the end-of-course dissolve
-    // (the ribbon fades out INTO the pond/river it merges with).
+    // Layout: pos (3) + flow dir*speed (2) + {halfWidth, lateral (lake
+    // quads: shore-foam gate), arcLength, endDist} (4) — the RIVER UV
+    // SPACE the shared shading uses for flow mapping and the
+    // end-of-course dissolve (the ribbon fades out INTO the pond/river
+    // it merges with).
     constexpr u32 kFloatsPerVertex = 10;
     vector<f32> verts;
     vector<u32> indices;
@@ -221,20 +222,26 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
         verts.push_back(material);
         return static_cast<u32>(verts.size() / kFloatsPerVertex - 1);
     };
+    // `foamGate` rides the lateral lane (unused on lake quads): 1 =
+    // shore foam allowed (big lakes), 0 = calm sheet (junction pools,
+    // mountain tarns — the lapping ring read as noise on small water).
     const auto quad = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 level,
-                          f32 material) {
-        const u32 v0 = vertex(x0, level, z0, 0.0f, 0.0f, 0.0f, 0.0f,
+                          f32 material, f32 foamGate) {
+        const u32 v0 = vertex(x0, level, z0, 0.0f, 0.0f, 0.0f, foamGate,
                               0.0f, 1.0e6f, material);
-        const u32 v1 = vertex(x1, level, z0, 0.0f, 0.0f, 0.0f, 0.0f,
+        const u32 v1 = vertex(x1, level, z0, 0.0f, 0.0f, 0.0f, foamGate,
                               0.0f, 1.0e6f, material);
-        const u32 v2 = vertex(x1, level, z1, 0.0f, 0.0f, 0.0f, 0.0f,
+        const u32 v2 = vertex(x1, level, z1, 0.0f, 0.0f, 0.0f, foamGate,
                               0.0f, 1.0e6f, material);
-        const u32 v3 = vertex(x0, level, z1, 0.0f, 0.0f, 0.0f, 0.0f,
+        const u32 v3 = vertex(x0, level, z1, 0.0f, 0.0f, 0.0f, foamGate,
                               0.0f, 1.0e6f, material);
         for (const u32 i : { v0, v2, v1, v0, v3, v2 }) {
             indices.push_back(i);
         }
     };
+    // Shore foam only on lakes >= this wet area — below it the ring
+    // dominates the surface instead of trimming it.
+    constexpr f32 kFoamLakeArea = 5000.0f; // m²
     const auto materialOf = [&](u32 index) {
         return static_cast<f32>(
             glm::min(index, kMaxWaterMaterials - 1));
@@ -246,11 +253,23 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
         // (hand-authored ponds) stay one bbox quad.
         if (lake.mask.empty() || lake.maskWidth == 0) {
             constexpr f32 kMargin = 6.0f;
+            const f32 area = (lake.maxX - lake.minX) *
+                             (lake.maxZ - lake.minZ);
             quad(lake.minX - kMargin, lake.minZ - kMargin,
                  lake.maxX + kMargin, lake.maxZ + kMargin, lake.level,
-                 materialOf(lake.materialIndex));
+                 materialOf(lake.materialIndex),
+                 area >= kFoamLakeArea ? 1.0f : 0.0f);
             continue;
         }
+        u32 wet = 0;
+        for (const u8 m : lake.mask) {
+            wet += m ? 1 : 0;
+        }
+        const f32 foamGate = static_cast<f32>(wet) * lake.maskTexel *
+                                     lake.maskTexel >=
+                                 kFoamLakeArea
+                                 ? 1.0f
+                                 : 0.0f;
         const f32 grow = lake.maskTexel * 0.75f;
         for (u32 row = 0; row < lake.maskHeight; ++row) {
             const f32 z0 =
@@ -275,7 +294,8 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                      z0,
                      lake.minX + static_cast<f32>(end) * lake.maskTexel +
                          lake.maskTexel + grow,
-                     z1, lake.level, materialOf(lake.materialIndex));
+                     z1, lake.level, materialOf(lake.materialIndex),
+                     foamGate);
                 col = end + 1;
             }
         }

@@ -259,11 +259,12 @@ void main() {
     float foam = waterline +
                  band * smoothstep(0.30, 0.75, pattern + band * 0.30) * 0.8;
 #ifdef WATER_LOCAL
-    // Shore foam belongs to STANDING water (sea, lakes, ponds): on
-    // rivers it whitewashed the shallow channel and turned merges into
-    // chaos — rivers keep only the torrent whitewater below. (Proper
-    // contour-following foam needs a shore-distance field: deferred.)
-    foam *= 1.0 - riverness;
+    // Shore foam belongs to the SEA and the BIG lakes only (>= ~0.5 ha,
+    // gate baked into the lake quads' free lateral lane): on rivers it
+    // whitewashed the shallow channel, and on the junction pools and
+    // mountain tarns the lapping ring read as noise. Rivers keep only
+    // the torrent whitewater below.
+    foam *= (1.0 - riverness) * clamp(vInfo.y, 0.0, 1.0);
 #endif
 
     // Small-pool suppression: ONE tap into the CPU-baked pool-depth map
@@ -289,23 +290,9 @@ void main() {
     float rapids = smoothstep(0.18, 0.55, sVert / sHoriz) * riverness;
     float agitation = 0.35 + 0.65 * smoothstep(0.4, 2.0, flowSpeed);
     foam += riverness * agitation * rapids * (0.25 + 0.45 * streak);
-    // Bank foam in RIVER UV SPACE (the Waterways model): a band hugging
-    // the bank whose width breathes with a 1D noise scrolling along the
-    // arc — contour-following by construction, immune to junction chaos.
-    float bankDist = 1.0 - abs(vInfo.y); // 0 at the bank, 1 mid-channel
-    float arcPhase = vInfo.z * 0.35 - uTime.x * (0.6 + flowSpeed * 0.8);
-    float edgeNoise = 0.5 + 0.30 * sin(arcPhase) +
-                      0.20 * sin(arcPhase * 2.7 + 1.3);
-    float bankFoam =
-        smoothstep(0.16 + 0.10 * edgeNoise, 0.02, bankDist);
-    // End-of-course dissolve: the last meters of a ribbon merge INTO the
-    // pond/river that swallowed it — the bank foam dies first, then the
-    // surface itself fades out (below), instead of stabbing straight
-    // through the receiving water.
-    float tailFade =
-        smoothstep(0.5, 3.0, vInfo.w / max(vInfo.x, 0.5));
-    foam += riverness * bankFoam * tailFade *
-            (0.18 + 0.25 * rapids + 0.12 * agitation);
+    // (Bank foam removed: two ribbons crossing at a junction each drew
+    // their band and the overlap read as chaos — river foam is now the
+    // torrent whitewater alone, shore foam is sea + big lakes.)
 #else
     foam *= poolGate;
 #endif

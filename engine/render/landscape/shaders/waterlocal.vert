@@ -7,7 +7,7 @@
 // position in the ribbon (banks/rapids foam).
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aFlow; // direction * speed (m/s)
-layout(location = 2) in vec4 aInfo; // halfWidth (0 = lake), lateral [-1,1], arc (m), endDist (m)
+layout(location = 2) in vec4 aInfo; // halfWidth (0 = lake), lateral [-1,1] (lakes: shore-foam gate), arc (m), endDist (m)
 layout(location = 3) in float aMaterial; // WaterMaterialsUbo slot
 
 layout(location = 0) out vec3 vWorldPos;
