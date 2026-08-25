@@ -56,6 +56,11 @@ struct MaterialSources {
     // `harmonizeWith` picks the anchor layer (0 = grass by default).
     bool harmonize { false };
     i64 harmonizeWith { 0 };
+    // ORM-only anchoring: for hex-flip targets whose albedo identity is
+    // deliberate (scree gravel on sand) but whose shading means must
+    // still match the anchor — since the ORM feeds AO/sheen, a mean
+    // difference there paints the lattice cells just like an albedo one.
+    bool harmonizeOrm { false };
     // High-pass the albedo and AO/roughness (flattenLowFreq): for smooth
     // bright families whose hex-tap offsets would expose the tile's own
     // large-scale gradients as lattice cells.
@@ -238,6 +243,7 @@ std::optional<vector<MaterialSources>> parseManifest(const fs::path& path) {
         mat.harmonizeWith =
             (*table)["harmonizeWith"].value_or<i64>(0);
         mat.flattenLowFreq = (*table)["flattenLowFreq"].value_or(false);
+        mat.harmonizeOrm = (*table)["harmonizeOrm"].value_or(false);
         if (mat.name.empty() || mat.albedo.empty()) {
             LOG_ERROR("cook-terrain-materials: every [[material]] needs "
                       "'name' and 'albedo'");
@@ -477,7 +483,8 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
             }
             const array<f64, 2> ormMean = { channelMean(*orm, 0),
                                             channelMean(*orm, 1) };
-            if (mat.harmonize && mat.harmonizeWith >= 0 &&
+            if ((mat.harmonize || mat.harmonizeOrm) &&
+                mat.harmonizeWith >= 0 &&
                 static_cast<size_t>(mat.harmonizeWith) <
                     layerOrmMeans.size()) {
                 const array<f64, 2>& anchor =
@@ -491,7 +498,9 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
                      channelMean(albedoBase, 0), channelMean(albedoBase, 1),
                      channelMean(albedoBase, 2), channelMean(*orm, 0),
                      channelMean(*orm, 1),
-                     mat.harmonize ? "  (harmonized)" : "");
+                     mat.harmonize        ? "  (harmonized)"
+                     : mat.harmonizeOrm ? "  (orm harmonized)"
+                                          : "");
         }
         const auto ormChain =
             mipChain(*orm, [](const Rgba& base, u32 size) {

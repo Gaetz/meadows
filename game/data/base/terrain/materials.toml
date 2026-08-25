@@ -174,13 +174,19 @@ harmonize = true
 harmonizeWith = 3
 
 [[material]]
-name = "scree"                  # layer 16 — talus at rock feet (no
-                                # harmonize: rock debris keeps its gray)
+name = "scree"                  # layer 16 — talus at rock feet. Pas
+                                # d'harmonize albedo (le gravier garde son
+                                # gris — proche du sable de toute façon)
+                                # mais l'ORM s'ancre : cible d'un flip par
+                                # sommet, une moyenne AO/rough divergente y
+                                # peint le lattice comme une couleur.
 albedo = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Color.png"
 normal = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_NormalGL.png"
 ao = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Roughness.png"
 height = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Displacement.png"
+harmonizeOrm = true
+harmonizeWith = 3
 
 # --- M3 enrichment (2026-08-25): cliff variants (the only mono-variant
 # family), mossy temperate rock, windswept snow, and the frost-grass

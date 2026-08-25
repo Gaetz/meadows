@@ -1080,6 +1080,25 @@ existants :
    du champ de patchs × relief de tuile ; seul le choix 22-vs-23
    (peu contrastées entre elles) reste par sommet (heathLayerOf).
    hexFamilyLayer famille 0 est revenu à l'identique.
+
+**Audit des flips (2026-08-25, demande dev)** : inventaire de tous
+les sites de décision par cellule du pipeline, moyennes mesurées au
+cook. Familles harmonisées (herbe 0/5-7, roche 1/8-10/19, neige
+2/11-12/20, sable 3/13-15, falaise 4/17-18 en panneaux 24 m) :
+toutes à ±1/255 en albedo ET ORM ✓. Dépôts par pixel (givre 21,
+lande 22-23) : hors famille par design, sans risque de lattice ✓
+(bonus constaté : l'ORM du dépôt lande est le tap unique de la
+couche 22 — la roughness brillante du turf 23, 67/255, n'atteint
+jamais le shading). **Un cas rouge trouvé : le scree (16)** — flip
+par sommet avec albedo proche du sable (±4 %, accepté de longue
+date) mais ORM divergent (AO 182 vs 235, rough 219 vs 170) :
+régression M1 (l'ORM est consommé depuis), damier latent dans les
+franges de biais intermédiaire du talus. Corrigé par
+**`harmonizeOrm`** (nouveau flag cooker : ancrage ORM seul, l'albedo
+gravier garde son identité) → scree AO 234 / rough 169. Règle
+complétée : une cible de flip par sommet doit être ancrée en
+moyenne sur TOUS les canaux que le shading consomme — albedo ET
+ORM ; seule la structure peut varier.
 2. **Biome subalpin (palette id 4)** : bande tier 1,7-2,1 sous
    l'alpin dans `biomeIdAt`, BiomeForm dédié (rockiness 0,35,
    grassPresence 0,55, snowLineOffset −60, temperature −0,2),
