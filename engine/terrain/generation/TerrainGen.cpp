@@ -764,15 +764,23 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // two climate fbms are paid here — the tier comes from the caller,
     // which is what lets synthesizeMacro evaluate the id per texel while
     // the heavy control fields interpolate from the coarse lattice.
-    const f32 temperature =
+    // Start decree: the homeland around the origin is temperate meadow
+    // (the tier biomes stay — a mountain is a mountain even at home).
+    const f32 startPull =
+        1.0f - noise::smoothstep01(p.startMeadowRadius,
+                                   p.startMeadowFade,
+                                   std::sqrt(x * x + z * z));
+    const f32 temperature = glm::mix(
         noise::fbm(p.seed ^ kSaltTemperature, x, z,
-                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f);
+                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f),
+        0.46f, startPull);
     if (temperature < 0.34f) {
         return 3; // tundra
     }
-    const f32 moisture =
+    const f32 moisture = glm::mix(
         noise::fbm(p.seed ^ kSaltMoisture, x, z,
-                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f);
+                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f),
+        0.55f, startPull);
     if (moisture < 0.38f && temperature > 0.58f) {
         return 1; // arid
     }

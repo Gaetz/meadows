@@ -1472,6 +1472,36 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             }
         }
     }
+    // Spawn-probe mirror (LandscapeScene setSandbox — keep the criteria
+    // in sync): where the game will actually start, temperate decree
+    // included.
+    {
+        f32 sx = 2600.0f;
+        f32 sz = 0.0f;
+        f32 sy = 0.0f;
+        bool found = false;
+        for (f32 radius = 2600.0f; radius <= 24000.0f && !found;
+             radius += 700.0f) {
+            for (u32 step = 0; step < 16 && !found; ++step) {
+                const f32 angle =
+                    radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
+                const f32 x = std::cos(angle) * radius;
+                const f32 z = std::sin(angle) * radius;
+                const f32 h = macroHeightAnalytic(controls, params.macro,
+                                                  x, z);
+                if (h > params.macro.seaLevel + 8.0f && h < 95.0f &&
+                    controls.at(x, z).biome == 0) {
+                    sx = x;
+                    sz = z;
+                    sy = h;
+                    found = true;
+                }
+            }
+        }
+        MESSAGE("spawn probe mirror: (", static_cast<i32>(sx), ", ",
+                static_cast<i32>(sy + 2.0f), ", ", static_cast<i32>(sz),
+                ")  found=", found);
+    }
     // Patch geometry at the nearest steppe hit: how big is the zone the
     // player is sent to, and how strong does the blended sandiness (the
     // shader's aridity signal) actually get there?

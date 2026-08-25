@@ -107,7 +107,16 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 z = originZ + (static_cast<f32>(i / perSide) +
                                      rng.next()) *
                                         kTreeSpacing;
-            const f32 forest = forestMask(params.seed, x, z);
+            f32 forest = forestMask(params.seed, x, z);
+            // Aridity thins the forest into savanna: the steppe keeps
+            // isolated trees (~1/5 density), the arid core almost none —
+            // the SAME dryBand vocabulary as the shader's withered-grass
+            // deposit, so the trees thin exactly where the ground dries.
+            forest *= 1.0f -
+                      0.88f * glm::smoothstep(
+                                  0.08f, 0.38f,
+                                  terrain::regionFieldsAt(params, x, z)
+                                      .sandiness);
             // Density halving done on the acceptance rather than the
             // spacing so the grid keeps its resolution (spacing x
             // sqrt(2) would truncate).
@@ -253,8 +262,14 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                      rng.next()) *
                                         kDebrisSpacing;
             // Forest interior only — debris is what a forest floor
-            // leaves behind.
-            const f32 forest = forestMask(params.seed, x, z);
+            // leaves behind. Same aridity thinning as the trees: a
+            // savanna floor keeps no forest litter.
+            f32 forest = forestMask(params.seed, x, z);
+            forest *= 1.0f -
+                      0.88f * glm::smoothstep(
+                                  0.08f, 0.38f,
+                                  terrain::regionFieldsAt(params, x, z)
+                                      .sandiness);
             if (forest < 0.55f || rng.next() >= 0.16f * forest) {
                 continue;
             }

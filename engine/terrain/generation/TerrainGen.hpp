@@ -148,6 +148,15 @@ struct ProceduralControlParams {
     // The short-wavelength "type selector" principle stays with the
     // relief REGIME field below; climate is geography.
     f32 climateWavelength { 2800.0f };
+    // Start decree, climate chapter (the layout guarantees the origin a
+    // coastal belt; this guarantees it a MEADOW): inside the radius the
+    // climate fields pull to temperate means, fading to `Fade` — the
+    // fields' own variation keeps the border ragged, never a circle.
+    // The radius covers the spawn probe's first height-acceptable ring
+    // (~8 km) so the start lands in prairie without moving away from
+    // the origin's authored content.
+    f32 startMeadowRadius { 8500.0f };
+    f32 startMeadowFade { 12000.0f };
     // Relief regimes: a type-selector field sorts the land into three
     // characters — HILL-CHAIN country (low, rolling ridged hills, no
     // uplift), OLD MASSIFS (an elevated plateau wearing hills, uplift

@@ -1164,6 +1164,34 @@ continentalité, `macroHeightAnalytic`, le réseau maître B5) :
 Placement : après l'eau (B7-B10) — l'ombre pluviométrique et
 l'advection consommeront les mêmes décrets de vent que la météo.
 
+**M3b-5 — départ en prairie + arbres de steppe (2026-08-25)** :
+steppe VALIDÉE dev, mais le spawn était tombé en région aride.
+1. **Décret « pays de départ »** : critère biome tempéré ajouté à la
+   sonde de spawn (garantie par recherche, tout seed) — seul, il
+   envoyait le départ à 17 km (toute la ceinture proche était
+   aride/toundra sur ce seed). Ajout du chapitre CLIMAT de la
+   garantie d'origine du layout : `startMeadowRadius/Fade`
+   (8,5→12 km) tire T/H vers les moyennes tempérées autour de
+   l'origine — le bord reste organique (les champs traversent les
+   seuils à des rayons rugueux), les biomes de TIER restent (une
+   montagne reste une montagne au pays). Rayon calé sur le premier
+   anneau d'altitude acceptable de la sonde (~8 km). Résultat : la
+   sonde retombe EXACTEMENT sur le spawn historique (8196, 230) —
+   tous les ancrages de diagnostics restent valides — avec steppe à
+   3,3 km (10692, 88, 2438), toundra 3,1 km, aride 3,7 km,
+   alpin/subalpin ~1 km. Miroir de sonde ajouté au `biome locator`
+   (critères à garder en phase avec LandscapeScene).
+2. **Arbres en steppe** : l'aridité amincit la forêt en savane —
+   `forest ×= 1 − 0,88·smoothstep(0,08, 0,38, sandiness)` (MÊME
+   vocabulaire que le dryBand du sol : les arbres se raréfient
+   exactement où le sol sèche) ; steppe ≈ 1/5 de densité (arbres
+   isolés), cœur aride ≈ 1/8 ; même réduction sur les débris de
+   sous-bois (une savane n'a pas de litière de forêt). Golden
+   scatter bit-inchangé (harnais sans biomes, hash vérifié).
+Caches v43/v48 ; neige : adopté 7,28 % vs référence 6,62 % (même
+ordre). Restes steppe : broussailles sèches dédiées (le scrub),
+clumps d'arbres près de l'eau (post-B8/B9).
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

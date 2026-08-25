@@ -1818,7 +1818,11 @@ void LandscapeScene::setSandboxMode(bool enable) {
         // workers and stretched the loading gate.
         renderer.setStreamingHold(true);
         // A pleasant start: probe the analytic macro for low, gentle
-        // land away from the authored demo content near the origin. The
+        // TEMPERATE land away from the authored demo content near the
+        // origin — the start is a green meadow by decree, whatever the
+        // climate map rolls (guarantee by search: temperate is the
+        // default biome, always findable). Mirrored by the hidden
+        // `biome locator` diagnostic — keep the criteria in sync. The
         // play capsule spawns under the fly camera (enterPlayMode).
         const render::terraingen::ProceduralControls controls {
             sandbox->controls
@@ -1834,7 +1838,8 @@ void LandscapeScene::setSandboxMode(bool enable) {
                 const f32 z = std::sin(angle) * radius;
                 const f32 h = render::terraingen::macroHeightAnalytic(
                     controls, sandbox->macro, x, z);
-                if (h > tuning.seaLevel + 8.0f && h < 95.0f) {
+                if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
+                    controls.at(x, z).biome == 0) {
                     start = { x, h, z };
                     found = true;
                 }
