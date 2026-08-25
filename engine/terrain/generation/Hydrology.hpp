@@ -49,6 +49,19 @@ struct RiverPoint {
 
 struct River {
     vector<RiverPoint> points; // downstream order
+    // Water tier (classifyRivers): 0 ruisseau (wadeable everywhere),
+    // 1 rivière (entrenched; crossable at the deterministic fords),
+    // 2 fleuve (the obstacle tier — promoted by MASTER-NETWORK course
+    // match, so its width rides the TRUE drainage area the tile window
+    // truncates). 0 = legacy for every caller that never classifies.
+    u8 tier { 0 };
+    // Ford spots on tier-1 rivers (world XZ): a jittered world grid
+    // anchors them (tile-independent by construction), the carve caps
+    // its depth there — a ford is TERRAIN, not a gameplay marker.
+    vector<Vec2> fords;
+    // Max drainage area seen along the trace (m²) — classification
+    // input, transient (not serialized; 0 on cache reload).
+    f32 mouthArea { 0.0f };
 };
 
 struct HydrologyParams {
@@ -58,7 +71,18 @@ struct HydrologyParams {
     // below that it is just a puddle the carve pass flattens away.
     f32 minLakeDepth { 0.6f };
     u32 minLakeCells { 12 };
-    f32 riverArea { 60000.0f }; // m² of drainage that starts a channel
+    // m² of drainage that starts a channel. Paces the STREAM rhythm:
+    // ~one watercourse per km of walk (dev arbitration).
+    f32 riverArea { 150000.0f };
+    // Tier thresholds (classifyRivers): drainage area that makes a
+    // rivière; the fleuve tier comes from the master network instead
+    // (MasterNetworkParams::fleuveArea — true areas, not window ones).
+    f32 riviereArea { 2.0e6f };
+    // Fords on rivières: a jittered world grid of candidate spots
+    // (spacing = the guaranteed rhythm, dev: ~2 km), adopted where the
+    // course passes within reach.
+    f32 fordSpacing { 2000.0f };
+    f32 fordReach { 700.0f };
     // halfWidth = coef * area^exponent, then narrowed by slope (see
     // pointAt) and charactered per river (smoothRiver): sqrt growth for
     // real small/large contrast, small coef to keep mountains torrent-
@@ -93,5 +117,14 @@ vector<Lake> extractLakes(const GridSpec& spec, const vector<f32>& height,
                           const vector<f32>& filled,
                           const HydrologyParams& params,
                           vector<f32>* lakeDepthOut = nullptr);
+
+// Tier classification + fords (S4 conditioning tail, called by the tile
+// bake — plain extractHydrology callers keep tier 0 everywhere):
+// rivière by drainage area, fleuve by master-network course match (the
+// TRUE areas set its width floor, monotone downstream), then the ford
+// grid on the rivières. `master` may be empty (no fleuve promotion).
+struct MasterRiver;
+void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
+                    u32 seed, const vector<MasterRiver>& master);
 
 } // namespace render::terraingen

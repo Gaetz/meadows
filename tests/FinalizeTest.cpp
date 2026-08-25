@@ -114,6 +114,67 @@ TEST_CASE("the river carves a bed below its water surface") {
     CHECK(side > mid.surface);
 }
 
+TEST_CASE("tier carve: wadeable stream, entrenched riviere, ford cap") {
+    const auto h = valleyHeights();
+    const auto macro = fakeMacro(h);
+    HydrologyParams hp;
+    hp.riverArea = 60000.0f; // the tiny grid needs the legacy rhythm
+    auto hydro = extractHydrology(coarse(), h, hp);
+    REQUIRE(!hydro.rivers.empty());
+    River* main = &hydro.rivers[0];
+    for (River& river : hydro.rivers) {
+        if (river.points.size() > main->points.size()) {
+            main = &river;
+        }
+    }
+    // Uniform wide channel: the natural depth law would dig well past
+    // every tier cap, so the caps are what the probes read.
+    for (RiverPoint& pt : main->points) {
+        pt.halfWidth = 8.0f;
+    }
+    FinalizeParams params;
+    params.fine.iterations = 0;
+    params.reliefAmplitude = 0.0f;
+    const RiverPoint mid = main->points[main->points.size() / 2];
+    const auto bedAt = [&](const FinalizeResult& fine, f32 x, f32 z) {
+        const u32 col = static_cast<u32>(
+            std::lround((x - fine.fineSpec.originX) /
+                        fine.fineSpec.texelSize));
+        const u32 row = static_cast<u32>(
+            std::lround((z - fine.fineSpec.originZ) /
+                        fine.fineSpec.texelSize));
+        return fine.height[static_cast<size_t>(row) * fine.fineSpec.n +
+                           col];
+    };
+    // Ruisseau (tier 0): the cap keeps the whole bed wadeable.
+    main->tier = 0;
+    const auto stream =
+        finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
+    CHECK(bedAt(stream, mid.x, mid.z) >=
+          mid.surface - params.streamDepthMax - 0.05f);
+    // Rivière (tier 1) with a ford at mid-course: entrenched away from
+    // the ford, wading depth on it.
+    main->tier = 1;
+    main->fords = { Vec2 { mid.x, mid.z } };
+    const auto riviere =
+        finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
+    CHECK(bedAt(riviere, mid.x, mid.z) >=
+          mid.surface - params.fordDepth - 0.08f);
+    const RiverPoint far =
+        main->points[std::min(main->points.size() / 2 + 12,
+                              main->points.size() - 1)];
+    CHECK(bedAt(riviere, far.x, far.z) < far.surface - 1.5f);
+    // Fleuve (tier 2): the deep cap opens up.
+    main->tier = 2;
+    main->fords.clear();
+    for (RiverPoint& pt : main->points) {
+        pt.halfWidth = 14.0f;
+    }
+    const auto fleuve =
+        finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
+    CHECK(bedAt(fleuve, mid.x, mid.z) < mid.surface - 4.2f);
+}
+
 TEST_CASE("masks: flow marks the channel, wetness hugs it, detail dies "
           "near water") {
     const auto h = valleyHeights();

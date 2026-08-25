@@ -18,7 +18,7 @@ using render::terraingen::Lake;
 using render::terraingen::River;
 using render::terraingen::RiverPoint;
 
-constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '2' };
+constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '3' };
 
 // Water sidecar next to the tile's .trg: the lakes/rivers a re-load
 // cannot re-derive without re-running the bake. Lakes carry their basin
@@ -51,6 +51,12 @@ bool writeWaterFile(const std::filesystem::path& path,
     }
     write(static_cast<u32>(rivers.size()));
     for (const River& river : rivers) {
+        write(river.tier);
+        write(static_cast<u32>(river.fords.size()));
+        for (const Vec2& ford : river.fords) {
+            write(ford.x);
+            write(ford.y);
+        }
         write(static_cast<u32>(river.points.size()));
         file.write(reinterpret_cast<const char*>(river.points.data()),
                    static_cast<std::streamsize>(river.points.size() *
@@ -103,6 +109,17 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
     }
     rivers.resize(riverCount);
     for (River& river : rivers) {
+        read(river.tier);
+        u32 fords = 0;
+        file.read(reinterpret_cast<char*>(&fords), sizeof(fords));
+        if (!file || fords > 100000) {
+            return false;
+        }
+        river.fords.resize(fords);
+        for (Vec2& ford : river.fords) {
+            read(ford.x);
+            read(ford.y);
+        }
         u32 points = 0;
         file.read(reinterpret_cast<char*>(&points), sizeof(points));
         if (!file || points > 1000000) {

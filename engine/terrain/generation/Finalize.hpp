@@ -21,6 +21,16 @@ struct FinalizeParams {
     f32 riverDepthMin { 0.6f };
     f32 riverDepthMax { 4.0f };
     f32 bankShoulder { 1.4f }; // extra halfWidths of bank blend
+    // Per-tier caps (River::tier): the ruisseau stays wadeable
+    // everywhere, the rivière entrenches (riverDepth* above), the
+    // fleuve is the swim obstacle with a wide shoulder. Ford spots
+    // (River::fords) cap the rivière's bed locally — a ford is
+    // TERRAIN, crossable on foot, not a gameplay marker.
+    f32 streamDepthMax { 0.5f };
+    f32 fleuveDepthMax { 7.0f };
+    f32 fleuveBankShoulder { 2.2f };
+    f32 fordDepth { 0.4f };
+    f32 fordRadius { 9.0f }; // full-cap core; the cap fades out by 2x
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach

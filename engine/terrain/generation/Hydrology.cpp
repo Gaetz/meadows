@@ -10,6 +10,7 @@
 #include "engine/core/Hash.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 
 namespace render::terraingen {
 
@@ -430,6 +431,9 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                 break;
             }
             claimedBy[i] = myId;
+            // Own cells only (the shared junction cell would leak the
+            // RECEIVING river's drainage into a tributary's tier).
+            river.mouthArea = glm::max(river.mouthArea, out.area[i]);
             const i32 cx = static_cast<i32>(i % spec.n);
             const i32 cz = static_cast<i32>(i / spec.n);
             u32 neighbourJunction = 0;
@@ -562,6 +566,125 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                      std::make_move_iterator(ponds.begin()),
                      std::make_move_iterator(ponds.end()));
     return out;
+}
+
+void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
+                    u32 seed, const vector<MasterRiver>& master) {
+    for (River& river : rivers) {
+        if (river.points.size() < 2) {
+            continue;
+        }
+        river.tier = river.mouthArea >= params.riviereArea ? 1 : 0;
+        // Fleuve promotion: a course matching a MASTER river inherits
+        // the obstacle tier and a width floor from the TRUE drainage
+        // area (the tile window truncates areas — a fleuve cannot be
+        // known locally, only recognized). Match = most points within
+        // two master texels of the master polyline.
+        u32 matched = 0;
+        constexpr f32 kMatchDist = 260.0f;
+        vector<f32> areaAt(river.points.size(), 0.0f);
+        for (size_t p = 0; p < river.points.size(); ++p) {
+            const RiverPoint& pt = river.points[p];
+            f32 best = kMatchDist * kMatchDist;
+            for (const MasterRiver& mr : master) {
+                for (const MasterNode& node : mr.nodes) {
+                    const f32 dx = node.x - pt.x;
+                    const f32 dz = node.z - pt.z;
+                    const f32 d = dx * dx + dz * dz;
+                    if (d < best) {
+                        best = d;
+                        areaAt[p] = node.area;
+                    }
+                }
+            }
+            matched += areaAt[p] > 0.0f ? 1 : 0;
+        }
+        if (matched * 2 >= river.points.size()) {
+            river.tier = 2;
+            // Width floor from the TRUE area at each point — WORLD-
+            // stable (the master's areas grow downstream wherever the
+            // tile window truncates the local ones, so neighbours
+            // agree), bounded to the design band (~24-36 m channels)
+            // and MONOTONE via the running max: an obstacle never
+            // pinches back into a crossable brook.
+            f32 runningHalf = 0.0f;
+            for (size_t p = 0; p < river.points.size(); ++p) {
+                if (areaAt[p] > 0.0f) {
+                    const f32 floorHalf = glm::clamp(
+                        params.widthCoef *
+                            std::pow(areaAt[p], params.widthExponent),
+                        12.0f, 18.0f);
+                    runningHalf = glm::max(runningHalf, floorHalf);
+                }
+                river.points[p].halfWidth =
+                    glm::max(river.points[p].halfWidth, runningHalf);
+            }
+        }
+        // Fords on the rivières only: candidates on a jittered WORLD
+        // grid (tile-independent by construction — the guarantee is
+        // the grid's, like the landmark layers), adopted where the
+        // course passes within reach. Ruisseaux need none (wadeable),
+        // fleuves get none (the obstacle: crossings are bridge sites).
+        river.fords.clear();
+        if (river.tier != 1) {
+            continue;
+        }
+        f32 minX = 1.0e30f;
+        f32 minZ = 1.0e30f;
+        f32 maxX = -1.0e30f;
+        f32 maxZ = -1.0e30f;
+        for (const RiverPoint& pt : river.points) {
+            minX = glm::min(minX, pt.x);
+            maxX = glm::max(maxX, pt.x);
+            minZ = glm::min(minZ, pt.z);
+            maxZ = glm::max(maxZ, pt.z);
+        }
+        const f32 cell = params.fordSpacing;
+        const i32 gx0 = static_cast<i32>(
+            std::floor((minX - params.fordReach) / cell));
+        const i32 gx1 = static_cast<i32>(
+            std::floor((maxX + params.fordReach) / cell));
+        const i32 gz0 = static_cast<i32>(
+            std::floor((minZ - params.fordReach) / cell));
+        const i32 gz1 = static_cast<i32>(
+            std::floor((maxZ + params.fordReach) / cell));
+        for (i32 gz = gz0; gz <= gz1; ++gz) {
+            for (i32 gx = gx0; gx <= gx1; ++gx) {
+                const u32 h = core::hashU32(
+                    (seed ^ 0x5f3d92c1u) ^
+                    static_cast<u32>(gx) * 0x9e3779b9u ^
+                    static_cast<u32>(gz) * 0x85ebca6bu);
+                const f32 jx = (static_cast<f32>(h & 0xffffu) *
+                                    (1.0f / 65535.0f) -
+                                0.5f) *
+                               0.7f;
+                const f32 jz = (static_cast<f32>((h >> 16) & 0xffffu) *
+                                    (1.0f / 65535.0f) -
+                                0.5f) *
+                               0.7f;
+                const f32 cx =
+                    (static_cast<f32>(gx) + 0.5f + jx) * cell;
+                const f32 cz =
+                    (static_cast<f32>(gz) + 0.5f + jz) * cell;
+                f32 best = params.fordReach * params.fordReach;
+                Vec2 spot { 0.0f, 0.0f };
+                bool found = false;
+                for (const RiverPoint& pt : river.points) {
+                    const f32 dx = pt.x - cx;
+                    const f32 dz = pt.z - cz;
+                    const f32 d = dx * dx + dz * dz;
+                    if (d < best) {
+                        best = d;
+                        spot = { pt.x, pt.z };
+                        found = true;
+                    }
+                }
+                if (found) {
+                    river.fords.push_back(spot);
+                }
+            }
+        }
+    }
 }
 
 } // namespace render::terraingen

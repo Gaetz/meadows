@@ -382,6 +382,25 @@ TileBakeResult bakeTileStage2(
     HydrologyParams hydrology = params.hydrology;
     hydrology.seaLevel = params.macro.seaLevel;
     HydrologyResult hydro = extractHydrology(window, composite, hydrology);
+    // Tier classification (S4 tail): fleuve promotion needs the master
+    // network's TRUE drainage areas — pure per super cell, identical
+    // for every neighbour that sees the same course.
+    {
+        ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        MasterNetworkParams network = params.network;
+        network.seaLevel = params.macro.seaLevel;
+        const f32 windowMaxX =
+            window.originX +
+            static_cast<f32>(window.n - 1) * window.texelSize;
+        const f32 windowMaxZ =
+            window.originZ +
+            static_cast<f32>(window.n - 1) * window.texelSize;
+        const vector<MasterRiver> master = masterRiversNear(
+            ProceduralControls { cp }, params.macro, network,
+            window.originX, window.originZ, windowMaxX, windowMaxZ);
+        classifyRivers(hydro.rivers, hydrology, params.worldSeed, master);
+    }
 
     // --- Canonical basin resolution. A lake whose mask touches the
     // window rim is a TRUNCATED view of a larger basin: its spill level
@@ -694,19 +713,38 @@ TileBakeResult bakeTileStage2(
                pt.z <= keepMaxZ;
     };
     for (const River& river : hydro.rivers) {
+        // Each kept run inherits the course's tier and the fords its
+        // points can reach (the ford grid is world-anchored, so both
+        // sides of a border keep the same spots).
+        const auto emit = [&](River&& run) {
+            for (const Vec2& ford : river.fords) {
+                for (const RiverPoint& pt : run.points) {
+                    const f32 dx = pt.x - ford.x;
+                    const f32 dz = pt.z - ford.y;
+                    if (dx * dx + dz * dz < 64.0f * 64.0f) {
+                        run.fords.push_back(ford);
+                        break;
+                    }
+                }
+            }
+            out.rivers.push_back(std::move(run));
+        };
         River run;
+        run.tier = river.tier;
         for (const RiverPoint& pt : river.points) {
             if (inKeep(pt)) {
                 run.points.push_back(pt);
                 continue;
             }
             if (run.points.size() >= 2) {
-                out.rivers.push_back(std::move(run));
+                emit(std::move(run));
+                run = River {};
             }
             run.points.clear();
+            run.tier = river.tier;
         }
         if (run.points.size() >= 2) {
-            out.rivers.push_back(std::move(run));
+            emit(std::move(run));
         }
     }
     return out;

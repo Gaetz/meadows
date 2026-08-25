@@ -327,12 +327,40 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
     // S5c — river carving on the fine grid: parabolic bed under the
     // water surface, bank shoulder blending back into the hillside.
     for (const River& river : hydro.rivers) {
+        // Tier character: cap band + shoulder (the ruisseau's shallow
+        // cap is what keeps it wadeable whatever its width says).
+        const f32 tierDepthMax = river.tier == 0 ? params.streamDepthMax
+                                 : river.tier == 2
+                                     ? params.fleuveDepthMax
+                                     : params.riverDepthMax;
+        const f32 tierDepthMin =
+            glm::min(params.riverDepthMin, tierDepthMax);
+        const f32 shoulder = river.tier == 2 ? params.fleuveBankShoulder
+                                             : params.bankShoulder;
         for (size_t s = 0; s + 1 < river.points.size(); ++s) {
             const RiverPoint& a = river.points[s];
             const RiverPoint& b = river.points[s + 1];
             const f32 maxHalf = glm::max(a.halfWidth, b.halfWidth);
-            const f32 reach = maxHalf * (1.0f + params.bankShoulder) +
+            const f32 reach = maxHalf * (1.0f + shoulder) +
                               out.fineSpec.texelSize;
+            // Nearest ford to this segment (few per river): outside its
+            // influence the whole segment skips the per-texel test.
+            f32 fordX = 0.0f;
+            f32 fordZ = 0.0f;
+            f32 fordNear = 1.0e30f;
+            const f32 fordFade = params.fordRadius * 2.0f;
+            for (const Vec2& ford : river.fords) {
+                const f32 mx = (a.x + b.x) * 0.5f - ford.x;
+                const f32 mz = (a.z + b.z) * 0.5f - ford.y;
+                const f32 d = mx * mx + mz * mz;
+                if (d < fordNear) {
+                    fordNear = d;
+                    fordX = ford.x;
+                    fordZ = ford.y;
+                }
+            }
+            const bool fordHere =
+                fordNear < (fordFade + 40.0f) * (fordFade + 40.0f);
             const f32 minX = glm::min(a.x, b.x) - reach;
             const f32 maxX = glm::max(a.x, b.x) + reach;
             const f32 minZ = glm::min(a.z, b.z) - reach;
@@ -379,9 +407,20 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                     const f32 half = glm::max(
                         glm::mix(a.halfWidth, b.halfWidth, t), 1.6f);
                     const f32 surface = glm::mix(a.surface, b.surface, t);
-                    const f32 depth = glm::clamp(
+                    f32 depth = glm::clamp(
                         params.riverDepthCoef * 2.0f * half,
-                        params.riverDepthMin, params.riverDepthMax);
+                        tierDepthMin, tierDepthMax);
+                    if (fordHere) {
+                        // The ford: the bed rises to wading depth over
+                        // the spot, blending back to the channel.
+                        const f32 fd = std::sqrt(
+                            (px - fordX) * (px - fordX) +
+                            (pz - fordZ) * (pz - fordZ));
+                        depth = glm::mix(
+                            glm::min(depth, params.fordDepth), depth,
+                            noise::smoothstep01(params.fordRadius,
+                                                fordFade, fd));
+                    }
                     const size_t i =
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);

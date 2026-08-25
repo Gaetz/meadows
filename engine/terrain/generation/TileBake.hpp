@@ -7,6 +7,7 @@
 #include "engine/terrain/generation/Finalize.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/ThermalErosion.hpp"
 
@@ -66,6 +67,9 @@ struct TileBakeParams {
     ThermalParams thermal;
     RidgeRoundParams rounding; // crest relaxation, uplift-gated
     HydrologyParams hydrology;
+    // Stage-0 master network (fleuve promotion in S4 — the true
+    // drainage areas the tile window cannot know).
+    MasterNetworkParams network;
     FinalizeParams finalize;
     // Measured fine-erosion reintroduction (B6) — the carved-rock
     // character coming back on the slopes without re-hatching the
@@ -159,7 +163,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 44;
-constexpr u32 kTileBakeVersion = 50;
+constexpr u32 kTileBakeVersion = 51;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

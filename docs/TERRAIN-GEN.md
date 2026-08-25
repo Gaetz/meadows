@@ -1238,6 +1238,44 @@ doivent lire comme des vasques/bassins, plus des flaques ; les lacs
 de montagne inchangés). Prochaine brique : B9 tiers de cours d'eau —
 STOP pour arbitrages dev (fréquence des gués, largeurs de fleuve).
 
+**B9 — tiers de cours d'eau (2026-08-25)** : arbitrages dev — gués
+~2 km, fleuve aux ordres du plan (24-36 m, ~7 m, dérive forte),
+ruisseaux ~1 km. Quatre pièces :
+1. **Classification S4** (`classifyRivers`, appelée par le bake —
+   les appels nus gardent tier 0 partout) : ruisseau par défaut ;
+   rivière si aire de drainage propre ≥ 2·10⁶ m² (aire du cours
+   HORS cellule de jonction — sinon un affluent héritait du tier de
+   son récepteur) ; **fleuve par correspondance de tracé au réseau
+   maître B5** (majorité des points à < 260 m d'un nœud maître) —
+   le plancher de largeur vient de l'AIRE VRAIE au nœud le plus
+   proche (clamp 12-18 m de demi-largeur, monotone aval par running
+   max) : ancré MONDE, les voisins de tuile s'accordent là où la
+   fenêtre tronque les aires locales.
+2. **Gués** (rivières seulement) : candidats sur une grille MONDE
+   jitterée de 2 km (la garantie est celle de la grille, comme les
+   amers — indépendante des fenêtres de tuile), adoptés où le cours
+   passe à < 700 m ; le carve remonte le lit à 0,4 m sur un cœur de
+   9 m (fondu ×2) — le gué est du TERRAIN. Fleuve : aucun gué (les
+   resserrements-sites de ponts sont différés à B11) ; ruisseau :
+   inutile (partout guéable).
+3. **Carve par tier** (S5c) : ruisseau plafonné 0,5 m (guéable
+   partout) ; rivière 4 m encaissée (inchangé) ; fleuve 7 m, épaule
+   ×2,2. **Vitesse par tier** au publish : 0,6 / 1,0 / 1,8 m/s (la
+   dérive passe par swimDriftFactor existant).
+4. **Rythme des ruisseaux** : riverArea 60k → 150k m² (~1 cours/km).
+Sidecar TWB2→TWB3 (tier + gués par rivière), bump v51 (stage-2
+seul). Mesures (5 tuiles) : 110 runs ruisseau / 15 rivière /
+**7 fleuve** (la promotion vit), 7 gués ; vasques 63 → 20 (moins de
+jonctions) ; lacs naturels bit-intacts ; bench 20,5 s (+0,55 pour le
+réseau maître par tuile). Doctests : tiers/promotion/gués
+(déterminisme, rythme, sur-le-cours), carve par tier + cap de gué.
+DIFFÉRÉS journalisés : resserrements de fleuve → sites B11 ;
+mapping tier→matériau d'eau (WaterMaterialForm TOML) quand des
+presets existeront ; niveaux partagés depuis l'étage 0 si des
+marches apparaissent aux frontières (l'apron couvre aujourd'hui).
+**Validation dev EN ATTENTE** : nager le fleuve (dérive), traverser
+un gué à pied, ruisseaux guéables, largeur du fleuve.
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

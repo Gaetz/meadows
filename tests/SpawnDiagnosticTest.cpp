@@ -1579,10 +1579,16 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
     };
     u32 total = 0;
     u32 dug = 0;
+    u32 tierCount[3] = {};
+    u32 fordCount = 0;
     for (const auto [tx, tz] : { std::pair { 2, -1 }, { 2, 0 }, { 2, 1 },
                                  { 1, 0 }, { 3, 0 } }) {
         MESSAGE("baking tile (", tx, ", ", tz, ")");
         const TileBakeResult baked = bakeTile(params, tx, tz);
+        for (const River& river : baked.rivers) {
+            ++tierCount[glm::min<u32>(river.tier, 2)];
+            fordCount += static_cast<u32>(river.fords.size());
+        }
         auto base = std::make_shared<render::TerrainBase>();
         base->regions.push_back(baked.region);
         render::TerrainParams tp;
@@ -1627,6 +1633,9 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
     }
     MESSAGE("natural lakes over 5 tiles: ", total, "  (+ ", dug,
             " placed ponds, never filtered)");
+    MESSAGE("river runs by tier: ruisseau ", tierCount[0], "  riviere ",
+            tierCount[1], "  fleuve ", tierCount[2], "  | fords ",
+            fordCount);
     for (const Bucket& b : buckets) {
         MESSAGE("  ", std::string(b.label), ": ", b.count,
                 "  (deepest ", b.deepest, " m)");
