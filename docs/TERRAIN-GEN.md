@@ -1138,6 +1138,32 @@ frange aride : le gazon doit jaunir en nappes rongées vers le cœur
 sec) ; reste M3b : couplage racines de brins sur les sols de
 transition.
 
+**ÉTAPE ULTÉRIEURE — climat GÉOGRAPHIQUE (demande dev 2026-08-25)** :
+le climat actuel (2 fbm température/humidité, M3b-4) est une
+répartition statistique — des régions cohérentes, mais qui ne
+racontent rien. Le chantier futur le dérive de la géographie réelle,
+en restant une fonction pure de (seed, x, z) bon marché (contrat
+`biomeIdAt` par texel) et en réutilisant l'existant (§2.11 : la
+continentalité, `macroHeightAnalytic`, le réseau maître B5) :
+- **Température** = gradient latitudinal décrété (axe N-S lent par
+  seed — le monde gagne un nord) − gradient altitudinal (lapse rate
+  ~6,5 °C/1000 m sur l'altitude analytique — la toundra devient un
+  fait d'altitude et de latitude, plus un tirage) + continentalité
+  (loin de la mer : plus contrasté).
+- **Humidité** = advection depuis la mer sous un vent dominant
+  (décrété par seed) : distance à la mer SOUS LE VENT, **ombre
+  pluviométrique** (un massif au vent assèche l'aval — l'aride
+  apparaît derrière les montagnes, pas au hasard), bonus vallées
+  maîtresses/rivières (trunk) et côtes.
+- Les biomes découlent des mêmes seuils sur (T, H, tier) — la
+  palette et tout l'aval (attributs blendés, dépôts, offsets neige)
+  sont inchangés : seul le CALCUL de T/H change.
+- Bénéfice : lisibilité et crédibilité — le joueur peut prédire le
+  climat en lisant le terrain (et inversement) ; le fbm actuel reste
+  en octave de détail sur les bords.
+Placement : après l'eau (B7-B10) — l'ombre pluviométrique et
+l'advection consommeront les mêmes décrets de vent que la météo.
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km
