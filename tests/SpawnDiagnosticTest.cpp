@@ -1588,6 +1588,15 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
         for (const River& river : baked.rivers) {
             ++tierCount[glm::min<u32>(river.tier, 2)];
             fordCount += static_cast<u32>(river.fords.size());
+            if (river.tier == 2 && !river.points.empty()) {
+                const RiverPoint& mid =
+                    river.points[river.points.size() / 2];
+                MESSAGE("  fleuve run: mid (", static_cast<i32>(mid.x),
+                        ", ", static_cast<i32>(mid.surface), ", ",
+                        static_cast<i32>(mid.z), "), hw ",
+                        mid.halfWidth, ", ", river.points.size(),
+                        " pts");
+            }
         }
         auto base = std::make_shared<render::TerrainBase>();
         base->regions.push_back(baked.region);
@@ -1714,6 +1723,53 @@ TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
                 static_cast<i32>(e.bx), ", ",
                 static_cast<i32>(yb + 30.0f), ", ",
                 static_cast<i32>(e.bz), ")");
+    }
+    CHECK(true);
+}
+
+TEST_CASE("fleuve continuity diagnostic" * doctest::skip()) {
+    // Repro of the vanished-fleuve report: the flagged spot (8192, 6656)
+    // sits ON the tile border (1,1)|(2,1). Bake both owners and list
+    // every river run passing within 800 m — do the two sides agree on
+    // the course's existence, tier and width where they meet?
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    struct Spot {
+        i32 tx, tz;
+        f32 fx, fz;
+    };
+    const Spot spots[] = {
+        { 1, 1, 8192.0f, 6656.0f }, // the vanished-fleuve report
+        { 2, 1, 8192.0f, 6656.0f },
+        { 2, 4, 10240.0f, 17536.0f }, // the far mouth stretch
+    };
+    for (const auto& [tx, tz, fx, fz] : spots) {
+        MESSAGE("baking tile (", tx, ", ", tz, ")");
+        const TileBakeResult baked = bakeTile(params, tx, tz);
+        u32 shown = 0;
+        for (const River& river : baked.rivers) {
+            f32 best = 1.0e30f;
+            for (const RiverPoint& pt : river.points) {
+                const f32 dx = pt.x - fx;
+                const f32 dz = pt.z - fz;
+                best = glm::min(best, dx * dx + dz * dz);
+            }
+            if (best > 800.0f * 800.0f) {
+                continue;
+            }
+            const RiverPoint& head = river.points.front();
+            const RiverPoint& tail = river.points.back();
+            MESSAGE("  run tier ", static_cast<u32>(river.tier), " (",
+                    river.points.size(), " pts, hw ",
+                    head.halfWidth, " -> ", tail.halfWidth,
+                    "): head (", static_cast<i32>(head.x), ", ",
+                    static_cast<i32>(head.z), ") tail (",
+                    static_cast<i32>(tail.x), ", ",
+                    static_cast<i32>(tail.z), "), a ",
+                    static_cast<i32>(std::sqrt(best)), " m du point");
+            ++shown;
+        }
+        MESSAGE("  -> ", shown, " run(s) near the spot");
     }
     CHECK(true);
 }
