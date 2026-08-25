@@ -1434,6 +1434,65 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("biome locator diagnostic" * doctest::skip()) {
+    // Where is each biome? Scans the control fields around the spawn
+    // (controls only — no bake) and prints, per palette id, the nearest
+    // LAND occurrence plus a far alternate, with the analytic height so
+    // the console/fly coordinate can be pasted directly (x, y, z).
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 px = 8196.77f;
+    const f32 pz = 230.072f;
+    const char* names[] = { "temperate", "arid",      "alpine",
+                            "tundra",    "subalpine", "steppe" };
+    struct Hit {
+        f32 x { 0.0f };
+        f32 z { 0.0f };
+        f32 d { 1.0e18f };
+    };
+    Hit nearest[6];
+    Hit alternate[6]; // nearest beyond 6 km — a second spot to try
+    for (f32 z = pz - 24000.0f; z <= pz + 24000.0f; z += 96.0f) {
+        for (f32 x = px - 24000.0f; x <= px + 24000.0f; x += 96.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea || s.biome >= 6) {
+                continue;
+            }
+            const f32 dx = x - px;
+            const f32 dz = z - pz;
+            const f32 d = dx * dx + dz * dz;
+            if (d < nearest[s.biome].d) {
+                nearest[s.biome] = { x, z, d };
+            }
+            if (d > 6000.0f * 6000.0f && d < alternate[s.biome].d) {
+                alternate[s.biome] = { x, z, d };
+            }
+        }
+    }
+    for (u32 b = 0; b < 6; ++b) {
+        const auto report = [&](const char* tag, const Hit& hit) {
+            const std::string label =
+                std::string(names[b]) + " " + tag;
+            if (hit.d >= 1.0e18f) {
+                MESSAGE(label, ": none within 24 km");
+                return;
+            }
+            const f32 y = macroHeightAnalytic(controls, params.macro,
+                                              hit.x, hit.z);
+            MESSAGE(label, ": (", static_cast<i32>(hit.x), ", ",
+                    static_cast<i32>(y + 40.0f), ", ",
+                    static_cast<i32>(hit.z), ")  a ",
+                    static_cast<i32>(std::sqrt(hit.d)), " m du spawn");
+        };
+        report("nearest", nearest[b]);
+        report("alt>6km", alternate[b]);
+    }
+    CHECK(true);
+}
+
 TEST_CASE("rock uv diagnostic" * doctest::skip()) {
     const char* kRocks[] = {
         "game/data/base/models/scans/stone_01/stone_01.gltf",
