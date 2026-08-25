@@ -1035,8 +1035,16 @@ cooker, deux corrections :
    (contenu < ~1/8 de tuile retiré, moyenne conservée) ; l'herbe et
    la roche, chargées, gardent tout leur contenu.
 Résidu connu : snow_03 (var2, traces) sature trop pour atteindre le
-bleu de l'ancre (243 vs 251, AO 242 vs 245) — si des cellules
-persistent, prochains leviers : remplacer sa source, ou moduler la
-force des normales par couche (les normales ne sont pas
-harmonisées). **Validation visuelle dev EN ATTENTE** ; ensuite M3b
-(biomes de transition, textures dédiées).
+bleu de l'ancre (243 vs 251, AO 242 vs 245). **Hexagones toujours
+visibles (dev)** → cause restante : les deux variantes Poly Haven
+(snow_02/03) étaient les intruses du set — pipeline différent,
+teinte crème saturée que l'harmonisation ne rattrape pas, normales à
+traces marquées (jamais harmonisées). **Remplacées par Snow007A
+(croûte lisse) et Snow009A (tassée granuleuse), ambientCG comme la
+base** : le set neige est cohérent de fabrique — après cook les 4
+couches sont à ±1/255 en albedo, AO 244-245, rough 181. Leçon
+durable : les variantes hex d'une famille LISSE et claire doivent
+venir du même pipeline de capture ; l'harmonisation corrige des
+moyennes, pas un caractère (saturation, relief des normales).
+**Validation visuelle dev EN ATTENTE** ; ensuite M3b (biomes de
+transition, textures dédiées).

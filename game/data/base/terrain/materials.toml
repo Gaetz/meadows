@@ -119,23 +119,26 @@ harmonize = true
 harmonizeWith = 1
 
 [[material]]
-name = "snow-var1"               # layer 11
-albedo = "../../../../assets-src/terrain/snow_02/snow_02_Color.png"
-normal = "../../../../assets-src/terrain/snow_02/snow_02_NormalGL.png"
-ao = "../../../../assets-src/terrain/snow_02/snow_02_AmbientOcclusion.png"
-roughness = "../../../../assets-src/terrain/snow_02/snow_02_Roughness.png"
-height = "../../../../assets-src/terrain/snow_02/snow_02_Displacement.png"
+name = "snow-var1"               # layer 11 — croûte lisse (même pipeline
+                                 # ambientCG que la base : couleurs et
+                                 # normales cohérentes de fabrique)
+albedo = "../../../../assets-src/terrain/Snow007A/Snow007A_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow007A/Snow007A_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow007A/Snow007A_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow007A/Snow007A_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow007A/Snow007A_1K-PNG_Displacement.png"
 harmonize = true
 harmonizeWith = 2
 flattenLowFreq = true
 
 [[material]]
-name = "snow-var2"               # layer 12
-albedo = "../../../../assets-src/terrain/snow_03/snow_03_Color.png"
-normal = "../../../../assets-src/terrain/snow_03/snow_03_NormalGL.png"
-ao = "../../../../assets-src/terrain/snow_03/snow_03_AmbientOcclusion.png"
-roughness = "../../../../assets-src/terrain/snow_03/snow_03_Roughness.png"
-height = "../../../../assets-src/terrain/snow_03/snow_03_Displacement.png"
+name = "snow-var2"               # layer 12 — neige tassée granuleuse
+                                 # (ambientCG, cohérente avec la base)
+albedo = "../../../../assets-src/terrain/Snow009A/Snow009A_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow009A/Snow009A_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow009A/Snow009A_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow009A/Snow009A_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow009A/Snow009A_1K-PNG_Displacement.png"
 harmonize = true
 harmonizeWith = 2
 flattenLowFreq = true
