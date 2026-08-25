@@ -779,6 +779,10 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     if (tier > 2.1f) {
         return 2; // alpine
     }
+    if (tier > 1.7f) {
+        return 4; // subalpine — the transition belt below the alpine
+                  // tiers (heath ground, milder snow accent)
+    }
     return 0;
 }
 

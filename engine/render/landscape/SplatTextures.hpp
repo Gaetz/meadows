@@ -40,7 +40,14 @@ constexpr u32 kScreeLayer = 16;
 // flips to under the frost bias near the snow line — the snow-patch
 // rule then drops its patches onto already-frosted grass.
 constexpr u32 kFrostGrassLayer = 21;
-constexpr u32 kSplatArrayLayers = 22;
+// Subalpine heath (large-scale autotile): below the snow line the
+// grass-family hex cells progressively flip to these two transition
+// grounds (weathered alpine meadow / dry turf) — whole cells adopt the
+// transition biome, the frost/snow deposition then rides on top.
+// Deliberately NOT harmonized with grass: the color shift IS the point.
+constexpr u32 kHeathLayerA = 22;
+constexpr u32 kHeathLayerB = 23;
+constexpr u32 kSplatArrayLayers = 24;
 constexpr u32 grassVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Grass : SplatLayer_Count + variant - 1;
 }

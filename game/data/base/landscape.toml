@@ -134,7 +134,7 @@ froxelDustNoise = 0.75            # dust wisps: 0 uniform, 1 sparse sheets
 interiorDustDensity = 0.025       # uniform dust indoors (H4)
 
 # --- Biomes (palette contract with the sandbox generator:
-#     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra) -------------------
+#     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra, 4 subalpine) -----
 # snowLineOffset is a character ACCENT: the big snow-line variation is
 # the engine's slow continuous wander field (±80 m over ~2.8 km) — large
 # offsets here re-create razor snow borders at biome edges.
@@ -181,6 +181,21 @@ grassPresence = 0.4
 snowLineOffset = -300.0
 temperature = -0.8
 wetness = 0.4
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b4"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeSubalpine"
+displayName = "Subalpine"
+paletteIndex = 4
+editorColor = [0.62, 0.68, 0.58]
+rockiness = 0.35
+grassPresence = 0.55
+snowLineOffset = -60.0
+temperature = -0.2
+wetness = 0.25
 
 
 # Radiance-cascades GI tuning (docs/RENDERING.md): the render

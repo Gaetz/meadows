@@ -68,14 +68,21 @@ int hexVariantOf(ivec2 v) {
 // (2/11/12/20), sand 4-way (3/13/14/15); cliff 3-way in 24 m PANELS
 // (4/17/18 — per-hex-cell picks would patchwork a continuous wall).
 // Distinct salts per family so the patchworks never correlate.
-// `bias` = the sand family's scree flip to layer 16 (rock-foot talus).
-// The frost-grass layer (21) is NOT a per-vertex flip — a binary cell
-// decision at high contrast paints the hex lattice (measured in game);
-// terrain.frag DEPOSITS it per-pixel over the blended grass instead,
-// filling the tile's hollows first.
+// `bias` = the sand family's scree flip to layer 16 (rock-foot talus),
+// and the GRASS family's subalpine flip to the heath layers 22/23 (the
+// large-scale autotile: whole cells adopt the transition ground as the
+// snow line nears; the low-contrast heath tolerates the per-vertex flip
+// that the white frost could not). The frost-grass layer (21) stays a
+// per-pixel DEPOSIT in terrain.frag — a binary cell decision at high
+// contrast paints the hex lattice (measured in game).
 float hexFamilyLayer(int family, ivec2 v, float bias) {
     if (family == 0) {
-        int g = hexVariantOf(v);
+        uint hg = zoneHash(uint(v.x) * 0x9e3779b9u ^
+                           uint(v.y) * 0x85ebca6bu);
+        if (float((hg >> 8) & 255u) * (1.0 / 255.0) < bias) {
+            return ((hg >> 16) & 1u) == 0u ? 22.0 : 23.0;
+        }
+        int g = int(hg & 3u);
         return g == 0 ? 0.0 : float(4 + g);
     }
     if (family >= 4) {

@@ -1046,5 +1046,38 @@ couches sont à ±1/255 en albedo, AO 244-245, rough 181. Leçon
 durable : les variantes hex d'une famille LISSE et claire doivent
 venir du même pipeline de capture ; l'harmonisation corrige des
 moyennes, pas un caractère (saturation, relief des normales).
-**Validation visuelle dev EN ATTENTE** ; ensuite M3b (biomes de
-transition, textures dédiées).
+**Validé dev : hexagones disparus.**
+
+**M3b — biomes de transition (2026-08-25)** : l'« autotile à grande
+échelle » du dev, en deux pièces qui n'étendent que des mécanismes
+existants :
+1. **Lande subalpine au sol (couches 22-23)** : deux sols de
+   transition (Ground037 pelouse alpine patinée, Grass004 turf sec
+   olive — ambientCG, PAS d'harmonize : le glissement de couleur EST
+   la transition). Le flip de variante par biais (précédent scree,
+   couche 16) s'étend à la famille herbe : `heathMix` monte en
+   approchant la ligne de neige par pixel (bande [ligne−260,
+   ligne−80], modulée par une instance grossière du champ de patchs
+   ×0,31 pour des adoptions rongées) et les CELLULES hex basculent
+   une à une vers la lande — l'autotile littéral ; le givre (21)
+   puis la neige se déposent par-dessus. Échelle finale : herbe →
+   cellules de lande → givre → neige. Le flip par cellule est
+   tolérable ici car la lande est PEU contrastée vs l'herbe (la
+   leçon du givre : jamais de flip binaire à fort contraste).
+   Miroir CPU : les variantes 0-3 de grassZoneAt sont intactes (même
+   hash) ; les racines de brins gardent la couleur de leur variante
+   sous-jacente — acceptable v1 (brins raréfiés là-haut par
+   grassPresence), à coupler si visible.
+2. **Biome subalpin (palette id 4)** : bande tier 1,7-2,1 sous
+   l'alpin dans `biomeIdAt`, BiomeForm dédié (rockiness 0,35,
+   grassPresence 0,55, snowLineOffset −60, temperature −0,2),
+   caractère d'érosion intermédiaire dans la table BiomeErosion —
+   la marche d'attributs temperate→alpin passe par un palier.
+   Caches v40/v45.
+Constat cook : heath-turf (Grass004) roughness moyenne 67/255 —
+brillant pour un sol ; si les cellules de lande accrochent le
+spéculaire, prochain levier = biais roughness par couche au cook.
+**Validation visuelle dev EN ATTENTE** (monter vers une ligne de
+neige : les cellules de lande doivent apparaître progressivement,
+sans lattice) ; restes M3b : steppe (transition aride) si besoin,
+couplage racines de brins.

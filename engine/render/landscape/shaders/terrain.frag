@@ -121,7 +121,21 @@ void main() {
                    snowLine + snowOffset + 60.0, h + wander * 26.0);
     float overlayPatch =
         overlayBand > 0.001 ? snowPatch01(vWorldPos.xz) : 0.5;
-    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
+    // Subalpine heath (the transition-biome autotile): approaching the
+    // snow line, grass-family hex CELLS progressively flip to the heath
+    // grounds (22/23) — the frost/snow deposition then settles on top.
+    // The patch field (coarser instance) makes the adoption gnawed
+    // instead of a level contour; per-vertex hashes do the cell dither.
+    float heathBand =
+        smoothstep(snowLine + snowOffset - 260.0,
+                   snowLine + snowOffset - 80.0, h + wander * 26.0);
+    float heathMix =
+        heathBand > 0.001
+            ? clamp(heathBand *
+                        (0.45 + 0.55 * snowPatch01(vWorldPos.xz * 0.31)),
+                    0.0, 1.0)
+            : 0.0;
+    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], heathMix);
     // Cliff variant panel (24 m) — every cliff fetch (height, albedo,
     // POM) must agree on it.
     float cliffLayer = hexFamilyLayer(4, hexV[hexDom], 0.0);
@@ -146,7 +160,8 @@ void main() {
                                           hexFamilyLayer(
                                               i, hexV[t],
                                               i == 3 ? screeMix
-                                                     : 0.0))).r;
+                                              : i == 0 ? heathMix
+                                                       : 0.0))).r;
                 }
             }
         } else {
@@ -293,7 +308,8 @@ void main() {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
                     float lyr = hexFamilyLayer(
-                        i, hexV[t], i == 3 ? screeMix : 0.0);
+                        i, hexV[t],
+                        i == 3 ? screeMix : i == 0 ? heathMix : 0.0);
                     layer += hexW[t] *
                              texture(uSplat, vec3(tapUv, lyr)).rgb;
                     layerN += hexW[t] *

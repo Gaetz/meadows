@@ -238,3 +238,23 @@ normal = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_NormalGL.png"
 ao = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Roughness.png"
 height = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Displacement.png"
+
+# Subalpine heath grounds (layers 22-23) — the transition-biome autotile
+# targets of the grass family's hex flip near the snow line. PAS
+# d'harmonize : le glissement de couleur vers le terne EST la transition.
+
+[[material]]
+name = "heath-meadow"           # layer 22 — pelouse alpine patinée
+albedo = "../../../../assets-src/terrain/Ground037/Ground037_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Ground037/Ground037_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Ground037/Ground037_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Ground037/Ground037_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Ground037/Ground037_1K-PNG_Displacement.png"
+
+[[material]]
+name = "heath-turf"             # layer 23 — turf sec olive
+albedo = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Grass004/Grass004_1K-PNG_Displacement.png"
