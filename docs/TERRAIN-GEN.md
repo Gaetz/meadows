@@ -995,6 +995,24 @@ préexistant). Transect re-passé : E-O familles 38/38/24 (cible
 40/35/25 — quasi), médian 25,3 m, >30° 12,8 % ✓ ; N-S ligne de
 montagne 13/72/15, médian 55,8 m ; lacs 3-53/tuile (reliquat B8) ;
 l'érosion par caractère de biome au texel déplace légèrement les
-fenêtres vs B6. **Validation visuelle dev EN ATTENTE** (zone
-bug-neige4 : 10499, 1014, 3802) ; ensuite M3b (biomes de transition,
-textures dédiées).
+fenêtres vs B6. **Verdict dev : nettement mieux — mais la neige a
+quasi disparu** (attendu a posteriori : lignes effectives alpin
+800→980, toundra 450→900).
+
+**M4b — recalibration neige (2026-08-25)** : nouvel instrument caché
+`snow coverage diagnostic` (bake tuiles (2,−1..1), % de terre en
+neige pleine — poids > 0,5 — et « touchée » — bande de l'overlay
+entamée — par bandes d'altitude, pour un jeu de configs). Mesures :
+avant-M4 = 6,3 % plein / 16,1 % touché (la référence visuelle) ;
+config M4 initiale = 0,47 % / 2,1 % (la disparition constatée).
+**Adopté : base 900 (1100 avant) + offsets aride +150 / alpin −180 /
+toundra −300** → 5,9 % / 17,3 % — la quantité d'avant, mieux placée
+(concentrée au-dessus de 600 m au lieu de la neige de toundra basse
+à 450 m qui faisait le damier ; la toundra garde des patchs d'overlay
+dès ~430 m). `treeLineFactor` 0,82 → 1,0 pour que la treeline reste
+à ~900 m (elle suivait la base : 1100×0,82 = 902 — la baisser aurait
+fait reculer les forêts de 160 m). Deltas aux frontières ≤ 300 m
+(vs 650 avant M4), portés par les rampes blendées + le wander.
+Le tout est de la donnée runtime (landscape.toml) — pas de bump de
+cache. **Validation visuelle dev EN ATTENTE** ; ensuite M3b (biomes
+de transition, textures dédiées).

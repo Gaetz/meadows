@@ -1303,6 +1303,127 @@ TEST_CASE("calm coverage diagnostic" * doctest::skip()) {
 //   meadows-tests '-tc=rock uv diagnostic' -ns
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshSimplify.hpp"
+TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
+    // Snow-line calibration instrument: bakes the spawn tile and its two
+    // N-S neighbours, then measures the snow WEIGHT coverage of the land
+    // under several (base snow line, biome offsets) configs through the
+    // real materialWeightsAt path (blended attributes + wander field
+    // included). "full" = weight > 0.5, "touched" = the deposition
+    // overlay's band has begun (h > line - 90). Altitude bands locate
+    // where the snow lives.
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const f32 seaLevel = params.macro.seaLevel;
+
+    auto base = std::make_shared<render::TerrainBase>();
+    for (const i32 tz : { -1, 0, 1 }) {
+        MESSAGE("baking tile (2, ", tz, ")");
+        base->regions.push_back(bakeTile(params, 2, tz).region);
+    }
+    render::TerrainParams tp;
+    tp.base = base;
+    tp.seed = params.worldSeed;
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls = controlParams;
+    sandbox->macro = params.macro;
+    tp.sandbox = sandbox;
+
+    struct Config {
+        const char* label;
+        f32 snowLine;
+        f32 arid;
+        f32 alpine;
+        f32 tundra;
+    };
+    // "avant-M4" is the pre-M4 look the calibration targets (~6 % full
+    // snow); "adopte" is the shipped landscape.toml config, the others
+    // bracket it one notch either way for future retuning.
+    const Config configs[] = {
+        { "avant-M4", 1100.0f, 400.0f, -300.0f, -650.0f },
+        { "adopte  ", 900.0f, 150.0f, -180.0f, -300.0f },
+        { "var-950 ", 950.0f, 150.0f, -150.0f, -250.0f },
+        { "var-850 ", 850.0f, 200.0f, -200.0f, -350.0f },
+    };
+    const auto biomeSetFor = [](const Config& c) {
+        auto set = std::make_shared<render::BiomeSet>();
+        set->table.resize(4);
+        set->table[1].sandiness = 0.7f;
+        set->table[1].grassPresence = 0.25f;
+        set->table[1].snowLineOffset = c.arid;
+        set->table[1].temperature = 0.6f;
+        set->table[1].wetness = 0.1f;
+        set->table[2].rockiness = 0.6f;
+        set->table[2].grassPresence = 0.6f;
+        set->table[2].snowLineOffset = c.alpine;
+        set->table[2].temperature = -0.4f;
+        set->table[3].rockiness = 0.3f;
+        set->table[3].grassPresence = 0.4f;
+        set->table[3].snowLineOffset = c.tundra;
+        set->table[3].temperature = -0.8f;
+        return set;
+    };
+    constexpr f32 kBandEdges[] = { 300.0f, 600.0f, 900.0f, 1200.0f };
+    for (const Config& c : configs) {
+        tp.snowLine = c.snowLine;
+        tp.biomes = biomeSetFor(c);
+        u32 land = 0;
+        u32 full = 0;
+        u32 touched = 0;
+        u32 bandLand[5] = {};
+        u32 bandFull[5] = {};
+        for (const render::TerrainRegion& region : base->regions) {
+            for (f32 z = region.originZ + 200.0f;
+                 z < region.originZ + region.spanZ() - 200.0f;
+                 z += 32.0f) {
+                for (f32 x = region.originX + 200.0f;
+                     x < region.originX + region.spanX() - 200.0f;
+                     x += 32.0f) {
+                    const f32 h = render::terrain::height(tp, x, z);
+                    if (h < seaLevel + 0.5f) {
+                        continue;
+                    }
+                    ++land;
+                    const Vec3 n = render::terrain::normal(tp, x, z);
+                    const auto w = render::terrain::materialWeightsAt(
+                        tp, x, z, h, n);
+                    const auto fields =
+                        render::terrain::regionFieldsAt(tp, x, z);
+                    const f32 line = c.snowLine + fields.snowLineOffset;
+                    u32 band = 0;
+                    while (band < 4 && h >= kBandEdges[band]) {
+                        ++band;
+                    }
+                    ++bandLand[band];
+                    if (w.snow > 0.5f) {
+                        ++full;
+                        ++bandFull[band];
+                    }
+                    if (h > line - 90.0f) {
+                        ++touched;
+                    }
+                }
+            }
+        }
+        const auto pct = [](u32 num, u32 den) {
+            return den ? 100.0f * static_cast<f32>(num) /
+                             static_cast<f32>(den)
+                       : 0.0f;
+        };
+        MESSAGE(std::string(c.label), " base ", c.snowLine, " offsets(",
+                c.arid, "/", c.alpine, "/", c.tundra, "): full ",
+                pct(full, land), "%  touched ", pct(touched, land),
+                "%  (", land, " land texels)");
+        MESSAGE("   full by band  <300m ", pct(bandFull[0], bandLand[0]),
+                "%  300-600 ", pct(bandFull[1], bandLand[1]),
+                "%  600-900 ", pct(bandFull[2], bandLand[2]),
+                "%  900-1200 ", pct(bandFull[3], bandLand[3]),
+                "%  >1200 ", pct(bandFull[4], bandLand[4]), "%");
+    }
+    CHECK(true);
+}
+
 TEST_CASE("rock uv diagnostic" * doctest::skip()) {
     const char* kRocks[] = {
         "game/data/base/models/scans/stone_01/stone_01.gltf",

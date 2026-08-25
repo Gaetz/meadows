@@ -60,10 +60,15 @@ terrainRecurveHigh = 0.75
 
 # --- Terrain materials ---------------------------------------------------
 snowLine = 165.0            # story-world snow altitude (m)
-sandboxSnowLine = 1100.0    # sandbox snow altitude — the tree line follows at ~0.82x
+# Sandbox snow: base line 900 + biome accents + the engine's ±80 m wander
+# field. Calibrated against the pre-M4 look (snow coverage diagnostic:
+# ~6 % full-snow land, mountains 600 m+); raise/lower ~50 m per notch.
+sandboxSnowLine = 900.0
 coniferTreeType = "conifer" # species of the high tree slots (3-4)
 bushTreeType = "bush"       # colonized bush species (legacy blobs if empty)
-treeLineFactor = 0.82       # tree line = snow line x this
+# 1.0 keeps the tree line at ~900 m — where it sat when the snow base was
+# 1100 x 0.82; the wander field lets snow patches dip into the forest edge.
+treeLineFactor = 1.0
 splatUvScale = 0.25         # ground texture tiles per meter
 splatBlendDepth = 0.15      # height-blend band between layers (0 = plain blend)
 terrainTintStrength = 0.3   # macro tint strength (0 = off, keep <= ~0.4)
@@ -144,7 +149,7 @@ paletteIndex = 1
 editorColor = [0.85, 0.72, 0.4]
 sandiness = 0.7
 grassPresence = 0.25
-snowLineOffset = 120.0
+snowLineOffset = 150.0
 temperature = 0.6
 wetness = 0.1
 
@@ -159,7 +164,7 @@ paletteIndex = 2
 editorColor = [0.55, 0.55, 0.6]
 rockiness = 0.6
 grassPresence = 0.6
-snowLineOffset = -120.0
+snowLineOffset = -180.0
 temperature = -0.4
 
 [[records]]
@@ -173,7 +178,7 @@ paletteIndex = 3
 editorColor = [0.75, 0.8, 0.85]
 rockiness = 0.3
 grassPresence = 0.4
-snowLineOffset = -200.0
+snowLineOffset = -300.0
 temperature = -0.8
 wetness = 0.4
 
