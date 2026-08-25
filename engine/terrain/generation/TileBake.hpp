@@ -74,21 +74,21 @@ struct TileBakeParams {
     //     smoothstep01(low, high, calm) instead of raw calm, so the
     //     mid-calm halo (0.3-0.6) stops blanketing the slopes.
     //     high <= 0 = legacy raw-calm damp.
-    f32 fineCalmGateLow { 0.0f };
-    f32 fineCalmGateHigh { 0.0f };
+    f32 fineCalmGateLow { 0.35f };
+    f32 fineCalmGateHigh { 0.7f };
     //   fineSlopeReturn: extra fineScale on steep, non-calm ground
     //     (x(1 + r*steep*(1-calmGated))). 0 = off.
-    f32 fineSlopeReturn { 0.0f };
+    f32 fineSlopeReturn { 0.35f };
     //   relaxGate*: the calm relaxation strength reads
     //     smoothstep01(low, high, calm) instead of raw calm — the
     //     mid-slopes keep their carve. high <= 0 = legacy.
-    f32 relaxGateLow { 0.0f };
-    f32 relaxGateHigh { 0.0f };
+    f32 relaxGateLow { 0.5f };
+    f32 relaxGateHigh { 0.85f };
     //   keepCrestFade: 0 = keep as-is; else the erosion keep fades to
     //     keep*(1-fade) OFF the local crests (crest = stands above the
     //     ~500 m mean), matching the measured profile: erosion belongs
     //     to the mid-slopes, the summits only need light shaping.
-    f32 keepCrestFade { 0.0f };
+    f32 keepCrestFade { 0.35f };
     // Indexed by biome palette id; empty = neutral everywhere. Ids past
     // the table's end fall back to neutral.
     vector<BiomeErosion> biomeErosion {
@@ -155,8 +155,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 36;
-constexpr u32 kTileBakeVersion = 41;
+constexpr u32 kStage1Version = 37;
+constexpr u32 kTileBakeVersion = 42;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its
