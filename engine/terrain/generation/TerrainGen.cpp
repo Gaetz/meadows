@@ -766,13 +766,13 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // the heavy control fields interpolate from the coarse lattice.
     const f32 temperature =
         noise::fbm(p.seed ^ kSaltTemperature, x, z,
-                   1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
+                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f);
     if (temperature < 0.34f) {
         return 3; // tundra
     }
     const f32 moisture =
         noise::fbm(p.seed ^ kSaltMoisture, x, z,
-                   1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
+                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f);
     if (moisture < 0.38f && temperature > 0.58f) {
         return 1; // arid
     }

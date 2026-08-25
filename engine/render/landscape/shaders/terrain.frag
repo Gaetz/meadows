@@ -138,7 +138,7 @@ void main() {
     // climate dries, so the arid interior reads as dry steppe instead
     // of lush lawn. Same deposition recipe as the heath — never a
     // per-vertex variant flip (off-color cells paint the hex lattice).
-    float dryBand = smoothstep(0.12, 0.55, shade1.b);
+    float dryBand = smoothstep(0.10, 0.42, shade1.b);
     float dryPatch =
         dryBand > 0.001 ? snowPatch01(vWorldPos.xz * 0.23 + 57.0) : 0.5;
     float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);

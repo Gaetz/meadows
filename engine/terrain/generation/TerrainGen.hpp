@@ -141,8 +141,13 @@ struct ProceduralControlParams {
     // Climate fields deciding the biome id (must match the BiomeForm
     // palette shipped in data: 0 temperate, 1 arid, 2 alpine, 3 tundra,
     // 4 subalpine, 5 steppe — the temperate->alpine and
-    // temperate->arid transition belts).
-    f32 climateWavelength { 350.0f };
+    // temperate->arid transition belts). REGIONAL since the biomes
+    // drive the ground materials: 5 fbm octaves from this base give
+    // 1-3 km coherent regions whose borders stay ragged at walk scale
+    // (a 350 m base made confetti patches — a biome was never a place).
+    // The short-wavelength "type selector" principle stays with the
+    // relief REGIME field below; climate is geography.
+    f32 climateWavelength { 2800.0f };
     // Relief regimes: a type-selector field sorts the land into three
     // characters — HILL-CHAIN country (low, rolling ridged hills, no
     // uplift), OLD MASSIFS (an elevated plateau wearing hills, uplift

@@ -1472,6 +1472,42 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             }
         }
     }
+    // Patch geometry at the nearest steppe hit: how big is the zone the
+    // player is sent to, and how strong does the blended sandiness (the
+    // shader's aridity signal) actually get there?
+    if (nearest[5].d < 1.0e18f) {
+        const f32 cx = nearest[5].x;
+        const f32 cz = nearest[5].z;
+        u32 steppe = 0;
+        u32 arid = 0;
+        u32 total = 0;
+        f32 maxSand = 0.0f;
+        for (f32 z = cz - 750.0f; z <= cz + 750.0f; z += 24.0f) {
+            for (f32 x = cx - 750.0f; x <= cx + 750.0f; x += 24.0f) {
+                const ControlSample s = controls.at(x, z);
+                ++total;
+                steppe += s.biome == 5 ? 1 : 0;
+                arid += s.biome == 1 ? 1 : 0;
+                // The runtime cross-blend, approximated at control level.
+                f32 sand = 0.0f;
+                for (const Vec2 o : { Vec2 { 0, 0 }, Vec2 { 32, 0 },
+                                      Vec2 { -32, 0 }, Vec2 { 0, 32 },
+                                      Vec2 { 0, -32 } }) {
+                    const u8 id = controls.at(x + o.x, z + o.y).biome;
+                    const f32 w = (o.x == 0.0f && o.y == 0.0f) ? 2.0f
+                                                               : 1.0f;
+                    sand += w * (id == 1 ? 0.7f : id == 5 ? 0.35f : 0.0f);
+                }
+                maxSand = glm::max(maxSand, sand / 6.0f);
+            }
+        }
+        MESSAGE("steppe patch @nearest: steppe ",
+                100.0f * static_cast<f32>(steppe) /
+                    static_cast<f32>(total),
+                "%  arid ",
+                100.0f * static_cast<f32>(arid) / static_cast<f32>(total),
+                "% of the 1.5 km box, max blended sandiness ", maxSand);
+    }
     for (u32 b = 0; b < 6; ++b) {
         const auto report = [&](const char* tag, const Hit& hit) {
             const std::string label =

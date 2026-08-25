@@ -1137,3 +1137,22 @@ offline. **Validation visuelle dev EN ATTENTE** (chercher une
 frange aride : le gazon doit jaunir en nappes rongées vers le cœur
 sec) ; reste M3b : couplage racines de brins sur les sols de
 transition.
+
+**M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
+différence aux coordonnées steppe — mesuré au `biome locator`
+étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km
+(aride 9,5 %) — λ350 m fait des confettis de 200-300 m, pas des
+zones. Depuis que les biomes pilotent le SOL, un biome doit être un
+LIEU : `climateWavelength` 350 → 2800 m en 5 octaves
+(2800/1400/700/350/175 — régions de 1-3 km, bords rugueux aux
+octaves hautes) ; le principe « type selector court » reste au champ
+de RÉGIME de relief, le climat est de la géographie. `dryBand`
+renforcé (seuils 0,10-0,42 : cœur steppe → couverture ~0,8).
+Après : la même boîte lit 46 % steppe / 53 % aride ✓. Caches
+v42/v47. Neige recalée d'office : adopté 7,2 % vs référence 7,3 %
+sur la nouvelle géographie ✓. **La géographie climatique est
+rebattue : le SPAWN (8197, 230) est désormais en région ARIDE**
+(steppe à 271 m : 8388, 88, 422 ; tempéré à ~700 m O) — le départ
+lira en herbe sèche, à valider par le dev (levier si prairie verte
+voulue au départ : re-roll du salt climat ou biais d'humidité près
+du spawn).
