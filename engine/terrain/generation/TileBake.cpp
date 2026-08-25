@@ -161,6 +161,22 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     // stream power: without this keep, the fastscape carves highlands
     // back toward sea base level and summits lose most of the lift.
     vector<f32> keep(macro.plateau.size());
+    // Crest field for the graduated keep: what stands above the ~500 m
+    // mean is a crest and deserves full protection; the mid-slopes
+    // below give their keep back to the erosion (the measured profile:
+    // dissection belongs to the flanks, summits only need shaping).
+    vector<f32> crest;
+    if (params.keepCrestFade > 0.0f) {
+        vector<f32> mean = macro.height;
+        for (u32 pass = 0; pass < 30; ++pass) {
+            mean = boxBlur3(out.sim, mean);
+        }
+        crest.resize(macro.height.size());
+        for (size_t i = 0; i < crest.size(); ++i) {
+            crest[i] = glm::smoothstep(10.0f, 80.0f,
+                                       macro.height[i] - mean[i]);
+        }
+    }
     for (size_t i = 0; i < macro.plateau.size(); ++i) {
         // High calm socles resist the carve too (kCalmKeep) — the
         // habitable high ground survives; the analytic mirror in
@@ -172,6 +188,10 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
         keep[i] = glm::min(kPlateauKeepMax,
                            macro.plateau[i] * kPlateauKeepCoef +
                                calmHigh * kCalmKeep);
+        if (!crest.empty()) {
+            keep[i] *= glm::mix(1.0f - params.keepCrestFade, 1.0f,
+                                crest[i]);
+        }
     }
     const FluvialResult eroded = erodeFluvial(
         out.sim, macro.height, macro.uplift, fluvial,
@@ -222,8 +242,14 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
             if (out.eroded[i] <= params.macro.seaLevel) {
                 continue;
             }
-            out.eroded[i] = glm::mix(out.eroded[i], mean[i],
-                                     0.75f * macro.calm[i]);
+            const f32 gate =
+                params.relaxGateHigh > 0.0f
+                    ? glm::smoothstep(params.relaxGateLow,
+                                      params.relaxGateHigh,
+                                      macro.calm[i])
+                    : macro.calm[i];
+            out.eroded[i] =
+                glm::mix(out.eroded[i], mean[i], 0.75f * gate);
         }
     }
     // Valley floors join the calm-socle family here: they only exist
@@ -522,8 +548,39 @@ TileBakeResult bakeTileStage2(
         if (character.fineScale.empty()) {
             character.fineScale.assign(sim.cells(), 1.0f);
         }
+        const u32 simN = sim.n;
         for (size_t i = 0; i < fineDamp.size(); ++i) {
-            character.fineScale[i] *= 1.0f - 0.95f * fineDamp[i];
+            // Gated damp: the mid-calm halo stops blanketing the
+            // slopes (legacy = raw calm).
+            const f32 damp =
+                params.fineCalmGateHigh > 0.0f
+                    ? glm::smoothstep(params.fineCalmGateLow,
+                                      params.fineCalmGateHigh,
+                                      fineDamp[i])
+                    : fineDamp[i];
+            character.fineScale[i] *= 1.0f - 0.95f * damp;
+            // Measured reintroduction: steep, non-calm ground gets its
+            // carve character back.
+            if (params.fineSlopeReturn > 0.0f &&
+                !self.eroded.empty()) {
+                const u32 col = static_cast<u32>(i % simN);
+                const u32 row = static_cast<u32>(i / simN);
+                const u32 c1 = glm::min(col + 1, simN - 1);
+                const u32 r1 = glm::min(row + 1, simN - 1);
+                const f32 sx =
+                    (self.eroded[static_cast<size_t>(row) * simN + c1] -
+                     self.eroded[i]) /
+                    sim.texelSize;
+                const f32 sz =
+                    (self.eroded[static_cast<size_t>(r1) * simN + col] -
+                     self.eroded[i]) /
+                    sim.texelSize;
+                const f32 steep = glm::smoothstep(
+                    0.18f, 0.45f, std::sqrt(sx * sx + sz * sz));
+                character.fineScale[i] *=
+                    1.0f +
+                    params.fineSlopeReturn * steep * (1.0f - damp);
+            }
         }
     }
     // Lowland soil creep: the sharp fine gullies belong to orogeny

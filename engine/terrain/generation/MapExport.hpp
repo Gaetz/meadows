@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/TerrainBase.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Top-down overview maps of the ANALYTIC sandbox macro (the far-terrain
@@ -25,5 +26,14 @@ struct TerrainMapParams {
 vector<u8> renderTerrainMap(const ProceduralControls& controls,
                             const MacroParams& macro,
                             const TerrainMapParams& params);
+
+// Shaded-relief close-up of BAKED heights (a TerrainRegion) — the
+// erosion bench's eye: hypsometric tints + Lambert hillshade,
+// resampled to size*size. cropSpan > 0 renders the world-space square
+// (cropCenter, cropSpan) instead of the whole region. RGB8.
+vector<u8> renderRegionRelief(const TerrainRegion& region, f32 seaLevel,
+                              u32 size, f32 cropCenterX = 0.0f,
+                              f32 cropCenterZ = 0.0f,
+                              f32 cropSpan = 0.0f);
 
 } // namespace render::terraingen

@@ -172,4 +172,84 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
     return out;
 }
 
+vector<u8> renderRegionRelief(const TerrainRegion& region, f32 seaLevel,
+                              u32 size, f32 cropCenterX,
+                              f32 cropCenterZ, f32 cropSpan) {
+    const u32 n = glm::max(size, 16u);
+    vector<u8> out(static_cast<size_t>(n) * n * 3);
+    // Crop window in region-normalized [0,1] uv (full region if 0).
+    f32 u0 = 0.0f, v0 = 0.0f, uw = 1.0f, vw = 1.0f;
+    if (cropSpan > 0.0f) {
+        u0 = glm::clamp(
+            (cropCenterX - cropSpan * 0.5f - region.originX) /
+                region.spanX(),
+            0.0f, 1.0f);
+        v0 = glm::clamp(
+            (cropCenterZ - cropSpan * 0.5f - region.originZ) /
+                region.spanZ(),
+            0.0f, 1.0f);
+        uw = glm::min(cropSpan / region.spanX(), 1.0f - u0);
+        vw = glm::min(cropSpan / region.spanZ(), 1.0f - v0);
+    }
+    const auto sample = [&](f32 u, f32 v) {
+        u = u0 + u * uw;
+        v = v0 + v * vw;
+        const f32 col = u * static_cast<f32>(region.width - 1);
+        const f32 row = v * static_cast<f32>(region.height - 1);
+        const u32 c0 = static_cast<u32>(col);
+        const u32 r0 = static_cast<u32>(row);
+        const u32 c1 = glm::min(c0 + 1, region.width - 1);
+        const u32 r1 = glm::min(r0 + 1, region.height - 1);
+        const f32 tc = col - static_cast<f32>(c0);
+        const f32 tr = row - static_cast<f32>(r0);
+        const auto at = [&](u32 c, u32 r) {
+            return region
+                .heights[static_cast<size_t>(r) * region.width + c];
+        };
+        return glm::mix(glm::mix(at(c0, r0), at(c1, r0), tc),
+                        glm::mix(at(c0, r1), at(c1, r1), tc), tr);
+    };
+    const f32 metersPerPx =
+        region.spanX() * uw / static_cast<f32>(n);
+    for (u32 row = 0; row < n; ++row) {
+        for (u32 col = 0; col < n; ++col) {
+            const f32 u = static_cast<f32>(col) / static_cast<f32>(n - 1);
+            const f32 v = static_cast<f32>(row) / static_cast<f32>(n - 1);
+            const f32 h = sample(u, v);
+            Rgb c;
+            if (h <= seaLevel) {
+                const f32 depth =
+                    glm::clamp((seaLevel - h) / 40.0f, 0.0f, 1.0f);
+                c = mix({ 0.55f, 0.72f, 0.86f },
+                        { 0.07f, 0.19f, 0.38f }, std::sqrt(depth));
+            } else {
+                c = landColor(h - seaLevel);
+                const f32 e = 1.0f / static_cast<f32>(n - 1);
+                const f32 sx =
+                    (sample(glm::min(u + e, 1.0f), v) -
+                     sample(glm::max(u - e, 0.0f), v)) /
+                    (2.0f * metersPerPx);
+                const f32 sz =
+                    (sample(u, glm::min(v + e, 1.0f)) -
+                     sample(u, glm::max(v - e, 0.0f))) /
+                    (2.0f * metersPerPx);
+                // Normalized Lambert (NW light, ambient floor): reads
+                // carve detail without saturating steep faces to
+                // black the way the cheap overview shading does.
+                const f32 inv =
+                    1.0f / std::sqrt(1.0f + sx * sx + sz * sz);
+                const f32 lambert = glm::max(
+                    (0.62f - 0.55f * sx - 0.55f * sz) * inv, 0.0f);
+                const f32 shade = 0.3f + 0.85f * lambert;
+                c = { c.r * shade, c.g * shade, c.b * shade };
+            }
+            u8* px = &out[(static_cast<size_t>(row) * n + col) * 3];
+            px[0] = static_cast<u8>(glm::clamp(c.r, 0.0f, 1.0f) * 255.0f);
+            px[1] = static_cast<u8>(glm::clamp(c.g, 0.0f, 1.0f) * 255.0f);
+            px[2] = static_cast<u8>(glm::clamp(c.b, 0.0f, 1.0f) * 255.0f);
+        }
+    }
+    return out;
+}
+
 } // namespace render::terraingen

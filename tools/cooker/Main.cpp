@@ -27,6 +27,7 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
 #include "data/plugins/Validate.hpp"
 #include "engine/core/Log.hpp"
@@ -376,6 +377,9 @@ int main(int argc, char** argv) {
     }
     if (command == "terrain-map" && argc >= 7 && argc <= 11) {
         return cooker::terrainMap(argv, argc);
+    }
+    if (command == "erosion-bench" && (argc == 6 || argc == 7)) {
+        return cooker::erosionBench(argv, argc);
     }
     return usage();
 }

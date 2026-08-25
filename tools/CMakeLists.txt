@@ -9,7 +9,7 @@
 # WeaponMeshes: the validate subcommand whitelists the runtime-injected
 # procedural mesh guids (headless mesh builders — CPU MeshData only).
 add_executable(cooker cooker/Main.cpp cooker/TextureCook.cpp
-               cooker/TerrainMap.cpp
+               cooker/TerrainMap.cpp cooker/ErosionBench.cpp
                ${PROJECT_SOURCE_DIR}/game/AllForms.cpp
                ${PROJECT_SOURCE_DIR}/game/WeaponMeshes.cpp)
 # stb/bc7enc/toml++: the cook-terrain-materials subcommand decodes, resizes
