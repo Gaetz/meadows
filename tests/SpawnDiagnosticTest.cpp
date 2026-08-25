@@ -1643,6 +1643,81 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
+    // Where are the fleuves? Master-network courses around the spawn
+    // (no bake needed — the promotion follows these very polylines).
+    // Prints, per course, its nearest point to the spawn and its
+    // biggest-area node, as pasteable (x, y, z).
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    MasterNetworkParams network = params.network;
+    network.seaLevel = params.macro.seaLevel;
+    const f32 px = 8196.77f;
+    const f32 pz = 230.072f;
+    const auto rivers = masterRiversNear(
+        controls, params.macro, network, px - 30000.0f, pz - 30000.0f,
+        px + 30000.0f, pz + 30000.0f);
+    MESSAGE("master courses in +/-30 km: ", rivers.size());
+    struct Entry {
+        f32 dist;
+        f32 nx, nz;   // nearest node to spawn
+        f32 bx, bz;   // biggest-area node (the wide stretch)
+        f32 area;
+        f32 length;
+    };
+    vector<Entry> entries;
+    for (const auto& river : rivers) {
+        if (river.nodes.size() < 2) {
+            continue;
+        }
+        Entry e { 1.0e30f, 0, 0, 0, 0, 0.0f, 0.0f };
+        for (size_t i = 0; i < river.nodes.size(); ++i) {
+            const MasterNode& node = river.nodes[i];
+            const f32 dx = node.x - px;
+            const f32 dz = node.z - pz;
+            const f32 d = std::sqrt(dx * dx + dz * dz);
+            if (d < e.dist) {
+                e.dist = d;
+                e.nx = node.x;
+                e.nz = node.z;
+            }
+            if (node.area > e.area) {
+                e.area = node.area;
+                e.bx = node.x;
+                e.bz = node.z;
+            }
+            if (i > 0) {
+                e.length += std::hypot(node.x - river.nodes[i - 1].x,
+                                       node.z - river.nodes[i - 1].z);
+            }
+        }
+        entries.push_back(e);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry& a, const Entry& b) {
+                  return a.dist < b.dist;
+              });
+    for (size_t i = 0; i < glm::min<size_t>(entries.size(), 6); ++i) {
+        const Entry& e = entries[i];
+        const f32 yn = macroHeightAnalytic(controls, params.macro, e.nx,
+                                           e.nz);
+        const f32 yb = macroHeightAnalytic(controls, params.macro, e.bx,
+                                           e.bz);
+        MESSAGE("fleuve ", i, ": ", static_cast<i32>(e.length / 1000),
+                " km, nearest (", static_cast<i32>(e.nx), ", ",
+                static_cast<i32>(yn + 30.0f), ", ",
+                static_cast<i32>(e.nz), ") a ",
+                static_cast<i32>(e.dist), " m du spawn | large a (",
+                static_cast<i32>(e.bx), ", ",
+                static_cast<i32>(yb + 30.0f), ", ",
+                static_cast<i32>(e.bz), ")");
+    }
+    CHECK(true);
+}
+
 TEST_CASE("analytic sea mismatch diagnostic" * doctest::skip()) {
     // The far mesh beyond baked tiles renders macroHeightAnalytic; over
     // the ocean its shore distance is a continentalness PROXY, so any
