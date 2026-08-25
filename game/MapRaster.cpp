@@ -13,7 +13,9 @@ namespace {
 // the map lives here.
 const Vec3 kWaterShallow { 0.26f, 0.47f, 0.58f };
 const Vec3 kWaterDeep { 0.12f, 0.26f, 0.42f };
-constexpr f32 kWaterDepthRange = 21.0f; // meters shallow->deep blend
+// Two-stage ocean (seaFloor -70): sqrt scale keeps the coastal plateau
+// (~14 m) readable at mid-tint while the talus still darkens to full.
+constexpr f32 kWaterDepthRange = 70.0f;
 
 const Vec3 kGrassColor { 0.35f, 0.52f, 0.29f };
 const Vec3 kRockColor { 0.47f, 0.44f, 0.41f };
@@ -83,7 +85,8 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
             Vec3 color;
             if (h < params.seaLevel) {
                 const f32 depth = glm::clamp(
-                    (params.seaLevel - h) / kWaterDepthRange, 0.0f, 1.0f);
+                    std::sqrt((params.seaLevel - h) / kWaterDepthRange),
+                    0.0f, 1.0f);
                 color = glm::mix(kWaterShallow, kWaterDeep, depth);
             } else {
                 // Same convention as render::terrain::normal (Y up,

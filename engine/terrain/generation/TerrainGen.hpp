@@ -255,10 +255,17 @@ struct MacroParams {
         { 520.0f, 140.0f, 5500.0f, 0.0f }, // high ranges
     };
     f32 seaLevel { kDefaultSeaLevel };
-    f32 seaFloor { -30.0f };   // deep-water altitude (absolute meters)
-    f32 shallowDepth { 6.0f }; // below seaLevel over the first shelf band
-    f32 shelfWidth { 90.0f };  // meters of shallow shelf past the shore
-    f32 seaFalloff { 750.0f }; // meters from shore to the deep floor
+    // Two-stage ocean: shore ramp -> luminous COASTAL PLATEAU (the
+    // bright turquoise band the player reads as swimmable) -> talus ->
+    // dark open-sea floor. Depths are calibrated to the water RENDER's
+    // absorption (the old -30 m floor already read as abyss), not to
+    // real bathymetry — the contrast comes from the shallow plateau.
+    f32 seaFloor { -70.0f };    // deep-water altitude (absolute meters)
+    f32 shallowDepth { 6.0f };  // below seaLevel at the shelf's inner edge
+    f32 shelfWidth { 90.0f };   // meters of nearshore ramp past the shore
+    f32 shelfDepth { 14.0f };   // below seaLevel across the plateau
+    f32 shelfEnd { 600.0f };    // meters from shore where the plateau ends
+    f32 seaFalloff { 2500.0f }; // meters from shore to the deep floor
     f32 shoreWidth { 220.0f }; // beach ramp band on land
     f32 shoreHeight { 0.8f };  // meters above sea level at the waterline
     // Tiers above this keep their altitude to the rim: the coast becomes

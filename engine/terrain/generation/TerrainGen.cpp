@@ -381,15 +381,25 @@ f32 coastProfile(const MacroParams& p, f32 land, f32 tier, f32 d,
                                      tier),
                  noise::smoothstep01(0.62f, 0.8f, hardness));
     if (d <= 0.0f) {
+        // Two-stage ocean: nearshore ramp, then the luminous coastal
+        // PLATEAU, then the talus to the dark open-sea floor. Cliff
+        // coasts contract all three bands — calanques plunge.
         const f32 shelf = glm::mix(p.shelfWidth, p.shelfWidth * 0.35f,
                                    cliff);
+        const f32 plateauEnd =
+            glm::mix(p.shelfEnd, p.shelfEnd * 0.45f, cliff);
         const f32 falloff =
             glm::mix(p.seaFalloff, p.seaFalloff * 0.4f, cliff);
         const f32 shallow =
             glm::mix(waterline, p.seaLevel - p.shallowDepth,
                      noise::smoothstep01(0.0f, shelf, -d));
-        return glm::mix(shallow, p.seaFloor,
-                        noise::smoothstep01(shelf, falloff, -d));
+        // The plateau depth is reached by MID-band and holds flat to
+        // plateauEnd — a real shelf, not one long ramp.
+        const f32 plateau =
+            glm::mix(shallow, p.seaLevel - p.shelfDepth,
+                     noise::smoothstep01(shelf, plateauEnd * 0.5f, -d));
+        return glm::mix(plateau, p.seaFloor,
+                        noise::smoothstep01(plateauEnd, falloff, -d));
     }
     const f32 ramp =
         glm::mix(waterline, land,

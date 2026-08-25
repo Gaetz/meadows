@@ -1192,6 +1192,31 @@ Caches v43/v48 ; neige : adopté 7,28 % vs référence 6,62 % (même
 ordre). Restes steppe : broussailles sèches dédiées (le scrub),
 clumps d'arbres près de l'eau (post-B8/B9).
 
+**B7 — océan à deux étages + horizon marin (2026-08-25)** :
+1. **Profil 3 segments** (`coastProfile`) : rampe de rivage (90 m,
+   −6) → **plateau côtier lumineux** (−14, atteint à mi-bande et PLAT
+   jusqu'à 600 m — un vrai plateau, pas une longue rampe) → talus →
+   plancher −70 à 2,5 km. Calibré sur le RENDU (constat dev : le
+   plancher −30 lisait déjà « très profond » — le contraste vient du
+   plateau clair, pas d'un abysse) ; les côtes falaise contractent
+   les trois bandes (calanques). Nouveaux params shelfDepth/shelfEnd,
+   seaFloor −30→−70, seaFalloff 750→2500. Doctest « two-stage
+   ocean » (plateau plat, monotonie du profil, contraction falaise) ;
+   carte : échelle de profondeur en √ (plateau lisible à mi-teinte).
+2. **Bug « terre au loin » (constat dev)** : mesuré d'abord — nouvel
+   instrument `analytic sea mismatch` (tuile océanique (3,0), 19 912
+   texels de mer) : l'analytique ne dépasse JAMAIS l'eau (0 %) — le
+   miroir est innocent. La vraie cause : la nappe de mer ne faisait
+   que ±1 600 m autour de la caméra quand le FarTerrain va à ±9 km —
+   au-delà de 1,6 km le fond marin se rendait À NU (beige = terre à
+   l'horizon). Nappe portée à ±9 000 m (le span du FarTerrain) ; le
+   LOD de vagues à distance existait déjà, le quad par-pixel scale
+   sans coût de géométrie.
+Caches v44/v49. Suite 666/667 (golden connu). **Validation visuelle
+dev EN ATTENTE** : depuis une falaise côtière — bande turquoise du
+plateau puis eau sombre du large, et plus aucune fausse terre à
+l'horizon océanique.
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

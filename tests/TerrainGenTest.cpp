@@ -155,6 +155,57 @@ TEST_CASE("beach coasts ramp to the waterline, cliff coasts hold the rim") {
     CHECK(at(rc, -48.0f, 0.0f) < params.seaLevel);
 }
 
+TEST_CASE("two-stage ocean: shore ramp, coastal plateau, deep floor") {
+    // Wide grid: the talus runs to seaFalloff (2.5 km) — spec1km cannot
+    // hold the full profile.
+    MacroParams params;
+    const GridSpec spec { -6144.0f, -1024.0f, 16.0f, 513 };
+    FixedControls beach;
+    beach.halfSea = true;
+    const MacroResult r = synthesizeMacro(beach, spec, params, 7);
+    const auto at = [&](f32 x) {
+        const u32 col =
+            static_cast<u32>((x - spec.originX) / spec.texelSize);
+        const u32 row =
+            static_cast<u32>((0.0f - spec.originZ) / spec.texelSize);
+        return r.height[static_cast<size_t>(row) * spec.n + col];
+    };
+    // The plateau: depth settles at shelfDepth by mid-band and STAYS
+    // there until shelfEnd.
+    CHECK(at(-350.0f) ==
+          doctest::Approx(params.seaLevel - params.shelfDepth)
+              .epsilon(0.25));
+    CHECK(at(-550.0f) ==
+          doctest::Approx(params.seaLevel - params.shelfDepth)
+              .epsilon(0.25));
+    // The talus: past shelfEnd the floor dives toward seaFloor.
+    CHECK(at(-1500.0f) < params.seaLevel - 35.0f);
+    CHECK(at(-3500.0f) ==
+          doctest::Approx(params.seaFloor).epsilon(0.1));
+    // Monotone seaward along the profile (no bumps between stages).
+    f32 prev = at(-16.0f);
+    for (f32 x = -32.0f; x >= -4000.0f; x -= 16.0f) {
+        const f32 h = at(x);
+        CHECK(h <= prev + 1.0e-3f);
+        prev = h;
+    }
+    // Cliff coasts contract every band: the deep floor arrives sooner.
+    FixedControls cliff;
+    cliff.tier = 3.0f;
+    cliff.halfSea = true;
+    const MacroResult rc = synthesizeMacro(cliff, spec, params, 7);
+    const auto atc = [&](f32 x) {
+        const u32 col =
+            static_cast<u32>((x - spec.originX) / spec.texelSize);
+        const u32 row =
+            static_cast<u32>((0.0f - spec.originZ) / spec.texelSize);
+        return rc.height[static_cast<size_t>(row) * spec.n + col];
+    };
+    CHECK(atc(-1500.0f) < at(-1500.0f) + 1.0e-3f);
+    CHECK(atc(-1200.0f) ==
+          doctest::Approx(params.seaFloor).epsilon(0.1));
+}
+
 TEST_CASE("uplift is zero at sea and bounded on land") {
     ProceduralControlParams pc;
     pc.seed = 99;

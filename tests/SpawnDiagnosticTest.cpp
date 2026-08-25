@@ -1559,6 +1559,69 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("analytic sea mismatch diagnostic" * doctest::skip()) {
+    // The far mesh beyond baked tiles renders macroHeightAnalytic; over
+    // the ocean its shore distance is a continentalness PROXY, so any
+    // carrier bump barely above the sea threshold can invent land the
+    // bake never confirms — phantom islands on the horizon. Bakes the
+    // oceanic tile (3, 0) and counts, over TRUE sea texels (baked
+    // < seaLevel - 2), how often and how high the analytic pokes above
+    // the water.
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 seaLevel = params.macro.seaLevel;
+    MESSAGE("baking tile (3, 0)");
+    auto base = std::make_shared<render::TerrainBase>();
+    base->regions.push_back(bakeTile(params, 3, 0).region);
+    const render::TerrainRegion& region = base->regions.front();
+    render::TerrainParams tp;
+    tp.base = base;
+    u32 seaTexels = 0;
+    u32 phantom = 0;
+    u32 phantomBig = 0;
+    f32 worst = 0.0f;
+    f32 worstX = 0.0f;
+    f32 worstZ = 0.0f;
+    for (f32 z = region.originZ + 200.0f;
+         z < region.originZ + region.spanZ() - 200.0f; z += 24.0f) {
+        for (f32 x = region.originX + 200.0f;
+             x < region.originX + region.spanX() - 200.0f; x += 24.0f) {
+            const f32 hb = render::terrain::height(tp, x, z);
+            if (hb >= seaLevel - 2.0f) {
+                continue;
+            }
+            ++seaTexels;
+            const f32 ha =
+                macroHeightAnalytic(controls, params.macro, x, z);
+            const f32 above = ha - (seaLevel + 1.0f);
+            if (above > 0.0f) {
+                ++phantom;
+                phantomBig += above > 8.0f ? 1 : 0;
+                if (above > worst) {
+                    worst = above;
+                    worstX = x;
+                    worstZ = z;
+                }
+            }
+        }
+    }
+    const f32 pct = seaTexels > 0 ? 100.0f * static_cast<f32>(phantom) /
+                                        static_cast<f32>(seaTexels)
+                                  : 0.0f;
+    const f32 pctBig = seaTexels > 0
+        ? 100.0f * static_cast<f32>(phantomBig) /
+              static_cast<f32>(seaTexels)
+        : 0.0f;
+    MESSAGE("sea texels ", seaTexels, ": analytic above water ", pct,
+            "%  (>8 m: ", pctBig, "%)  worst +", worst, " m at (",
+            static_cast<i32>(worstX), ", ", static_cast<i32>(worstZ),
+            ")");
+    CHECK(true);
+}
+
 TEST_CASE("rock uv diagnostic" * doctest::skip()) {
     const char* kRocks[] = {
         "game/data/base/models/scans/stone_01/stone_01.gltf",
