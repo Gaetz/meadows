@@ -913,6 +913,26 @@ analytique complet également en reste (le doctest d'accord au rim
 reste vert ; la correction par morceaux se re-calera après le
 verdict en jeu sur les hauteurs).
 
+**Clôture B6 (2026-08-25)** : perf contrôles-grille-grossière
+(26,5 → 19,3 s/tuile), re-fit analytique (seuil 60 + 900·keep +
+600·uplift, pente 0,35 — biais assumé côté crêtes : les silhouettes
+lointaines sont faites de crêtes), diagnostics re-ancrés au spawn
+final (8197, 230), mer séparée + plateaux première classe dans les
+instruments et la cible (§6 amendé). **Volet matériaux** : inventaire
+complet fait (NB : `docs/TERRAIN-TEXTURING.md` est en retard sur le
+code — 17 couches réelles, hex-tiling livré, scree, POM self-shadow) ;
+constats clés pour la suite : l'array **ORM est cooké et résident
+mais jamais bindé** (aucune roughness/AO au shading !), la **wetness
+est bakée et uploadée mais ignorée** par les matériaux (T0.a libre),
+`deposit`/`hardness` ne sont **pas persistés** au TRG, pas d'entrée
+courbure dans la règle de poids, bindings samplers 9-10 libres,
+vColor.g/b libres ; chemins : rien n'existe mais les seams sont prêts
+(précédent screeBias pour un flip de variante par masque, patron
+d'append du 7e canal TRG, machinerie polyligne des rivières).
+Proposition M1-M5 remise au dev (ORM, wetness par pixel, variantes
+roche/neige/falaise, entrées courbure/hardness/deposit, préparation
+chemins).
+
 **État B6 au checkpoint** : monde continental adopté et mesuré,
 familles terrestres en progression (17/57/26 sur la ligne étalon),
 lacs 13-56/tuile, fleuves 41 km, pic héroïque à 4 km du spawn,
