@@ -788,10 +788,88 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.hardness.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
+    // Control sampling on a COARSE grid, bilinearly interpolated to
+    // the sim texels: every control field runs at >= 350 m of
+    // wavelength, a 64 m lattice over-samples all of them (5+ samples
+    // per wave) while the full ControlSource::at — carriers, layout
+    // kernels, landmark grids, valley potential — is by far the
+    // dominant stage-1 cost at 16 m. Booleans/ids take the nearest
+    // lattice point; the analytic mirror stays exact-pointwise (the
+    // ~1 m interpolation residue is folded into the erosion-fit
+    // calibration and hidden by the rim blend).
+    const u32 step = spec.texelSize < 60.0f
+                         ? glm::max(1u, static_cast<u32>(std::lround(
+                                            64.0f / spec.texelSize)))
+                         : 1u;
+    const u32 coarseN = (spec.n + step - 1) / step + 1;
+    vector<ControlSample> coarse(static_cast<size_t>(coarseN) * coarseN);
+    for (u32 row = 0; row < coarseN; ++row) {
+        for (u32 col = 0; col < coarseN; ++col) {
+            coarse[static_cast<size_t>(row) * coarseN + col] =
+                controls.at(
+                    spec.x(glm::min(col * step, spec.n - 1)),
+                    spec.z(glm::min(row * step, spec.n - 1)));
+        }
+    }
+    const auto lerpSample = [&](u32 col, u32 row) {
+        if (step == 1) {
+            return coarse[static_cast<size_t>(row) * coarseN + col];
+        }
+        const u32 c0 = col / step;
+        const u32 r0 = row / step;
+        const u32 c1 = glm::min(c0 + 1, coarseN - 1);
+        const u32 r1 = glm::min(r0 + 1, coarseN - 1);
+        const f32 tc =
+            static_cast<f32>(col - c0 * step) / static_cast<f32>(step);
+        const f32 tr =
+            static_cast<f32>(row - r0 * step) / static_cast<f32>(step);
+        const ControlSample& s00 =
+            coarse[static_cast<size_t>(r0) * coarseN + c0];
+        const ControlSample& s10 =
+            coarse[static_cast<size_t>(r0) * coarseN + c1];
+        const ControlSample& s01 =
+            coarse[static_cast<size_t>(r1) * coarseN + c0];
+        const ControlSample& s11 =
+            coarse[static_cast<size_t>(r1) * coarseN + c1];
+        const auto lerp = [&](f32 a, f32 b, f32 c, f32 d) {
+            return glm::mix(glm::mix(a, b, tc), glm::mix(c, d, tc), tr);
+        };
+        ControlSample out;
+        out.tier = lerp(s00.tier, s10.tier, s01.tier, s11.tier);
+        out.uplift =
+            lerp(s00.uplift, s10.uplift, s01.uplift, s11.uplift);
+        out.plateau =
+            lerp(s00.plateau, s10.plateau, s01.plateau, s11.plateau);
+        out.hillRelief = lerp(s00.hillRelief, s10.hillRelief,
+                              s01.hillRelief, s11.hillRelief);
+        out.gentle =
+            lerp(s00.gentle, s10.gentle, s01.gentle, s11.gentle);
+        out.calm = lerp(s00.calm, s10.calm, s01.calm, s11.calm);
+        out.hardness = lerp(s00.hardness, s10.hardness, s01.hardness,
+                            s11.hardness);
+        out.reliefScale = lerp(s00.reliefScale, s10.reliefScale,
+                               s01.reliefScale, s11.reliefScale);
+        out.trunk = lerp(s00.trunk, s10.trunk, s01.trunk, s11.trunk);
+        out.trunkDepth = lerp(s00.trunkDepth, s10.trunkDepth,
+                              s01.trunkDepth, s11.trunkDepth);
+        out.axisCos = lerp(s00.axisCos, s10.axisCos, s01.axisCos,
+                           s11.axisCos);
+        out.axisSin = lerp(s00.axisSin, s10.axisSin, s01.axisSin,
+                           s11.axisSin);
+        out.axisStrength =
+            lerp(s00.axisStrength, s10.axisStrength, s01.axisStrength,
+                 s11.axisStrength);
+        const ControlSample& nearest =
+            coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
+                   (tc < 0.5f ? c0 : c1)];
+        out.sea = nearest.sea;
+        out.biome = nearest.biome;
+        return out;
+    };
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n + col;
-            const ControlSample s = controls.at(spec.x(col), spec.z(row));
+            const ControlSample s = lerpSample(col, row);
             samples[i] = s;
             seaMask[i] = s.sea ? 1 : 0;
             out.uplift[i] = s.sea ? 0.0f : s.uplift;
@@ -847,12 +925,19 @@ f32 macroHeightAnalytic(const ProceduralControls& controls,
     const f32 keep = glm::min(kPlateauKeepMax,
                               s.plateau * kPlateauKeepCoef +
                                   calmHigh * kCalmKeep);
-    const f32 threshold = 80.0f + 1100.0f * keep;
+    // The v4 crest fade lets the FLANKS erode while the crests hold:
+    // statistically, mid heights compress earlier and harder, the top
+    // of the lift survives — fit refreshed against the 'erosion
+    // calibration' bands of the adopted world.
+    // Uplift discriminates what a same keep cannot: active orogeny
+    // replenishes what the stream power takes, so ranges hold their
+    // heights while quiet flanks erode down.
+    const f32 threshold = 60.0f + 900.0f * keep + 600.0f * s.uplift;
     const f32 rel = h - params.seaLevel;
     if (rel <= threshold) {
         return h;
     }
-    return params.seaLevel + threshold + 0.25f * (rel - threshold);
+    return params.seaLevel + threshold + 0.35f * (rel - threshold);
 }
 
 } // namespace render::terraingen
