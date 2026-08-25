@@ -239,9 +239,11 @@ ao = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_AmbientOcclusion.png
 roughness = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Roughness.png"
 height = "../../../../assets-src/terrain/Snow015/Snow015_1K-PNG_Displacement.png"
 
-# Subalpine heath grounds (layers 22-23) — the transition-biome autotile
-# targets of the grass family's hex flip near the snow line. PAS
-# d'harmonize : le glissement de couleur vers le terne EST la transition.
+# Subalpine heath grounds (layers 22-23) — déposés PAR PIXEL sous le
+# givre près de la ligne de neige (recette du frost, jamais un flip de
+# variante : réservé aux couches de même famille chromatique,
+# docs/GRASS-REDO.md). PAS d'harmonize : le glissement de couleur vers
+# le terne EST la transition.
 
 [[material]]
 name = "heath-meadow"           # layer 22 — pelouse alpine patinée

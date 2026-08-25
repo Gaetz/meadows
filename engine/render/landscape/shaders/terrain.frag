@@ -121,21 +121,18 @@ void main() {
                    snowLine + snowOffset + 60.0, h + wander * 26.0);
     float overlayPatch =
         overlayBand > 0.001 ? snowPatch01(vWorldPos.xz) : 0.5;
-    // Subalpine heath (the transition-biome autotile): approaching the
-    // snow line, grass-family hex CELLS progressively flip to the heath
-    // grounds (22/23) — the frost/snow deposition then settles on top.
-    // The patch field (coarser instance) makes the adoption gnawed
-    // instead of a level contour; per-vertex hashes do the cell dither.
+    // Subalpine heath band: approaching the snow line the heath grounds
+    // (22/23) DEPOSIT per-pixel over the blended grass — same recipe as
+    // the frost above it, NOT a per-vertex variant flip (an off-color
+    // cell decision paints the hex lattice; measured twice: frost, then
+    // this very heath). A coarser instance of the patch field gnaws the
+    // adoption edge instead of tracing a level contour.
     float heathBand =
         smoothstep(snowLine + snowOffset - 260.0,
                    snowLine + snowOffset - 80.0, h + wander * 26.0);
-    float heathMix =
-        heathBand > 0.001
-            ? clamp(heathBand *
-                        (0.45 + 0.55 * snowPatch01(vWorldPos.xz * 0.31)),
-                    0.0, 1.0)
-            : 0.0;
-    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], heathMix);
+    float heathPatch =
+        heathBand > 0.001 ? snowPatch01(vWorldPos.xz * 0.31) : 0.5;
+    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
     // Cliff variant panel (24 m) — every cliff fetch (height, albedo,
     // POM) must agree on it.
     float cliffLayer = hexFamilyLayer(4, hexV[hexDom], 0.0);
@@ -160,8 +157,7 @@ void main() {
                                           hexFamilyLayer(
                                               i, hexV[t],
                                               i == 3 ? screeMix
-                                              : i == 0 ? heathMix
-                                                       : 0.0))).r;
+                                                     : 0.0))).r;
                 }
             }
         } else {
@@ -296,6 +292,7 @@ void main() {
         vec3 layer;
         vec2 layerN;
         bool overlayHere = i == 0 && overlayBand > 0.001;
+        bool heathHere = i == 0 && heathBand > 0.001;
         if (i <= 3) {
             layer = vec3(0.0);
             layerN = vec2(0.0);
@@ -304,12 +301,13 @@ void main() {
             vec2 frostN = vec2(0.0);
             vec3 snowA = vec3(0.0);
             vec2 snowN = vec2(0.0);
+            vec3 heathA = vec3(0.0);
+            vec2 heathN = vec2(0.0);
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
                     float lyr = hexFamilyLayer(
-                        i, hexV[t],
-                        i == 3 ? screeMix : i == 0 ? heathMix : 0.0);
+                        i, hexV[t], i == 3 ? screeMix : 0.0);
                     layer += hexW[t] *
                              texture(uSplat, vec3(tapUv, lyr)).rgb;
                     layerN += hexW[t] *
@@ -325,6 +323,22 @@ void main() {
                     // single-tap version re-exposed the 4 m tile grid
                     // as visible lines), at slightly detuned scales so
                     // nothing aligns with the grass tiles either.
+                    // The heath deposit rides the SAME hex taps as the
+                    // frost (single-tap = visible 4 m grid, measured);
+                    // only the CHOICE between the two heaths is
+                    // per-vertex — they share one chromatic family.
+                    if (heathHere) {
+                        float hl = heathLayerOf(hexV[t]);
+                        heathA += hexW[t] *
+                                  texture(uSplat,
+                                          vec3(tapUv * 0.71, hl)).rgb;
+                        heathN +=
+                            hexW[t] *
+                            (texture(uSplatNormal,
+                                     vec3(tapUv * 0.71, hl)).rg *
+                                 2.0 -
+                             1.0);
+                    }
                     if (overlayHere) {
                         frostA += hexW[t] *
                                   texture(uSplat,
@@ -345,6 +359,25 @@ void main() {
                                  2.0 -
                              1.0);
                     }
+                }
+            }
+            // The subalpine heath settles FIRST (under the frost): a
+            // feathered per-pixel coverage shaped by its own coarser
+            // patch instance — the transition-biome ground emerges in
+            // gnawed pools, never in lattice cells.
+            if (heathHere) {
+                float heathRelief = hs[0] - 0.5;
+                float heathCover = smoothstep(
+                    0.08, 0.75,
+                    heathBand * 1.1 - heathPatch * 0.5 -
+                        heathRelief * 0.35);
+                layer = mix(layer, heathA, heathCover);
+                layerN = mix(layerN, heathN, heathCover);
+                if (wantOrm) {
+                    layerOrm = mix(
+                        layerOrm,
+                        texture(uSplatOrm, vec3(baseUv, 22.0)).rg,
+                        heathCover);
                 }
             }
             // Two-stage snow DEPOSITION over the blended grass: frost
