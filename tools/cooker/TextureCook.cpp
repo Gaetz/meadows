@@ -56,6 +56,10 @@ struct MaterialSources {
     // `harmonizeWith` picks the anchor layer (0 = grass by default).
     bool harmonize { false };
     i64 harmonizeWith { 0 };
+    // High-pass the albedo and AO/roughness (flattenLowFreq): for smooth
+    // bright families whose hex-tap offsets would expose the tile's own
+    // large-scale gradients as lattice cells.
+    bool flattenLowFreq { false };
 };
 
 std::optional<Rgba> loadRgba(const fs::path& path) {
@@ -233,6 +237,7 @@ std::optional<vector<MaterialSources>> parseManifest(const fs::path& path) {
         mat.harmonize = (*table)["harmonize"].value_or(false);
         mat.harmonizeWith =
             (*table)["harmonizeWith"].value_or<i64>(0);
+        mat.flattenLowFreq = (*table)["flattenLowFreq"].value_or(false);
         if (mat.name.empty() || mat.albedo.empty()) {
             LOG_ERROR("cook-terrain-materials: every [[material]] needs "
                       "'name' and 'albedo'");
@@ -247,6 +252,57 @@ std::optional<vector<MaterialSources>> parseManifest(const fs::path& path) {
 // helper: returns the channel `c` of `img` at index i.
 u8 channel(const Rgba& img, size_t i, u32 c) {
     return img.pixels[i * 4 + c];
+}
+
+f64 channelMean(const Rgba& img, u32 c) {
+    f64 sum = 0.0;
+    const size_t count = img.pixels.size() / 4;
+    for (size_t i = 0; i < count; ++i) {
+        sum += img.pixels[i * 4 + c];
+    }
+    return count > 0 ? sum / static_cast<f64>(count) : 0.0;
+}
+
+// Additively shifts one channel until its mean hits `target` — several
+// clamp-aware passes, because a single shift undershoots whenever the
+// distribution saturates at 0/255 (bright snow albedo, near-white AO);
+// heavily saturated layers converge asymptotically, so a small residual
+// can remain on extreme targets.
+void shiftChannelToMean(Rgba& img, u32 c, f64 target) {
+    const size_t count = img.pixels.size() / 4;
+    for (u32 pass = 0; pass < 4; ++pass) {
+        const f64 delta = target - channelMean(img, c);
+        if (std::abs(delta) < 0.5) {
+            return;
+        }
+        for (size_t i = 0; i < count; ++i) {
+            u8& px = img.pixels[i * 4 + c];
+            px = static_cast<u8>(std::clamp(px + delta, 0.0, 255.0));
+        }
+    }
+}
+
+// Removes a channel set's low-frequency drift (content below ~1/8 of
+// the tile) while keeping its mean. On a smooth bright material every
+// hex-tiling vertex samples the tile at a random offset, so any
+// large-scale gradient INSIDE the tile shows the lattice cells even
+// when the layer means match — the grain stays, the drift goes. Busy
+// materials (grass, rock) hide the drift and keep their full content.
+void flattenLowFreq(Rgba& img, u32 channels, bool srgb) {
+    const Rgba low =
+        resizeRgba(resizeRgba(img, 8, srgb), img.width, srgb);
+    f64 mean[4] = {};
+    for (u32 c = 0; c < channels; ++c) {
+        mean[c] = channelMean(img, c);
+    }
+    const size_t count = img.pixels.size() / 4;
+    for (size_t i = 0; i < count; ++i) {
+        for (u32 c = 0; c < channels; ++c) {
+            u8& px = img.pixels[i * 4 + c];
+            px = static_cast<u8>(std::clamp(
+                px - low.pixels[i * 4 + c] + mean[c], 0.0, 255.0));
+        }
+    }
 }
 
 std::optional<Rgba> buildOrm(const MaterialSources& mat) {
@@ -316,6 +372,7 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
     // (harmonizeWith indexes into them).
 
     vector<array<f64, 3>> layerMeans;
+    vector<array<f64, 2>> layerOrmMeans; // pre-harmonize (AO, roughness)
 
     for (u32 layer = 0; layer < layers; ++layer) {
         const MaterialSources& mat = (*materials)[layer];
@@ -326,6 +383,9 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
             return 1;
         }
         Rgba albedoBase = resizeRgba(*albedo, kSize, true);
+        if (mat.flattenLowFreq) {
+            flattenLowFreq(albedoBase, 3, true);
+        }
         {
             f64 mean[3] = { 0, 0, 0 };
             for (size_t i = 0; i < albedoBase.pixels.size(); i += 4) {
@@ -352,6 +412,13 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
                             std::clamp(albedoBase.pixels[i + c] * scale[c],
                                        0.0, 255.0));
                     }
+                }
+                // Bright layers saturate the multiplicative match (snow
+                // clamps at 255 and lands short of the anchor); the
+                // hex-tiling shows ANY per-variant mean difference as
+                // cells, so recover the exact anchor mean additively.
+                for (u32 c = 0; c < 3; ++c) {
+                    shiftChannelToMean(albedoBase, c, anchor[c]);
                 }
             }
             // Every layer's (pre-harmonize) mean joins the anchor table
@@ -399,6 +466,32 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
         auto orm = buildOrm(mat);
         if (!orm) {
             return 1;
+        }
+        // ORM means anchor exactly like the albedo: AO multiplies the
+        // ambient and roughness shapes the sheen, so a per-variant mean
+        // difference paints the hex lattice into the shading even when
+        // the albedo matches. Metalness stays untouched (0 everywhere).
+        {
+            if (mat.flattenLowFreq) {
+                flattenLowFreq(*orm, 2, false);
+            }
+            const array<f64, 2> ormMean = { channelMean(*orm, 0),
+                                            channelMean(*orm, 1) };
+            if (mat.harmonize && mat.harmonizeWith >= 0 &&
+                static_cast<size_t>(mat.harmonizeWith) <
+                    layerOrmMeans.size()) {
+                const array<f64, 2>& anchor =
+                    layerOrmMeans[static_cast<size_t>(mat.harmonizeWith)];
+                shiftChannelToMean(*orm, 0, anchor[0]);
+                shiftChannelToMean(*orm, 1, anchor[1]);
+            }
+            layerOrmMeans.push_back(ormMean);
+            LOG_INFO("cook-terrain-materials:   albedo mean ({:.0f}, "
+                     "{:.0f}, {:.0f})  ao {:.0f}  rough {:.0f}{}",
+                     channelMean(albedoBase, 0), channelMean(albedoBase, 1),
+                     channelMean(albedoBase, 2), channelMean(*orm, 0),
+                     channelMean(*orm, 1),
+                     mat.harmonize ? "  (harmonized)" : "");
         }
         const auto ormChain =
             mipChain(*orm, [](const Rgba& base, u32 size) {

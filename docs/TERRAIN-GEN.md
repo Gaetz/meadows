@@ -1014,5 +1014,29 @@ dès ~430 m). `treeLineFactor` 0,82 → 1,0 pour que la treeline reste
 fait reculer les forêts de 160 m). Deltas aux frontières ≤ 300 m
 (vs 650 avant M4), portés par les rampes blendées + le wander.
 Le tout est de la donnée runtime (landscape.toml) — pas de bump de
-cache. **Validation visuelle dev EN ATTENTE** ; ensuite M3b (biomes
-de transition, textures dédiées).
+cache. **Validé dev : transitions et quantité de neige bonnes.**
+
+**M4c — hexagones sur la neige pleine (2026-08-25)** : le hex-tiling
+transparaît sur la neige (constat dev). Deux causes mesurées au
+cooker, deux corrections :
+1. **L'harmonisation ne touchait que l'albedo** — l'ORM (AO à
+   l'ambiante, roughness au sheen) n'était PAS ancré, or M1 vient de
+   l'activer : chaque variante de neige portait sa moyenne AO/rough
+   → cellules dans l'ombrage. Corrigé : les moyennes AO/roughness
+   des couches `harmonize` s'ancrent comme l'albedo. En passant,
+   le match multiplicatif albedo CLAMPAIT sur les matériaux clairs
+   (la neige sature à 255 et n'atteignait pas l'ancre) → passes
+   additives clamp-aware derrière le scale.
+2. **`flattenLowFreq`** (nouveau flag de manifest, posé sur les 4
+   couches neige) : chaque sommet hex échantillonne la tuile à un
+   offset aléatoire — tout gradient basse fréquence INTERNE à la
+   texture (dérive, taches larges) rend donc les cellules visibles
+   sur un matériau lisse, même à moyennes égales. High-pass au cook
+   (contenu < ~1/8 de tuile retiré, moyenne conservée) ; l'herbe et
+   la roche, chargées, gardent tout leur contenu.
+Résidu connu : snow_03 (var2, traces) sature trop pour atteindre le
+bleu de l'ancre (243 vs 251, AO 242 vs 245) — si des cellules
+persistent, prochains leviers : remplacer sa source, ou moduler la
+force des normales par couche (les normales ne sont pas
+harmonisées). **Validation visuelle dev EN ATTENTE** ; ensuite M3b
+(biomes de transition, textures dédiées).

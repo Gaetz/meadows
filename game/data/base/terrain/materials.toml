@@ -32,6 +32,8 @@ normal = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_NormalGL.png"
 ao = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Roughness.png"
 height = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Displacement.png"
+flattenLowFreq = true           # smooth bright family: the tile's own
+                                # large-scale drift would show the hex cells
 
 [[material]]
 name = "sand"                   # SplatLayer_Sand
@@ -125,6 +127,7 @@ roughness = "../../../../assets-src/terrain/snow_02/snow_02_Roughness.png"
 height = "../../../../assets-src/terrain/snow_02/snow_02_Displacement.png"
 harmonize = true
 harmonizeWith = 2
+flattenLowFreq = true
 
 [[material]]
 name = "snow-var2"               # layer 12
@@ -135,6 +138,7 @@ roughness = "../../../../assets-src/terrain/snow_03/snow_03_Roughness.png"
 height = "../../../../assets-src/terrain/snow_03/snow_03_Displacement.png"
 harmonize = true
 harmonizeWith = 2
+flattenLowFreq = true
 
 [[material]]
 name = "sand-var1"               # layer 13
@@ -220,6 +224,7 @@ roughness = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_Roughness.p
 height = "../../../../assets-src/terrain/Snow008A/Snow008A_1K-PNG_Displacement.png"
 harmonize = true
 harmonizeWith = 2
+flattenLowFreq = true
 
 [[material]]
 name = "grass-snowy"            # layer 21 — herbe givrée (transition) ; PAS
