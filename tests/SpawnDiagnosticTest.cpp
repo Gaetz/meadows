@@ -1559,6 +1559,81 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("lake census diagnostic" * doctest::skip()) {
+    // Lake size distribution over the spawn neighbourhood: where does
+    // the puddle tail end and the real lakes begin? Areas from the
+    // flooded masks (never the bbox), max depth from level - min ground.
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    struct Bucket {
+        f32 maxArea; // m²
+        const char* label;
+        u32 count { 0 };
+        f32 deepest { 0.0f };
+    };
+    Bucket buckets[] = {
+        { 1000.0f, "<0.1ha  " },
+        { 5000.0f, "0.1-0.5 " },
+        { 20000.0f, "0.5-2ha " },
+        { 1.0e18f, ">2ha    " },
+    };
+    u32 total = 0;
+    u32 dug = 0;
+    for (const auto [tx, tz] : { std::pair { 2, -1 }, { 2, 0 }, { 2, 1 },
+                                 { 1, 0 }, { 3, 0 } }) {
+        MESSAGE("baking tile (", tx, ", ", tz, ")");
+        const TileBakeResult baked = bakeTile(params, tx, tz);
+        auto base = std::make_shared<render::TerrainBase>();
+        base->regions.push_back(baked.region);
+        render::TerrainParams tp;
+        tp.base = base;
+        for (const Lake& lake : baked.lakes) {
+            if (lake.dug) {
+                ++dug; // placed ponds: design features, never filtered
+                continue;
+            }
+            u32 wet = 0;
+            f32 depth = 0.0f;
+            for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+                for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                    if (!lake.mask[static_cast<size_t>(mz) *
+                                       lake.maskWidth +
+                                   mx]) {
+                        continue;
+                    }
+                    ++wet;
+                    const f32 x = lake.minX + (static_cast<f32>(mx) +
+                                               0.5f) *
+                                                  lake.maskTexel;
+                    const f32 z = lake.minZ + (static_cast<f32>(mz) +
+                                               0.5f) *
+                                                  lake.maskTexel;
+                    depth = glm::max(
+                        depth,
+                        lake.level - render::terrain::height(tp, x, z));
+                }
+            }
+            const f32 area =
+                static_cast<f32>(wet) * lake.maskTexel * lake.maskTexel;
+            ++total;
+            for (Bucket& b : buckets) {
+                if (area <= b.maxArea) {
+                    ++b.count;
+                    b.deepest = glm::max(b.deepest, depth);
+                    break;
+                }
+            }
+        }
+    }
+    MESSAGE("natural lakes over 5 tiles: ", total, "  (+ ", dug,
+            " placed ponds, never filtered)");
+    for (const Bucket& b : buckets) {
+        MESSAGE("  ", std::string(b.label), ": ", b.count,
+                "  (deepest ", b.deepest, " m)");
+    }
+    CHECK(true);
+}
+
 TEST_CASE("analytic sea mismatch diagnostic" * doctest::skip()) {
     // The far mesh beyond baked tiles renders macroHeightAnalytic; over
     // the ocean its shore distance is a continentalness PROXY, so any

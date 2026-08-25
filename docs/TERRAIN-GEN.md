@@ -1217,6 +1217,27 @@ dev EN ATTENTE** : depuis une falaise côtière — bande turquoise du
 plateau puis eau sombre du large, et plus aucune fausse terre à
 l'horizon océanique.
 
+**B8 — lacs : les flaques, pas les lacs (2026-08-25)** : B7 validé
+dev (océan + horizon). Recadrage dev de B8 : « les grands lacs de
+montagne c'est cool, ce que je veux supprimer ce sont les tout
+petits bassins de quelques mètres » — la cible 2-6 lacs/tuile du §6
+est CADUQUE, le critère est la qualité (pas de flaques), pas le
+compte. Mesuré d'abord (nouvel instrument `lake census`, 5 tuiles) :
+**les lacs naturels n'ont AUCUNE queue de flaques** (76 lacs, zéro
+sous 0,1 ha, plus petit bucket = 30-70 m — les lacs de montagne
+aimés du dev ; seuils minLakeDepth/minLakeCells INCHANGÉS). Les
+vraies flaques : les **64 mares creusées** aux confluences/épingles
+des rivières (rayon min 5-6 m = disques de 10 m) — un correctif
+d'artefacts de jonction qui lisait comme des flaques. Corrigé :
+rayon minimum 15 m partout (×3/×2,2 sur la largeur de rivière) —
+une vasque de confluence à l'échelle de sa rivière, creusée en
+parabole (½ riverDepthMax au centre, bords baignables). 63 vasques
+après merge, lacs naturels bit-intacts. Bump v50 (stage-2 seul).
+**Validation visuelle dev EN ATTENTE** (les jonctions de rivières
+doivent lire comme des vasques/bassins, plus des flaques ; les lacs
+de montagne inchangés). Prochaine brique : B9 tiers de cours d'eau —
+STOP pour arbitrages dev (fréquence des gués, largeurs de fleuve).
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

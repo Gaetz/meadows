@@ -215,12 +215,14 @@ void mergeByProximity(vector<River>& rivers, f32 reachFactor,
                                 glm::min(pt.surface, other.surface);
                             river.points.resize(p + 1);
                             river.points.push_back(snap);
+                            // Pool-sized, never puddle-sized (see the
+                            // hairpin spot below).
                             spots.push_back(
                                 { snap.x, snap.z, snap.surface,
                                   glm::max((snap.halfWidth +
                                             other.halfWidth) *
-                                               1.6f,
-                                           6.0f) });
+                                               2.2f,
+                                           15.0f) });
                             break;
                         }
                     }
@@ -403,9 +405,10 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     };
     vector<PondSpot> spots;
     const auto junctionPond = [&](const RiverPoint& at, f32 other) {
+        // Pool-sized, never puddle-sized (see the hairpin spot below).
         spots.push_back({ at.x, at.z, at.surface,
-                          glm::max((at.halfWidth + other) * 1.6f,
-                                   6.0f) });
+                          glm::max((at.halfWidth + other) * 2.2f,
+                                   15.0f) });
     };
     // Phase 1 — raw traces. A junction fires when the current cell OR
     // any 8-neighbour is already claimed: two courses one cell apart
@@ -507,8 +510,12 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                            1.0f));
             if (turn > params.hairpinTurn) {
                 const RiverPoint& at = river.points[p];
+                // Pool-sized, never puddle-sized: a junction pond under
+                // ~15 m radius reads as a puddle in the landscape (the
+                // few-meter basins the landscape review flagged) — the
+                // fix spot must look like a natural river pool.
                 spots.push_back({ at.x, at.z, at.surface,
-                                  glm::max(at.halfWidth * 2.2f, 5.0f) });
+                                  glm::max(at.halfWidth * 3.0f, 15.0f) });
             }
         }
         out.rivers.push_back(std::move(river));
