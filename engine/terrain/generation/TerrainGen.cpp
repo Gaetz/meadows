@@ -754,22 +754,32 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     sample.reliefScale =
         (1.0f - 0.75f * clearing) * (1.0f - 0.6f * sample.trunk);
     sample.calm = glm::max(sample.calm, clearing);
+    sample.biome = biomeIdAt(x, z, sample.tier);
+    return sample;
+}
+
+u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // Climate -> biome id (palette contract in ProceduralControlParams):
-    // cold beats arid beats alpine; temperate is the default.
+    // cold beats arid beats alpine; temperate is the default. Only the
+    // two climate fbms are paid here — the tier comes from the caller,
+    // which is what lets synthesizeMacro evaluate the id per texel while
+    // the heavy control fields interpolate from the coarse lattice.
     const f32 temperature =
         noise::fbm(p.seed ^ kSaltTemperature, x, z,
                    1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
+    if (temperature < 0.34f) {
+        return 3; // tundra
+    }
     const f32 moisture =
         noise::fbm(p.seed ^ kSaltMoisture, x, z,
                    1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
-    if (temperature < 0.34f) {
-        sample.biome = 3; // tundra
-    } else if (moisture < 0.38f && temperature > 0.58f) {
-        sample.biome = 1; // arid
-    } else if (sample.tier > 2.1f) {
-        sample.biome = 2; // alpine
+    if (moisture < 0.38f && temperature > 0.58f) {
+        return 1; // arid
     }
-    return sample;
+    if (tier > 2.1f) {
+        return 2; // alpine
+    }
+    return 0;
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,
@@ -793,8 +803,10 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     // wavelength, a 64 m lattice over-samples all of them (5+ samples
     // per wave) while the full ControlSource::at — carriers, layout
     // kernels, landmark grids, valley potential — is by far the
-    // dominant stage-1 cost at 16 m. Booleans/ids take the nearest
-    // lattice point; the analytic mirror stays exact-pointwise (the
+    // dominant stage-1 cost at 16 m. The sea boolean takes the nearest
+    // lattice point; the biome id is re-evaluated per texel through the
+    // cheap biomeIdAt seam (a nearest id drew 64 m axis-aligned biome
+    // stairs); the analytic mirror stays exact-pointwise (the
     // ~1 m interpolation residue is folded into the erosion-fit
     // calibration and hidden by the rim blend).
     const u32 step = spec.texelSize < 60.0f
@@ -863,13 +875,19 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
         out.sea = nearest.sea;
-        out.biome = nearest.biome;
         return out;
     };
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n + col;
-            const ControlSample s = lerpSample(col, row);
+            ControlSample s = lerpSample(col, row);
+            // Biome id PER TEXEL (nearest-sampling an id on the coarse
+            // lattice drew 64 m axis-aligned biome stairs); the tier the
+            // alpine rule needs interpolates fine.
+            if (step > 1) {
+                s.biome = controls.biomeIdAt(spec.x(col), spec.z(row),
+                                             s.tier);
+            }
             samples[i] = s;
             seaMask[i] = s.sea ? 1 : 0;
             out.uplift[i] = s.sea ? 0.0f : s.uplift;

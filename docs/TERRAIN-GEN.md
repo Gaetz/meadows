@@ -965,3 +965,36 @@ Traité par le volet suivant : **M4 « continuité des biomes »**
 champ continu lent, offsets par biome réduits), puis **M3b « biomes
 de transition »** (textures dédiées, l'idée autotile grande échelle
 du dev).
+
+**M4 — continuité des biomes (2026-08-25, S1+S3)** : trois pièces,
+formats inchangés (le masque u8 reste des ids, la table BiomeForm
+reste vivante pour les mods §5).
+1. **Id par texel** : nouveau seam `ControlSource::biomeIdAt(x, z,
+   tier)` — la synthèse macro le demande PAR TEXEL (2 fbm climat
+   seulement, le tier lourd reste interpolé de la grille 64 m) au
+   lieu du nearest de la grille grossière → les frontières suivent
+   les contours fbm λ350 m au lieu d'escaliers 64 m alignés aux
+   axes. Coût : bench 19,3 → 19,9 s/tuile (+3 %).
+2. **Attributs blendés au runtime** : `regionFieldsAt` résout
+   bilinéaire sur les texels du masque + croix ±32 m généralisée à
+   TOUS les attributs (rockiness, sandiness, grassPresence,
+   temperature, wetness — plus seulement snowLineOffset). Pire cas
+   analytique (frontière alignée aux axes) : 4/6 du delta sur un
+   texel de 8 m ; contours organiques → étalement ~64 m. Doctest de
+   continuité (bornes du pire cas) + agrément biomeIdAt/at().
+3. **S3 — la ligne de neige est un CHAMP, pas un attribut** :
+   wander seedé ±80 m sur λ~2,8 km (2 octaves du lattice wander —
+   pas de fbm sur le hot path scatter/footstep) ajouté dans
+   `regionFieldsAt` → lockstep shader (shade map) / CPU par
+   construction. Offsets landscape.toml réduits en ACCENTS :
+   aride +400→+120, alpin −300→−120, toundra −650→−200 (data dev,
+   retunable) — la grosse variation vient du champ, les sauts aux
+   frontières passent de 300-650 m à ≤ 200 m.
+Caches v39/v44. Suite 665/666 (seul le golden scatter MSVC
+préexistant). Transect re-passé : E-O familles 38/38/24 (cible
+40/35/25 — quasi), médian 25,3 m, >30° 12,8 % ✓ ; N-S ligne de
+montagne 13/72/15, médian 55,8 m ; lacs 3-53/tuile (reliquat B8) ;
+l'érosion par caractère de biome au texel déplace légèrement les
+fenêtres vs B6. **Validation visuelle dev EN ATTENTE** (zone
+bug-neige4 : 10499, 1014, 3802) ; ensuite M3b (biomes de transition,
+textures dédiées).

@@ -198,6 +198,45 @@ TEST_CASE("procedural controls carve both sea and high ground") {
     CHECK(highCount > 0);
 }
 
+TEST_CASE("biome ids resolve per texel, not on the coarse lattice") {
+    // A biome border at x = 37 — deliberately NOT a 64 m lattice
+    // multiple: the macro grid must carry it at texel resolution
+    // (nearest-sampling the id on the coarse control lattice drew 64 m
+    // axis-aligned biome stairs).
+    struct BiomeControls final : ControlSource {
+        ControlSample at(f32 x, f32) const override {
+            ControlSample s;
+            s.tier = 1.0f;
+            s.biome = x > 37.0f ? 2 : 0;
+            return s;
+        }
+    } controls;
+    const GridSpec spec = spec1km();
+    const MacroResult r =
+        synthesizeMacro(controls, spec, MacroParams {}, 7);
+    for (const u32 row : { 0u, 64u, 128u }) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            const u8 expected = spec.x(col) > 37.0f ? 2 : 0;
+            CHECK(r.biome[static_cast<size_t>(row) * spec.n + col] ==
+                  expected);
+        }
+    }
+}
+
+TEST_CASE("procedural biomeIdAt agrees with the full control sample") {
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    for (i32 gz = -8; gz <= 8; ++gz) {
+        for (i32 gx = -8; gx <= 8; ++gx) {
+            const f32 x = static_cast<f32>(gx) * 1730.0f;
+            const f32 z = static_cast<f32>(gz) * 1730.0f;
+            const ControlSample s = controls.at(x, z);
+            CHECK(controls.biomeIdAt(x, z, s.tier) == s.biome);
+        }
+    }
+}
+
 TEST_CASE("the analytic macro matches the tier floors away from shore") {
     ProceduralControlParams pc;
     pc.seed = 31;

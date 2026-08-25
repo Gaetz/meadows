@@ -71,6 +71,17 @@ class ControlSource {
 public:
     virtual ~ControlSource() = default;
     virtual ControlSample at(f32 x, f32 z) const = 0;
+    // Biome id alone, with the (heavy) elevation tier already known: the
+    // macro synthesis samples the control fields on a coarse lattice and
+    // interpolates, but an id cannot interpolate — nearest-sampling it
+    // there drew 64 m axis-aligned biome stairs. Providers whose biome
+    // derives from cheap fields override this so the synthesis can ask
+    // PER TEXEL; the default pays one full sample (painted/test sources
+    // are lookup-cheap anyway).
+    virtual u8 biomeIdAt(f32 x, f32 z, f32 tier) const {
+        (void)tier;
+        return at(x, z).biome;
+    }
 };
 
 // Sandbox controls: continentalness (warped low-frequency FBM) decides
@@ -197,6 +208,7 @@ public:
     explicit ProceduralControls(const ProceduralControlParams& params)
         : p { params } {}
     ControlSample at(f32 x, f32 z) const override;
+    u8 biomeIdAt(f32 x, f32 z, f32 tier) const override; // climate only
     f32 continentalness(f32 x, f32 z) const; // [0,1], warped
 
     const ProceduralControlParams& params() const { return p; }

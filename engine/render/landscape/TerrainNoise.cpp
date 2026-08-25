@@ -309,32 +309,130 @@ GrassZone grassZoneAt(f32 x, f32 z) {
     return zone;
 }
 
+namespace {
+
+// Attribute-blended biome resolution over the baked region mask: the id
+// channel stays hard (ids never blend) but the ATTRIBUTES blend —
+// bilinear across the four surrounding mask texels, so a biome border is
+// a one-texel attribute ramp instead of a razor step. Falls back to the
+// nearest/painted path off baked regions (scenario mode stays nearest).
+BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
+    const TerrainRegion* region =
+        params.base ? params.base->regionAt(x, z) : nullptr;
+    if (!params.biomes || params.biomes->table.empty() || !region ||
+        region->biome.empty() || region->maskWidth < 2 ||
+        region->maskHeight < 2) {
+        return biomeAt(params, x, z);
+    }
+    const f32 texelX =
+        region->spanX() / static_cast<f32>(region->maskWidth - 1);
+    const f32 texelZ =
+        region->spanZ() / static_cast<f32>(region->maskHeight - 1);
+    const f32 fx = glm::clamp((x - region->originX) / texelX, 0.0f,
+                              static_cast<f32>(region->maskWidth - 1));
+    const f32 fz = glm::clamp((z - region->originZ) / texelZ, 0.0f,
+                              static_cast<f32>(region->maskHeight - 1));
+    const u32 c0 = glm::min(static_cast<u32>(fx), region->maskWidth - 2);
+    const u32 r0 = glm::min(static_cast<u32>(fz), region->maskHeight - 2);
+    const f32 tx = fx - static_cast<f32>(c0);
+    const f32 tz = fz - static_cast<f32>(r0);
+    const f32 w[4] = { (1.0f - tx) * (1.0f - tz), tx * (1.0f - tz),
+                       (1.0f - tx) * tz, tx * tz };
+    const size_t base =
+        static_cast<size_t>(r0) * region->maskWidth + c0;
+    const size_t ids[4] = { base, base + 1, base + region->maskWidth,
+                            base + region->maskWidth + 1 };
+    BiomeParams blend;
+    blend.grassPresence = 0.0f;
+    blend.detailAmplitudeScale = 0.0f;
+    f32 wMax = -1.0f;
+    for (u32 i = 0; i < 4; ++i) {
+        const size_t clamped = glm::min<size_t>(
+            region->biome[ids[i]], params.biomes->table.size() - 1);
+        const BiomeParams& b = params.biomes->table[clamped];
+        blend.snowLineOffset += w[i] * b.snowLineOffset;
+        blend.rockiness += w[i] * b.rockiness;
+        blend.sandiness += w[i] * b.sandiness;
+        blend.grassPresence += w[i] * b.grassPresence;
+        blend.detailAmplitudeScale += w[i] * b.detailAmplitudeScale;
+        blend.temperature += w[i] * b.temperature;
+        blend.wetness += w[i] * b.wetness;
+        if (w[i] > wMax) {
+            wMax = w[i];
+            blend.vegetationSet = b.vegetationSet;
+        }
+    }
+    return blend;
+}
+
+// The snow line's own geography: a slow seeded wander (±80 m over
+// ~2.8 km, two incommensurate octaves of the wander lattice — lattice
+// noise, cheap enough for the scatter/footstep hot path where fbm is
+// banned). Riding through regionFieldsAt keeps the shade-map bake and
+// every CPU weight mirror in lockstep by construction. This field, not
+// the per-biome offsets, carries the BIG snow-line variation — the
+// palette offsets are character accents on top (landscape.toml).
+f32 snowLineWander(u32 seed, f32 x, f32 z) {
+    const f32 ox =
+        static_cast<f32>(core::hashU32(seed ^ 0x51a9cbe3u) & 0xffffu);
+    const f32 oz =
+        static_cast<f32>(core::hashU32(seed ^ 0x9d2c5681u) & 0xffffu);
+    const f32 n =
+        0.65f * wanderValue01((x + ox) * (1.0f / 2800.0f),
+                              (z + oz) * (1.0f / 2800.0f)) +
+        0.35f * wanderValue01((x - oz) * (1.0f / 950.0f),
+                              (z + ox) * (1.0f / 950.0f));
+    return (n - 0.5f) * 160.0f;
+}
+
+} // namespace
+
 RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {
-    const BiomeParams& biome = biomeAt(params, x, z);
     const TerrainRegion* region =
         params.base ? params.base->regionAt(x, z) : nullptr;
     RegionFields fields;
-    fields.rockiness = biome.rockiness;
-    fields.snowLineOffset = biome.snowLineOffset;
-    // Biome ids resolve nearest-texel, so their borders are crisp — and
-    // the snow-line offset is the one field whose jump (up to ~300 m
-    // between palette entries) paints a razor snow/grass border along
-    // them. Averaged over a small cross, the jump becomes a ~60 m ramp
-    // the snow patches and the frost band can dress. Shared by the
-    // ShadeMap bake and every CPU consumer — the lockstep holds by
-    // construction.
-    if (params.biomes && !params.biomes->table.empty()) {
-        f32 sum = fields.snowLineOffset * 2.0f;
-        sum += biomeAt(params, x + 32.0f, z).snowLineOffset;
-        sum += biomeAt(params, x - 32.0f, z).snowLineOffset;
-        sum += biomeAt(params, x, z + 32.0f).snowLineOffset;
-        sum += biomeAt(params, x, z - 32.0f).snowLineOffset;
-        fields.snowLineOffset = sum / 6.0f;
+    const bool baked = params.biomes && !params.biomes->table.empty() &&
+                       region && !region->biome.empty();
+    if (baked) {
+        // Cross-averaged attribute blend (±32 m on top of the bilinear
+        // texel ramp): EVERY biome attribute ramps over ~60-80 m along
+        // the border contour — wide enough for the wander terms and the
+        // deposition overlay to dress. A nearest id with razor steps
+        // painted hard borders (the bug-neige rectangles).
+        const BiomeParams c = biomeBlended(params, x, z);
+        const BiomeParams e = biomeBlended(params, x + 32.0f, z);
+        const BiomeParams o = biomeBlended(params, x - 32.0f, z);
+        const BiomeParams s = biomeBlended(params, x, z + 32.0f);
+        const BiomeParams n = biomeBlended(params, x, z - 32.0f);
+        const auto avg = [](f32 cv, f32 ev, f32 ov, f32 sv, f32 nv) {
+            return (cv * 2.0f + ev + ov + sv + nv) * (1.0f / 6.0f);
+        };
+        fields.rockiness =
+            avg(c.rockiness, e.rockiness, o.rockiness, s.rockiness,
+                n.rockiness);
+        fields.snowLineOffset =
+            avg(c.snowLineOffset, e.snowLineOffset, o.snowLineOffset,
+                s.snowLineOffset, n.snowLineOffset);
+        fields.sandiness = avg(c.sandiness, e.sandiness, o.sandiness,
+                               s.sandiness, n.sandiness);
+        fields.grassPresence =
+            avg(c.grassPresence, e.grassPresence, o.grassPresence,
+                s.grassPresence, n.grassPresence);
+        fields.temperature =
+            avg(c.temperature, e.temperature, o.temperature,
+                s.temperature, n.temperature);
+        fields.biomeWetness =
+            avg(c.wetness, e.wetness, o.wetness, s.wetness, n.wetness);
+        fields.snowLineOffset += snowLineWander(params.seed, x, z);
+    } else {
+        const BiomeParams& biome = biomeAt(params, x, z);
+        fields.rockiness = biome.rockiness;
+        fields.snowLineOffset = biome.snowLineOffset;
+        fields.sandiness = biome.sandiness;
+        fields.grassPresence = biome.grassPresence;
+        fields.temperature = biome.temperature;
+        fields.biomeWetness = biome.wetness;
     }
-    fields.sandiness = biome.sandiness;
-    fields.grassPresence = biome.grassPresence;
-    fields.temperature = biome.temperature;
-    fields.biomeWetness = biome.wetness;
     if (region) {
         fields.wetness = maskSample(*region, region->wetness, x, z, 0.0f);
         // The baked beach mask forces sand where the coast pass decided

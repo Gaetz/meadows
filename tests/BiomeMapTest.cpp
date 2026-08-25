@@ -78,6 +78,81 @@ TEST_CASE("the rockExposure mask drives the cliff weight") {
           0.0f);
 }
 
+TEST_CASE("biome attributes ramp across a baked border, never step") {
+    // A hard id border in the region mask (temperate | alpine at x=68):
+    // regionFieldsAt must resolve CONTINUOUS attributes — bilinear over
+    // the mask texels plus the ±32 m cross — so no consumer ever sees a
+    // razor step (the bug-neige rectangles). This axis-aligned border is
+    // the WORST case: the z taps share the center's x, so 4/6 of the
+    // delta ramps over one 8 m texel (organic fbm contours decorrelate
+    // the taps and spread over ~64 m). Bounds = that worst case + the
+    // slow wander field's drift.
+    render::TerrainParams params;
+    auto base = std::make_shared<render::TerrainBase>();
+    render::TerrainRegion region;
+    region.originX = 0.0f;
+    region.originZ = 0.0f;
+    region.texelSize = 8.0f;
+    region.edgeBlend = 0.0f;
+    region.width = 17;
+    region.height = 17;
+    region.heights.assign(17 * 17, 50.0f);
+    region.maskWidth = 17;
+    region.maskHeight = 17;
+    const size_t maskCells = 17 * 17;
+    region.detailAmp.assign(maskCells, 255);
+    region.flow.assign(maskCells, 0);
+    region.wetness.assign(maskCells, 0);
+    region.beach.assign(maskCells, 0);
+    region.rockExposure.assign(maskCells, 0);
+    region.biome.assign(maskCells, 0);
+    for (u32 rz = 0; rz < 17; ++rz) {
+        for (u32 cx = 9; cx < 17; ++cx) { // x >= 68 m: alpine
+            region.biome[static_cast<size_t>(rz) * 17 + cx] = 2;
+        }
+    }
+    base->regions.push_back(region);
+    params.base = base;
+    auto biomes = std::make_shared<render::BiomeSet>();
+    biomes->table.resize(3);
+    biomes->table[2].snowLineOffset = -120.0f;
+    biomes->table[2].rockiness = 0.6f;
+    biomes->table[2].grassPresence = 0.5f;
+    params.biomes = biomes;
+
+    // Sample range chosen so the ±32 m taps stay inside the region (at
+    // the true edge of baked coverage the fallback is neutral, a
+    // pre-existing seam outside this test's scope).
+    f32 prevOffset = 0.0f;
+    f32 prevRock = 0.0f;
+    f32 minOffset = 1.0e9f;
+    f32 maxOffset = -1.0e9f;
+    for (u32 i = 0; i <= 30; ++i) {
+        const f32 x = 36.0f + static_cast<f32>(i) * 2.0f;
+        const auto fields =
+            render::terrain::regionFieldsAt(params, x, 64.0f);
+        if (i > 0) {
+            // 4/6 of the 120 m / 0.6 deltas over an 8 m texel, per 2 m
+            // step, plus wander drift — a razor step would read ~120/0.6.
+            CHECK(std::abs(fields.snowLineOffset - prevOffset) < 24.0f);
+            CHECK(std::abs(fields.rockiness - prevRock) < 0.125f);
+        }
+        prevOffset = fields.snowLineOffset;
+        prevRock = fields.rockiness;
+        minOffset = glm::min(minOffset, fields.snowLineOffset);
+        maxOffset = glm::max(maxOffset, fields.snowLineOffset);
+    }
+    // The border swing is crossed (relative check: the slow wander field
+    // offsets both plateaus together, ±80 m).
+    CHECK(maxOffset - minOffset > 60.0f);
+    // Determinism: the wander field is a pure function of (seed, x, z).
+    const auto again =
+        render::terrain::regionFieldsAt(params, 44.0f, 64.0f);
+    const auto again2 =
+        render::terrain::regionFieldsAt(params, 44.0f, 64.0f);
+    CHECK(again.snowLineOffset == again2.snowLineOffset);
+}
+
 TEST_CASE("BiomeForm records build the table; the painted map resolves") {
     const auto dir = std::filesystem::temp_directory_path() / "meadows-tbm";
     std::filesystem::create_directories(dir);

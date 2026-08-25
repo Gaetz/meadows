@@ -177,10 +177,14 @@ MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
                                   f32 z, f32 height, const Vec3& normal);
 
 // One sample of the low-frequency region fields — biome attributes
-// resolved to CONTINUOUS values (ids never blend; resolving
-// id -> attributes here is what makes the shade map's bilinear filtering
-// legitimate) plus the baked wetness/beach masks. This is the CHEAP part,
-// on the scatter/footstep hot path.
+// resolved to CONTINUOUS values (ids never blend; the ATTRIBUTES blend:
+// bilinear across the id mask texels + a ±32 m cross, so borders are
+// ~60-80 m ramps — resolving id -> attributes here is what makes the
+// shade map's bilinear filtering legitimate) plus the baked wetness/
+// beach masks and the slow seeded snow-line wander field (±80 m over
+// ~2.8 km — geography, not biome ids, carries the big snow variation).
+// This is the CHEAP part, on the scatter/footstep hot path (lattice
+// noise only — fbm stays banned here, see regionShadingAt).
 struct RegionFields {
     f32 wetness { 0.0f };
     f32 rockiness { 0.0f };

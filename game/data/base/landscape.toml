@@ -130,6 +130,9 @@ interiorDustDensity = 0.025       # uniform dust indoors (H4)
 
 # --- Biomes (palette contract with the sandbox generator:
 #     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra) -------------------
+# snowLineOffset is a character ACCENT: the big snow-line variation is
+# the engine's slow continuous wander field (±80 m over ~2.8 km) — large
+# offsets here re-create razor snow borders at biome edges.
 [[records]]
 form = "1a4d5c00-0000-4000-8000-0000000000b1"
 type = "BiomeForm"
@@ -141,7 +144,7 @@ paletteIndex = 1
 editorColor = [0.85, 0.72, 0.4]
 sandiness = 0.7
 grassPresence = 0.25
-snowLineOffset = 400.0
+snowLineOffset = 120.0
 temperature = 0.6
 wetness = 0.1
 
@@ -156,7 +159,7 @@ paletteIndex = 2
 editorColor = [0.55, 0.55, 0.6]
 rockiness = 0.6
 grassPresence = 0.6
-snowLineOffset = -300.0
+snowLineOffset = -120.0
 temperature = -0.4
 
 [[records]]
@@ -170,7 +173,7 @@ paletteIndex = 3
 editorColor = [0.75, 0.8, 0.85]
 rockiness = 0.3
 grassPresence = 0.4
-snowLineOffset = -650.0
+snowLineOffset = -200.0
 temperature = -0.8
 wetness = 0.4
 
