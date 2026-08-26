@@ -2,6 +2,10 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/terrain/SandboxTerrain.hpp"
+#include "engine/terrain/WaterBodies.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
+
 namespace game {
 
 namespace {
@@ -13,6 +17,8 @@ namespace {
 // the map lives here.
 const Vec3 kWaterShallow { 0.26f, 0.47f, 0.58f };
 const Vec3 kWaterDeep { 0.12f, 0.26f, 0.42f };
+// (Altitude lakes and river ribbons reuse the same blues — one water
+// vocabulary on the map, whatever the body's level.)
 // Two-stage ocean (seaFloor -70): sqrt scale keeps the coastal plateau
 // (~14 m) readable at mid-tint while the talus still darkens to full.
 constexpr f32 kWaterDepthRange = 70.0f;
@@ -119,6 +125,120 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
             pixels[at + 1] = toByte(color.g);
             pixels[at + 2] = toByte(color.b);
             pixels[at + 3] = 255;
+        }
+    }
+
+    // --- Water bodies overlay: the ALTITUDE water the height rule cannot
+    // see (lakes sit above sea level, river ribbons ride their own
+    // surface). Painted from the same published set the renderer and the
+    // swim queries read.
+    const auto paint = [&](i32 px, i32 pz, const Vec3& color) {
+        if (px < 0 || pz < 0 || px >= static_cast<i32>(size) ||
+            pz >= static_cast<i32>(size)) {
+            return;
+        }
+        const size_t at = (static_cast<size_t>(pz) * size + px) * 4;
+        pixels[at + 0] = toByte(color.r);
+        pixels[at + 1] = toByte(color.g);
+        pixels[at + 2] = toByte(color.b);
+    };
+    const auto stamp = [&](f32 x, f32 z, f32 radiusPx, const Vec3& color) {
+        const f32 fx = (x - desc.minX) / stepX - 0.5f;
+        const f32 fz = (z - desc.minZ) / stepZ - 0.5f;
+        const i32 r = static_cast<i32>(std::ceil(radiusPx));
+        for (i32 dz = -r; dz <= r; ++dz) {
+            for (i32 dx = -r; dx <= r; ++dx) {
+                if (static_cast<f32>(dx * dx + dz * dz) <=
+                    radiusPx * radiusPx) {
+                    paint(static_cast<i32>(std::lround(fx)) + dx,
+                          static_cast<i32>(std::lround(fz)) + dz, color);
+                }
+            }
+        }
+    };
+    // Polyline walk: stamps every half-pixel so thin courses stay
+    // connected whatever the segment lengths.
+    const auto strokeSegment = [&](f32 ax, f32 az, f32 bx, f32 bz,
+                                   f32 radiusPx, const Vec3& color) {
+        const f32 len = std::hypot(bx - ax, bz - az);
+        const f32 step = glm::min(stepX, stepZ) * 0.5f;
+        const i32 n = glm::max(static_cast<i32>(len / step), 1);
+        for (i32 i = 0; i <= n; ++i) {
+            const f32 t = static_cast<f32>(i) / static_cast<f32>(n);
+            stamp(glm::mix(ax, bx, t), glm::mix(az, bz, t), radiusPx,
+                  color);
+        }
+    };
+    if (params.water) {
+        for (const render::LakeSurface& lake : params.water->lakes) {
+            const i32 px0 = static_cast<i32>(
+                std::floor((lake.minX - desc.minX) / stepX));
+            const i32 px1 = static_cast<i32>(
+                std::ceil((lake.maxX - desc.minX) / stepX));
+            const i32 pz0 = static_cast<i32>(
+                std::floor((lake.minZ - desc.minZ) / stepZ));
+            const i32 pz1 = static_cast<i32>(
+                std::ceil((lake.maxZ - desc.minZ) / stepZ));
+            for (i32 pz = glm::max(pz0, 0);
+                 pz <= glm::min(pz1, static_cast<i32>(size) - 1); ++pz) {
+                for (i32 px = glm::max(px0, 0);
+                     px <= glm::min(px1, static_cast<i32>(size) - 1);
+                     ++px) {
+                    const f32 x =
+                        desc.minX + (static_cast<f32>(px) + 0.5f) * stepX;
+                    const f32 z =
+                        desc.minZ + (static_cast<f32>(pz) + 0.5f) * stepZ;
+                    const f32 h = heightAt(static_cast<u32>(px) + 1,
+                                           static_cast<u32>(pz) + 1);
+                    if (h >= lake.level || !lake.covers(x, z)) {
+                        continue;
+                    }
+                    const f32 depth = glm::clamp(
+                        std::sqrt((lake.level - h) / kWaterDepthRange),
+                        0.0f, 1.0f);
+                    paint(px, pz,
+                          glm::mix(kWaterShallow, kWaterDeep, depth));
+                }
+            }
+        }
+        for (const render::RiverSurface& river : params.water->rivers) {
+            for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
+                const render::RiverNode& a = river.nodes[s];
+                const render::RiverNode& b = river.nodes[s + 1];
+                const f32 half =
+                    glm::max(a.halfWidth, b.halfWidth);
+                // Width in pixels, floored so brooks stay visible; the
+                // depth tint follows the width (the fleuve reads dark).
+                const f32 radiusPx =
+                    glm::clamp(half / stepX, 0.55f, 4.0f);
+                const f32 tint =
+                    glm::clamp(half * (1.0f / 18.0f), 0.35f, 0.9f);
+                strokeSegment(a.x, a.z, b.x, b.z, radiusPx,
+                              glm::mix(kWaterShallow, kWaterDeep, tint));
+            }
+        }
+    }
+    // --- Master courses beyond the published ring (sandbox only): the
+    // fleuves keep drawing where no tile is resident. Skipped on the
+    // widest extents (their super-cell routing would dominate the bake;
+    // a river is sub-pixel up there anyway) and on close ones (the
+    // published water is the better truth).
+    const f32 span = desc.maxX - desc.minX;
+    if (params.sandbox && span > 6000.0f && span <= 44000.0f) {
+        render::terraingen::ProceduralControlParams cp =
+            params.sandbox->controls;
+        const render::terraingen::ProceduralControls controls { cp };
+        render::terraingen::MasterNetworkParams net;
+        net.seaLevel = params.seaLevel;
+        const auto master = render::terraingen::masterRiversNear(
+            controls, params.sandbox->macro, net, desc.minX, desc.minZ,
+            desc.maxX, desc.maxZ);
+        for (const auto& river : master) {
+            for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
+                const auto& a = river.nodes[s];
+                const auto& b = river.nodes[s + 1];
+                strokeSegment(a.x, a.z, b.x, b.z, 0.55f, kWaterDeep);
+            }
         }
     }
     return pixels;
