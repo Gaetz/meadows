@@ -149,22 +149,49 @@ int waterSolve(char** argv, int argc) {
         return ground[static_cast<size_t>(r) * spec.n +
                       static_cast<size_t>(c)];
     };
+    // Display wet mask, dilated one texel: a 1-2 px stream vanished
+    // against the shading (dev feedback) — the dilation is display
+    // only, the fields stay honest.
+    vector<u8> wetMask(spec.cells(), 0);
+    for (i32 row = 0; row < n; ++row) {
+        for (i32 col = 0; col < n; ++col) {
+            const size_t i = static_cast<size_t>(row) * spec.n +
+                             static_cast<size_t>(col);
+            if (water.depth[i] > 0.0f ||
+                ground[i] < solve.seaLevel) {
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 pc = col + dx;
+                        const i32 pr = row + dz;
+                        if (pc >= 0 && pr >= 0 && pc < n && pr < n) {
+                            wetMask[static_cast<size_t>(pr) * spec.n +
+                                    static_cast<size_t>(pc)] = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
     for (i32 row = 0; row < n; ++row) {
         for (i32 col = 0; col < n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n +
                              static_cast<size_t>(col);
             const f32 gx = groundAt(col - 1, row) - groundAt(col + 1, row);
             const f32 gz = groundAt(col, row - 1) - groundAt(col, row + 1);
+            // Exaggerated relief + darker range: the flat-lit version
+            // washed out white and drowned the streams.
             const Vec3 normal = glm::normalize(
-                Vec3 { gx, 2.0f * spec.texelSize, gz });
+                Vec3 { gx, 0.6f * spec.texelSize, gz });
             const f32 light = glm::clamp(
-                0.35f + 0.65f * glm::dot(normal,
+                0.25f + 0.70f * glm::dot(normal,
                                          glm::normalize(Vec3 {
                                              -0.45f, 0.8f, -0.4f })),
                 0.0f, 1.0f);
-            f32 r = light;
-            f32 g = light;
-            f32 b = light;
+            const f32 band = glm::clamp(
+                (ground[i] - solve.seaLevel) / 900.0f, 0.0f, 1.0f);
+            f32 r = light * (0.55f + 0.30f * band);
+            f32 g = light * (0.52f + 0.28f * band);
+            f32 b = light * (0.45f + 0.25f * band);
             const f32 d = water.depth[i];
             const bool sea = ground[i] < solve.seaLevel;
             if (d > 0.0f || sea) {
@@ -172,16 +199,21 @@ int waterSolve(char** argv, int argc) {
                     std::sqrt((sea ? solve.seaLevel - ground[i] : d) /
                               12.0f),
                     0.0f, 1.0f);
-                r = glm::mix(0.30f, 0.05f, t);
-                g = glm::mix(0.55f, 0.18f, t);
-                b = glm::mix(0.70f, 0.45f, t);
+                r = glm::mix(0.10f, 0.02f, t);
+                g = glm::mix(0.55f, 0.15f, t);
+                b = glm::mix(0.95f, 0.45f, t);
                 const f32 speed = std::hypot(water.velocityX[i],
                                              water.velocityZ[i]);
                 const f32 foam =
-                    glm::clamp((speed - 1.0f) * 0.4f, 0.0f, 0.5f);
+                    glm::clamp((speed - 1.5f) * 0.3f, 0.0f, 0.45f);
                 r += foam;
                 g += foam;
                 b += foam;
+            } else if (wetMask[i]) {
+                // Dilated fringe: outline the thin streams.
+                r = 0.15f;
+                g = 0.45f;
+                b = 0.85f;
             }
             const size_t at = (static_cast<size_t>(row) * n + col) * 3;
             pixels[at + 0] =
