@@ -44,6 +44,7 @@ add_executable(true-adventurer
     scenes/InteractionController.cpp
     scenes/LandscapeScene.cpp
     scenes/MapController.cpp
+    scenes/MiniMapPanel.cpp
     scenes/NpcCombatController.cpp
     scenes/NpcDirector.cpp
     scenes/NpcMovement.cpp

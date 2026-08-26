@@ -24,6 +24,7 @@
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/MapController.hpp"
+#include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
@@ -158,6 +159,7 @@ private:
     bool uiRenderOpen { false };
     bool uiTreesOpen { false }; // Tree builder (generation knobs, live)
     bool uiPerfOpen { false }; // the GPU budget table [F6]
+    bool uiMapOpen { false };  // dev minimap (MiniMapPanel)
 
     // The whole custom renderer — shader library, render::* systems,
     // GPU handles, frame graph, terrain/render dev panels and their toggle
@@ -326,6 +328,7 @@ private:
     // (game/MapRaster) behind the runtime://map texture, player marker +
     // door POIs through the shared mapUv mapping.
     MapController mapController;
+    MiniMapPanel miniMap; // Spectator/Edit dev minimap
     MapContext makeMapContext();
     // The language machinery. loadGatedPluginConfig = plugins.toml
     // with every text-<code>.toml pack enabled iff <code> ==

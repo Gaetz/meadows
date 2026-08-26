@@ -1203,6 +1203,7 @@ void LandscapeScene::onExit() {
     uiRouter.reset(); // open container/vendor die with the world
     optionsController.reset(); // Drop any armed rebind capture
     mapController.reset(); // Runtime pixels died with the UiSystem
+    miniMap.shutdown(device);
     followerController.reset(); // Drop the affinity-accrual stamp
     goldForm = nullptr;
     sceneConsole.reset(); // panel/VM/session reference forms — before re-resolve
@@ -4450,11 +4451,13 @@ void LandscapeScene::drawUi() {
         barToggle("Rendering", uiRenderOpen);
         barToggle("Trees", uiTreesOpen);
         barToggle("GPU perf", uiPerfOpen);
+        barToggle("Map", uiMapOpen);
     } else { // Edit: editing-related (the SceneEditor windows draw on
              // their own; these are the extras).
         barToggle("Gameplay", uiGameplayOpen);
         barToggle("Terrain", uiTerrainOpen);
         barToggle("Sky & weather", uiSkyOpen);
+        barToggle("Map", uiMapOpen);
     }
     ImGui::SameLine();
     if (ImGui::SmallButton(sceneConsole.visible() ? "Console*"
@@ -4527,6 +4530,11 @@ void LandscapeScene::drawUi() {
     rightWindow("GPU perf", uiPerfOpen, [&] {
         RenderTuningPanels::drawPerfPanel(renderer, &frameProbe);
     });
+    if (uiMapOpen) {
+        miniMap.draw(engine->getDevice(), engine->getJobSystem(),
+                     renderer.terrainParams(), flyCamera.camera.position,
+                     renderer.terrainParams().contentStamp, &uiMapOpen);
+    }
     if (renderer.consumeSaveTuningRequest()) {
         saveRenderTuning();
     }
