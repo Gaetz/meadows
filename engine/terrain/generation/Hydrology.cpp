@@ -22,7 +22,7 @@ namespace {
 // carve pass then follows the same curve as the surface), re-derive the
 // widths by arc length, and clamp the surface monotone downstream (the
 // interpolating spline may overshoot on y).
-void smoothRiver(River& river, f32 texel) {
+void smoothRiver(River& river, f32 texel, const HydrologyParams& params) {
     if (river.points.size() < 3) {
         return;
     }
@@ -100,9 +100,11 @@ void smoothRiver(River& river, f32 texel) {
     f32 level = raw.front().y;
     size_t seg = 0;
     for (size_t i = 0; i < course.size(); ++i) {
+        f32 step = 0.0f;
         if (i > 0) {
-            outArc += std::hypot(course[i].x - course[i - 1].x,
-                                 course[i].z - course[i - 1].z);
+            step = std::hypot(course[i].x - course[i - 1].x,
+                              course[i].z - course[i - 1].z);
+            outArc += step;
         }
         const f32 rawAt = outArc / courseTotal * rawTotal;
         while (seg + 1 < rawArc.size() && rawArc[seg + 1] < rawAt) {
@@ -111,7 +113,15 @@ void smoothRiver(River& river, f32 texel) {
         const size_t next = glm::min(seg + 1, rawArc.size() - 1);
         const f32 span = glm::max(rawArc[next] - rawArc[seg], 1.0e-3f);
         const f32 t = glm::clamp((rawAt - rawArc[seg]) / span, 0.0f, 1.0f);
-        level = glm::min(level, glm::mix(raw[seg].y, raw[next].y, t));
+        // Gradient ratchet: the raw level is a priority-flood surface —
+        // flat across every filled stretch (they read as ponds). The
+        // water must DESCEND through them (minGradient), while never
+        // digging more than maxDrop below the flood level; both terms
+        // are non-increasing downstream, so monotonicity holds.
+        const f32 rawLevel = glm::mix(raw[seg].y, raw[next].y, t);
+        level = glm::max(
+            glm::min(level - params.riverMinGradient * step, rawLevel),
+            rawLevel - params.riverReprofileMaxDrop);
         RiverPoint pt;
         pt.x = course[i].x;
         pt.z = course[i].z;
@@ -535,7 +545,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         if (river.points.size() < params.minRiverPoints) {
             continue;
         }
-        smoothRiver(river, spec.texelSize);
+        smoothRiver(river, spec.texelSize, params);
         smoothed.push_back(std::move(river));
     }
     // Phase 4 — GLOBAL merge on the final smoothed set: smoothing MOVES

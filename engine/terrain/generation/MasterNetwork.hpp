@@ -14,8 +14,11 @@
 // natural cost/routing support).
 //
 // Purity contract: computeMasterNetwork is a pure function of
-// (controls, macro, params, super cell) — no cache, no state, safe on
-// bake workers, bit-identical for every caller. Ownership by super
+// (controls, macro, params, super cell) — bit-identical for every
+// caller. A thread-safe process memo backs it (exact-parameter hits
+// only — a memoized pure function stays pure): the fleuve imprint asks
+// for the same super cells from every stage-1 window, and recomputing
+// them per window multiplied the bake cost. Ownership by super
 // cell (a river belongs to the cell holding its head) keeps two
 // callers' views identical; a course is traced through the apron up
 // to `apron` meters beyond its cell, further continuation is the
@@ -66,5 +69,37 @@ vector<MasterRiver> masterRiversNear(const ProceduralControls& controls,
                                      const MasterNetworkParams& params,
                                      f32 minX, f32 minZ, f32 maxX,
                                      f32 maxZ);
+
+// The network's S1 consumption (the B5 plan's "empreinte le long du
+// cours réel", wired at last): the fleuve is CONSTRUCTED into the
+// terrain instead of recognized after the fact. Along each master
+// course the stamp digs the channel, flattens a bounded alluvial plain
+// and imposes a smooth monotone bed gradient — the local hydrology then
+// finds this channel by construction (water follows the carving) and
+// the tier promotion becomes a confirmation. Lowering-only everywhere:
+// the imprint can never dam. The analytic mirror stays UNTOUCHED — the
+// network routes on it, so imprinting it would loop.
+struct MasterImprintParams {
+    f32 minGradient { 0.0015f }; // m/m of reprofiled bed (kills the
+                                 // flood-flat "lake" stretches)
+    f32 bedDepth { 5.0f };       // m under the reprofiled surface
+    f32 plainFactor { 3.0f };    // plain half-width = f * channel
+    f32 plainLift { 1.5f };      // plain ceiling above the surface
+    f32 maxPlainCut { 14.0f };   // deeper crossings stay gorges
+    f32 keepChannel { 0.85f };   // erosion keep inside the channel
+    f32 keepPlain { 0.35f };
+};
+// `extraKeep` (sim.cells(), caller-zeroed) receives the erosion
+// protection to max into the bake's keep grid. Width law shared with
+// classifyRivers (widthCoef/exponent/fleuveWidthScale) so the imprinted
+// channel and the promoted ribbon agree.
+void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
+                           vector<f32>& extraKeep,
+                           const ProceduralControls& controls,
+                           const MacroParams& macroParams,
+                           const MasterNetworkParams& network,
+                           const MasterImprintParams& imprint,
+                           f32 widthCoef, f32 widthExponent,
+                           f32 fleuveWidthScale);
 
 } // namespace render::terraingen

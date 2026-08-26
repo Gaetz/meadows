@@ -151,3 +151,41 @@ TEST_CASE("master network diagnostic" * doctest::skip()) {
             nodes ? 100.0 * trunkAligned / nodes : 0.0, "%");
     CHECK(true);
 }
+
+TEST_CASE("master imprint: carves a channel, never dams, protects it") {
+    // A 2 km window on the seed-1337 spawn fleuve (the course the
+    // locator diagnostics pinned near (7453..8103, 0..300)): the
+    // imprint must LOWER only (no dam anywhere), actually dig a
+    // channel, and hand the erosion a keep along it.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const MacroParams macro;
+    MasterNetworkParams net;
+    net.seaLevel = macro.seaLevel;
+    const GridSpec sim { 6912.0f, -512.0f, 16.0f, 129 };
+    MacroResult m = synthesizeMacro(controls, sim, macro, pc.seed);
+    const vector<f32> before = m.height;
+    const vector<f32> calmBefore = m.calm;
+    vector<f32> keep(sim.cells(), 0.0f);
+    imprintMasterChannels(sim, m, keep, controls, macro, net,
+                          MasterImprintParams {}, 0.008f, 0.5f, 1.6f);
+    u32 carved = 0;
+    f32 maxKeep = 0.0f;
+    for (size_t i = 0; i < before.size(); ++i) {
+        CHECK(m.height[i] <= before[i] + 1.0e-3f); // lowering only
+        carved += m.height[i] < before[i] - 2.0f ? 1 : 0;
+        maxKeep = glm::max(maxKeep, keep[i]);
+        CHECK(m.calm[i] >= calmBefore[i] - 1.0e-6f);
+    }
+    CHECK(carved > 50);      // a real channel crosses the window
+    CHECK(maxKeep >= 0.8f);  // and the erosion is told to spare it
+
+    // Determinism: bit-identical on a second run.
+    MacroResult m2 = synthesizeMacro(controls, sim, macro, pc.seed);
+    vector<f32> keep2(sim.cells(), 0.0f);
+    imprintMasterChannels(sim, m2, keep2, controls, macro, net,
+                          MasterImprintParams {}, 0.008f, 0.5f, 1.6f);
+    CHECK(m.height == m2.height);
+    CHECK(keep == keep2);
+}

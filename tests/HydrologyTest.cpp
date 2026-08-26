@@ -191,6 +191,61 @@ TEST_CASE("a tilted valley traces one widening river to the map edge") {
     }
 }
 
+TEST_CASE("a flat stretch flows: the surface reprofiles downhill") {
+    // Tilted valley with a FLAT shelf mid-course: the raw flood surface
+    // is level across it (it used to read as a pond) — the gradient
+    // ratchet must make the extracted surface descend through the
+    // shelf, without digging more than maxDrop below the flood level.
+    vector<f32> h(spec().cells());
+    const f32 axis = static_cast<f32>(kN / 2);
+    const u32 shelf0 = 35;
+    const u32 shelf1 = 60;
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            const f32 lateral =
+                std::abs(static_cast<f32>(col) - axis) * 0.8f;
+            // Down toward +z, but frozen across the shelf rows.
+            const u32 effective =
+                row < shelf0 ? row
+                             : (row <= shelf1 ? shelf0
+                                              : row - (shelf1 - shelf0));
+            const f32 down =
+                static_cast<f32>(kN - 1 - effective) * 0.3f;
+            h[at(col, row)] = 40.0f + lateral + down;
+        }
+    }
+    HydrologyParams params;
+    params.riverArea = 60000.0f;
+    const HydrologyResult r = extractHydrology(spec(), h, params);
+    REQUIRE(!r.rivers.empty());
+    const River* main = &r.rivers[0];
+    for (const River& river : r.rivers) {
+        if (river.points.size() > main->points.size()) {
+            main = &river;
+        }
+    }
+    // Surfaces across the shelf: strictly descending overall, drop in
+    // [0.9 * minGrad * length, maxDrop + slack].
+    const f32 z0 = spec().z(shelf0);
+    const f32 z1 = spec().z(shelf1);
+    f32 first = -1.0e9f;
+    f32 last = 1.0e9f;
+    for (const RiverPoint& pt : main->points) {
+        if (pt.z < z0 || pt.z > z1) {
+            continue;
+        }
+        if (first < -1.0e8f) {
+            first = pt.surface;
+        }
+        last = pt.surface;
+    }
+    REQUIRE(first > -1.0e8f);
+    const f32 drop = first - last;
+    const f32 shelfLen = z1 - z0;
+    CHECK(drop >= 0.9f * params.riverMinGradient * shelfLen * 0.5f);
+    CHECK(drop <= params.riverReprofileMaxDrop + 0.5f);
+}
+
 TEST_CASE("a rejected pothole does not interrupt the river") {
     // Tilted valley with a small deep dip on the axis: too few cells to
     // be a lake, deep enough to flood — the trace must ride the spill

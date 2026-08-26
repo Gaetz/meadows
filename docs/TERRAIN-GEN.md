@@ -1323,6 +1323,39 @@ pleine largeur). Mesuré (tuile 2,1) : 44 runs/11,0 km →
 < 100 m) ; doctest « rejected pothole does not interrupt the
 river ». Caches v53 (stage-2 seul).
 
+**B9e/B9f — le fleuve est CONSTRUIT, les rivières coulent
+(2026-08-26)** : après le constat dev « le fleuve à l'embouchure est
+une espèce de lac », diagnostic de conception acté : le fleuve était
+*reconnu* (promotion + largeur cosmétique sur un tracé de flood
+local), jamais *construit*. La brique câble enfin l'« empreinte le
+long du cours réel » du plan B5 :
+1. **B9e — empreinte fleuve (S1)** : `imprintMasterChannels`
+   (MasterNetwork, la consommation S1 de l'étage 0) au slot
+   « authored → S1 avant érosion » (TileBake:79). Par cours maître :
+   REPROFILAGE aval lower-only à gradient minimal (1,5 m/km — tue
+   les biefs plats du flood), puis stamp par segment : chenal
+   parabolique (largeur = MÊME loi que classifyRivers, cohérence par
+   construction), plaine alluviale bornée (abaissement ≤ 14 m —
+   au-delà : gorge), calm/gentle posés sur le fond (érosion douce +
+   futurs sites B11), keep 0,85/0,35 max-é dans le keep du bake.
+   Abaissement seul partout : jamais de barrage. L'analytique reste
+   INTACT (le réseau route dessus — pas de boucle ; aucun test
+   n'impose de tolérance analytique↔baké, vérifié).
+2. **B9f — reprofilage des rivières** : dans smoothRiver, le ratchet
+   de monotonie devient un ratchet À GRADIENT (2 m/km, borné à 3 m
+   sous le niveau de flood) — les biefs plats des rivières locales
+   descendent aussi, sans gorge artificielle en plaine.
+Mesures : **« longest LEVEL fleuve surface » : 0 m (tuile spawn) et
+17 m** (contre des centaines de mètres de plat par construction du
+flood avant) ; l'embouchure sud porte un run tier 2 continu à hw 72
+(~165 m d'eau) qui descend vers la mer ; runs de fleuve plus longs
+et moins nombreux (5 runs vs 7) ; lacs 70 (l'empreinte draine des
+cuvettes sur les cours) ; suite 671/672 ; doctests imprint (jamais
+de barrage, chenal creusé, keep, bit-déterminisme) + bief plat.
+Caches v46/v55 — re-bake complet. Restes journalisés : cours
+tronqués aux super-régions (limite B5 connue), re-fit analytique
+complet en B13, far-water pour l'eau à distance.
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

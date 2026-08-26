@@ -92,6 +92,13 @@ struct HydrologyParams {
     // course passes within reach.
     f32 fordSpacing { 2000.0f };
     f32 fordReach { 700.0f };
+    // Surface reprofiling (smoothRiver): the raw surface is a priority-
+    // flood level — flat across every filled stretch, which read as
+    // ponds. The gradient ratchet makes the water DESCEND through them,
+    // never digging more than maxDrop below the flood level (no
+    // artificial gorge across a plain). Lower-only: monotonicity holds.
+    f32 riverMinGradient { 0.002f };
+    f32 riverReprofileMaxDrop { 3.0f };
     // halfWidth = coef * area^exponent, then narrowed by slope (see
     // pointAt) and charactered per river (smoothRiver): sqrt growth for
     // real small/large contrast, small coef to keep mountains torrent-

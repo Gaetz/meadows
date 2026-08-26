@@ -1674,11 +1674,29 @@ TEST_CASE("river wetness diagnostic" * doctest::skip()) {
         f32 totalLen = 0.0f;
         u32 runs = 0;
         u32 shortRuns = 0; // < 100 m: crop confetti, all ends dissolving
+        f32 worstFlat = 0.0f; // longest LEVEL surface stretch, tier 2 —
+                              // the "fleuve reads as a lake" measure
         for (const River& river : baked.rivers) {
             if (river.points.size() < 2) {
                 continue;
             }
             ++runs;
+            if (river.tier == 2) {
+                f32 flat = 0.0f;
+                for (size_t s = 0; s + 1 < river.points.size(); ++s) {
+                    const f32 len = std::hypot(
+                        river.points[s + 1].x - river.points[s].x,
+                        river.points[s + 1].z - river.points[s].z);
+                    if (river.points[s].surface -
+                            river.points[s + 1].surface <
+                        0.01f) {
+                        flat += len;
+                        worstFlat = glm::max(worstFlat, flat);
+                    } else {
+                        flat = 0.0f;
+                    }
+                }
+            }
             f32 runLen = 0.0f;
             f32 dryStretch = 0.0f;
             for (size_t s = 0; s + 1 < river.points.size(); ++s) {
@@ -1725,6 +1743,7 @@ TEST_CASE("river wetness diagnostic" * doctest::skip()) {
                 100.0f * static_cast<f32>(dry) /
                     static_cast<f32>(glm::max(samples, 1u)),
                 "%  worst continuous dry stretch ", worstDryRun, " m");
+        MESSAGE("  longest LEVEL fleuve surface: ", worstFlat, " m");
     }
     CHECK(true);
 }

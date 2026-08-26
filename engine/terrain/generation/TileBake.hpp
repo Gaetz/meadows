@@ -70,6 +70,9 @@ struct TileBakeParams {
     // Stage-0 master network (fleuve promotion in S4 — the true
     // drainage areas the tile window cannot know).
     MasterNetworkParams network;
+    // The fleuve imprint (S1): the master courses are CONSTRUCTED into
+    // the macro before erosion — channel, alluvial plain, monotone bed.
+    MasterImprintParams imprint;
     FinalizeParams finalize;
     // Measured fine-erosion reintroduction (B6) — the carved-rock
     // character coming back on the slopes without re-hatching the
@@ -162,8 +165,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 45;
-constexpr u32 kTileBakeVersion = 54;
+constexpr u32 kStage1Version = 46;
+constexpr u32 kTileBakeVersion = 55;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

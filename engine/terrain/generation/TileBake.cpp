@@ -75,8 +75,22 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
 
     MacroParams macroParams = params.macro;
     macroParams.hillChainWavelength = controlParams.hillChainWavelength;
-    const MacroResult macro =
+    MacroResult macro =
         synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
+    // The fleuve imprint — the "authored -> S1 before erosion" slot: the
+    // master courses carve their channel, plain and monotone bed into
+    // the macro BEFORE the fastscape, which then sculpts around them
+    // (imprintKeep). The apron makes neighbours stamp identically.
+    vector<f32> imprintKeep(out.sim.cells(), 0.0f);
+    {
+        MasterNetworkParams network = params.network;
+        network.seaLevel = params.macro.seaLevel;
+        imprintMasterChannels(out.sim, macro, imprintKeep, controls,
+                              macroParams, network, params.imprint,
+                              params.hydrology.widthCoef,
+                              params.hydrology.widthExponent,
+                              params.hydrology.fleuveWidthScale);
+    }
     BiomeCharacter character =
         biomeCharacter(out.sim, macro.biome, params.biomeErosion);
     // Passability corridors soften the erosion locally: softer rock
@@ -192,6 +206,9 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
             keep[i] *= glm::mix(1.0f - params.keepCrestFade, 1.0f,
                                 crest[i]);
         }
+        // The imprinted fleuve channel/plain resists the fastscape: the
+        // constructed course must survive erosion like a pad would.
+        keep[i] = glm::max(keep[i], imprintKeep[i]);
     }
     const FluvialResult eroded = erodeFluvial(
         out.sim, macro.height, macro.uplift, fluvial,
