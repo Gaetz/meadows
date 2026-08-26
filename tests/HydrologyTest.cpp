@@ -191,6 +191,58 @@ TEST_CASE("a tilted valley traces one widening river to the map edge") {
     }
 }
 
+TEST_CASE("a rejected pothole does not interrupt the river") {
+    // Tilted valley with a small deep dip on the axis: too few cells to
+    // be a lake, deep enough to flood — the trace must ride the spill
+    // surface THROUGH it (one continuous course, monotone surface)
+    // instead of breaking into fragments around a dry gap.
+    vector<f32> h(spec().cells());
+    const f32 axis = static_cast<f32>(kN / 2);
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            const f32 lateral =
+                std::abs(static_cast<f32>(col) - axis) * 0.8f;
+            const f32 down = static_cast<f32>(kN - 1 - row) * 0.3f;
+            h[at(col, row)] = 40.0f + lateral + down;
+        }
+    }
+    // The pothole: 2x2 cells, 3 m deep, mid-course on the axis.
+    const u32 ax = kN / 2;
+    for (u32 row = kN / 2; row < kN / 2 + 2; ++row) {
+        for (u32 col = ax; col < ax + 2; ++col) {
+            h[at(col, row)] -= 3.0f;
+        }
+    }
+    HydrologyParams params;
+    params.riverArea = 60000.0f; // the tiny grid's channel rhythm
+    const HydrologyResult r = extractHydrology(spec(), h, params);
+    // No accepted lake out of a 2x2 dip.
+    for (const Lake& lake : r.lakes) {
+        CHECK(lake.dug == 1);
+    }
+    // One course crosses the pothole row: some river holds points both
+    // well above and well below it.
+    const f32 potholeZ = spec().z(kN / 2);
+    bool crosses = false;
+    for (const River& river : r.rivers) {
+        f32 minZ = 1.0e9f;
+        f32 maxZ = -1.0e9f;
+        for (const RiverPoint& pt : river.points) {
+            minZ = glm::min(minZ, pt.z);
+            maxZ = glm::max(maxZ, pt.z);
+        }
+        if (minZ < potholeZ - 60.0f && maxZ > potholeZ + 60.0f) {
+            crosses = true;
+            // And its surface stays monotone through the dip.
+            for (size_t i = 1; i < river.points.size(); ++i) {
+                CHECK(river.points[i].surface <=
+                      river.points[i - 1].surface + 1e-3f);
+            }
+        }
+    }
+    CHECK(crosses);
+}
+
 TEST_CASE("river tiers: area threshold, fleuve promotion, ford grid") {
     HydrologyParams params;
     const auto course = [](f32 x0, f32 length, f32 area) {

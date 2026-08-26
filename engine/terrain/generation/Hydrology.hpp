@@ -62,6 +62,10 @@ struct River {
     // Max drainage area seen along the trace (m²) — classification
     // input, transient (not serialized; 0 on cache reload).
     f32 mouthArea { 0.0f };
+    // Head sits at a lake outlet: the course RESUMES below a lake and
+    // skips the spring taper (a hairline restart read as yet another
+    // interruption). Bake-time only, not serialized.
+    u8 lakeFed { 0 };
 };
 
 struct HydrologyParams {

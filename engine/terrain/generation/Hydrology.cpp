@@ -120,9 +120,13 @@ void smoothRiver(River& river, f32 texel) {
             0.85f + 0.3f * noise::value(riverSeed ^ 0x9e3779b9u,
                                         outArc * 0.011f, 0.0f);
         // Spring taper: a channel head EMERGES — hairline for the first
-        // meters, full torrent width after ~45 m.
-        const f32 spring = glm::max(
-            noise::smoothstep01(0.0f, 45.0f, outArc), 0.10f);
+        // meters, full torrent width after ~45 m. A lake-fed head is a
+        // RESUME, not a spring: it keeps its width from the first meter.
+        const f32 spring =
+            river.lakeFed
+                ? 1.0f
+                : glm::max(noise::smoothstep01(0.0f, 45.0f, outArc),
+                           0.10f);
         pt.halfWidth = glm::mix(rawWidth[seg], rawWidth[next], t) *
                        riverFactor * alongMod * spring;
         river.points.push_back(pt);
@@ -352,9 +356,39 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     const i32 n = static_cast<i32>(spec.n);
 
     // Rivers: channel cells (area over threshold, on land, not lake),
-    // traced downstream from channel heads. A trace ends at the sea, at a
-    // lake, at base level, or when it merges into an already-traced
-    // channel (the junction point is appended so ribbons connect).
+    // traced downstream from channel heads. A trace ends at the sea, at
+    // an ACCEPTED lake, at base level, or when it merges into an
+    // already-traced channel (the junction point is appended so ribbons
+    // connect). Only real lakes break a course: a flooded pothole
+    // REJECTED by the size threshold used to break the channel too —
+    // every small basin cut the course into fragments with a dry gap
+    // over the dip (measured: the "rivers constantly interrupted"
+    // report). Tracing THROUGH them rides the spill surface and the
+    // S5c carve keeps the bed below it — the water is continuous in
+    // its own carving, the dip becomes a natural pool.
+    vector<u8> acceptedLake(cells, 0);
+    for (const Lake& lake : out.lakes) {
+        for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+            for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                if (!lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
+                               mx]) {
+                    continue;
+                }
+                const i32 col = static_cast<i32>(std::lround(
+                    (lake.minX + static_cast<f32>(mx) * spec.texelSize -
+                     spec.originX) /
+                    spec.texelSize));
+                const i32 row = static_cast<i32>(std::lround(
+                    (lake.minZ + static_cast<f32>(mz) * spec.texelSize -
+                     spec.originZ) /
+                    spec.texelSize));
+                if (col >= 0 && row >= 0 && col < n && row < n) {
+                    acceptedLake[static_cast<size_t>(row) * spec.n +
+                                 static_cast<size_t>(col)] = 1;
+                }
+            }
+        }
+    }
     vector<u8> channel(cells, 0);
     // Who claimed each channel cell (river index + 1): the junction
     // tests must ignore the CURRENT trace's own cells (the predecessor
@@ -363,7 +397,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     for (size_t i = 0; i < cells; ++i) {
         channel[i] = out.area[i] >= params.riverArea &&
                              height[i] > params.seaLevel &&
-                             out.lakeDepth[i] <= 0.0f
+                             !acceptedLake[i]
                          ? 1
                          : 0;
     }
@@ -421,6 +455,21 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             continue;
         }
         River river;
+        {
+            const i32 hx = static_cast<i32>(head % spec.n);
+            const i32 hz = static_cast<i32>(head / spec.n);
+            for (i32 dz = -1; dz <= 1 && !river.lakeFed; ++dz) {
+                for (i32 dx = -1; dx <= 1 && !river.lakeFed; ++dx) {
+                    const i32 px = hx + dx;
+                    const i32 pz = hz + dz;
+                    if (px >= 0 && pz >= 0 && px < n && pz < n &&
+                        acceptedLake[static_cast<size_t>(pz) * spec.n +
+                                     static_cast<size_t>(px)]) {
+                        river.lakeFed = 1;
+                    }
+                }
+            }
+        }
         const u32 myId = static_cast<u32>(raw.size()) + 1;
         u32 i = static_cast<u32>(head);
         while (true) {
@@ -466,7 +515,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             }
             const u32 r = flow.receiver[i];
             if (r == i || height[r] <= params.seaLevel ||
-                out.lakeDepth[r] > 0.0f) {
+                acceptedLake[r] != 0) {
                 if (r != i) {
                     river.points.push_back(pointAt(r)); // reach the shore
                 }

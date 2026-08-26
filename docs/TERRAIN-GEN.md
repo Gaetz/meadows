@@ -1303,6 +1303,26 @@ Mesures post-fix : monde stable (80 lacs, tiers 103/13/7, bassins
 canoniques verts, mouillabilité inchangée). Caches v45/v52 — re-bake
 complet. Doctests inchangés verts.
 
+**B9c — les cours ne s'interrompent plus aux cuvettes (2026-08-26)** :
+le dev précise : « mon problème est que les ruisseaux/rivières/
+fleuves sont TOUT LE TEMPS interrompus » — et l'instrument wetness
+ne pouvait pas le voir (il sonde LE LONG des runs, pas les trous
+ENTRE les runs). Mécanisme trouvé dans le tracé S4 : `channel`
+excluait TOUTE cellule inondée et le trace cassait dessus — y
+compris les cuvettes REJETÉES comme lacs (< minLakeCells), qui
+devenaient des trous secs ; chaque nid-de-poule de fond de vallée
+coupait donc le cours, et chaque reprise repartait en filet (spring
+taper). Fix : (1) le trace ne casse plus qu'aux lacs ACCEPTÉS
+(masque `acceptedLake` rasterisé depuis les masques de lacs) — à
+travers une cuvette rejetée, le ruban suit la surface de déversement
+et le carve S5c garde le lit dessous : la cuvette devient une
+VASQUE naturelle sous le cours ; (2) une tête en sortie de lac est
+une REPRISE, pas une source — elle saute le spring taper (repart
+pleine largeur). Mesuré (tuile 2,1) : 44 runs/11,0 km →
+**36 runs/13,4 km** (+2,4 km de linéaire d'eau, −40 % de fragments
+< 100 m) ; doctest « rejected pothole does not interrupt the
+river ». Caches v53 (stage-2 seul).
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km
