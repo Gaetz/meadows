@@ -28,7 +28,10 @@ struct FinalizeParams {
     // TERRAIN, crossable on foot, not a gameplay marker.
     f32 streamDepthMax { 0.5f };
     f32 fleuveDepthMax { 7.0f };
-    f32 fleuveBankShoulder { 2.2f };
+    // Wide shoulder = the alluvial floor: the shoulder cap pulls the
+    // banks toward the waterline over this many halfWidths, so a grand
+    // fleuve flattens its valley bottom instead of sitting in a slot.
+    f32 fleuveBankShoulder { 3.2f };
     f32 fordDepth { 0.4f };
     f32 fordRadius { 9.0f }; // full-cap core; the cap fades out by 2x
     f32 seaLevel { kDefaultSeaLevel };

@@ -82,6 +82,11 @@ struct HydrologyParams {
     // rivière; the fleuve tier comes from the master network instead
     // (MasterNetworkParams::fleuveArea — true areas, not window ones).
     f32 riviereArea { 2.0e6f };
+    // The fleuve reads GRAND, not merely big: its widths (floor and
+    // local alike) scale by this on top of the area law — a fleuve
+    // spreads in its flat valley where a rivière of the same discharge
+    // stays channeled.
+    f32 fleuveWidthScale { 1.6f };
     // Fords on rivières: a jittered world grid of candidate spots
     // (spacing = the guaranteed rhythm, dev: ~2 km), adopted where the
     // course passes within reach.

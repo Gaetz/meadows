@@ -653,20 +653,22 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
             // Width floor from the TRUE area at each point — WORLD-
             // stable (the master's areas grow downstream wherever the
             // tile window truncates the local ones, so neighbours
-            // agree), bounded to the design band (~24-36 m channels)
-            // and MONOTONE via the running max: an obstacle never
-            // pinches back into a crossable brook.
+            // agree) and MONOTONE via the running max: an obstacle
+            // never pinches back into a crossable brook. The fleuve
+            // scale then spreads the whole course: grand, not merely
+            // big (a first 18 m ceiling read as an ordinary river).
             f32 runningHalf = 0.0f;
             for (size_t p = 0; p < river.points.size(); ++p) {
                 if (areaAt[p] > 0.0f) {
                     const f32 floorHalf = glm::clamp(
                         params.widthCoef *
                             std::pow(areaAt[p], params.widthExponent),
-                        12.0f, 18.0f);
+                        12.0f, 45.0f);
                     runningHalf = glm::max(runningHalf, floorHalf);
                 }
                 river.points[p].halfWidth =
-                    glm::max(river.points[p].halfWidth, runningHalf);
+                    glm::max(river.points[p].halfWidth, runningHalf) *
+                    params.fleuveWidthScale;
             }
         }
         // Fords on the rivières only: candidates on a jittered WORLD
