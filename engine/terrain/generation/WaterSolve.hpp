@@ -65,6 +65,13 @@ struct WaterSolveResult {
     vector<f32> depth;     // m of standing water per texel (0 = dry)
     vector<f32> velocityX; // m/s, depth-averaged
     vector<f32> velocityZ;
+    // Through-discharge per texel (m³/s): THE river-trace signal. Mass
+    // conservation makes the high-flux paths CONTINUOUS from source to
+    // sea, even where the water film is centimeters thin on a steep
+    // stretch — a course is where the flux runs, not where the depth
+    // pools (the depth-thresholded view broke rivers into puddles,
+    // measured on the judgment maps).
+    vector<f32> flux;
     u32 iterations { 0 };
     f32 residual { 0.0f }; // last max |depth change| observed
 };

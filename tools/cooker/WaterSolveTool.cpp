@@ -149,16 +149,20 @@ int waterSolve(char** argv, int argc) {
         return ground[static_cast<size_t>(r) * spec.n +
                       static_cast<size_t>(c)];
     };
-    // Display wet mask, dilated one texel: a 1-2 px stream vanished
-    // against the shading (dev feedback) — the dilation is display
-    // only, the fields stay honest.
+    // River traces come from the FLUX field (mass conservation makes
+    // the high-flux paths continuous to the sea; the depth view broke
+    // rivers into puddles wherever the film ran thin). Dilate by one
+    // texel for display; the fields stay honest.
+    constexpr f32 kTraceFlux = 0.04f; // m³/s — a course worth drawing
+                                      // (a ~1 km² catchment at the
+                                      // demo rain rate)
     vector<u8> wetMask(spec.cells(), 0);
     for (i32 row = 0; row < n; ++row) {
         for (i32 col = 0; col < n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n +
                              static_cast<size_t>(col);
-            if (water.depth[i] > 0.0f ||
-                ground[i] < solve.seaLevel) {
+            if (water.depth[i] > 0.0f || ground[i] < solve.seaLevel ||
+                water.flux[i] > kTraceFlux) {
                 for (i32 dz = -1; dz <= 1; ++dz) {
                     for (i32 dx = -1; dx <= 1; ++dx) {
                         const i32 pc = col + dx;
@@ -194,23 +198,32 @@ int waterSolve(char** argv, int argc) {
             f32 b = light * (0.45f + 0.25f * band);
             const f32 d = water.depth[i];
             const bool sea = ground[i] < solve.seaLevel;
-            if (d > 0.0f || sea) {
-                const f32 t = glm::clamp(
-                    std::sqrt((sea ? solve.seaLevel - ground[i] : d) /
-                              12.0f),
-                    0.0f, 1.0f);
-                r = glm::mix(0.10f, 0.02f, t);
-                g = glm::mix(0.55f, 0.15f, t);
-                b = glm::mix(0.95f, 0.45f, t);
-                const f32 speed = std::hypot(water.velocityX[i],
-                                             water.velocityZ[i]);
-                const f32 foam =
-                    glm::clamp((speed - 1.5f) * 0.3f, 0.0f, 0.45f);
-                r += foam;
-                g += foam;
-                b += foam;
+            const bool trace = water.flux[i] > kTraceFlux;
+            if (d > 0.0f || sea || trace) {
+                if (trace && !sea) {
+                    // The COURSE: tinted by discharge (log scale, like
+                    // a real map — brooks thin cyan, fleuves deep
+                    // blue), whatever the local depth does.
+                    const f32 q = glm::clamp(
+                        std::log10(glm::max(water.flux[i], kTraceFlux) /
+                                   kTraceFlux) /
+                            3.0f,
+                        0.0f, 1.0f);
+                    r = glm::mix(0.20f, 0.02f, q);
+                    g = glm::mix(0.75f, 0.25f, q);
+                    b = glm::mix(1.00f, 0.70f, q);
+                } else {
+                    const f32 t = glm::clamp(
+                        std::sqrt((sea ? solve.seaLevel - ground[i]
+                                       : d) /
+                                  12.0f),
+                        0.0f, 1.0f);
+                    r = glm::mix(0.10f, 0.02f, t);
+                    g = glm::mix(0.55f, 0.15f, t);
+                    b = glm::mix(0.95f, 0.45f, t);
+                }
             } else if (wetMask[i]) {
-                // Dilated fringe: outline the thin streams.
+                // Dilated fringe: outline the thin traces.
                 r = 0.15f;
                 g = 0.45f;
                 b = 0.85f;

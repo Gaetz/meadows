@@ -26,6 +26,7 @@ WaterSolveResult solveSteadyWater(const GridSpec& spec,
     out.depth.assign(cells, 0.0f);
     out.velocityX.assign(cells, 0.0f);
     out.velocityZ.assign(cells, 0.0f);
+    out.flux.assign(cells, 0.0f);
 
     // Pipes: +x, -x, +z, -z outflow per cell.
     vector<f32> fE(cells, 0.0f);
@@ -172,10 +173,15 @@ WaterSolveResult solveSteadyWater(const GridSpec& spec,
     }
 
     // Depth-averaged velocity from the net pipe flux, then dry the
-    // film noise.
+    // film noise. The FLUX field records every cell's through-discharge
+    // BEFORE the drying: a course stays a course where its water runs
+    // thin.
     for (i32 row = 0; row < n; ++row) {
         for (i32 col = 0; col < n; ++col) {
             const size_t i = at(col, row);
+            // At steady state outflow ~= inflow: the total outflow IS
+            // the cell's through-discharge.
+            out.flux[i] = fE[i] + fW[i] + fS[i] + fN[i];
             if (depth[i] <= params.dryThreshold) {
                 depth[i] = 0.0f;
                 continue;
