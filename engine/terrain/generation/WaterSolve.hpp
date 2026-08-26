@@ -47,6 +47,15 @@ struct WaterSolveParams {
     u32 checkInterval { 250 };
     // Depths under this are dried at the end (film noise, not water).
     f32 dryThreshold { 0.02f };
+    // Multigrid: solve coarse levels first (min-downsampled terrain —
+    // channels survive the downsample) and transfer the SURFACE as the
+    // next level's warm start. The equilibrium is a large-scale
+    // phenomenon: the fine level only pays local correction — measured
+    // as the difference between a 124 s and a usable bake budget.
+    bool multigrid { true };
+    u32 multigridMinN { 96 };      // stop coarsening below this grid
+    u32 fineIterations { 3000 };   // per refined level (coarse levels
+                                   // are capped separately)
 };
 
 // A point discharge injected every iteration (m³/s) — the boundary
