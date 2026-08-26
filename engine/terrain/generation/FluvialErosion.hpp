@@ -46,6 +46,24 @@ struct FluvialParams {
     f32 sedimentCapacity { 1.2f };
     f32 depositMax { 0.35f };   // m deposited per cell per iteration cap
     f32 depositSlack { 0.05f }; // m above the routed surface allowed
+    // Slope floor in the capacity: on a flat valley floor S -> 0 killed
+    // the carrying capacity — a physical guard, though measured nearly
+    // toothless (the routed surface rarely drops under it): the real
+    // bed protection is the channel keep below. 0 = legacy (no floor).
+    f32 capacitySlopeFloor { 0.002f };
+    // Channel keep: deposition may never fill a drainage path closer
+    // than coef * A^exponent meters (capped) to its routed waterline —
+    // the river-sized sibling of lakeKeepDepth. ~0.35 m at the stream
+    // threshold (1.5e5 m²), ~1 m at riviere grade (2e6), capped 3 m on
+    // the fleuves: channels stay INCISED through the aggrading floors
+    // instead of burying themselves. 0 coef = legacy.
+    f32 channelKeepCoef { 0.0018f };
+    f32 channelKeepExponent { 0.44f };
+    f32 channelKeepMax { 3.0f };
+    // Below this drainage area the legacy ceiling applies untouched —
+    // floodplains and hollows still aggrade to the waterline; only
+    // CHANNELS earn their incision.
+    f32 channelKeepMinArea { 1.0e5f };
     // In FLOODED cells deeper than this, deposits stop that far under
     // the water surface: deltas still build at lake entries (shallow
     // cells keep the old ceiling), but sediment can no longer pave a

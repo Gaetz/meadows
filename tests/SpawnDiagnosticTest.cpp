@@ -1700,8 +1700,17 @@ TEST_CASE("river wetness diagnostic" * doctest::skip()) {
                     if (h > surface - 0.05f) {
                         ++dry;
                         dryStretch += 2.0f;
-                        worstDryRun =
-                            glm::max(worstDryRun, dryStretch);
+                        if (dryStretch > worstDryRun) {
+                            worstDryRun = dryStretch;
+                            MESSAGE("    dry at (",
+                                    static_cast<i32>(x), ", ",
+                                    static_cast<i32>(z), "): terrain ",
+                                    h, " vs surface ", surface,
+                                    " (hw ",
+                                    glm::mix(a.halfWidth, b.halfWidth,
+                                             t),
+                                    ", stretch ", dryStretch, " m)");
+                        }
                     } else {
                         dryStretch = 0.0f;
                     }

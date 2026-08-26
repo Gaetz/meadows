@@ -1276,6 +1276,33 @@ marches apparaissent aux frontières (l'apron couvre aujourd'hui).
 **Validation dev EN ATTENTE** : nager le fleuve (dérive), traverser
 un gué à pied, ruisseaux guéables, largeur du fleuve.
 
+**B9b — les rivières n'ont plus le droit de s'enterrer (2026-08-26)** :
+question dev : « est-ce que l'érosion rebouche les rivières ?
+physiquement l'eau emporte les sédiments ». Enquête mesurée :
+1. Les lits FINAUX sont sains — l'ordre des passes protège (le carve
+   S5c est le dernier écrivain de hauteur) : instrument
+   `river wetness`, 99-100 % de centerline mouillée sur 19 km ; le
+   ~1 % restant est un artefact de bord du harnais (dépassements de
+   3-20 cm à x=12264, le rim de région sans voisine).
+2. MAIS l'intuition physique du dev était juste EN S2 : le plafond
+   de dépôt (`routed + depositSlack`) laissait chaque cours
+   s'aggrader jusqu'à SA PROPRE ligne d'eau — le lit s'enterrait
+   dans ses sédiments avant extraction. Le plancher de pente dans la
+   capacité (`capacitySlopeFloor` 0,002) a été essayé d'abord et
+   mesuré SANS DENT (tuile bit-identique : la surface routée ne
+   descend presque jamais sous 2 m/km) — c'était le plafond, pas la
+   capacité.
+3. **Fix : le channel keep** — le frère rivière de `lakeKeepDepth` :
+   au-dessus de 10⁵ m² de drainage, le dépôt ne peut plus approcher
+   la ligne d'eau routée à moins de `0,0018·A^0,44` m (plafond 3 m) —
+   ~0,35 m au seuil ruisseau, ~1 m au grade rivière, 2-3 m sur les
+   fleuves. Les chenaux restent INCISÉS à travers les fonds qui
+   s'aggradent ; le flux refusé continue vers l'aval et sort en mer
+   (l'export du dev). Sous le seuil, plaines d'inondation inchangées.
+Mesures post-fix : monde stable (80 lacs, tiers 103/13/7, bassins
+canoniques verts, mouillabilité inchangée). Caches v45/v52 — re-bake
+complet. Doctests inchangés verts.
+
 **M3b-4 — climat régional (2026-08-25)** : le dev ne voyait AUCUNE
 différence aux coordonnées steppe — mesuré au `biome locator`
 étendu : la « steppe » ne couvrait que 8,4 % de la boîte de 1,5 km

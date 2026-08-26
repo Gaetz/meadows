@@ -190,8 +190,9 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                 if (r == i) {
                     continue; // base level: flux exits (sea/rim)
                 }
-                const f32 slope =
-                    (routed[i] - routed[r]) / flow.recvDist[i];
+                const f32 slope = glm::max(
+                    (routed[i] - routed[r]) / flow.recvDist[i],
+                    params.capacitySlopeFloor);
                 const f32 cs = capacityScale ? (*capacityScale)[i] : 1.0f;
                 const f32 capacity =
                     params.sedimentCapacity * cs *
@@ -200,11 +201,32 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                 const f32 excess = flux - capacity;
                 if (excess > 0.0f) {
                     // Flooded-aware ceiling: deep lake cells keep
-                    // lakeKeepDepth of water under the routed surface.
+                    // lakeKeepDepth of water under the routed surface —
+                    // and CHANNELS keep a drainage-scaled depth of their
+                    // own: the old ceiling (routed + slack) let every
+                    // river aggrade to its waterline and bury itself in
+                    // its own sediment; physically a big river keeps its
+                    // discharge and exports (the capacity slope-floor
+                    // alone was measured toothless — the ceiling is what
+                    // plugged the beds).
                     const f32 waterDepth = routed[i] - out.height[i];
-                    const f32 ceiling =
+                    const f32 channelKeep =
+                        params.channelKeepCoef > 0.0f &&
+                                flow.area[i] > params.channelKeepMinArea
+                            ? glm::min(params.channelKeepCoef *
+                                           std::pow(flow.area[i],
+                                                    params
+                                                        .channelKeepExponent),
+                                       params.channelKeepMax)
+                            : 0.0f;
+                    const f32 keepDepth = glm::max(
                         waterDepth > params.lakeKeepDepth
-                            ? routed[i] - params.lakeKeepDepth
+                            ? params.lakeKeepDepth
+                            : 0.0f,
+                        channelKeep);
+                    const f32 ceiling =
+                        keepDepth > 0.0f
+                            ? routed[i] - keepDepth
                             : routed[i] + params.depositSlack;
                     const f32 room =
                         glm::max(ceiling - out.height[i], 0.0f);
