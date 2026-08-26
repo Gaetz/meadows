@@ -1652,6 +1652,74 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("river wetness diagnostic" * doctest::skip()) {
+    // The ground truth of "l'eau est continue dans les creusements" :
+    // walks every published river run's centerline at 2 m and probes the
+    // baked terrain against the ribbon surface — DRY means the water
+    // sheet is clipped under the ground there. Also lists the run ends
+    // (each end is a place the ribbon dissolves — too many of them and
+    // the course reads as broken puddles).
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    for (const auto [tx, tz] : { std::pair { 2, 0 }, { 2, 1 } }) {
+        MESSAGE("baking tile (", tx, ", ", tz, ")");
+        const TileBakeResult baked = bakeTile(params, tx, tz);
+        auto base = std::make_shared<render::TerrainBase>();
+        base->regions.push_back(baked.region);
+        render::TerrainParams tp;
+        tp.base = base;
+        u32 samples = 0;
+        u32 dry = 0;
+        f32 worstDryRun = 0.0f;
+        f32 totalLen = 0.0f;
+        u32 runs = 0;
+        u32 shortRuns = 0; // < 100 m: crop confetti, all ends dissolving
+        for (const River& river : baked.rivers) {
+            if (river.points.size() < 2) {
+                continue;
+            }
+            ++runs;
+            f32 runLen = 0.0f;
+            f32 dryStretch = 0.0f;
+            for (size_t s = 0; s + 1 < river.points.size(); ++s) {
+                const RiverPoint& a = river.points[s];
+                const RiverPoint& b = river.points[s + 1];
+                const f32 len = std::hypot(b.x - a.x, b.z - a.z);
+                runLen += len;
+                const i32 n =
+                    glm::max(static_cast<i32>(len / 2.0f), 1);
+                for (i32 i = 0; i < n; ++i) {
+                    const f32 t =
+                        static_cast<f32>(i) / static_cast<f32>(n);
+                    const f32 x = glm::mix(a.x, b.x, t);
+                    const f32 z = glm::mix(a.z, b.z, t);
+                    const f32 surface =
+                        glm::mix(a.surface, b.surface, t);
+                    const f32 h = render::terrain::height(tp, x, z);
+                    ++samples;
+                    if (h > surface - 0.05f) {
+                        ++dry;
+                        dryStretch += 2.0f;
+                        worstDryRun =
+                            glm::max(worstDryRun, dryStretch);
+                    } else {
+                        dryStretch = 0.0f;
+                    }
+                }
+            }
+            totalLen += runLen;
+            shortRuns += runLen < 100.0f ? 1 : 0;
+        }
+        MESSAGE("  ", runs, " runs, ", totalLen / 1000.0f,
+                " km total, ", shortRuns, " runs < 100 m");
+        MESSAGE("  centerline dry: ",
+                100.0f * static_cast<f32>(dry) /
+                    static_cast<f32>(glm::max(samples, 1u)),
+                "%  worst continuous dry stretch ", worstDryRun, " m");
+    }
+    CHECK(true);
+}
+
 TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
     // Where are the fleuves? Master-network courses around the spawn
     // (no bake needed — the promotion follows these very polylines).

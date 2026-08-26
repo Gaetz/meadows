@@ -2,9 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/WaterBodies.hpp"
-#include "engine/terrain/generation/MasterNetwork.hpp"
 
 namespace game {
 
@@ -201,43 +199,27 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
                 }
             }
         }
+        // The map draws ONLY the published water, at its TRUE width — a
+        // course thinner than a third of a pixel does not exist at this
+        // zoom, exactly like on a paper map. (A first version floored
+        // widths and traced the analytic master courses: every brook
+        // read as a fleuve and rivers appeared where no water exists —
+        // the map must never promise what the world does not show.)
         for (const render::RiverSurface& river : params.water->rivers) {
             for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
                 const render::RiverNode& a = river.nodes[s];
                 const render::RiverNode& b = river.nodes[s + 1];
                 const f32 half =
                     glm::max(a.halfWidth, b.halfWidth);
-                // Width in pixels, floored so brooks stay visible; the
-                // depth tint follows the width (the fleuve reads dark).
-                const f32 radiusPx =
-                    glm::clamp(half / stepX, 0.55f, 4.0f);
+                const f32 radiusPx = half / stepX;
+                if (radiusPx < 0.35f) {
+                    continue;
+                }
                 const f32 tint =
                     glm::clamp(half * (1.0f / 18.0f), 0.35f, 0.9f);
-                strokeSegment(a.x, a.z, b.x, b.z, radiusPx,
+                strokeSegment(a.x, a.z, b.x, b.z,
+                              glm::min(radiusPx, 4.0f),
                               glm::mix(kWaterShallow, kWaterDeep, tint));
-            }
-        }
-    }
-    // --- Master courses beyond the published ring (sandbox only): the
-    // fleuves keep drawing where no tile is resident. Skipped on the
-    // widest extents (their super-cell routing would dominate the bake;
-    // a river is sub-pixel up there anyway) and on close ones (the
-    // published water is the better truth).
-    const f32 span = desc.maxX - desc.minX;
-    if (params.sandbox && span > 6000.0f && span <= 44000.0f) {
-        render::terraingen::ProceduralControlParams cp =
-            params.sandbox->controls;
-        const render::terraingen::ProceduralControls controls { cp };
-        render::terraingen::MasterNetworkParams net;
-        net.seaLevel = params.seaLevel;
-        const auto master = render::terraingen::masterRiversNear(
-            controls, params.sandbox->macro, net, desc.minX, desc.minZ,
-            desc.maxX, desc.maxZ);
-        for (const auto& river : master) {
-            for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
-                const auto& a = river.nodes[s];
-                const auto& b = river.nodes[s + 1];
-                strokeSegment(a.x, a.z, b.x, b.z, 0.55f, kWaterDeep);
             }
         }
     }
