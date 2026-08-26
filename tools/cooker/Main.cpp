@@ -29,6 +29,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
+#include "WaterSolveTool.hpp"
 #include "data/plugins/Validate.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
@@ -380,6 +381,9 @@ int main(int argc, char** argv) {
     }
     if (command == "erosion-bench" && (argc == 6 || argc == 7)) {
         return cooker::erosionBench(argv, argc);
+    }
+    if (command == "water-solve" && argc >= 6 && argc <= 8) {
+        return cooker::waterSolve(argv, argc);
     }
     return usage();
 }

@@ -45,6 +45,7 @@ add_library(meadows STATIC
     terrain/generation/TerrainGen.cpp
     terrain/generation/ThermalErosion.cpp
     terrain/generation/TileBake.cpp
+    terrain/generation/WaterSolve.cpp
     platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp

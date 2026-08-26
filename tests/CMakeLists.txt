@@ -71,6 +71,7 @@
     FloatersTest.cpp
     RiverGeometryTest.cpp
     WaterInfoMapTest.cpp
+    WaterSolveTest.cpp
     AuthoringTest.cpp
     SpawnDiagnosticTest.cpp
     LevelEditorTest.cpp
