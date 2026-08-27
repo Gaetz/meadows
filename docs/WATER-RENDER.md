@@ -118,6 +118,18 @@ Shading :
   écoulement stable. La couleur sim = absorption par épaisseur
   OPTIQUE (géométrie, stable) + teinte constante ; le champ ne sert
   au visuel que pour la direction d'advection (lisse par nature).
+- **La sobriété doit être SYMÉTRIQUE — la recette sim = la recette
+  mer, à l'identique** : chaque simplification appliquée au seul
+  chemin sim (normale plate, fresnel plafonné 0.28, ciel sans soleil)
+  a redessiné le rect de confiance par CONTRASTE avec le baké/mer
+  autour (mesuré dev sur les grands lacs). L'eau calme a UNE recette :
+  waveNormal(xz, t) de la mer telle quelle (sans échelle de ride, sans
+  advection deux-phases — c'est l'ADVECTION qui faisait respirer les
+  anneaux concentriques au cycle de 3 s, pas les vagues), fresnel
+  ×0.75 commun, skyWithSun. Le « brûlage au disque solaire » attribué
+  au ciel était en fait le handle de texture non lié (leçon backend
+  ci-dessous) — la formule commune est sûre. Simplifier l'eau sim
+  seule est interdit : on simplifie TOUT le rendu d'eau ou rien.
 - L'underside est une décision UNIFORME (caméra immergée via
   uSubmersionInfo.x) — le test par fragment coupait toute eau en
   pente d'une ligne nette à hauteur d'œil (bug d'avant la sim).
