@@ -349,6 +349,106 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
     CHECK(wetRows > 40);
 }
 
+TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
+    // A flat plateau with a 10x10-cell basin: the flood start fills it
+    // to its spill, giving a wet block with a full shoreline.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto basin = [](f32 x, f32 z) {
+        const bool in = x >= 40.0f && x <= 58.0f && z >= 40.0f &&
+                        z <= 58.0f;
+        return in ? 298.5f : 300.0f;
+    };
+    WaterSimState state;
+    initWindow(state, spec, basin, -1000.0f);
+    WaterSimParams params = closedParams();
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+
+    u32 wet = 0;
+    f32 minColumnFloor = 1.0e9f;
+    for (size_t i = 0; i < snap.depth.size(); ++i) {
+        if (snap.depth[i] > 0.0f) {
+            ++wet;
+            minColumnFloor = glm::min(
+                minColumnFloor, snap.surface[i] - snap.depth[i]);
+        }
+    }
+    REQUIRE(wet > 50);
+    REQUIRE(!snap.meshIndices.empty());
+    // Watertight accounting: tops (6 indices per wet cell) + one side
+    // quad (6 indices) per wet/dry boundary edge with a real drop.
+    u32 sides = 0;
+    const auto wetAt = [&](i32 c, i32 r) {
+        return c >= 0 && r >= 0 && c < static_cast<i32>(spec.n) &&
+               r < static_cast<i32>(spec.n) &&
+               snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f;
+    };
+    for (u32 r = 0; r < spec.n; ++r) {
+        for (u32 c = 0; c < spec.n; ++c) {
+            if (!wetAt(static_cast<i32>(c), static_cast<i32>(r))) {
+                continue;
+            }
+            const i32 dirs[4][2] = {
+                { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }
+            };
+            for (const auto& d : dirs) {
+                const i32 nc = static_cast<i32>(c) + d[0];
+                const i32 nr = static_cast<i32>(r) + d[1];
+                if (nc < 0 || nr < 0 || nc >= static_cast<i32>(spec.n) ||
+                    nr >= static_cast<i32>(spec.n)) {
+                    continue;
+                }
+                if (!wetAt(nc, nr)) {
+                    ++sides; // basin wall: ground drop guarantees one
+                }
+            }
+        }
+    }
+    CHECK(snap.meshIndices.size() ==
+          static_cast<size_t>(wet) * 6 + static_cast<size_t>(sides) * 6);
+    // Column cap: no vertex sinks below any wet column's floor.
+    f32 minY = 1.0e9f;
+    for (size_t v = 0; v + 4 < snap.meshVerts.size(); v += 5) {
+        CHECK(std::isfinite(snap.meshVerts[v + 1]));
+        minY = glm::min(minY, snap.meshVerts[v + 1]);
+    }
+    CHECK(minY >= minColumnFloor - 0.16f);
+    // Determinism: a second extraction is bit-identical.
+    WaterSimSnapshot again;
+    extractSnapshot(state, params, again);
+    CHECK(snap.meshVerts == again.meshVerts);
+    CHECK(snap.meshIndices == again.meshIndices);
+}
+
+TEST_CASE("water sim: wetness hysteresis is sticky") {
+    const GridSpec spec = makeSpec(33, 2.0f);
+    WaterSimState state;
+    initWindow(
+        state, spec, [](f32, f32) { return 300.0f; }, -1000.0f);
+    const WaterSimParams params = closedParams();
+    // A 2x2 block (connectivity) hovering around the thresholds.
+    const size_t block[4] = { 16u * spec.n + 16u, 16u * spec.n + 17u,
+                              17u * spec.n + 16u, 17u * spec.n + 17u };
+    WaterSimSnapshot snap;
+    const auto setBlock = [&](f32 d) {
+        for (const size_t i : block) {
+            state.depth[i] = d;
+        }
+    };
+    setBlock(0.02f); // below the ENTRY threshold
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[block[0]] == 0.0f);
+    setBlock(0.035f); // above entry: turns wet
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[block[0]] > 0.0f);
+    setBlock(0.02f); // dips below entry but above EXIT: stays wet
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[block[0]] > 0.0f);
+    setBlock(0.005f); // below exit: dries
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[block[0]] == 0.0f);
+}
+
 TEST_CASE("water sim: kernel perf gate") {
     // The CPU-realtime premise (plan option C): the kernel must stay
     // well under 100 ns/cell/substep on a 256-class window. Generous

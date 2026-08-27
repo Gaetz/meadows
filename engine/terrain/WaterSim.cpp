@@ -466,11 +466,11 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
     }
 }
 
-void extractSnapshot(const WaterSimState& state,
-                     const WaterSimParams& params,
+void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
                      WaterSimSnapshot& out) {
     const GridSpec& spec = state.spec;
     const size_t cells = spec.cells();
+    const u32 n = spec.n;
     out.spec = spec;
     out.marginCells = params.marginCells;
     out.surface.assign(cells, kWaterInfoDry);
@@ -478,60 +478,75 @@ void extractSnapshot(const WaterSimState& state,
     out.velX.assign(cells, 0.0f);
     out.velZ.assign(cells, 0.0f);
     out.display.resize(cells);
+    out.meshVerts.clear();
+    out.meshIndices.clear();
     const f32 texel = spec.texelSize;
-    // A cell publishes when its film beats the dry threshold — or when
-    // it moves FAST with any substance at all: on a near-vertical face
-    // the physical film runs centimeters, and drying it erased whole
-    // waterfalls from the render while the sim carried them fine.
-    const auto wetAt = [&](size_t j) {
-        if (state.depth[j] > params.dryThreshold) {
-            return true;
-        }
-        if (state.depth[j] > 0.004f) {
-            const f32 fx = state.fE[j] - state.fW[j];
-            const f32 fz = state.fS[j] - state.fN[j];
-            const f32 div = glm::max(state.depth[j], 0.05f) * texel;
-            return (fx * fx + fz * fz) / (div * div) > 1.5f * 1.5f;
-        }
-        return false;
-    };
+    if (state.wetMask.size() != cells) {
+        state.wetMask.assign(cells, 0);
+    }
+
+    // --- Pass 1: HYSTERETIC wetness (docs/WATER-RENDER.md §1.3). A
+    // cell turns wet above the high threshold and only dries below the
+    // low one — cells hovering at one threshold blinked whole surfaces
+    // out per tick. Fast films (a waterfall face runs centimeters)
+    // publish at reduced thresholds.
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
-        out.display[i] = state.terrain[i] - 0.25f; // dry tuck default
-        if (!wetAt(i)) {
-            continue;
+        const bool wasWet = state.wetMask[i] != 0;
+        bool wet = d > (wasWet ? 0.012f : 0.03f);
+        if (!wet && d > (wasWet ? 0.0025f : 0.005f)) {
+            const f32 fx = state.fE[i] - state.fW[i];
+            const f32 fz = state.fS[i] - state.fN[i];
+            const f32 div = glm::max(d, 0.05f) * texel;
+            wet = (fx * fx + fz * fz) / (div * div) > 1.5f * 1.5f;
         }
-        // Sea-pinned: the ocean sheet's territory, read dry.
-        if (state.terrain[i] < params.seaLevel &&
+        // Sea-pinned: the ocean sheet's territory, published dry.
+        if (wet && state.terrain[i] < params.seaLevel &&
             state.terrain[i] + d <= params.seaLevel + 0.01f) {
-            continue;
+            wet = false;
         }
-        // An isolated wet cell (no wet neighbour at all) is transient
-        // spray, not a water body — rendered, each one made a detached
-        // diamond. EIGHT-connected: a thread descending a cliff hops
-        // DIAGONALLY cell to cell, and the 4-neighbour test erased
-        // whole waterfalls (measured in-game — "only the baked water
-        // shows").
-        const size_t col = i % spec.n;
-        const size_t row = i / spec.n;
-        bool connected = false;
-        for (i32 dz = -1; dz <= 1 && !connected; ++dz) {
-            for (i32 dx = -1; dx <= 1 && !connected; ++dx) {
-                if (dx == 0 && dz == 0) {
-                    continue;
-                }
-                const i32 nc = static_cast<i32>(col) + dx;
-                const i32 nr = static_cast<i32>(row) + dz;
-                if (nc >= 0 && nr >= 0 &&
-                    nc < static_cast<i32>(spec.n) &&
-                    nr < static_cast<i32>(spec.n) &&
-                    wetAt(static_cast<size_t>(nr) * spec.n +
-                          static_cast<size_t>(nc))) {
-                    connected = true;
+        state.wetMask[i] = wet ? 1 : 0;
+    }
+    // --- Pass 2: connectivity (EIGHT-way — a thread descends a cliff
+    // diagonally; the 4-way test erased whole waterfalls). Isolated
+    // wet cells are transient spray and lose their wet memory.
+    {
+        vector<f32>& keepBuf = state.headBuf; // scratch reuse
+        for (size_t i = 0; i < cells; ++i) {
+            keepBuf[i] = 0.0f;
+            if (!state.wetMask[i]) {
+                continue;
+            }
+            const i32 col = static_cast<i32>(i % n);
+            const i32 row = static_cast<i32>(i / n);
+            for (i32 dz = -1; dz <= 1 && keepBuf[i] == 0.0f; ++dz) {
+                for (i32 dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dz == 0) {
+                        continue;
+                    }
+                    const i32 nc = col + dx;
+                    const i32 nr = row + dz;
+                    if (nc >= 0 && nr >= 0 && nc < static_cast<i32>(n) &&
+                        nr < static_cast<i32>(n) &&
+                        state.wetMask[static_cast<size_t>(nr) * n +
+                                      static_cast<size_t>(nc)]) {
+                        keepBuf[i] = 1.0f;
+                        break;
+                    }
                 }
             }
         }
-        if (!connected) {
+        for (size_t i = 0; i < cells; ++i) {
+            if (state.wetMask[i] && keepBuf[i] == 0.0f) {
+                state.wetMask[i] = 0;
+            }
+        }
+    }
+    // --- Pass 3: publish fields for the retained cells.
+    for (size_t i = 0; i < cells; ++i) {
+        const f32 d = state.depth[i];
+        out.display[i] = state.terrain[i] - 0.25f; // dry (texture path)
+        if (!state.wetMask[i]) {
             continue;
         }
         out.depth[i] = d;
@@ -549,6 +564,139 @@ void extractSnapshot(const WaterSimState& state,
         }
         out.velX[i] = vx;
         out.velZ[i] = vz;
+    }
+
+    // --- Pass 4: the ONE closed mesh (docs/WATER-RENDER.md §2).
+    // Corner nodes (n+1)² carry the MEAN surface of their adjacent wet
+    // cells; tops are two triangles per wet cell on shared nodes; side
+    // faces close every wet/dry boundary, never taller than the column
+    // that backs them. Extent lives in this geometry — the shader has
+    // no dryness discard at all.
+    {
+        const u32 nn = n + 1;
+        const size_t nodeCount = static_cast<size_t>(nn) * nn;
+        vector<f32> nodeSum(nodeCount, 0.0f);
+        vector<u8> nodeCnt(nodeCount, 0);
+        const auto cellAt = [&](u32 c, u32 r) {
+            return static_cast<size_t>(r) * n + c;
+        };
+        for (u32 r = 0; r < n; ++r) {
+            for (u32 c = 0; c < n; ++c) {
+                const size_t i = cellAt(c, r);
+                if (!state.wetMask[i]) {
+                    continue;
+                }
+                const f32 s = out.surface[i];
+                for (u32 dz = 0; dz <= 1; ++dz) {
+                    for (u32 dx = 0; dx <= 1; ++dx) {
+                        const size_t nIdx =
+                            static_cast<size_t>(r + dz) * nn + (c + dx);
+                        nodeSum[nIdx] += s;
+                        ++nodeCnt[nIdx];
+                    }
+                }
+            }
+        }
+        const auto nodeHeight = [&](u32 nc, u32 nr) {
+            const size_t nIdx = static_cast<size_t>(nr) * nn + nc;
+            return nodeCnt[nIdx] > 0
+                       ? nodeSum[nIdx] / static_cast<f32>(nodeCnt[nIdx])
+                       : 0.0f;
+        };
+        const auto nodeX = [&](u32 nc) {
+            return spec.originX +
+                   (static_cast<f32>(nc) - 0.5f) * texel;
+        };
+        const auto nodeZ = [&](u32 nr) {
+            return spec.originZ +
+                   (static_cast<f32>(nr) - 0.5f) * texel;
+        };
+        vector<u32> nodeSlot(nodeCount, ~0u);
+        const auto pushVert = [&](f32 x, f32 y, f32 z, f32 u, f32 v) {
+            out.meshVerts.push_back(x);
+            out.meshVerts.push_back(y);
+            out.meshVerts.push_back(z);
+            out.meshVerts.push_back(u);
+            out.meshVerts.push_back(v);
+            return static_cast<u32>(out.meshVerts.size() / 5 - 1);
+        };
+        const auto topNode = [&](u32 nc, u32 nr) {
+            u32& slot = nodeSlot[static_cast<size_t>(nr) * nn + nc];
+            if (slot == ~0u) {
+                slot = pushVert(nodeX(nc), nodeHeight(nc, nr),
+                                nodeZ(nr),
+                                static_cast<f32>(nc) /
+                                    static_cast<f32>(n),
+                                static_cast<f32>(nr) /
+                                    static_cast<f32>(n));
+            }
+            return slot;
+        };
+        for (u32 r = 0; r < n; ++r) {
+            for (u32 c = 0; c < n; ++c) {
+                const size_t i = cellAt(c, r);
+                if (!state.wetMask[i]) {
+                    continue;
+                }
+                // Top.
+                const u32 v00 = topNode(c, r);
+                const u32 v10 = topNode(c + 1, r);
+                const u32 v01 = topNode(c, r + 1);
+                const u32 v11 = topNode(c + 1, r + 1);
+                for (const u32 v : { v00, v11, v10, v00, v01, v11 }) {
+                    out.meshIndices.push_back(v);
+                }
+                // Side faces toward dry in-window 4-neighbours. Corner
+                // node pairs per direction, in (dc,dr) order E,W,S,N.
+                const f32 columnFloor =
+                    out.surface[i] - out.depth[i] - 0.15f;
+                const auto side = [&](i32 dc, i32 dr, u32 na_c, u32 na_r,
+                                      u32 nb_c, u32 nb_r) {
+                    const i32 jc = static_cast<i32>(c) + dc;
+                    const i32 jr = static_cast<i32>(r) + dr;
+                    if (jc < 0 || jr < 0 || jc >= static_cast<i32>(n) ||
+                        jr >= static_cast<i32>(n)) {
+                        return; // window rim: the fade band hides it
+                    }
+                    const size_t j =
+                        cellAt(static_cast<u32>(jc),
+                               static_cast<u32>(jr));
+                    if (state.wetMask[j]) {
+                        return; // wet-wet: the top already connects
+                    }
+                    const f32 edgeGround =
+                        (state.terrain[i] + state.terrain[j]) * 0.5f;
+                    const f32 bottom =
+                        glm::max(edgeGround - 0.15f, columnFloor);
+                    const f32 hA = nodeHeight(na_c, na_r);
+                    const f32 hB = nodeHeight(nb_c, nb_r);
+                    if (bottom >= glm::min(hA, hB) - 0.01f) {
+                        return;
+                    }
+                    const f32 u =
+                        (static_cast<f32>(c) + 0.5f) /
+                        static_cast<f32>(n);
+                    const f32 v =
+                        (static_cast<f32>(r) + 0.5f) /
+                        static_cast<f32>(n);
+                    const u32 ta = pushVert(nodeX(na_c), hA,
+                                            nodeZ(na_r), u, v);
+                    const u32 tb = pushVert(nodeX(nb_c), hB,
+                                            nodeZ(nb_r), u, v);
+                    const u32 ba = pushVert(nodeX(na_c), bottom,
+                                            nodeZ(na_r), u, v);
+                    const u32 bb = pushVert(nodeX(nb_c), bottom,
+                                            nodeZ(nb_r), u, v);
+                    for (const u32 k : { ta, tb, bb, ta, bb, ba }) {
+                        out.meshIndices.push_back(k);
+                    }
+                };
+                side(1, 0, c + 1, r, c + 1, r + 1);  // east edge
+                side(-1, 0, c, r, c, r + 1);         // west edge
+                side(0, 1, c, r + 1, c + 1, r + 1);  // south edge
+                side(0, -1, c, r, c + 1, r);         // north edge
+            }
+        }
     }
 }
 

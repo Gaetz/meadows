@@ -69,6 +69,11 @@ struct WaterSimState {
     // sheet only implied. Breaching a rim by sculpting drains forever
     // (the reservoir never empties) — accepted, and very From Dust.
     vector<f32> pinned;
+    // Persistent RENDER wetness with hysteresis (updated at
+    // extraction): cells near the publish threshold flickered wet/dry
+    // per tick, blinking whole surfaces out and popping orphan walls
+    // at their neighbours (docs/WATER-RENDER.md §1.3).
+    vector<u8> wetMask;
 
     bool valid() const {
         return spec.n >= 8 && terrain.size() == spec.cells() &&
@@ -88,10 +93,14 @@ struct WaterSimSnapshot {
     vector<f32> velX;    // m/s, depth-averaged
     vector<f32> velZ;
     // Render displacement plane: the wet surface, or the local ground
-    // minus a tuck where dry — the sheet dives under the bank and the
-    // depth test cuts the exact shoreline (sim ground == render
-    // ground, so this is reliable here).
+    // minus a tuck where dry (kept for texture-side consumers).
     vector<f32> display;
+    // The ONE render geometry (docs/WATER-RENDER.md §2): a closed
+    // heightfield skin built on the worker — top faces over wet cells
+    // (shared corner nodes) + side faces at wet/dry boundaries, capped
+    // by the water column. Vertex = pos3 + uv2 (sim-texture uv).
+    vector<f32> meshVerts;
+    vector<u32> meshIndices;
 };
 
 // Fresh window: terrain from `height` per cell, depth from the
@@ -124,10 +133,10 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                   const HeightFn& height, f32 seaLevel);
 
-// Build the immutable snapshot (dry threshold + velocity derivation
-// live here, not in the state).
-void extractSnapshot(const WaterSimState& state,
-                     const WaterSimParams& params,
+// Build the immutable snapshot AND its render mesh (dry threshold,
+// hysteresis, velocity derivation and geometry all live here, not in
+// the kernel). Mutates only state.wetMask.
+void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
                      WaterSimSnapshot& out);
 
 // Async spin-up for init/teleport: the offline multigrid solver runs
