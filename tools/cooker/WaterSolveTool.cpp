@@ -67,36 +67,16 @@ int waterSolve(char** argv, int argc) {
     {
         ProceduralControlParams cp = params.controls;
         cp.seed = seed;
-        const ProceduralControls controls { cp };
         MasterNetworkParams net = params.network;
         net.seaLevel = params.macro.seaLevel;
         const f32 maxX =
             spec.originX + static_cast<f32>(spec.n - 1) * texel;
         const f32 maxZ =
             spec.originZ + static_cast<f32>(spec.n - 1) * texel;
-        const auto master = masterRiversNear(
-            controls, params.macro, net, spec.originX - 4000.0f,
-            spec.originZ - 4000.0f, maxX + 4000.0f, maxZ + 4000.0f);
-        const auto inside = [&](const MasterNode& node) {
-            return node.x >= spec.originX && node.x <= maxX &&
-                   node.z >= spec.originZ && node.z <= maxZ;
-        };
-        for (const auto& river : master) {
-            for (size_t k = 1; k < river.nodes.size(); ++k) {
-                if (!inside(river.nodes[k - 1]) &&
-                    inside(river.nodes[k])) {
-                    // Linear rain x true area reaches Rhône-grade
-                    // torrents (5400 m3/s measured) — cap at a big-
-                    // fleuve discharge until a sub-linear runoff law
-                    // replaces it.
-                    sources.push_back(
-                        { river.nodes[k].x, river.nodes[k].z,
-                          glm::min(river.nodes[k].area *
-                                       solve.rainRate,
-                                   350.0f) });
-                }
-            }
-        }
+        sources = masterBoundarySources(ProceduralControls { cp },
+                                        params.macro, net, solve,
+                                        spec.originX, spec.originZ,
+                                        maxX, maxZ);
         f32 total = 0.0f;
         for (const WaterSource& s : sources) {
             total += s.discharge;

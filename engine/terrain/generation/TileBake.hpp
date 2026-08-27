@@ -10,6 +10,7 @@
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/ThermalErosion.hpp"
+#include "engine/terrain/generation/WaterSolve.hpp"
 
 // The pipeline for ONE sandbox tile, in TWO ORDERED STAGES (the
 // Peytavie 2019 / UE Water lesson: water is a LATER pass over the FINAL
@@ -74,6 +75,16 @@ struct TileBakeParams {
     // the macro before erosion — channel, alluvial plain, monotone bed.
     MasterImprintParams imprint;
     FinalizeParams finalize;
+    // Steady-state water solve over the published rect (option D,
+    // docs/WATER-RESEARCH.md) — fills the region's water* fields. The
+    // rain rate here is the judged demo value (the WaterSolveParams
+    // default is the physics doc value). Runs on the FINAL cropped
+    // heights, so a terrain patch re-bake re-solves its water
+    // deterministically (the terraforming contract: water is a pure
+    // function of the terrain).
+    bool solveWater { true };
+    f32 waterSolveTexel { 8.0f };
+    WaterSolveParams waterSolve { .rainRate = 4.0e-6f };
     // Measured fine-erosion reintroduction (B6) — the carved-rock
     // character coming back on the slopes without re-hatching the
     // socles. All defaults are the LEGACY behavior (bit-exact); the
@@ -166,7 +177,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 55;
+constexpr u32 kTileBakeVersion = 56;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

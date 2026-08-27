@@ -703,6 +703,113 @@ TileBakeResult bakeTileStage2(
     region.detailWavelength = kRegionDetailWavelength;
     region.detailOctaves = kRegionDetailOctaves;
 
+    // --- Steady-water solve (option D, docs/WATER-RESEARCH.md): the
+    // equilibrium depth/velocity/flux fields over the published rect,
+    // computed on the FINAL cropped heights (the ground the runtime
+    // renders — so the water sits exactly on it, and a terrain-patch
+    // re-bake re-solves its water for free). Master courses entering
+    // the rect inject their upstream discharge; the solver is pure and
+    // single-threaded, so the fields are as deterministic as the
+    // heights they derive from.
+    if (params.solveWater) {
+        // Solve on the WHOLE fine window (published rect + the fine-
+        // erosion halo) and crop after: the open-border drain then sits
+        // ~192 m outside anything that ships, and two neighbours solve
+        // the shared margin band with real terrain context on both
+        // sides — their levels agree closely (not bit-exactly: the
+        // windows differ) where the geometry meets.
+        GridSpec wspec;
+        wspec.originX = fine.fineSpec.originX;
+        wspec.originZ = fine.fineSpec.originZ;
+        wspec.texelSize = params.waterSolveTexel;
+        const u32 stride = glm::max(
+            texels(wspec.texelSize, fine.fineSpec.texelSize), 1u);
+        wspec.n = (fine.fineSpec.n - 1) / stride + 1;
+        vector<f32> wground(wspec.cells());
+        f32 maxGround = -1.0e9f;
+        for (u32 row = 0; row < wspec.n; ++row) {
+            for (u32 col = 0; col < wspec.n; ++col) {
+                const f32 h =
+                    fine.height[static_cast<size_t>(row) * stride *
+                                    fine.fineSpec.n +
+                                static_cast<size_t>(col) * stride];
+                wground[static_cast<size_t>(row) * wspec.n + col] = h;
+                maxGround = glm::max(maxGround, h);
+            }
+        }
+        WaterSolveParams ws = params.waterSolve;
+        ws.seaLevel = params.macro.seaLevel;
+        // A fully-submerged rect is the ocean sheet's job — skip.
+        if (maxGround > ws.seaLevel + 0.5f) {
+            ProceduralControlParams cp = params.controls;
+            cp.seed = params.worldSeed;
+            MasterNetworkParams network = params.network;
+            network.seaLevel = params.macro.seaLevel;
+            const f32 wMaxX =
+                wspec.originX +
+                static_cast<f32>(wspec.n - 1) * wspec.texelSize;
+            const f32 wMaxZ =
+                wspec.originZ +
+                static_cast<f32>(wspec.n - 1) * wspec.texelSize;
+            const vector<WaterSource> sources = masterBoundarySources(
+                ProceduralControls { cp }, params.macro, network, ws,
+                wspec.originX, wspec.originZ, wMaxX, wMaxZ);
+            const WaterSolveResult water =
+                solveSteadyWater(wspec, wground, ws, &sources);
+            // Crop the halo away: ship the published rect only.
+            const u32 cropOff =
+                texels(keepMinX - wspec.originX, wspec.texelSize);
+            const u32 waterN = glm::min(
+                texels(keepSpan, wspec.texelSize) + 1,
+                wspec.n - glm::min(cropOff, wspec.n - 1));
+            const size_t wcells = static_cast<size_t>(waterN) * waterN;
+            region.waterWidth = waterN;
+            region.waterHeight = waterN;
+            region.waterTexel = wspec.texelSize;
+            region.waterSurface.assign(wcells, 0.0f);
+            region.waterDepth.assign(wcells, 0);
+            region.waterVelX.assign(wcells, 0);
+            region.waterVelZ.assign(wcells, 0);
+            region.waterFlux.assign(wcells, 0);
+            for (u32 row = 0; row < waterN; ++row) {
+                for (u32 col = 0; col < waterN; ++col) {
+                    const size_t i =
+                        static_cast<size_t>(row) * waterN + col;
+                    const size_t j =
+                        static_cast<size_t>(row + cropOff) * wspec.n +
+                        (col + cropOff);
+                    // Flux survives the dry pass on purpose: it is the
+                    // course-trace signal (metadata, map), not a wet
+                    // mask.
+                    region.waterFlux[i] = static_cast<u8>(glm::clamp(
+                        std::log10(1.0f +
+                                   glm::max(water.flux[j], 0.0f)) *
+                            (255.0f / 4.0f),
+                        0.0f, 255.0f));
+                    const f32 depth = water.depth[j];
+                    if (depth <= 0.0f) {
+                        continue;
+                    }
+                    const f32 surface = wground[j] + depth;
+                    // Sea-pinned cells store dry: the ocean sheet
+                    // renders them. Estuary water ABOVE sea level keeps
+                    // its level.
+                    if (wground[j] < ws.seaLevel &&
+                        surface <= ws.seaLevel + 0.01f) {
+                        continue;
+                    }
+                    region.waterDepth[i] = static_cast<u16>(glm::clamp(
+                        depth * 32.0f + 0.5f, 1.0f, 65535.0f));
+                    region.waterSurface[i] = surface;
+                    region.waterVelX[i] = static_cast<i8>(glm::clamp(
+                        water.velocityX[j] * 10.0f, -127.0f, 127.0f));
+                    region.waterVelZ[i] = static_cast<i8>(glm::clamp(
+                        water.velocityZ[j] * 10.0f, -127.0f, 127.0f));
+                }
+            }
+        }
+    }
+
     // Water ownership: lakes belong to the tile holding their bbox
     // center; river polylines are CLIPPED to this tile's kept rect (each
     // run is its own ribbon, the neighbour renders the continuation over

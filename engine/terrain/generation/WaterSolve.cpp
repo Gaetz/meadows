@@ -375,4 +375,37 @@ WaterSolveResult solveLevel(const GridSpec& spec,
 
 } // namespace
 
+f32 runoffDischarge(f32 area, const WaterSolveParams& params) {
+    return params.rainRate *
+           std::pow(glm::max(area, 0.0f), params.runoffExponent) *
+           std::pow(params.runoffRefArea,
+                    1.0f - params.runoffExponent);
+}
+
+vector<WaterSource> masterBoundarySources(
+    const ProceduralControls& controls, const MacroParams& macro,
+    const MasterNetworkParams& network, const WaterSolveParams& params,
+    f32 minX, f32 minZ, f32 maxX, f32 maxZ) {
+    // Query halo: a course can enter through a node pair straddling the
+    // rect even when both nodes sit kilometers apart.
+    const auto master = masterRiversNear(controls, macro, network,
+                                         minX - 4000.0f, minZ - 4000.0f,
+                                         maxX + 4000.0f, maxZ + 4000.0f);
+    const auto inside = [&](const MasterNode& node) {
+        return node.x >= minX && node.x <= maxX && node.z >= minZ &&
+               node.z <= maxZ;
+    };
+    vector<WaterSource> sources;
+    for (const auto& river : master) {
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            if (!inside(river.nodes[k - 1]) && inside(river.nodes[k])) {
+                sources.push_back(
+                    { river.nodes[k].x, river.nodes[k].z,
+                      runoffDischarge(river.nodes[k].area, params) });
+            }
+        }
+    }
+    return sources;
+}
+
 } // namespace render::terraingen

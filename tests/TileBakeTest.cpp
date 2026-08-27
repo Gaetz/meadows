@@ -47,6 +47,75 @@ TEST_CASE("tile bakes are deterministic") {
     CHECK(a.region.spanX() ==
           doctest::Approx(params.tileSize + 2.0f * params.overlapMargin));
     CHECK(a.region.maskWidth > 2);
+
+    // Water-field determinism holds whether or not the tile has land
+    // (a fully-submerged rect legitimately ships empty fields — the
+    // ocean sheet owns it).
+    CHECK(a.region.waterWidth == b.region.waterWidth);
+    CHECK(a.region.waterDepth == b.region.waterDepth); // bit-exact
+    CHECK(a.region.waterSurface == b.region.waterSurface);
+    CHECK(a.region.waterFlux == b.region.waterFlux);
+}
+
+TEST_CASE("a land tile ships solved water fields on the region rect") {
+    const TileBakeParams params = testParams();
+    // The test world's origin sits in open ocean (small 512 m tiles):
+    // scan the analytic macro outward for the nearest emerged tile, then
+    // bake THAT one — no wasted ocean bakes.
+    ProceduralControlParams cp = params.controls;
+    cp.seed = params.worldSeed;
+    const ProceduralControls controls { cp };
+    i32 landTx = 0;
+    i32 landTz = 0;
+    bool foundLand = false;
+    for (i32 radius = 0; radius <= 40 && !foundLand; ++radius) {
+        for (i32 tz = -radius; tz <= radius && !foundLand; ++tz) {
+            for (i32 tx = -radius; tx <= radius && !foundLand; ++tx) {
+                if (glm::max(std::abs(tx), std::abs(tz)) != radius) {
+                    continue;
+                }
+                const f32 cx =
+                    (static_cast<f32>(tx) + 0.5f) * params.tileSize;
+                const f32 cz =
+                    (static_cast<f32>(tz) + 0.5f) * params.tileSize;
+                if (macroHeightAnalytic(controls, params.macro, cx, cz) >
+                    params.macro.seaLevel + 15.0f) {
+                    landTx = tx;
+                    landTz = tz;
+                    foundLand = true;
+                }
+            }
+        }
+    }
+    REQUIRE(foundLand);
+    const render::TerrainRegion region =
+        bakeTile(params, landTx, landTz).region;
+    f32 maxH = -1.0e9f;
+    for (const f32 h : region.heights) {
+        maxH = glm::max(maxH, h);
+    }
+    REQUIRE(maxH > params.macro.seaLevel + 0.5f);
+    REQUIRE(region.waterWidth > 2);
+    REQUIRE(region.waterDepth.size() ==
+            static_cast<size_t>(region.waterWidth) * region.waterHeight);
+    CHECK(static_cast<f32>(region.waterWidth - 1) * region.waterTexel ==
+          doctest::Approx(region.spanX()));
+    // Wet cells carry a level above the local ground (never buried).
+    for (u32 row = 0; row < region.waterHeight; ++row) {
+        for (u32 col = 0; col < region.waterWidth; ++col) {
+            const size_t i =
+                static_cast<size_t>(row) * region.waterWidth + col;
+            if (region.waterDepth[i] == 0) {
+                continue;
+            }
+            const f32 x = region.originX +
+                          static_cast<f32>(col) * region.waterTexel;
+            const f32 z = region.originZ +
+                          static_cast<f32>(row) * region.waterTexel;
+            const f32 ground = render::terrain::baseHeight(region, x, z);
+            CHECK(region.waterSurface[i] > ground - 1.0f);
+        }
+    }
 }
 
 TEST_CASE("adjacent tiles blend smoothly across their shared border") {

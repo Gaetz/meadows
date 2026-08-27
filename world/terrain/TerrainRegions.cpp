@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <type_traits>
 
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
@@ -11,8 +12,30 @@ namespace world {
 
 namespace {
 
-constexpr char kMagic[4] = { 'T', 'R', 'G', '2' };
+// TRG3 appends the solved-water fields; TRG2 (story-terrain assets
+// cooked before the water refonte) still reads, with empty water.
+constexpr char kMagic[4] = { 'T', 'R', 'G', '3' };
+constexpr char kMagicV2[4] = { 'T', 'R', 'G', '2' };
 constexpr u32 kMaxSamples = 8192;
+
+bool validWater(const render::TerrainRegion& region) {
+    if (region.waterWidth == 0 && region.waterHeight == 0) {
+        return region.waterSurface.empty() && region.waterDepth.empty() &&
+               region.waterVelX.empty() && region.waterVelZ.empty() &&
+               region.waterFlux.empty();
+    }
+    const size_t cells =
+        static_cast<size_t>(region.waterWidth) * region.waterHeight;
+    return region.waterWidth >= 2 && region.waterHeight >= 2 &&
+           region.waterWidth <= kMaxSamples &&
+           region.waterHeight <= kMaxSamples &&
+           region.waterTexel > 0.0f &&
+           region.waterSurface.size() == cells &&
+           region.waterDepth.size() == cells &&
+           region.waterVelX.size() == cells &&
+           region.waterVelZ.size() == cells &&
+           region.waterFlux.size() == cells;
+}
 
 bool validGrid(const render::TerrainRegion& region) {
     const size_t cells =
@@ -21,7 +44,8 @@ bool validGrid(const render::TerrainRegion& region) {
         static_cast<size_t>(region.maskWidth) * region.maskHeight;
     if (region.width < 2 || region.height < 2 ||
         region.width > kMaxSamples || region.height > kMaxSamples ||
-        region.texelSize <= 0.0f || region.heights.size() != cells) {
+        region.texelSize <= 0.0f || region.heights.size() != cells ||
+        !validWater(region)) {
         return false;
     }
     const auto maskOk = [&](const vector<u8>& channel) {
@@ -86,6 +110,21 @@ bool writeTrgFile(const std::filesystem::path& path,
     } else {
         writeChannel(region.rockExposure);
     }
+    write(region.waterWidth);
+    write(region.waterHeight);
+    write(region.waterTexel);
+    const auto writeRaw = [&](const auto& field) {
+        file.write(
+            reinterpret_cast<const char*>(field.data()),
+            static_cast<std::streamsize>(
+                field.size() * sizeof(typename std::remove_reference_t<
+                                      decltype(field)>::value_type)));
+    };
+    writeRaw(region.waterSurface);
+    writeRaw(region.waterDepth);
+    writeRaw(region.waterVelX);
+    writeRaw(region.waterVelZ);
+    writeRaw(region.waterFlux);
     return static_cast<bool>(file);
 }
 
@@ -102,16 +141,18 @@ std::optional<render::TerrainRegion> readTrgFile(
         file.read(reinterpret_cast<char*>(&value), sizeof(value));
     };
     file.read(magic, 4);
+    const bool v3 = std::memcmp(magic, kMagic, 4) == 0;
+    const bool v2 = std::memcmp(magic, kMagicV2, 4) == 0;
     read(region.width);
     read(region.height);
     read(region.originX);
     read(region.originZ);
     read(region.texelSize);
     read(region.edgeBlend);
-    if (!file || std::memcmp(magic, kMagic, 4) != 0 || region.width < 2 ||
+    if (!file || (!v3 && !v2) || region.width < 2 ||
         region.height < 2 || region.width > kMaxSamples ||
         region.height > kMaxSamples || region.texelSize <= 0.0f) {
-        LOG_ERROR("readTrgFile: not a TRG2 region: {}", path.string());
+        LOG_ERROR("readTrgFile: not a TRG region: {}", path.string());
         return std::nullopt;
     }
     region.heights.resize(static_cast<size_t>(region.width) *
@@ -148,6 +189,47 @@ std::optional<render::TerrainRegion> readTrgFile(
         if (!file) {
             LOG_ERROR("readTrgFile: truncated masks: {}", path.string());
             return std::nullopt;
+        }
+    }
+    if (v3) {
+        read(region.waterWidth);
+        read(region.waterHeight);
+        read(region.waterTexel);
+        if (!file) {
+            LOG_ERROR("readTrgFile: truncated water header: {}",
+                      path.string());
+            return std::nullopt;
+        }
+        if (region.waterWidth != 0 || region.waterHeight != 0) {
+            if (region.waterWidth < 2 || region.waterHeight < 2 ||
+                region.waterWidth > kMaxSamples ||
+                region.waterHeight > kMaxSamples ||
+                region.waterTexel <= 0.0f) {
+                LOG_ERROR("readTrgFile: bad water dims: {}",
+                          path.string());
+                return std::nullopt;
+            }
+            const size_t wcells = static_cast<size_t>(region.waterWidth) *
+                                  region.waterHeight;
+            const auto readRaw = [&](auto& field) {
+                field.resize(wcells);
+                file.read(
+                    reinterpret_cast<char*>(field.data()),
+                    static_cast<std::streamsize>(
+                        wcells *
+                        sizeof(typename std::remove_reference_t<
+                               decltype(field)>::value_type)));
+            };
+            readRaw(region.waterSurface);
+            readRaw(region.waterDepth);
+            readRaw(region.waterVelX);
+            readRaw(region.waterVelZ);
+            readRaw(region.waterFlux);
+            if (!file) {
+                LOG_ERROR("readTrgFile: truncated water: {}",
+                          path.string());
+                return std::nullopt;
+            }
         }
     }
     return region;

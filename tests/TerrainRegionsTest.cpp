@@ -147,6 +147,15 @@ TEST_CASE(".trg round-trip preserves the region and its masks") {
     region.beach.assign(maskCells, 30);
     region.biome.assign(maskCells, 4);
     region.rockExposure.assign(maskCells, 40);
+    region.waterWidth = 17;
+    region.waterHeight = 17;
+    region.waterTexel = 8.0f;
+    const size_t wcells = 17 * 17;
+    region.waterSurface.assign(wcells, 13.25f);
+    region.waterDepth.assign(wcells, 24); // 0.75 m
+    region.waterVelX.assign(wcells, -12);
+    region.waterVelZ.assign(wcells, 7);
+    region.waterFlux.assign(wcells, 90);
 
     REQUIRE(world::writeTrgFile(file, region));
     const auto back = world::readTrgFile(file);
@@ -161,8 +170,15 @@ TEST_CASE(".trg round-trip preserves the region and its masks") {
     CHECK(back->detailAmp == region.detailAmp);
     CHECK(back->biome == region.biome);
     CHECK(back->rockExposure == region.rockExposure);
+    CHECK(back->waterWidth == 17);
+    CHECK(back->waterTexel == 8.0f);
+    CHECK(back->waterSurface == region.waterSurface); // bit-exact
+    CHECK(back->waterDepth == region.waterDepth);
+    CHECK(back->waterVelX == region.waterVelX);
+    CHECK(back->waterVelZ == region.waterVelZ);
+    CHECK(back->waterFlux == region.waterFlux);
 
-    // Maskless round-trip.
+    // Maskless, waterless round-trip.
     const auto bare = dir / "bare.trg";
     REQUIRE(world::writeTrgFile(bare,
                                 flatRegion(0.0f, 0.0f, 64.0f, 2.0f, 1.0f)));
@@ -170,6 +186,47 @@ TEST_CASE(".trg round-trip preserves the region and its masks") {
     REQUIRE(bareBack.has_value());
     CHECK(bareBack->maskWidth == 0);
     CHECK(bareBack->detailAmp.empty());
+    CHECK(bareBack->waterWidth == 0);
+    CHECK(bareBack->waterDepth.empty());
+}
+
+TEST_CASE("water fields sample wet-weighted at the shore") {
+    auto region = flatRegion(0.0f, 0.0f, 64.0f, 2.0f, 10.0f);
+    region.waterWidth = 9;
+    region.waterHeight = 9;
+    region.waterTexel = 8.0f;
+    const size_t wcells = 9 * 9;
+    region.waterSurface.assign(wcells, 0.0f);
+    region.waterDepth.assign(wcells, 0);
+    region.waterVelX.assign(wcells, 0);
+    region.waterVelZ.assign(wcells, 0);
+    region.waterFlux.assign(wcells, 0);
+    // Wet left half (columns 0-3): 1 m deep, level 11, current +x.
+    for (u32 row = 0; row < 9; ++row) {
+        for (u32 col = 0; col < 4; ++col) {
+            const size_t i = static_cast<size_t>(row) * 9 + col;
+            region.waterDepth[i] = 32;
+            region.waterSurface[i] = 11.0f;
+            region.waterVelX[i] = 15; // 1.5 m/s
+        }
+    }
+
+    // Fully wet interior: exact values.
+    const auto mid = render::terrain::waterSample(region, 8.0f, 32.0f);
+    CHECK(mid.depth == doctest::Approx(1.0f));
+    CHECK(mid.surface == doctest::Approx(11.0f));
+    CHECK(mid.velocityX == doctest::Approx(1.5f));
+    // Between the last wet column (x=24) and the first dry one (x=32):
+    // depth fades, but the SURFACE stays at the wet level — a dry
+    // corner must not drag the water level down at the bank.
+    const auto shore = render::terrain::waterSample(region, 28.0f, 32.0f);
+    CHECK(shore.depth == doctest::Approx(0.5f));
+    CHECK(shore.surface == doctest::Approx(11.0f));
+    CHECK(shore.velocityX == doctest::Approx(1.5f));
+    // Fully dry: nothing.
+    const auto dry = render::terrain::waterSample(region, 56.0f, 32.0f);
+    CHECK(dry.depth == 0.0f);
+    CHECK(dry.surface == 0.0f);
 }
 
 TEST_CASE(".trg rejects malformed files") {

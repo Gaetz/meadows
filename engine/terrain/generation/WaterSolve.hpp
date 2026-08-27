@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Steady-state water solve (docs/WATER-RESEARCH.md, option D): the
@@ -25,6 +26,15 @@ struct WaterSolveParams {
     // real-world runoff at our compressed basin sizes would make
     // creeks of every fleuve; tune for game-scale discharges).
     f32 rainRate { 1.0e-5f };
+    // Sub-linear runoff for BOUNDARY sources: a real basin loses water
+    // to infiltration and evaporation on the way, so discharge grows
+    // slower than area — Q = rain * A^exp * refArea^(1-exp), continuous
+    // with the window's own linear rain at A = refArea. Linear rain on
+    // the master areas made Rhône-grade torrents (5400 m3/s measured);
+    // the old flat 350 m3/s cap flattened every big fleuve to the same
+    // size.
+    f32 runoffExponent { 0.75f };
+    f32 runoffRefArea { 1.0e6f }; // m2 — a window-scale catchment
     // Evaporation, m/s, STRICTLY below rain (net runoff must stay
     // positive or nothing ever flows — measured: evap > rain froze the
     // whole grid at 0.06 m/s). Pans still fill to their spill and
@@ -100,5 +110,17 @@ WaterSolveResult solveSteadyWater(const GridSpec& spec,
                                   const WaterSolveParams& params,
                                   const vector<WaterSource>* sources =
                                       nullptr);
+
+// The sub-linear runoff law (see runoffExponent).
+f32 runoffDischarge(f32 area, const WaterSolveParams& params);
+
+// Boundary sources for a solve window: every master course ENTERING the
+// rect injects its upstream discharge (true catchment area through the
+// runoff law) at its first inside node. Shared by the bake and the
+// judgment tool so their windows stay comparable.
+vector<WaterSource> masterBoundarySources(
+    const ProceduralControls& controls, const MacroParams& macro,
+    const MasterNetworkParams& network, const WaterSolveParams& params,
+    f32 minX, f32 minZ, f32 maxX, f32 maxZ);
 
 } // namespace render::terraingen
