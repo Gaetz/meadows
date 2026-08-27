@@ -511,8 +511,15 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
     const size_t interior = 30u * spec.n + 15u;  // x=30, mask core
     const size_t seedRim = 63u * spec.n + 15u;   // z=126: seeded, not
                                                  // pinned (erosion)
-    CHECK(state.depth[overhang] == 0.0f);
-    CHECK(state.depth[crestEdge] == 0.0f);
+    // Past-crest cells carry the thin connective FILM (the lake-to-
+    // fall interpolation), never the full column (the "cube" would be
+    // 31.5 m at the overhang), and never a pin.
+    CHECK(state.depth[overhang] ==
+          doctest::Approx(0.08f).epsilon(0.01));
+    CHECK(state.depth[crestEdge] ==
+          doctest::Approx(0.08f).epsilon(0.01));
+    CHECK(state.pinned[overhang] <
+          render::terrain::kWaterInfoDry + 1.0f);
     CHECK(state.pinned[interior] ==
           doctest::Approx(301.5f).epsilon(0.001));
     CHECK(state.depth[seedRim] ==

@@ -556,6 +556,15 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                         }
                     }
                     if (pastCrest) {
+                        // Interpolate, don't cut (dev feedback: the
+                        // hard skip ended the lake short of the crest
+                        // with a dry gap before the fall): seed a
+                        // thin connective FILM following the terrain
+                        // over the crest — publishable, cube-free —
+                        // and let the pour carve its real profile.
+                        // Never pin past the crest.
+                        seedLevel[i] = glm::max(
+                            seedLevel[i], state.terrain[i] + 0.08f);
                         continue;
                     }
                 }
@@ -753,6 +762,7 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         const u32 nn = n + 1;
         const size_t nodeCount = static_cast<size_t>(nn) * nn;
         vector<f32> nodeSum(nodeCount, 0.0f);
+        vector<f32> nodeTerr(nodeCount, -1.0e9f);
         vector<u8> nodeCnt(nodeCount, 0);
         const auto cellAt = [&](u32 c, u32 r) {
             return static_cast<size_t>(r) * n + c;
@@ -769,16 +779,29 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
                         const size_t nIdx =
                             static_cast<size_t>(r + dz) * nn + (c + dx);
                         nodeSum[nIdx] += s;
+                        nodeTerr[nIdx] = glm::max(nodeTerr[nIdx],
+                                                  state.terrain[i]);
                         ++nodeCnt[nIdx];
                     }
                 }
             }
         }
+        // A node is at least a thin film ABOVE the highest adjacent
+        // wet cell's ground: on a fall face the mean of the adjacent
+        // surfaces sinks below the UPHILL cell's terrain, burying the
+        // sheet inside the slope — the visible water thinned to a
+        // skin (dev feedback: the debug columns sat behind the
+        // ground). The clamp keeps the whole drape on the visible
+        // side; flat water is untouched (its mean already stands
+        // above every adjacent floor).
         const auto nodeHeight = [&](u32 nc, u32 nr) {
             const size_t nIdx = static_cast<size_t>(nr) * nn + nc;
-            return nodeCnt[nIdx] > 0
-                       ? nodeSum[nIdx] / static_cast<f32>(nodeCnt[nIdx])
-                       : 0.0f;
+            if (nodeCnt[nIdx] == 0) {
+                return 0.0f;
+            }
+            const f32 mean =
+                nodeSum[nIdx] / static_cast<f32>(nodeCnt[nIdx]);
+            return glm::max(mean, nodeTerr[nIdx] + 0.05f);
         };
         const auto nodeX = [&](u32 nc) {
             return spec.originX +
