@@ -646,12 +646,19 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         // (same rule) — the baked sheet renders everywhere, so no
         // window boundary can exist on a lake (a sim-rendered half
         // next to a baked half re-drew the trusted rect however close
-        // the recipes got). Water genuinely ABOVE the baked level (a
-        // flood pouring across the lake) still publishes.
+        // the recipes got). Cull ONLY where the surface MATCHES the
+        // baked sheet: the rasterized mask overhangs its banks, so the
+        // territory includes the fall lip below the rim — an "anything
+        // at-or-under the level" rule erased the HEAD of every lake
+        // waterfall (measured in-game: the pour left the lake and
+        // vanished). Water clearly below (the drape) or above (a
+        // flood) the sheet publishes.
         if (wet && state.lakeLevel.size() == cells) {
             const f32 lakeLvl = state.lakeLevel[i];
+            const f32 surface = state.terrain[i] + d;
             if (lakeLvl > kWaterInfoDry + 1.0f &&
-                state.terrain[i] + d <= lakeLvl + 0.05f) {
+                surface >= lakeLvl - 0.20f &&
+                surface <= lakeLvl + 0.05f) {
                 wet = false;
             }
         }

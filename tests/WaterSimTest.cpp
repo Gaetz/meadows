@@ -404,6 +404,15 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
     state.depth[inLake + spec.n + 1] += 0.5f;
     extractSnapshot(state, params, snap);
     CHECK(snap.depth[inLake] > 0.0f);
+    // Fall lip under the mask overhang: lake TERRITORY, but the
+    // draped water runs well BELOW the sheet — it must publish (the
+    // at-or-under-the-level rule erased every lake waterfall's head).
+    state.depth[inLake] = 1.0f; // surface 306, sheet at 310
+    state.depth[inLake + 1] = 1.0f;
+    state.depth[inLake + spec.n] = 1.0f;
+    state.depth[inLake + spec.n + 1] = 1.0f;
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[inLake] > 0.0f);
 }
 
 TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
