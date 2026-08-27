@@ -2,11 +2,14 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
+
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/terrain/WaterBodies.hpp"
+#include "engine/terrain/WaterSim.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
@@ -83,6 +86,51 @@ public:
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle sceneBindGroup);
 
+    // --- Real-time sim window (option C, engine/terrain/WaterSim) ----
+    // One camera-following shallow-water window stepped on a worker
+    // (Phase-5: at most ONE job in flight owns the state; main reads
+    // only published snapshots). Inside its trusted rect the sim owns
+    // the water per fragment; the baked lakes/ribbons keep everything
+    // outside and the spin-up fallback.
+    struct SimConfig {
+        bool enabled { true };
+        f32 span { 512.0f };
+        f32 texel { 2.0f };
+        u32 maxSubsteps { 4 };       // hitch clamp per job
+        f32 anchorHysteresis { 16.0f }; // m before the window re-anchors
+        f32 invalidateSpeed { 25.0f };  // m/s sustained -> baked fallback
+        f32 fadeBand { 32.0f };         // m of sim->baked edge crossfade
+        i32 debugMode { 0 }; // 0 normal, 1 force baked, 2 seam overlay
+        terrain::WaterSimParams params;
+    };
+    SimConfig& simConfig() { return simCfg; }
+    // Boundary-inflow provider (rect -> sources), called ON THE WORKER
+    // (pure; the master-network query costs ms). Null = rain only.
+    using SimSourcesFn =
+        std::function<vector<terraingen::WaterSource>(f32, f32, f32,
+                                                      f32)>;
+    void setSimSources(SimSourcesFn fn) { simSourcesFn = std::move(fn); }
+    // Terraforming hook: the sculpt overlay changed — the next step job
+    // re-samples the window's ground and the water reacts live.
+    void notifySimGroundChanged() { simGroundDirty = true; }
+    // Once per frame, after update(). dt = real frame seconds.
+    void updateSim(rhi::Device& device, const TerrainParams& params,
+                   const Vec3& cameraPos, f32 dt);
+    // Latest published snapshot (null before the first pre-roll lands)
+    // — the gameplay query source inside the trusted rect.
+    sptr<const terrain::WaterSimSnapshot> simSnapshot() const {
+        return simSnap;
+    }
+    // FrameUniforms feeds: origin/1-span/valid + trusted/fade/debug.
+    Vec4 simMapInfo() const;
+    Vec4 simTuneInfo() const {
+        return { static_cast<f32>(simCfg.params.marginCells) *
+                     simCfg.texel,
+                 simCfg.fadeBand, static_cast<f32>(simCfg.debugMode),
+                 0.0f };
+    }
+    f32 simCostMs() const { return simLastMs; } // worker job, F6 line
+
 private:
     struct BakedMap {
         Vec2 center {};
@@ -100,15 +148,28 @@ private:
         vector<f32> surface; // R32F payload
         vector<f32> extras;  // RGBA16F payload: depth, flowXZ, spare
     };
+    struct SimResult {
+        u64 generation { 0 };
+        u32 epoch { 0 };
+        sptr<terrain::WaterSimState> state;
+        sptr<terrain::WaterSimSnapshot> snap;
+        vector<terraingen::WaterSource> sources;
+        bool sourcesFresh { false };
+        f32 millis { 0.0f };
+    };
     struct Shared {
         core::ConcurrentQueue<BakedMap> baked;
         core::ConcurrentQueue<BakedInfo> bakedInfo;
+        core::ConcurrentQueue<SimResult> simDone;
     };
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void rebuildLocalGeometry(rhi::Device& device);
     void rebuildMapGroup(rhi::Device& device);
     void rebuildMaterials(rhi::Device& device);
+    void uploadSimTextures(rhi::Device& device,
+                           const terrain::WaterSimSnapshot& snap);
+    void ensureSimMesh(rhi::Device& device, u32 n);
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
@@ -149,6 +210,28 @@ private:
     rhi::BufferHandle localIndexBuffer {};
     rhi::PipelineHandle localPipeline {};
     u32 localIndexCount { 0 };
+
+    // Sim window state (see the public block).
+    SimConfig simCfg;
+    SimSourcesFn simSourcesFn;
+    sptr<terrain::WaterSimState> simState;
+    sptr<const terrain::WaterSimSnapshot> simSnap;
+    vector<terraingen::WaterSource> simSrcCache;
+    bool simInFlight { false };
+    bool simGroundDirty { false };
+    bool simValid { false }; // snapshot uploaded and fresh
+    u32 simEpoch { 0 };      // bumped on invalidation (fly mode, off)
+    f32 simAccum { 0.0f };
+    Vec2 simLastCam { 0.0f, 0.0f };
+    bool simHasLastCam { false };
+    f32 simLastMs { 0.0f };
+    rhi::TextureHandle simMapA {};
+    rhi::TextureHandle simMapB {};
+    rhi::BufferHandle simVertexBuffer {};
+    rhi::BufferHandle simIndexBuffer {};
+    u32 simIndexCount { 0 };
+    u32 simMeshN { 0 };
+    rhi::PipelineHandle simPipeline {};
 };
 
 } // namespace render

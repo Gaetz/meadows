@@ -1508,3 +1508,48 @@ cascade FX = brique future) ; le blanc torrent domine les biefs rapides
 visuellement, la bascule actée est l'option C fenêtrée autour de la
 caméra (From Dust), initialisée/bornée par les champs D — D reste la
 vérité gameplay/requêtes.
+
+**Chantier eau C — C0-C3 (2026-08-27, plan approuvé)** : bascule
+option D → option C actée par le dev (3 échecs de validation D : la
+grille de solve 8 m ne suit pas le terrain de rendu 2 m). Décisions
+dev : eau lointaine = lacs+rubans d'avant-refonte restaurés (C0), eau
+transitoire (jamais sérialisée — le terrain persisté suffit), cadence
+= checkpoint visuel dès C3.
+- **C0** : retrait du rendu/requêtes champs D, republication des
+  lacs/rubans sandbox, solveWater OFF au bake (le solveur reste
+  l'oracle offline), v59.
+- **C1 — WaterSim** (engine/terrain, headless, 9 doctests) : le
+  kernel virtual-pipes en état persistant fenêtré ; scroll memmove
+  avec strips « flood borné par le bord survivant + copie des flux »
+  (les rivières arrivent en mouvement) ; extraction = seuil de
+  séchage + vitesses + plan d'affichage (mouillé = surface, sec =
+  sol − 0,25 m — la nappe plonge sous la berge, sol sim == sol rendu
+  donc fiable) ; cellules mer épinglées lues SÈCHES (la nappe océan
+  et la requête mer les possèdent) ; pre-roll = solveSteadyWater
+  multigrid (~2 s worker). **GATE PERF MESURÉ : 9,6-16,5
+  ns/cellule/substep** — 256² à 30 Hz ≈ 3 % d'un cœur worker, le
+  critère d'abandon GPU (60 ns) est loin.
+- **C2 — intégration** (WaterSystem::updateSim) : un seul job en vol
+  (le worker possède l'état), tick 30 Hz à accumulateur clampé 4
+  substeps, ré-ancrage hystérésis 16 m, invalidation > 25 m/s
+  (crossfade vers le baké, retour = téléport/pre-roll), sources
+  maître calculées SUR le worker (réseau memoïzé), sol re-samplé sur
+  publication de tuile ET sur stroke de sculpt (l'eau réagit PENDANT
+  la sculpture) ; la sim attend la tuile sous la caméra (pas de solve
+  sur le terrain analytique de repli) ; knobs panneau Water (span,
+  texel, substeps, pluie, fade, mode sim/baké/couture) + coût job.
+- **C3 — rendu** : FrameUbo +uWaterSimMapInfo/uWaterSimTuneInfo
+  (append-only, lockstep, rebuild propre fait) ; textures simMapA
+  (R32F plan d'affichage) / simMapB (RGBA16F depth/courant) aux
+  bindings 7/8 du groupe eau (destroy+create par tick — le chemin
+  info-map éprouvé ; updateTexture RHI = optimisation notée) ;
+  water_sim.vert = grille de nœuds déplacée par la texture ;
+  water_sim.frag = WATER_SIM + WATER_LOCAL → tout le shading local
+  réutilisé (torrent, advection, absorption), fragments secs discard,
+  fondu de bord au rect de confiance ; arbitrage PAR FRAGMENT : les
+  lacs/rubans bakés se discard là où la sim est valide et mouillée
+  (les filets < 2 texels restent rubans) ; 4 shaders validés
+  glslang.
+**CHECKPOINT VISUEL DEV (avant C4/C5)** : ruisseau en pente (4015,
+407, −1666), chute (4117, 396, −1592), bord de fenêtre/couture (mode
+« Seam overlay »), un coup de sculpt dans un ruisseau, coût F6/panneau.

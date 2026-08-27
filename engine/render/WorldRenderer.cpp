@@ -1810,6 +1810,8 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             core::FrameProbe::Scope probe { *view.probe, "water" };
             water.update(frame.device, terrain.params,
                          view.camera.position);
+            water.updateSim(frame.device, terrain.params,
+                            view.camera.position, frame.dt);
         }
     }
 }
@@ -2171,6 +2173,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .waterDebugInfo = { static_cast<f32>(tuning.waterDebug), 0.0f, 0.0f,
                             0.0f },
         .waterInfoMapInfo = water.infoMapInfo(),
+        .waterSimMapInfo = water.simMapInfo(),
+        .waterSimTuneInfo = water.simTuneInfo(),
         .terrainShadeMapInfo = terrainShadeMap.info(),
     });
     const render::FrameUniforms& uniforms = composed.base;

@@ -359,6 +359,10 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     zeroBorderWalls(state);
 }
 
+void refreshTerrain(WaterSimState& state, const HeightFn& height) {
+    fillTerrain(state.spec, height, state.terrain);
+}
+
 void extractSnapshot(const WaterSimState& state,
                      const WaterSimParams& params,
                      WaterSimSnapshot& out) {
@@ -370,14 +374,22 @@ void extractSnapshot(const WaterSimState& state,
     out.depth.assign(cells, 0.0f);
     out.velX.assign(cells, 0.0f);
     out.velZ.assign(cells, 0.0f);
+    out.display.resize(cells);
     const f32 texel = spec.texelSize;
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
+        out.display[i] = state.terrain[i] - 0.25f; // dry tuck default
         if (d <= params.dryThreshold) {
+            continue;
+        }
+        // Sea-pinned: the ocean sheet's territory, read dry.
+        if (state.terrain[i] < params.seaLevel &&
+            state.terrain[i] + d <= params.seaLevel + 0.01f) {
             continue;
         }
         out.depth[i] = d;
         out.surface[i] = state.terrain[i] + d;
+        out.display[i] = out.surface[i];
         const f32 flowX = state.fE[i] - state.fW[i];
         const f32 flowZ = state.fS[i] - state.fN[i];
         const f32 div = glm::max(d, 0.05f) * texel;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/terrain/RiverGeometry.hpp"
@@ -16,6 +17,7 @@ namespace {
 
 constexpr const char* kWaterShader = "water";
 constexpr const char* kWaterLocalShader = "waterlocal";
+constexpr const char* kWaterSimShader = "water_sim";
 
 // Worker-side pool-depth bake: vertical water column over the terrain
 // (sea + lakes + river ribbons when bodies are set), then a separable
@@ -121,6 +123,20 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                .format = rhi::TextureFormat::RGBA16F,
                                .usage = rhi::TextureUsage_Sampled },
                              kZeros);
+    // Sim placeholders: dry everywhere until the first pre-roll lands
+    // (created before the first bind-group build below).
+    const f32 kTuck = -1.0e6f;
+    simMapA = device.createTexture({ .width = 1,
+                                     .height = 1,
+                                     .format = rhi::TextureFormat::R32F,
+                                     .usage = rhi::TextureUsage_Sampled },
+                                   &kTuck);
+    simMapB =
+        device.createTexture({ .width = 1,
+                               .height = 1,
+                               .format = rhi::TextureFormat::RGBA16F,
+                               .usage = rhi::TextureUsage_Sampled },
+                             kZeros);
     rebuildMaterials(device); // also builds the map bind group
 
     shaders.load(kWaterShader, { { "FrameUbo", 0 } },
@@ -129,7 +145,9 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 } });
+                   { "uWaterInfoB", 6 },
+                   { "uWaterSimA", 7 },
+                   { "uWaterSimB", 8 } });
     shaders.load(kWaterLocalShader,
                  { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
                  { { "uSceneColor", 0 },
@@ -137,7 +155,19 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 } });
+                   { "uWaterInfoB", 6 },
+                   { "uWaterSimA", 7 },
+                   { "uWaterSimB", 8 } });
+    shaders.load(kWaterSimShader,
+                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { { "uSceneColor", 0 },
+                   { "uSceneDepth", 1 },
+                   { "uPoolDepth", 3 },
+                   { "uSkyClouds", 4 },
+                   { "uWaterInfoA", 5 },
+                   { "uWaterInfoB", 6 },
+                   { "uWaterSimA", 7 },
+                   { "uWaterSimB", 8 } });
     buildPipeline(device, shaders);
 }
 
@@ -182,6 +212,29 @@ void WaterSystem::destroy(rhi::Device& device) {
     bodies.reset();
     bodiesStamp = 0;
     bodiesDirty = false;
+    // Sim window teardown (in-flight jobs die on arrival by generation).
+    device.destroyTexture(simMapA);
+    device.destroyTexture(simMapB);
+    device.destroyBuffer(simVertexBuffer);
+    device.destroyBuffer(simIndexBuffer);
+    device.destroyPipeline(simPipeline);
+    simMapA = {};
+    simMapB = {};
+    simVertexBuffer = {};
+    simIndexBuffer = {};
+    simPipeline = {};
+    simIndexCount = 0;
+    simMeshN = 0;
+    simState.reset();
+    simSnap.reset();
+    simSrcCache.clear();
+    simInFlight = false;
+    simGroundDirty = false;
+    simValid = false;
+    ++simEpoch;
+    simAccum = 0.0f;
+    simHasLastCam = false;
+    simLastMs = 0.0f;
 }
 
 void WaterSystem::setBodies(sptr<const WaterBodies> next) {
@@ -491,6 +544,281 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
     }
 }
 
+Vec4 WaterSystem::simMapInfo() const {
+    if (!simValid || !simSnap || simSnap->spec.n < 2) {
+        return { 0.0f, 0.0f, 0.0f, 0.0f };
+    }
+    const auto& spec = simSnap->spec;
+    const f32 span = static_cast<f32>(spec.n - 1) * spec.texelSize;
+    return { spec.originX, spec.originZ, 1.0f / span, 1.0f };
+}
+
+void WaterSystem::uploadSimTextures(rhi::Device& device,
+                                    const terrain::WaterSimSnapshot& snap) {
+    // Destroy+create each tick (the proven info-map path; both
+    // backends defer deletion). An updateTexture RHI fast path is a
+    // known later optimization.
+    const u32 n = snap.spec.n;
+    device.destroyTexture(simMapA);
+    device.destroyTexture(simMapB);
+    simMapA = device.createTexture(
+        { .width = n,
+          .height = n,
+          .format = rhi::TextureFormat::R32F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled },
+        snap.display.data());
+    vector<f32> extras(static_cast<size_t>(n) * n * 4);
+    for (size_t i = 0; i < snap.depth.size(); ++i) {
+        extras[i * 4 + 0] = snap.depth[i];
+        extras[i * 4 + 1] = snap.velX[i];
+        extras[i * 4 + 2] = snap.velZ[i];
+        extras[i * 4 + 3] = 0.0f;
+    }
+    simMapB = device.createTexture(
+        { .width = n,
+          .height = n,
+          .format = rhi::TextureFormat::RGBA16F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled },
+        extras.data());
+    rebuildMapGroup(device);
+    ensureSimMesh(device, n);
+}
+
+void WaterSystem::ensureSimMesh(rhi::Device& device, u32 n) {
+    if (simMeshN == n || n < 2) {
+        return;
+    }
+    device.destroyBuffer(simVertexBuffer);
+    device.destroyBuffer(simIndexBuffer);
+    // Node-uv grid; water_sim.vert lifts each node by the display
+    // texture. Winding matches the sea quad (CCW from above).
+    vector<f32> verts;
+    verts.reserve(static_cast<size_t>(n) * n * 2);
+    const f32 inv = 1.0f / static_cast<f32>(n - 1);
+    for (u32 row = 0; row < n; ++row) {
+        for (u32 col = 0; col < n; ++col) {
+            verts.push_back(static_cast<f32>(col) * inv);
+            verts.push_back(static_cast<f32>(row) * inv);
+        }
+    }
+    vector<u32> indices;
+    indices.reserve(static_cast<size_t>(n - 1) * (n - 1) * 6);
+    for (u32 row = 0; row + 1 < n; ++row) {
+        for (u32 col = 0; col + 1 < n; ++col) {
+            const u32 v00 = row * n + col;
+            const u32 v10 = v00 + 1;
+            const u32 v01 = v00 + n;
+            const u32 v11 = v01 + 1;
+            for (const u32 v : { v00, v11, v10, v00, v01, v11 }) {
+                indices.push_back(v);
+            }
+        }
+    }
+    simVertexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = verts.size() * sizeof(f32) },
+        verts.data());
+    simIndexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = indices.size() * sizeof(u32) },
+        indices.data());
+    simIndexCount = static_cast<u32>(indices.size());
+    simMeshN = n;
+}
+
+void WaterSystem::updateSim(rhi::Device& device,
+                            const TerrainParams& params,
+                            const Vec3& cameraPos, f32 dt) {
+    using terrain::WaterSimState;
+    // Apply finished jobs (newest wins; at most one is ever in flight).
+    SimResult res;
+    while (shared->simDone.tryPop(res)) {
+        if (res.generation != generation) {
+            continue;
+        }
+        simInFlight = false;
+        if (res.epoch != simEpoch) {
+            continue; // invalidated while the job ran
+        }
+        simState = res.state;
+        simLastMs = res.millis;
+        if (res.sourcesFresh) {
+            simSrcCache = std::move(res.sources);
+        }
+        if (res.snap) {
+            uploadSimTextures(device, *res.snap);
+            simSnap = res.snap;
+            simValid = true;
+        }
+    }
+    if (!simCfg.enabled || !params.base) {
+        if (simState || simValid) {
+            simState.reset();
+            simSnap.reset();
+            simValid = false;
+            ++simEpoch;
+            simAccum = 0.0f;
+        }
+        return;
+    }
+    // Sustained fast travel (fly mode): no margin survives 25+ m/s —
+    // drop the window, the baked bodies take over, and slowing down
+    // re-enters like a teleport (fresh pre-roll).
+    const Vec2 camXz { cameraPos.x, cameraPos.z };
+    f32 speed = 0.0f;
+    if (simHasLastCam && dt > 1.0e-4f) {
+        speed = glm::distance(camXz, simLastCam) / dt;
+    }
+    simLastCam = camXz;
+    simHasLastCam = true;
+    if (speed > simCfg.invalidateSpeed) {
+        if (simState || simValid) {
+            simState.reset();
+            simSnap.reset();
+            simValid = false;
+            ++simEpoch;
+            simAccum = 0.0f;
+        }
+        return;
+    }
+    if (simInFlight) {
+        return;
+    }
+    const f32 texel = glm::max(simCfg.texel, 0.5f);
+    // Live span/texel knob change: rebuild the window from scratch.
+    if (simState &&
+        (std::abs(simState->spec.texelSize - texel) > 1.0e-3f ||
+         std::abs(static_cast<f32>(simState->spec.n - 1) *
+                      simState->spec.texelSize -
+                  simCfg.span) > texel * 2.0f)) {
+        simState.reset();
+        simSnap.reset();
+        simValid = false;
+        ++simEpoch;
+        simAccum = 0.0f;
+    }
+    if (!simState) {
+        // Wait for the ground truth: pre-rolling before the camera's
+        // tile is published would settle water on the analytic
+        // fallback terrain, meters off the baked one.
+        if (!params.base->regionAt(cameraPos.x, cameraPos.z)) {
+            return;
+        }
+        // Teleport / first entry: async pre-roll to equilibrium.
+        terraingen::GridSpec spec;
+        spec.texelSize = texel;
+        spec.n = static_cast<u32>(simCfg.span / texel) + 1;
+        spec.originX =
+            std::floor((cameraPos.x - simCfg.span * 0.5f) / texel) *
+            texel;
+        spec.originZ =
+            std::floor((cameraPos.z - simCfg.span * 0.5f) / texel) *
+            texel;
+        simInFlight = true;
+        const f32 maxX =
+            spec.originX + static_cast<f32>(spec.n - 1) * texel;
+        const f32 maxZ =
+            spec.originZ + static_cast<f32>(spec.n - 1) * texel;
+        jobs->enqueue([sharedRef = shared, params, spec,
+                       simParams = simCfg.params, fn = simSourcesFn,
+                       gen = generation, epoch = simEpoch, maxX, maxZ] {
+            SimResult out;
+            out.generation = gen;
+            out.epoch = epoch;
+            const core::TimePoint start = core::clockNow();
+            if (fn) {
+                out.sources = fn(spec.originX, spec.originZ, maxX, maxZ);
+                out.sourcesFresh = true;
+            }
+            auto state = std::make_shared<WaterSimState>(
+                terrain::preRollWindow(
+                    spec,
+                    [&params](f32 x, f32 z) {
+                        return terrain::height(params, x, z);
+                    },
+                    simParams, out.sources));
+            auto snap = std::make_shared<terrain::WaterSimSnapshot>();
+            terrain::extractSnapshot(*state, simParams, *snap);
+            out.state = std::move(state);
+            out.snap = std::move(snap);
+            out.millis =
+                static_cast<f32>(core::secondsSince(start) * 1000.0);
+            sharedRef->simDone.push(std::move(out));
+        });
+        return;
+    }
+    // Regular tick: fixed-dt accumulator (hitch-clamped), re-anchor by
+    // hysteresis, ground refresh on terraforming.
+    simAccum += glm::min(dt, 0.25f);
+    const f32 tickDt = glm::max(simCfg.params.dt, 1.0f / 240.0f);
+    u32 substeps = static_cast<u32>(simAccum / tickDt);
+    substeps = glm::min(substeps, simCfg.maxSubsteps);
+    simAccum = glm::min(simAccum - static_cast<f32>(substeps) * tickDt,
+                        tickDt);
+    const auto& spec = simState->spec;
+    const f32 span = static_cast<f32>(spec.n - 1) * spec.texelSize;
+    const f32 centerX = spec.originX + span * 0.5f;
+    const f32 centerZ = spec.originZ + span * 0.5f;
+    i32 dCol = 0;
+    i32 dRow = 0;
+    if (std::abs(cameraPos.x - centerX) > simCfg.anchorHysteresis) {
+        dCol = static_cast<i32>(
+            std::lround((cameraPos.x - centerX) / spec.texelSize));
+    }
+    if (std::abs(cameraPos.z - centerZ) > simCfg.anchorHysteresis) {
+        dRow = static_cast<i32>(
+            std::lround((cameraPos.z - centerZ) / spec.texelSize));
+    }
+    if (substeps == 0 && dCol == 0 && dRow == 0 && !simGroundDirty) {
+        return;
+    }
+    simInFlight = true;
+    const bool refreshGround = simGroundDirty;
+    simGroundDirty = false;
+    jobs->enqueue([sharedRef = shared, params, state = simState,
+                   simParams = simCfg.params, fn = simSourcesFn,
+                   sources = simSrcCache, gen = generation,
+                   epoch = simEpoch, dCol, dRow, substeps,
+                   refreshGround]() mutable {
+        SimResult out;
+        out.generation = gen;
+        out.epoch = epoch;
+        const core::TimePoint start = core::clockNow();
+        const auto heightFn = [&params](f32 x, f32 z) {
+            return terrain::height(params, x, z);
+        };
+        if (refreshGround) {
+            terrain::refreshTerrain(*state, heightFn);
+        }
+        if (dCol != 0 || dRow != 0) {
+            terrain::scrollWindow(*state, dCol, dRow, heightFn,
+                                  simParams.seaLevel);
+            if (fn) {
+                const auto& sp = state->spec;
+                const f32 sMaxX =
+                    sp.originX +
+                    static_cast<f32>(sp.n - 1) * sp.texelSize;
+                const f32 sMaxZ =
+                    sp.originZ +
+                    static_cast<f32>(sp.n - 1) * sp.texelSize;
+                sources = fn(sp.originX, sp.originZ, sMaxX, sMaxZ);
+                out.sourcesFresh = true;
+            }
+        }
+        terrain::stepWindow(*state, simParams, sources, substeps);
+        auto snap = std::make_shared<terrain::WaterSimSnapshot>();
+        terrain::extractSnapshot(*state, simParams, *snap);
+        out.state = std::move(state);
+        out.snap = std::move(snap);
+        out.sources = std::move(sources);
+        out.millis =
+            static_cast<f32>(core::secondsSince(start) * 1000.0);
+        sharedRef->simDone.push(std::move(out));
+    });
+}
+
 void WaterSystem::rebuildMapGroup(rhi::Device& device) {
     device.destroyBindGroup(poolMapGroup);
     poolMapGroup = device.createBindGroup(
@@ -503,6 +831,12 @@ void WaterSystem::rebuildMapGroup(rhi::Device& device) {
                          .sampler = poolMapSampler },
                        { .binding = 6,
                          .texture = infoMapB,
+                         .sampler = poolMapSampler },
+                       { .binding = 7,
+                         .texture = simMapA,
+                         .sampler = poolMapSampler },
+                       { .binding = 8,
+                         .texture = simMapB,
                          .sampler = poolMapSampler } } });
 }
 
@@ -593,8 +927,26 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .cull = rhi::CullMode::None,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f });
+    // Sim window: node-uv grid displaced by the display texture in the
+    // vertex shader, same states and shared shading.
+    if (simPipeline.id != 0) {
+        device.destroyPipeline(simPipeline);
+    }
+    simPipeline = device.createPipeline(
+        { .shader = shaders.get(kWaterSimShader),
+          .vertexBuffers =
+              { { .stride = 2 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = 0 } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Greater },
+          .cull = rhi::CullMode::None,
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
     // The watch recorded every shader the build consumed: a reload of
-    // any of them rebuilds both pipelines.
+    // any of them rebuilds the pipelines.
     shaderWatch = shaders.endWatch();
 }
 
@@ -624,6 +976,17 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setVertexBuffer(0, localVertexBuffer);
         cmd.setIndexBuffer(localIndexBuffer, rhi::IndexFormat::U32);
         cmd.drawIndexed(localIndexCount);
+    }
+    if (simValid && simIndexCount > 0 && simCfg.debugMode != 1) {
+        // The live sim sheet (drawn last: its fragments discard where
+        // dry, the baked ones discard where the sim owns the texel).
+        cmd.setPipeline(simPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, sceneBindGroup);
+        cmd.setBindGroup(2, poolMapGroup);
+        cmd.setVertexBuffer(0, simVertexBuffer);
+        cmd.setIndexBuffer(simIndexBuffer, rhi::IndexFormat::U32);
+        cmd.drawIndexed(simIndexCount);
     }
 }
 

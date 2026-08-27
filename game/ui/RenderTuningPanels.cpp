@@ -723,6 +723,29 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::Combo("Debug view", &r.tuning.waterDebug,
                      "Off\0Flow\0Torrent\0River UV\0Info: surface\0"
                      "Info: depth\0Info: flow\0");
+        ImGui::SeparatorText("Sim window");
+        // The live windowed shallow-water sim (option C). Span/texel
+        // apply on the next window re-init (toggle off/on to force).
+        render::WaterSystem::SimConfig& sim =
+            r.waterSystem().simConfig();
+        ImGui::Checkbox("Sim enabled", &sim.enabled);
+        ImGui::SameLine();
+        ImGui::Text("job %.2f ms", r.waterSystem().simCostMs());
+        ImGui::SliderFloat("Sim span (m)", &sim.span, 256.0f, 1024.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Sim texel (m)", &sim.texel, 1.0f, 4.0f,
+                           "%.1f");
+        ImGui::SliderInt("Sim max substeps",
+                         reinterpret_cast<int*>(&sim.maxSubsteps), 1, 8);
+        f32 rainMmh = sim.params.rainRate * 3.6e6f;
+        if (ImGui::SliderFloat("Sim rain (mm/h)", &rainMmh, 0.0f, 60.0f,
+                               "%.1f")) {
+            sim.params.rainRate = rainMmh / 3.6e6f;
+        }
+        ImGui::SliderFloat("Sim fade band (m)", &sim.fadeBand, 8.0f,
+                           64.0f, "%.0f");
+        ImGui::Combo("Sim mode", &sim.debugMode,
+                     "Sim + baked\0Force baked\0Seam overlay\0");
     }
     if (ImGui::CollapsingHeader("Post-processing")) {
         ImGui::Checkbox("Filmic tonemap (A/B)", &r.tuning.tonemap);

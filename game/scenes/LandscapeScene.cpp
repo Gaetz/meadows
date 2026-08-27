@@ -1813,6 +1813,32 @@ void LandscapeScene::setSandboxMode(bool enable) {
             &engine->getJobSystem());
         LOG_INFO("Sandbox terrain: seed {}, {} m tiles",
                  tuning.terrainSeed, bakeParams.tileSize);
+        // Live water sim (option C): boundary inflow from the master
+        // network — worker-callable and pure (the memoized network
+        // makes repeat queries cheap after the first).
+        {
+            render::terraingen::ProceduralControlParams cp =
+                bakeParams.controls;
+            cp.seed = bakeParams.worldSeed;
+            render::terraingen::MasterNetworkParams net =
+                bakeParams.network;
+            net.seaLevel = bakeParams.macro.seaLevel;
+            render::terraingen::WaterSolveParams solveParams =
+                bakeParams.waterSolve;
+            solveParams.seaLevel = bakeParams.macro.seaLevel;
+            const render::terraingen::MacroParams macro =
+                bakeParams.macro;
+            renderer.waterSystem().setSimSources(
+                [cp, macro, net, solveParams](f32 minX, f32 minZ,
+                                              f32 maxX, f32 maxZ) {
+                    return render::terraingen::masterBoundarySources(
+                        render::terraingen::ProceduralControls { cp },
+                        macro, net, solveParams, minX, minZ, maxX,
+                        maxZ);
+                });
+            renderer.waterSystem().simConfig().params.seaLevel =
+                tuning.seaLevel;
+        }
         // Park the terrain/grass/vegetation rings until the first tile
         // publishes: chunks meshed against the empty base are ALL remeshed
         // on publish — double work that competed with the bakes for
@@ -2190,6 +2216,9 @@ void LandscapeScene::publishBakedTiles(
         reconcileWaterWithTerrain(next->regions[r]);
     }
     publishWaterBodies();
+    // Fresh regions changed the ground under the sim window — it
+    // re-samples on its next step job.
+    renderer.waterSystem().notifySimGroundChanged();
     LOG_INFO("Sandbox terrain: {} tile(s) published ({} lakes, {} "
              "rivers resident)",
              tiles.size(), sandboxLakes.size(), sandboxRivers.size());
@@ -2454,6 +2483,10 @@ SculptContext LandscapeScene::makeSculptContext() {
             renderer.terrainParams().patches = next;
             renderer.sculptRemeshQueue().insert(renderer.sculptRemeshQueue().end(), changed.begin(),
                                      changed.end());
+            // The live water sim re-samples its ground on the next
+            // step job — the water reacts DURING the stroke (the From
+            // Dust terraforming loop).
+            renderer.waterSystem().notifySimGroundChanged();
             if (!commit) {
                 return; // live preview: terrain only, no heavy churn
             }

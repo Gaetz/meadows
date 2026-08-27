@@ -154,4 +154,10 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Terrain surface response: x = per-material AO strength, y =
     // wetness darkening, z = wet sheen, w = snow sheen.
     vec4 uSurfSheenInfo;
+    // Real-time water sim window (WaterSystem): xy = window ORIGIN
+    // (min corner, world m), z = 1 / span, w = valid (0/1).
+    vec4 uWaterSimMapInfo;
+    // x = trusted inset (m), y = edge fade band (m), z = debug mode
+    // (0 normal, 1 force baked, 2 seam overlay), w free.
+    vec4 uWaterSimTuneInfo;
 };

@@ -59,6 +59,9 @@ struct WaterSimState {
 };
 
 // Immutable view for the render upload and the gameplay queries.
+// Sea-pinned cells (ground under sea, level at sea) read DRY here: the
+// analytic ocean sheet renders them and the sea query path answers for
+// them — the sim window never fights either.
 struct WaterSimSnapshot {
     terraingen::GridSpec spec;
     u32 marginCells { 0 };
@@ -66,6 +69,11 @@ struct WaterSimSnapshot {
     vector<f32> depth;   // 0 where dry
     vector<f32> velX;    // m/s, depth-averaged
     vector<f32> velZ;
+    // Render displacement plane: the wet surface, or the local ground
+    // minus a tuck where dry — the sheet dives under the bank and the
+    // depth test cuts the exact shoreline (sim ground == render
+    // ground, so this is reliable here).
+    vector<f32> display;
 };
 
 // Fresh window: terrain from `height` per cell, depth from the
@@ -79,6 +87,10 @@ void initWindow(WaterSimState& state, const terraingen::GridSpec& spec,
 void stepWindow(WaterSimState& state, const WaterSimParams& params,
                 const vector<terraingen::WaterSource>& sources,
                 u32 substeps);
+
+// Re-sample the whole terrain plane (terraforming: the sculpt overlay
+// changed under the window — the water then reacts live).
+void refreshTerrain(WaterSimState& state, const HeightFn& height);
 
 // Shift the window by whole cells (positive = origin moves +x/+z).
 // Interior content moves bit-exactly (memmove); entered strips get

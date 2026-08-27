@@ -20,6 +20,19 @@ layout(binding = 4) uniform sampler2D uSkyClouds;
 // overlaps resolve per PIXEL against this — the Unreal Water model.
 layout(binding = 5) uniform sampler2D uWaterInfoA;
 layout(binding = 6) uniform sampler2D uWaterInfoB;
+// Live sim window (WaterSystem::updateSim): A = display level (wet
+// surface, or ground minus a tuck where dry), B = depth / current XZ /
+// spare. uWaterSimMapInfo maps world -> window uv.
+layout(binding = 7) uniform sampler2D uWaterSimA;
+layout(binding = 8) uniform sampler2D uWaterSimB;
+
+// World XZ -> texel-centered uv of the sim textures (n nodes = n
+// texels over the window span).
+vec2 waterSimUv(vec2 worldXz) {
+    vec2 rel = (worldXz - uWaterSimMapInfo.xy) * uWaterSimMapInfo.z;
+    vec2 texSize = vec2(textureSize(uWaterSimB, 0));
+    return (rel * (texSize - 1.0) + 0.5) / texSize;
+}
 
 #ifdef WATER_LOCAL
 // Water material presets (WaterSystem::rebuildMaterials — std140
@@ -41,12 +54,21 @@ layout(std140, binding = 1) uniform WaterMaterialsUbo {
 #include "view_util.glsl"
 
 layout(location = 0) in vec3 vWorldPos;
-#ifdef WATER_LOCAL
+#if defined(WATER_LOCAL) && !defined(WATER_SIM)
 // Local surfaces (lakes/rivers, waterlocal.vert): the per-surface
 // character the shading below specializes on.
 layout(location = 1) in vec2 vFlow; // direction * speed; (0,0) = lake
 layout(location = 2) in vec4 vInfo; // halfWidth (0 = lake), lateral, arc, endDist
 layout(location = 3) flat in float vMaterial; // preset slot
+#endif
+#ifdef WATER_SIM
+// Sim sheet (water_sim.vert): per-fragment character comes from the
+// sim textures instead of vertex attributes — same NAMES so the whole
+// WATER_LOCAL shading below runs unchanged.
+layout(location = 1) in vec2 vSimUv;
+vec2 vFlow;
+vec4 vInfo;
+float vMaterial;
 #endif
 layout(location = 0) out vec4 fragColor;
 
@@ -67,6 +89,54 @@ vec3 waveNormal(vec2 p, float t) {
 void main() {
     vec2 screenUv = gl_FragCoord.xy * uScreenInfo.zw;
     float t = uWindInfo.x; // wind-scaled phase: waves slow down in a calm
+#ifdef WATER_SIM
+    // Character from the sim textures; dry fragments dissolve (the
+    // bilinear depth softens the shoreline past the mesh tuck).
+    vec4 simTexB = texture(uWaterSimB, vSimUv);
+    if (simTexB.x < 0.02) {
+        discard;
+    }
+    vFlow = simTexB.yz;
+    vInfo = vec4(dot(vFlow, vFlow) > 0.09 ? 4.0 : 0.0, 0.0, 0.0, 1.0e6);
+    vMaterial = 0.0;
+    // Trusted-rim fade: 0 at the margin boundary, 1 a fade-band inside
+    // — the baked bodies own everything past it.
+    vec2 simRel =
+        (vWorldPos.xz - uWaterSimMapInfo.xy) * uWaterSimMapInfo.z;
+    float simEdgeM = min(min(simRel.x, 1.0 - simRel.x),
+                         min(simRel.y, 1.0 - simRel.y)) /
+                     uWaterSimMapInfo.z;
+    float simFade = smoothstep(uWaterSimTuneInfo.x,
+                               uWaterSimTuneInfo.x + uWaterSimTuneInfo.y,
+                               simEdgeM);
+    if (simFade <= 0.001) {
+        discard;
+    }
+#endif
+#if defined(WATER_LOCAL) && !defined(WATER_SIM)
+    // The live sim owns its trusted interior: baked lake/ribbon
+    // fragments yield wherever the sim has water there (per FRAGMENT —
+    // thin creeks the 2 m grid cannot hold keep their ribbons).
+    {
+        int simMode = int(uWaterSimTuneInfo.z + 0.5);
+        if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
+            vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
+                       uWaterSimMapInfo.z;
+            if (all(greaterThan(rel, vec2(0.0))) &&
+                all(lessThan(rel, vec2(1.0)))) {
+                float edgeM = min(min(rel.x, 1.0 - rel.x),
+                                  min(rel.y, 1.0 - rel.y)) /
+                              uWaterSimMapInfo.z;
+                if (edgeM > uWaterSimTuneInfo.x +
+                                uWaterSimTuneInfo.y * 0.5 &&
+                    texture(uWaterSimB, waterSimUv(vWorldPos.xz)).x >
+                        0.02) {
+                    discard;
+                }
+            }
+        }
+    }
+#endif
 #ifdef WATER_LOCAL
     // Rivers: the wave field is ADVECTED downstream (current, not wind)
     // and its ripples shrink with the channel — a 4 m creek carries
@@ -310,6 +380,14 @@ void main() {
                         riverness));
     // Preset emissive (lava): glows through the fog like any emitter.
     color += mtl.emissiveViscosity.rgb * mtl.deepEmissive.w;
+#ifdef WATER_SIM
+    // Trusted-rim crossfade toward the ground (the baked bodies pick
+    // the water up past the band), and the seam-overlay debug tint.
+    color = mix(refracted, color, simFade);
+    if (int(uWaterSimTuneInfo.z + 0.5) == 2) {
+        color = mix(color, vec3(1.0, 0.25, 0.2), 0.30);
+    }
+#endif
 
     // Debug views (render panel > Water > Debug view). Modes 4-6 show
     // the water-info texture channels once that map is bound.

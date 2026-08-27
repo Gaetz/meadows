@@ -154,6 +154,10 @@ struct FrameComposerInputs {
     Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Water-info map: xy = center, z = 1/span, w = valid.
     Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Live water-sim window: xy = origin, z = 1/span, w = valid;
+    // tune = trusted inset (m), fade band (m), debug mode.
+    Vec4 waterSimMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4 waterSimTuneInfo { 64.0f, 32.0f, 0.0f, 0.0f };
     // Region shading maps (TerrainShadeMap::info()).
     Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };

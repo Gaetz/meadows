@@ -213,6 +213,12 @@ struct FrameUniforms {
     // sheen is the only specular the stylized terrain has — it lives
     // exclusively on wet/snowy ground, dry land stays pure diffuse.
     Vec4 surfSheenInfo { 0.7f, 0.6f, 0.5f, 0.04f };
+    // Real-time water sim window (WaterSystem): xy = window ORIGIN
+    // (min corner), z = 1/span, w = valid.
+    Vec4 waterSimMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // x = trusted inset (m), y = edge fade band (m), z = debug mode
+    // (0 normal, 1 force baked, 2 seam overlay), w free.
+    Vec4 waterSimTuneInfo { 64.0f, 32.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -293,7 +299,9 @@ static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1840);
 static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1936);
 static_assert(offsetof(FrameUniforms, ssaoInfo) == 2032);
 static_assert(offsetof(FrameUniforms, surfSheenInfo) == 2048);
-static_assert(sizeof(FrameUniforms) == 2064,
+static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 2064);
+static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 2080);
+static_assert(sizeof(FrameUniforms) == 2096,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 
