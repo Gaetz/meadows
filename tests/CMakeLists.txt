@@ -72,6 +72,7 @@
     RiverGeometryTest.cpp
     WaterInfoMapTest.cpp
     WaterSolveTest.cpp
+    WaterSimTest.cpp
     AuthoringTest.cpp
     SpawnDiagnosticTest.cpp
     LevelEditorTest.cpp
