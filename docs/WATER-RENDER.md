@@ -125,6 +125,14 @@ Intégration :
   (mesuré dev). Seul un téléport > demi-fenêtre ré-initialise, et le
   pre-roll épingle les lacs PUIS fait une rafale (~15 s de sim) pour
   arriver « déjà en train de couler ».
+- **Backend d'abord quand l'artefact ERRE** : des symptômes qui
+  changent de forme à chaque retouche shader (ronds → croix → brûlure
+  blanche → cyan) = données d'entrée indéfinies, pas une erreur de
+  shading. Racine réelle : la whitelist d'upload GL46 refusait
+  R32F/RGBA16F avec pixels → createTexture échouait → handle 0 → le
+  shader lisait de la mémoire indéfinie. Vérifier le HANDLE avant de
+  soupçonner le shading ; le replay prouve l'état sim sain en une
+  commande.
 - `cooker water-replay <dump> <prefix> [substeps]` : TOUT correctif de
   simulation se vérifie sur un dump AVANT de re-déranger le dev.
 
