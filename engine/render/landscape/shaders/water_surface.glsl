@@ -337,8 +337,15 @@ void main() {
     // is what turns the sheet into a VOLUME.
     vec3 gpx = dFdx(vWorldPos);
     vec3 gpy = dFdy(vWorldPos);
-    vec3 geoN = normalize(cross(gpy, gpx));
-    float wallness = 1.0 - smoothstep(0.30, 0.62, abs(geoN.y));
+    vec3 crossN = cross(gpy, gpx);
+    float crossLen = length(crossN);
+    // Degenerate derivatives (grazing/far facets) would NaN through
+    // normalize and poison the bloom chain tile by tile (the black
+    // rectangles, measured) — treat them as flat.
+    float wallness =
+        crossLen > 1.0e-9
+            ? 1.0 - smoothstep(0.30, 0.62, abs(crossN.y / crossLen))
+            : 0.0;
     if (wallness > 0.001) {
         float streak =
             0.5 + 0.5 * sin(vWorldPos.y * 4.0 +

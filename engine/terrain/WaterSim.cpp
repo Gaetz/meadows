@@ -22,6 +22,15 @@ void pinSea(const WaterSimState& state, vector<f32>& depth,
             depth[i] = seaLevel - state.terrain[i];
         }
     }
+    // Pinned reservoirs (baked lakes): held level, absorb and supply.
+    if (state.pinned.size() == cells) {
+        for (size_t i = 0; i < cells; ++i) {
+            const f32 level = state.pinned[i];
+            if (level > kWaterInfoDry + 1.0f) {
+                depth[i] = glm::max(0.0f, level - state.terrain[i]);
+            }
+        }
+    }
 }
 
 void zeroBorderWalls(WaterSimState& state) {
@@ -65,6 +74,7 @@ void initWindow(WaterSimState& state, const GridSpec& spec,
     state.fN.assign(cells, 0.0f);
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
+    state.pinned.assign(cells, kWaterInfoDry);
     const vector<f32> filled = terraingen::priorityFloodFill(
         spec, state.terrain, seaLevel, 1.0e-4f);
     for (size_t i = 0; i < cells; ++i) {
@@ -253,8 +263,15 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
         }
         return;
     }
-    vector<f32>* planes[] = { &state.terrain, &state.depth, &state.fE,
-                              &state.fW,      &state.fS,    &state.fN };
+    if (state.pinned.size() != state.spec.cells()) {
+        state.pinned.assign(state.spec.cells(), kWaterInfoDry);
+    }
+    // The pinned plane shifts with the rest; the caller rebuilds it
+    // via pinLakes after every scroll (whole-plane, cheap), so the
+    // entered strips never keep stale pins for long.
+    vector<f32>* planes[] = { &state.terrain, &state.depth,  &state.fE,
+                              &state.fW,      &state.fS,     &state.fN,
+                              &state.pinned };
     const auto at = [&](i32 col, i32 row) {
         return static_cast<size_t>(row) * state.spec.n +
                static_cast<size_t>(col);
@@ -363,6 +380,46 @@ void refreshTerrain(WaterSimState& state, const HeightFn& height) {
     fillTerrain(state.spec, height, state.terrain);
 }
 
+void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
+    const GridSpec& spec = state.spec;
+    const size_t cells = spec.cells();
+    state.pinned.assign(cells, kWaterInfoDry);
+    const f32 texel = spec.texelSize;
+    const f32 maxX = spec.originX + static_cast<f32>(spec.n - 1) * texel;
+    const f32 maxZ = spec.originZ + static_cast<f32>(spec.n - 1) * texel;
+    for (const LakeSurface& lake : bodies.lakes) {
+        if (lake.maxX < spec.originX || lake.minX > maxX ||
+            lake.maxZ < spec.originZ || lake.minZ > maxZ) {
+            continue;
+        }
+        const i32 c0 = glm::max(
+            static_cast<i32>((lake.minX - spec.originX) / texel), 0);
+        const i32 c1 = glm::min(
+            static_cast<i32>((lake.maxX - spec.originX) / texel) + 1,
+            static_cast<i32>(spec.n) - 1);
+        const i32 r0 = glm::max(
+            static_cast<i32>((lake.minZ - spec.originZ) / texel), 0);
+        const i32 r1 = glm::min(
+            static_cast<i32>((lake.maxZ - spec.originZ) / texel) + 1,
+            static_cast<i32>(spec.n) - 1);
+        for (i32 row = r0; row <= r1; ++row) {
+            for (i32 col = c0; col <= c1; ++col) {
+                const size_t i =
+                    static_cast<size_t>(row) * spec.n + col;
+                if (lake.level <= state.terrain[i] + 0.02f) {
+                    continue; // rim/bank cell above the water
+                }
+                if (!lake.covers(spec.x(static_cast<u32>(col)),
+                                 spec.z(static_cast<u32>(row)))) {
+                    continue;
+                }
+                state.pinned[i] =
+                    glm::max(state.pinned[i], lake.level);
+            }
+        }
+    }
+}
+
 void extractSnapshot(const WaterSimState& state,
                      const WaterSimParams& params,
                      WaterSimSnapshot& out) {
@@ -435,6 +492,7 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
     state.fN.assign(cells, 0.0f);
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
+    state.pinned.assign(cells, kWaterInfoDry);
     pinSea(state, state.depth, params.seaLevel);
     zeroBorderWalls(state);
     return state;

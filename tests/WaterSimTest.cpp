@@ -293,6 +293,48 @@ TEST_CASE("water sim: matches the offline equilibrium oracle") {
     CHECK(compared > 50);
 }
 
+TEST_CASE("water sim: a pinned lake pours over its whole rim") {
+    // A plateau lake (baked LakeSurface) pinned at level 310 next to a
+    // 20 m drop: the reservoir never empties, so water pours over
+    // every rim cell below the level — the wide waterfall — and keeps
+    // pouring (infinite supply).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto plateau = [](f32 x, f32) {
+        return x < 48.0f ? 305.0f : 285.0f; // basin floor | lower land
+    };
+    WaterSimState state;
+    initWindow(state, spec, plateau, -1000.0f);
+    render::WaterBodies bodies;
+    render::LakeSurface lake;
+    lake.level = 310.0f;
+    lake.minX = 0.0f;
+    lake.minZ = 0.0f;
+    lake.maxX = 44.0f;
+    lake.maxZ = 128.0f; // maskless: the whole bbox is water
+    bodies.lakes.push_back(lake);
+    pinLakes(state, bodies);
+    WaterSimParams params = closedParams();
+    params.borderDrainPerSecond = 0.9f;
+    stepWindow(state, params, {}, 1200);
+    // The lake stands at its pinned level...
+    const size_t inLake = 30u * spec.n + 10u;
+    CHECK(state.terrain[inLake] + state.depth[inLake] ==
+          doctest::Approx(310.0f).epsilon(0.001));
+    // ...and the lower land is wet across a WIDE front (many rows).
+    u32 wetRows = 0;
+    for (u32 row = 2; row < spec.n - 2; ++row) {
+        f32 rowWet = 0.0f;
+        for (u32 col = 28; col < spec.n; ++col) {
+            rowWet +=
+                state.depth[static_cast<size_t>(row) * spec.n + col];
+        }
+        if (rowWet > 0.05f) {
+            ++wetRows;
+        }
+    }
+    CHECK(wetRows > 40);
+}
+
 TEST_CASE("water sim: kernel perf gate") {
     // The CPU-realtime premise (plan option C): the kernel must stay
     // well under 100 ns/cell/substep on a 256-class window. Generous

@@ -74,6 +74,59 @@ vector<f32> bakePoolDepth(const TerrainParams& params,
     return depth;
 }
 
+// Boundary inflow from the BAKED ribbons: any river polyline entering
+// the window injects a discharge derived from its width (the inverse
+// of the classifyRivers width law, default coef 0.008/exponent 0.5 —
+// the ribbon's width says how much catchment feeds it). Master-network
+// entries already inject the true areas; skip anything near one.
+vector<render::terraingen::WaterSource> bakedEntrySources(
+    const render::WaterBodies& bodies,
+    const render::terraingen::GridSpec& spec,
+    const vector<render::terraingen::WaterSource>& master,
+    f32 rainRate) {
+    using render::terraingen::WaterSource;
+    render::terraingen::WaterSolveParams runoff;
+    runoff.rainRate = rainRate;
+    const f32 maxX = spec.originX +
+                     static_cast<f32>(spec.n - 1) * spec.texelSize;
+    const f32 maxZ = spec.originZ +
+                     static_cast<f32>(spec.n - 1) * spec.texelSize;
+    const auto inside = [&](f32 x, f32 z) {
+        return x >= spec.originX && x <= maxX && z >= spec.originZ &&
+               z <= maxZ;
+    };
+    vector<WaterSource> out;
+    for (const render::RiverSurface& river : bodies.rivers) {
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            const render::RiverNode& a = river.nodes[k - 1];
+            const render::RiverNode& b = river.nodes[k];
+            if (inside(a.x, a.z) || !inside(b.x, b.z)) {
+                continue;
+            }
+            bool nearMaster = false;
+            for (const WaterSource& m : master) {
+                const f32 dx = m.x - b.x;
+                const f32 dz = m.z - b.z;
+                if (dx * dx + dz * dz < 80.0f * 80.0f) {
+                    nearMaster = true;
+                    break;
+                }
+            }
+            if (nearMaster) {
+                continue;
+            }
+            const f32 hw = glm::max(b.halfWidth, 0.5f);
+            const f32 area = (hw / 0.008f) * (hw / 0.008f);
+            out.push_back(
+                { b.x, b.z,
+                  glm::min(render::terraingen::runoffDischarge(area,
+                                                               runoff),
+                           120.0f) });
+        }
+    }
+    return out;
+}
+
 // Unit quad in [-1,1]²; water.vert scales it around the camera and pins it
 // to sea level. Flat geometry — the waves live in the fragment normals.
 // CCW seen from ABOVE (+Y): the surface faces the sky.
@@ -723,15 +776,22 @@ void WaterSystem::updateSim(rhi::Device& device,
             spec.originZ + static_cast<f32>(spec.n - 1) * texel;
         jobs->enqueue([sharedRef = shared, params, spec,
                        simParams = simCfg.params, fn = simSourcesFn,
-                       gen = generation, epoch = simEpoch, maxX, maxZ] {
+                       bodiesRef = bodies, gen = generation,
+                       epoch = simEpoch, maxX, maxZ] {
             SimResult out;
             out.generation = gen;
             out.epoch = epoch;
             const core::TimePoint start = core::clockNow();
             if (fn) {
                 out.sources = fn(spec.originX, spec.originZ, maxX, maxZ);
-                out.sourcesFresh = true;
             }
+            if (bodiesRef) {
+                const auto baked = bakedEntrySources(
+                    *bodiesRef, spec, out.sources, simParams.rainRate);
+                out.sources.insert(out.sources.end(), baked.begin(),
+                                   baked.end());
+            }
+            out.sourcesFresh = true;
             auto state = std::make_shared<WaterSimState>(
                 terrain::preRollWindow(
                     spec,
@@ -739,6 +799,12 @@ void WaterSystem::updateSim(rhi::Device& device,
                         return terrain::height(params, x, z);
                     },
                     simParams, out.sources));
+            if (bodiesRef) {
+                // Baked lakes = pinned reservoirs; one substep applies
+                // them so the first snapshot already holds the lakes.
+                terrain::pinLakes(*state, *bodiesRef);
+                terrain::stepWindow(*state, simParams, out.sources, 1);
+            }
             auto snap = std::make_shared<terrain::WaterSimSnapshot>();
             terrain::extractSnapshot(*state, simParams, *snap);
             out.state = std::move(state);
@@ -779,9 +845,9 @@ void WaterSystem::updateSim(rhi::Device& device,
     simGroundDirty = false;
     jobs->enqueue([sharedRef = shared, params, state = simState,
                    simParams = simCfg.params, fn = simSourcesFn,
-                   sources = simSrcCache, gen = generation,
-                   epoch = simEpoch, dCol, dRow, substeps,
-                   refreshGround]() mutable {
+                   bodiesRef = bodies, sources = simSrcCache,
+                   gen = generation, epoch = simEpoch, dCol, dRow,
+                   substeps, refreshGround]() mutable {
         SimResult out;
         out.generation = gen;
         out.epoch = epoch;
@@ -795,17 +861,28 @@ void WaterSystem::updateSim(rhi::Device& device,
         if (dCol != 0 || dRow != 0) {
             terrain::scrollWindow(*state, dCol, dRow, heightFn,
                                   simParams.seaLevel);
+            const auto& sp = state->spec;
+            const f32 sMaxX =
+                sp.originX + static_cast<f32>(sp.n - 1) * sp.texelSize;
+            const f32 sMaxZ =
+                sp.originZ + static_cast<f32>(sp.n - 1) * sp.texelSize;
+            sources.clear();
             if (fn) {
-                const auto& sp = state->spec;
-                const f32 sMaxX =
-                    sp.originX +
-                    static_cast<f32>(sp.n - 1) * sp.texelSize;
-                const f32 sMaxZ =
-                    sp.originZ +
-                    static_cast<f32>(sp.n - 1) * sp.texelSize;
                 sources = fn(sp.originX, sp.originZ, sMaxX, sMaxZ);
-                out.sourcesFresh = true;
             }
+            if (bodiesRef) {
+                const auto baked = bakedEntrySources(
+                    *bodiesRef, sp, sources, simParams.rainRate);
+                sources.insert(sources.end(), baked.begin(),
+                               baked.end());
+            }
+            out.sourcesFresh = true;
+        }
+        if (bodiesRef && (refreshGround || dCol != 0 || dRow != 0)) {
+            // Ground or window moved: re-rasterize the reservoirs (and
+            // apply them — at least one substep).
+            terrain::pinLakes(*state, *bodiesRef);
+            substeps = glm::max(substeps, 1u);
         }
         terrain::stepWindow(*state, simParams, sources, substeps);
         auto snap = std::make_shared<terrain::WaterSimSnapshot>();

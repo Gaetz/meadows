@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/WaterBodies.hpp"  // LakeSurface (pins)
 #include "engine/terrain/WaterInfoMap.hpp" // HeightFn, kWaterInfoDry
 #include "engine/terrain/generation/WaterSolve.hpp"
 
@@ -51,6 +52,14 @@ struct WaterSimState {
     vector<f32> fE, fW, fS, fN; // outflow pipes (+x, -x, +z, -z)
     vector<f32> headBuf;        // scratch
     vector<f32> scratch;
+    // Pinned reservoirs (kWaterInfoDry = free cell): the surface is
+    // HELD at this level every substep, absorbing and supplying like
+    // the sea — baked lakes become infinite reservoirs, so a lake cut
+    // by (or bordering) the window keeps its authored level and POURS
+    // over every rim cell below it: the wide waterfall the flat lake
+    // sheet only implied. Breaching a rim by sculpting drains forever
+    // (the reservoir never empties) — accepted, and very From Dust.
+    vector<f32> pinned;
 
     bool valid() const {
         return spec.n >= 8 && terrain.size() == spec.cells() &&
@@ -91,6 +100,12 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
 // Re-sample the whole terrain plane (terraforming: the sculpt overlay
 // changed under the window — the water then reacts live).
 void refreshTerrain(WaterSimState& state, const HeightFn& height);
+
+// Rebuild the pinned-reservoir plane from the baked lakes (call after
+// init, scroll or terrain refresh; the whole plane is cheap). A cell
+// pins where a lake's mask covers it and its level stands above the
+// local ground.
+void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 
 // Shift the window by whole cells (positive = origin moves +x/+z).
 // Interior content moves bit-exactly (memmove); entered strips get
