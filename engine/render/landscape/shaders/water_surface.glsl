@@ -229,9 +229,14 @@ void main() {
     vec3 gpy = dFdy(vWorldPos);
     vec3 crossN = cross(gpy, gpx);
     float crossLen = length(crossN);
+    // The closed mesh carries REAL near-vertical side faces now, so
+    // the threshold can relax from the old paranoid 81° (which existed
+    // to keep draped hillside TOPS from striping): full wall past
+    // ~78°, fading out by ~63° — steep chute tops keep the advected
+    // torrent look instead.
     float simWallness =
         crossLen > 1.0e-9
-            ? 1.0 - smoothstep(0.15, 0.40, abs(crossN.y / crossLen))
+            ? 1.0 - smoothstep(0.20, 0.45, abs(crossN.y / crossLen))
             : 0.0;
 
     // Underside: only for surface-like fragments — a WALL below eye
@@ -440,6 +445,12 @@ void main() {
     // Meniscus: a thin lapping line where the volume meets the ground
     // (its contact edge) — the torrent whitewater above still stacks.
     foam = max(foam, (1.0 - smoothstep(0.0, 0.6, thickness)) * 0.45);
+#endif
+#ifdef WATER_FAR
+    // Far baked bodies carry NO foam family: shore foam, whitewater
+    // and lapping lines are sub-pixel past the trusted rect, and the
+    // sim owns everything near. The sea (its own path) keeps its foam.
+    foam = 0.0;
 #endif
     color = mix(color, mFoam, clamp(foam * mFoamGain, 0.0, 1.0));
 
