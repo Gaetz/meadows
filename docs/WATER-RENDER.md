@@ -85,6 +85,12 @@ Simulation :
 - Sol de sim = render::terrain::height COMPLET (base + détail +
   patches) — toute autre source ré-ouvre la classe de bugs « sim vs
   rendu » qui a tué l'option D.
+- **L'eau DORMANTE vient du BAKÉ, jamais de l'init** : le warm start
+  priority-flood remplissait toute cuvette fermée par la fenêtre
+  jusqu'à son col (lac fantôme de 138 m / 9,5M m³ mesuré au replay,
+  ruisselant sur les versants). initWindow démarre SEC (mer seule),
+  le pre-roll sans warm start ; lacs = pins, rivières = sources — la
+  sim déplace l'eau, elle n'en invente pas.
 - La sim attend la tuile bakée sous la caméra (sinon elle résout sur
   le terrain analytique de repli, faux de plusieurs mètres).
 
