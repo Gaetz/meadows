@@ -457,6 +457,45 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     CHECK(snap.meshIndices == again.meshIndices);
 }
 
+TEST_CASE("water sim: a narrow lake still pins and seeds (fallback)") {
+    // One mask texel wide: the interior erosion leaves NO pin — the
+    // fallback pins the deepest covered cell so the BFS still seeds
+    // the whole trench (the remaining-"flan" fix).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto trench = [](f32 x, f32 z) {
+        const bool in = x >= 60.0f && x <= 66.0f && z >= 20.0f &&
+                        z <= 100.0f;
+        return in ? 296.0f : 300.0f;
+    };
+    WaterSimState state;
+    initWindow(state, spec, trench, -1000.0f);
+    render::WaterBodies bodies;
+    render::LakeSurface lake;
+    lake.level = 299.5f;
+    lake.minX = 58.0f;
+    lake.minZ = 18.0f;
+    lake.maxX = 68.0f;
+    lake.maxZ = 102.0f;
+    lake.maskTexel = 8.0f;
+    lake.maskWidth = 3;
+    lake.maskHeight = 12;
+    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                         lake.maskHeight,
+                     1);
+    bodies.lakes.push_back(lake);
+    pinLakes(state, bodies);
+    u32 pinnedCount = 0;
+    f64 seeded = 0.0;
+    for (size_t i = 0; i < spec.cells(); ++i) {
+        if (state.pinned[i] > render::terrain::kWaterInfoDry + 1.0f) {
+            ++pinnedCount;
+        }
+        seeded += state.depth[i];
+    }
+    CHECK(pinnedCount >= 1);
+    CHECK(seeded > 10.0); // the trench holds water immediately
+}
+
 TEST_CASE("water sim: no phantom lakes — enclosed valleys start dry") {
     // A deep bowl whose only exit lies past the rim: without a baked
     // lake (pin) or a source, the window must NOT invent water — the

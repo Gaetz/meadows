@@ -292,10 +292,11 @@ void main() {
     // Aerated torrent water is milky, not glassy.
     float milkGate = 1.0;
 #ifdef WATER_SIM
-    // Aeration needs SPEED: a wide slow glide down a terraced slope
-    // read as one white plastic sheet (measured in-game) — only fast
-    // water whips air in.
-    milkGate = smoothstep(0.8, 2.5, flowSpeed);
+    // SOBRIETY PASS (dev directive): every speed/surface effect is
+    // POLISH, stripped from the sim path until the base is validated
+    // — no milk, no whitewater, no wall streaks, no meniscus. The sim
+    // water is body color + refraction + a quiet fresnel.
+    milkGate = 0.0;
 #endif
     transmitted = mix(transmitted, vec3(0.52, 0.66, 0.70),
                       torrent * 0.55 * milkGate);
@@ -378,21 +379,10 @@ void main() {
     // fall (lanes across the current), and the white only comes with
     // SPEED — a slow wall stays body-colored.
     if (simWallness > 0.001) {
-        vec2 fallDir =
-            flowSpeed > 1.0e-3 ? vFlow / flowSpeed : vec2(0.0, 1.0);
-        float streak =
-            0.5 + 0.5 * sin(dot(vWorldPos.xz,
-                                vec2(-fallDir.y, fallDir.x)) *
-                                2.8 +
-                            vWorldPos.y * 1.3 -
-                            t * (3.0 + 2.0 * flowSpeed));
-        // Aeration comes from SPEED ALONE: the old + depth·0.5 term
-        // painted every deep STILL front solid white (the pale towers
-        // with white ovals, measured in-game).
-        float aeration = smoothstep(1.0, 3.5, flowSpeed);
-        vec3 wall = mix(bodyColor, mFoam,
-                        (0.10 + 0.45 * streak) * aeration);
-        color = mix(color, wall, simWallness * 0.85);
+        // Sobriety pass: a wall is plain body-colored water (no
+        // streaks, no aeration white — polish, later). The override
+        // still exists to kill the grazing mirror on vertical faces.
+        color = mix(color, bodyColor, simWallness * 0.85);
     }
 #endif
 
@@ -444,12 +434,9 @@ void main() {
 #endif
 
 #ifdef WATER_SIM
-    // Meniscus: a thin lapping line where the volume meets the ground
-    // (its contact edge) — FLAT surfaces only: on a vertical wall the
-    // view-ray thickness is tiny everywhere, and the meniscus washed
-    // whole side faces white.
-    foam = max(foam, (1.0 - smoothstep(0.0, 0.6, thickness)) * 0.45 *
-                         (1.0 - simWallness));
+    // Sobriety pass: NO foam family on the sim at all (meniscus and
+    // whitewater were polish) — the sea keeps its own.
+    foam = 0.0;
 #endif
 #ifdef WATER_FAR
     // Far baked bodies carry NO foam family: shore foam, whitewater

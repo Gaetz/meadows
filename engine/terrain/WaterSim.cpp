@@ -463,6 +463,9 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
         const i32 r1 = glm::min(
             static_cast<i32>((lake.maxZ - spec.originZ) / texel) + 1,
             static_cast<i32>(spec.n) - 1);
+        bool pinnedAny = false;
+        size_t deepest = 0;
+        f32 deepestColumn = 0.0f;
         for (i32 row = r0; row <= r1; ++row) {
             for (i32 col = c0; col <= c1; ++col) {
                 const size_t i =
@@ -478,6 +481,11 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 // Seed candidate (validated by the pin-connectivity
                 // BFS below).
                 seedLevel[i] = glm::max(seedLevel[i], lake.level);
+                const f32 column = lake.level - state.terrain[i];
+                if (column > deepestColumn) {
+                    deepestColumn = column;
+                    deepest = i;
+                }
                 // PIN the mask INTERIOR only (eroded by one mask
                 // texel): the 8 m mask rasterized at sim resolution
                 // overhangs its banks, and an over-hanging pin is an
@@ -492,7 +500,17 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 }
                 state.pinned[i] =
                     glm::max(state.pinned[i], lake.level);
+                pinnedAny = true;
             }
+        }
+        // A NARROW lake (under ~3 mask texels) has no interior at all
+        // after the erosion: no pin, no BFS root, no seed — it filled
+        // at river speed, the remaining "flan" (measured at the spawn
+        // cascade). Fall back to pinning its deepest covered cell so
+        // the basin seeds and the reservoir supplies.
+        if (!pinnedAny && deepestColumn > 0.02f) {
+            state.pinned[deepest] =
+                glm::max(state.pinned[deepest], lake.level);
         }
     }
     // Seed by CONNECTIVITY: BFS from the pinned core through covered
