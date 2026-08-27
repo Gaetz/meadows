@@ -311,30 +311,15 @@ void main() {
         mix(transmitted, mtl.tintStrength.rgb, mtl.tintStrength.w);
 #endif
 #ifdef WATER_SIM
-    // The From Dust BODY: color from the SIMULATED column, not only
-    // the view-ray optical thickness — a 20 cm flow reads as a body
-    // of water, not a transparent film. Shallow water is a vivid
-    // turquoise, deep water falls to the dark deep color.
-    // The color keys on a SMOOTHED depth (5 taps, ~2 texels): the raw
-    // per-cell depth turned every micro-pool of a bumpy bed into a
-    // dark disc with a light bilinear rim (measured in-game).
-    // 3x3 box (the 5-tap cross kernel stamped CROSS-shaped color
-    // spots around every locally deep cell — measured in-game).
-    vec2 simTx = 1.0 / vec2(textureSize(uWaterSimB, 0));
-    float depthSmooth = 0.0;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            depthSmooth += clamp(
-                texture(uWaterSimB,
-                        vSimUv + vec2(dx, dy) * simTx).x,
-                0.0, 200.0);
-        }
-    }
-    depthSmooth *= (1.0 / 9.0);
-    vec3 bodyColor = mix(vec3(0.10, 0.34, 0.42), mDeep,
-                         clamp(depthSmooth * 0.18, 0.0, 1.0));
-    float bodyMix = 1.0 - exp(-depthSmooth * 1.6);
-    transmitted = mix(transmitted, bodyColor, bodyMix * 0.75);
+    // SIMPLE, TIME-STABLE body (dev directive): the color NEVER reads
+    // the simulated depth field — every depth-keyed variant (raw,
+    // cross-smoothed, box-smoothed) painted evolving blotches as the
+    // field fluctuated (rounds, crosses, lozenges — measured). The
+    // sim water uses the same recipe as the sea and the baked lakes:
+    // view-ray absorption (geometry, stable) + ONE constant tint so a
+    // thin stream still reads as water instead of a transparent film.
+    vec3 bodyColor = vec3(0.10, 0.34, 0.42);
+    transmitted = mix(transmitted, bodyColor, 0.45);
 #endif
 
     // Reflection: the mirrored scene (terrain, trees, sky + sun glints all
@@ -483,13 +468,11 @@ void main() {
     // where the water thins out — or a ribbon reaches its end — the
     // surface dissolves into the plain refracted ground.
 #ifdef WATER_SIM
-    // The SIM column counts too: a 10 cm draped stream has almost no
-    // view-ray thickness, and the optical-only feather dissolved the
-    // whole body color right back into the ground (measured — the
-    // "transparent film" look). The feather now only trims the true
-    // shoreline edge.
+    // Time-stable feather: geometry-only (a small floor keeps thin
+    // draped streams from dissolving into the ground) — no simulated
+    // field in the visual, same doctrine as the body color.
     color = mix(refracted, color,
-                smoothstep(0.0, 0.25, max(thickness, simDepth)));
+                smoothstep(0.0, 0.2, thickness + 0.08));
 #else
     color = mix(refracted, color,
                 smoothstep(0.0, 0.35, thickness) *
