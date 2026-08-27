@@ -223,12 +223,13 @@ void main() {
     n = normalize(mix(vec3(0.0, 1.0, 0.0), n,
                       mix(0.3, 1.0, lodFade)));
 #ifdef WATER_SIM
-    // Sobriety: NO wave field on the sim water — the analytic cosine
-    // normal aliased into faint concentric rings per cell, breathing
-    // with the 3 s two-phase advection cycle (measured in-game). A
-    // flat normal until the polish pass brings calibrated ripples
-    // back; the sea keeps its validated waves.
-    n = vec3(0.0, 1.0, 0.0);
+    // ONE recipe for all calm water: the sim uses the SEA's exact
+    // wave normal — no ripple scaling, no two-phase advection (the
+    // advection blend was the source of the breathing concentric
+    // rings, not the waves themselves), no LOD flatten. A fully flat
+    // sim next to rippled baked lakes re-drew the trusted-rect square
+    // by CONTRAST (measured in-game); identical formulas erase it.
+    n = waveNormal(vWorldPos.xz, t);
 #endif
 
 #ifdef WATER_SIM
@@ -345,15 +346,13 @@ void main() {
     } else {
         vec3 reflectDir = reflect(viewDir, n);
         reflectDir.y = abs(reflectDir.y); // never reflect below the horizon
-#ifdef WATER_SIM
-        // NO sun disc on the sim water: a flat pond whose mirror
-        // aligns with the sun caught the disc's radiance on EVERY
-        // fragment — whole lakes burned white with bloom fringes
-        // (measured in-game). Sun glints are polish, later.
-        reflected = skyGradient(reflectDir);
-#else
+        // skyWithSun for EVERY analytic-sky water, sim included: the
+        // "sun-disc burn" that motivated a sun-less sim sky was in
+        // fact the unbound texture handle (GL46 upload whitelist) —
+        // with real data and the HDR ceiling, the shared formula is
+        // safe, and any sim-specific sky re-drew the trusted-rect
+        // square by contrast.
         reflected = skyWithSun(reflectDir);
-#endif
     }
     // Volumetric sky clouds live in a main-view screen buffer
     // (composited by the tonemap), so the mirrored scene never contains
@@ -383,14 +382,8 @@ void main() {
         0.02 + 0.98 * pow(1.0 - max(dot(-viewDir, n), 0.0), 5.0);
     // Dialed down so the reflection reads as water, not as a second world.
     fresnel *= 0.75;
-#ifdef WATER_SIM
-    // The sim sheet has no planar mirror (analytic sky only): a full
-    // fresnel painted whole rivers sky-white at grazing angles — the
-    // BODY must dominate, the sky is a glaze. The hard cap keeps even
-    // grazing water in the blue family (dev preference: the whitish
-    // sheen was the least liked side of the old eye-height cut).
-    fresnel = min(fresnel * 0.6, 0.28);
-#endif
+    // (Sim water: same fresnel as the sea and the baked lakes — any
+    // sim-specific scale re-drew the trusted-rect square by contrast.)
 
     vec3 color = mix(transmitted, reflected, fresnel);
 #ifdef WATER_SIM
