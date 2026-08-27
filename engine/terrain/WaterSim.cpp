@@ -85,11 +85,13 @@ void initWindow(WaterSimState& state, const GridSpec& spec,
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
     state.pinned.assign(cells, kWaterInfoDry);
-    const vector<f32> filled = terraingen::priorityFloodFill(
-        spec, state.terrain, seaLevel, 1.0e-4f);
-    for (size_t i = 0; i < cells; ++i) {
-        state.depth[i] = glm::max(0.0f, filled[i] - state.terrain[i]);
-    }
+    // Start DRY (sea pin only). The old priority-flood warm start
+    // filled EVERY window-enclosed basin to its pass — a mountain
+    // valley whose true exit lies past the window rim became a 138 m
+    // phantom lake (9.5M m³, replay-measured) draining down the
+    // hillsides. Standing water is the BAKE's authority: lakes arrive
+    // through the pins, rivers through the sources — the sim only
+    // moves water, it never invents it.
     pinSea(state, state.depth, seaLevel);
     zeroBorderWalls(state);
 }
@@ -716,6 +718,10 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
     solve.dt = 0.05f * std::sqrt(spec.texelSize / 2.0f);
     solve.friction = params.friction;
     solve.dryThreshold = 0.0f;
+    // No flood warm start: it invented phantom lakes in every
+    // window-enclosed valley (see initWindow). Channels fill from the
+    // sources + rain over the burst budget instead.
+    solve.warmStart = false;
     solve.multigrid = true;
     solve.maxIterations = 4000;
     solve.fineIterations = 1500;

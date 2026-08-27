@@ -266,6 +266,7 @@ TEST_CASE("water sim: matches the offline equilibrium oracle") {
     solve.evaporationRate = params.evaporationRate;
     solve.seaLevel = params.seaLevel;
     solve.dryThreshold = 0.0f;
+    solve.warmStart = false; // both sides from dry (no-phantom doctrine)
     solve.multigrid = false;
     solve.maxIterations = 12000;
     const auto oracle = render::terraingen::solveSteadyWater(
@@ -360,6 +361,13 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     };
     WaterSimState state;
     initWindow(state, spec, basin, -1000.0f);
+    // Standing water comes from the bake (pins) or sources, never
+    // from init — fill the basin explicitly for this geometry test.
+    for (size_t i = 0; i < spec.cells(); ++i) {
+        if (state.terrain[i] < 299.0f) {
+            state.depth[i] = 299.9f - state.terrain[i];
+        }
+    }
     WaterSimParams params = closedParams();
     WaterSimSnapshot snap;
     extractSnapshot(state, params, snap);
@@ -418,6 +426,25 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     extractSnapshot(state, params, again);
     CHECK(snap.meshVerts == again.meshVerts);
     CHECK(snap.meshIndices == again.meshIndices);
+}
+
+TEST_CASE("water sim: no phantom lakes — enclosed valleys start dry") {
+    // A deep bowl whose only exit lies past the rim: without a baked
+    // lake (pin) or a source, the window must NOT invent water — the
+    // old priority-flood warm start filled such valleys to their pass
+    // (a 138 m / 9.5M m³ phantom lake, replay-measured).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    WaterSimState state;
+    initWindow(state, spec, bowlHeight, -1000.0f);
+    CHECK(totalVolume(state) == 0.0);
+    WaterSimParams params = closedParams();
+    params.rainRate = 1.0e-5f;
+    stepWindow(state, params, {}, 300);
+    // Only the rain that actually fell may stand (300 substeps at
+    // 1/30 s = 10 s of 1e-5 m/s over the window).
+    const f64 rained = 1.0e-5 * 10.0 *
+                       static_cast<f64>(spec.cells()) * 4.0;
+    CHECK(totalVolume(state) <= rained * 1.01);
 }
 
 TEST_CASE("water sim: wetness hysteresis is sticky") {
