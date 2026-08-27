@@ -217,8 +217,30 @@ void main() {
     n = normalize(mix(vec3(0.0, 1.0, 0.0), n,
                       mix(0.3, 1.0, lodFade)));
 
+#ifdef WATER_SIM
+    // Wall factor, computed at TOP level (uniform control flow keeps
+    // the derivatives defined) and BEFORE the underside branch: only
+    // GENUINELY steep facets count (a draped rapid at 45-60° must stay
+    // a water surface — the loose threshold striped whole hillsides).
+    // Degenerate derivatives are treated as flat (normalize would NaN
+    // and poison the bloom chain tile by tile — the black rectangles).
+    vec3 gpx = dFdx(vWorldPos);
+    vec3 gpy = dFdy(vWorldPos);
+    vec3 crossN = cross(gpy, gpx);
+    float crossLen = length(crossN);
+    float simWallness =
+        crossLen > 1.0e-9
+            ? 1.0 - smoothstep(0.15, 0.40, abs(crossN.y / crossLen))
+            : 0.0;
+
+    // Underside: only for surface-like fragments — a WALL below eye
+    // height must not flip to the seen-from-below look (it cut every
+    // waterfall with a horizontal seam at camera height).
+    if (uCameraPos.y < vWorldPos.y - 0.02 && simWallness < 0.5) {
+#else
     // Underside: the camera is below THIS surface's level.
     if (uCameraPos.y < vWorldPos.y - 0.02) {
+#endif
 #else
     vec3 n = waveNormal(vWorldPos.xz, t);
     // Sea path: the default-water constants (slot 0 of the presets).
@@ -262,8 +284,15 @@ void main() {
     vec3 transmitted = mix(mDeep, refracted, absorption);
 #ifdef WATER_LOCAL
     // Aerated torrent water is milky, not glassy.
+    float milkGate = 1.0;
+#ifdef WATER_SIM
+    // Aeration needs SPEED: a wide slow glide down a terraced slope
+    // read as one white plastic sheet (measured in-game) — only fast
+    // water whips air in.
+    milkGate = smoothstep(0.8, 2.5, flowSpeed);
+#endif
     transmitted = mix(transmitted, vec3(0.52, 0.66, 0.70),
-                      torrent * 0.55);
+                      torrent * 0.55 * milkGate);
     // Preset tint (mud, enchanted pools) — strength 0 on plain water.
     transmitted =
         mix(transmitted, mtl.tintStrength.rgb, mtl.tintStrength.w);
@@ -328,34 +357,34 @@ void main() {
         0.02 + 0.98 * pow(1.0 - max(dot(-viewDir, n), 0.0), 5.0);
     // Dialed down so the reflection reads as water, not as a second world.
     fresnel *= 0.75;
+#ifdef WATER_SIM
+    // The sim sheet has no planar mirror (analytic sky only): a full
+    // fresnel painted whole rivers sky-white at grazing angles — the
+    // BODY must dominate, the sky is a glaze.
+    fresnel *= 0.6;
+#endif
 
     vec3 color = mix(transmitted, reflected, fresnel);
 #ifdef WATER_SIM
-    // Side WALLS: steep sheet facets (flood fronts, fall lips, the
+    // Side WALLS: genuinely steep facets (flood fronts, fall lips, the
     // dive into a bank) are the water body seen from the side — an
-    // opaque wall with falling streaks, never a grazing mirror. This
-    // is what turns the sheet into a VOLUME.
-    vec3 gpx = dFdx(vWorldPos);
-    vec3 gpy = dFdy(vWorldPos);
-    vec3 crossN = cross(gpy, gpx);
-    float crossLen = length(crossN);
-    // Degenerate derivatives (grazing/far facets) would NaN through
-    // normalize and poison the bloom chain tile by tile (the black
-    // rectangles, measured) — treat them as flat.
-    float wallness =
-        crossLen > 1.0e-9
-            ? 1.0 - smoothstep(0.30, 0.62, abs(crossN.y / crossLen))
-            : 0.0;
-    if (wallness > 0.001) {
+    // opaque wall, never a grazing mirror. Streaks run ALONG the local
+    // fall (lanes across the current), and the white only comes with
+    // SPEED — a slow wall stays body-colored.
+    if (simWallness > 0.001) {
+        vec2 fallDir =
+            flowSpeed > 1.0e-3 ? vFlow / flowSpeed : vec2(0.0, 1.0);
         float streak =
-            0.5 + 0.5 * sin(vWorldPos.y * 4.0 +
-                            dot(vWorldPos.xz, vec2(1.7, 2.3)) -
-                            t * 7.0);
+            0.5 + 0.5 * sin(dot(vWorldPos.xz,
+                                vec2(-fallDir.y, fallDir.x)) *
+                                2.8 +
+                            vWorldPos.y * 1.3 -
+                            t * (3.0 + 2.0 * flowSpeed));
+        float aeration =
+            smoothstep(1.0, 4.0, flowSpeed + simDepth * 0.5);
         vec3 wall = mix(bodyColor, mFoam,
-                        0.18 + 0.32 * streak *
-                                   smoothstep(0.5, 3.0,
-                                              flowSpeed + simDepth));
-        color = mix(color, wall, wallness * 0.85);
+                        (0.10 + 0.45 * streak) * aeration);
+        color = mix(color, wall, simWallness * 0.85);
     }
 #endif
 
@@ -417,11 +446,21 @@ void main() {
     // Edge fade (Waterways' ALPHA feather, opaque-pipeline version):
     // where the water thins out — or a ribbon reaches its end — the
     // surface dissolves into the plain refracted ground.
+#ifdef WATER_SIM
+    // The SIM column counts too: a 10 cm draped stream has almost no
+    // view-ray thickness, and the optical-only feather dissolved the
+    // whole body color right back into the ground (measured — the
+    // "transparent film" look). The feather now only trims the true
+    // shoreline edge.
+    color = mix(refracted, color,
+                smoothstep(0.0, 0.25, max(thickness, simDepth)));
+#else
     color = mix(refracted, color,
                 smoothstep(0.0, 0.35, thickness) *
                     mix(1.0, smoothstep(0.0, 1.5, vInfo.w /
                                                       max(vInfo.x, 0.5)),
                         riverness));
+#endif
     // Preset emissive (lava): glows through the fog like any emitter.
     color += mtl.emissiveViscosity.rgb * mtl.deepEmissive.w;
 #ifdef WATER_SIM
@@ -430,6 +469,11 @@ void main() {
     color = mix(refracted, color, simFade);
     if (int(uWaterSimTuneInfo.z + 0.5) == 2) {
         color = mix(color, vec3(1.0, 0.25, 0.2), 0.30);
+    }
+    // Last-resort sanitize: ONE NaN fragment poisons the bloom chain
+    // tile by tile (black rectangles) — never let one out.
+    if (any(isnan(color)) || any(isinf(color))) {
+        color = vec3(0.02, 0.10, 0.12);
     }
 #endif
 
