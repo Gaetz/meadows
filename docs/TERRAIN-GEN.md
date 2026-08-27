@@ -1475,3 +1475,36 @@ vérifier aussi le raccord de niveau entre régions). Watch :
 coût du rebuild de géométrie au publish (~dizaines de ms, passage en
 worker si hitch), écart drapé↔surface absolue > 0,35 m sur pentes =
 l'info map ne prend pas le relais du flow (le vertex flow est juste).
+
+**Correctif eau 2 — ancrage au terrain fin (2026-08-27, bug-eau1/2.png,
+itération décisive avant bascule éventuelle en option C)** : deux
+symptômes, une cause commune — la grille de solve à 8 m ne peut pas
+suivre le terrain à 2 m, et le rendu faisait confiance au niveau résolu
+brut. (1) bug-eau1 : nappe bleue visible DE LOIN au-dessus d'une pente,
+disparaissant DE PRÈS — eau stockée SOUS le terrain fin (le point strié
+à 8 m tombait dans un lit creusé étroit → cuvette fantôme sur toute la
+cellule, remplie par le solve ; de loin, le LOD terrain grossier plonge
+sous ce niveau → la nappe ressort ; de près le terrain fin la couvre).
+(2) bug-eau2 : la chute PLANE au lieu de descendre la falaise — la
+surface bilinéaire ponte l'à-pic horizontalement sur 8 m, et le sol
+strié coupait le coin de la falaise ; carrés volants = même mal.
+Corrections (v58) :
+1. **Sol du solve = MOYENNE de bloc** des samples fins (plus de
+   cuvettes d'aliasing, plus de coins de falaise coupés — le plancher
+   honnête de la cellule).
+2. **Véto de mouillage au rendu** : un sample n'est mouillé que si
+   niveau résolu > sol fin + 2 cm — l'eau enterrée n'émet RIEN (tue la
+   nappe fantôme, quelle que soit la distance).
+3. **Garde anti-vol continue** : niveau ≤ sol fin + profondeur + 1 m
+   (min, pas de bascule brutale) — la chute épouse la paroi/le talus au
+   lieu de traverser les airs ; les carrés volants sont plaqués.
+4. **Fast-path quad plat = profond ET plat** (< 0,3 m d'écart de
+   niveau) — une lèvre de chute se subdivise toujours à 2 m.
+Watch : rainure possible au raccord quad-plat/subdivisé sur berges
+sous-marines très accidentées (la garde mord mi-arête — desserrer le
+slack si vu) ; l'aspect chute = goulotte vitreuse plaquée (vraie
+cascade FX = brique future) ; le blanc torrent domine les biefs rapides
+(gain laiteux à doser si trop). Si cette passe ne suffit pas
+visuellement, la bascule actée est l'option C fenêtrée autour de la
+caméra (From Dust), initialisée/bornée par les champs D — D reste la
+vérité gameplay/requêtes.

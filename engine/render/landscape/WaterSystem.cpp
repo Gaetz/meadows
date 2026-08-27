@@ -440,6 +440,15 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
             };
             // One vertex from one world sample — the SAME formula at
             // every granularity, so shared positions always agree.
+            // Two guards anchor the sheet to the FINE terrain (the 8 m
+            // solve grid cannot follow it): a sample only counts wet
+            // when the solved level actually stands above the local
+            // ground (a buried level rendered ghost sheets through the
+            // coarser far-terrain LOD), and the level may never hang
+            // more than its own column + slack above the ground (the
+            // bilinear surface bridged waterfalls through the air; the
+            // cap makes the chute hug the face, continuously).
+            constexpr f32 kAirSlack = 1.0f; // m over ground + depth
             const auto sampleVertex = [&](f32 x, f32 z, bool& wetOut) {
                 const terrain::WaterSample s =
                     terrain::waterSample(region, x, z);
@@ -448,11 +457,14 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                 f32 flowX = 0.0f;
                 f32 flowZ = 0.0f;
                 f32 riverHalf = 0.0f;
-                wetOut = s.depth > kWetEps;
+                wetOut =
+                    s.depth > kWetEps && s.surface > ground + 0.02f;
                 if (wetOut) {
                     const f32 blend =
                         glm::smoothstep(0.2f, kDeepDepth, s.depth);
                     level = glm::mix(ground + s.depth, s.surface, blend);
+                    level = glm::min(level,
+                                     ground + s.depth + kAirSlack);
                     flowX = s.velocityX;
                     flowZ = s.velocityZ;
                     if (flowX * flowX + flowZ * flowZ >
@@ -497,10 +509,27 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                         region.originX + static_cast<f32>(c) * texel;
                     const f32 z0 =
                         region.originZ + static_cast<f32>(r) * texel;
+                    const auto surfAt = [&](u32 cc, u32 rr) {
+                        return region
+                            .waterSurface[static_cast<size_t>(rr) * wN +
+                                          cc];
+                    };
+                    const f32 s00 = surfAt(c, r);
+                    const f32 s10 = surfAt(c + 1, r);
+                    const f32 s01 = surfAt(c, r + 1);
+                    const f32 s11 = surfAt(c + 1, r + 1);
+                    // Flat-quad fast path only for deep AND level cells
+                    // — a deep cell on a drop (waterfall lip) must
+                    // subdivide so the guards can pin it to the face.
+                    const f32 sMin =
+                        glm::min(glm::min(s00, s10), glm::min(s01, s11));
+                    const f32 sMax =
+                        glm::max(glm::max(s00, s10), glm::max(s01, s11));
                     const bool deep = d00 >= kDeepDepth &&
                                       d10 >= kDeepDepth &&
                                       d01 >= kDeepDepth &&
-                                      d11 >= kDeepDepth;
+                                      d11 >= kDeepDepth &&
+                                      sMax - sMin < 0.3f;
                     const u32 cellSub = deep ? 1 : subN;
                     const f32 step =
                         texel / static_cast<f32>(cellSub);

@@ -727,12 +727,32 @@ TileBakeResult bakeTileStage2(
         wspec.n = (fine.fineSpec.n - 1) / stride + 1;
         vector<f32> wground(wspec.cells());
         f32 maxGround = -1.0e9f;
+        // Block MEAN of the fine samples around each node, not the
+        // strided point: point sampling aliased narrow carved beds
+        // into whole-cell pits (phantom pools whose level sat under
+        // the real 2 m ground — invisible near, ghost sheets far) and
+        // cut cliff corners. The mean is the cell's honest floor.
+        const i32 half = static_cast<i32>(stride) / 2;
+        const i32 fineNn = static_cast<i32>(fine.fineSpec.n);
         for (u32 row = 0; row < wspec.n; ++row) {
             for (u32 col = 0; col < wspec.n; ++col) {
-                const f32 h =
-                    fine.height[static_cast<size_t>(row) * stride *
-                                    fine.fineSpec.n +
-                                static_cast<size_t>(col) * stride];
+                f32 sum = 0.0f;
+                i32 taps = 0;
+                for (i32 dz = -half; dz <= half; ++dz) {
+                    for (i32 dx = -half; dx <= half; ++dx) {
+                        const i32 fr = glm::clamp(
+                            static_cast<i32>(row * stride) + dz, 0,
+                            fineNn - 1);
+                        const i32 fc = glm::clamp(
+                            static_cast<i32>(col * stride) + dx, 0,
+                            fineNn - 1);
+                        sum += fine.height[static_cast<size_t>(fr) *
+                                               fine.fineSpec.n +
+                                           fc];
+                        ++taps;
+                    }
+                }
+                const f32 h = sum / static_cast<f32>(taps);
                 wground[static_cast<size_t>(row) * wspec.n + col] = h;
                 maxGround = glm::max(maxGround, h);
             }

@@ -100,7 +100,11 @@ TEST_CASE("a land tile ships solved water fields on the region rect") {
             static_cast<size_t>(region.waterWidth) * region.waterHeight);
     CHECK(static_cast<f32>(region.waterWidth - 1) * region.waterTexel ==
           doctest::Approx(region.spanX()));
-    // Wet cells carry a level above the local ground (never buried).
+    // Wet cells carry a level near or above the local ground. The
+    // solve floor is the cell's block MEAN, so on a cliff cell the
+    // point-sampled ground can legitimately stand a few meters higher
+    // — the render-side wet veto handles those; the bound here only
+    // catches wholesale burial.
     for (u32 row = 0; row < region.waterHeight; ++row) {
         for (u32 col = 0; col < region.waterWidth; ++col) {
             const size_t i =
@@ -113,7 +117,7 @@ TEST_CASE("a land tile ships solved water fields on the region rect") {
             const f32 z = region.originZ +
                           static_cast<f32>(row) * region.waterTexel;
             const f32 ground = render::terrain::baseHeight(region, x, z);
-            CHECK(region.waterSurface[i] > ground - 1.0f);
+            CHECK(region.waterSurface[i] > ground - 8.0f);
         }
     }
 }
