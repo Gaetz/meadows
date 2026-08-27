@@ -91,6 +91,12 @@ Simulation :
   ruisselant sur les versants). initWindow démarre SEC (mer seule),
   le pre-roll sans warm start ; lacs = pins, rivières = sources — la
   sim déplace l'eau, elle n'en invente pas.
+- **Les bandes de scroll entrent SÈCHES** (même doctrine) : l'init
+  « flood borné par le bord survivant » peignait le niveau d'un lac
+  épinglé sur toute bande entrante (3,9M m³ mesurés au replay en
+  volant près du lac). Lacs re-rasterisés par pinLakes après chaque
+  scroll, rivières par les sources ; le wetMask se décale avec les
+  plans (sinon hystérésis désalignée → flicker).
 - La sim attend la tuile bakée sous la caméra (sinon elle résout sur
   le terrain analytique de repli, faux de plusieurs mètres).
 
