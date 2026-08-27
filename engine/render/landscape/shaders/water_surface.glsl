@@ -310,17 +310,13 @@ void main() {
     transmitted =
         mix(transmitted, mtl.tintStrength.rgb, mtl.tintStrength.w);
 #endif
-#ifdef WATER_SIM
-    // SIMPLE, TIME-STABLE body (dev directive): the color NEVER reads
-    // the simulated depth field — every depth-keyed variant (raw,
-    // cross-smoothed, box-smoothed) painted evolving blotches as the
-    // field fluctuated (rounds, crosses, lozenges — measured). The
-    // sim water uses the same recipe as the sea and the baked lakes:
-    // view-ray absorption (geometry, stable) + ONE constant tint so a
-    // thin stream still reads as water instead of a transparent film.
-    vec3 bodyColor = vec3(0.10, 0.34, 0.42);
-    transmitted = mix(transmitted, bodyColor, 0.45);
-#endif
+    // SIM water color = EXACTLY the shared recipe above (view-ray
+    // absorption, nothing added): any sim-only tint made the trusted
+    // rect a visible square of different water following the player
+    // (measured — a constant turquoise mix at 0.45). Seamless with
+    // the sea and the baked lakes by construction; and the color
+    // never reads the simulated field (every depth-keyed variant
+    // painted evolving blotches: rounds, crosses, lozenges).
 
     // Reflection: the mirrored scene (terrain, trees, sky + sun glints all
     // included), wobbled by the waves; falls back to the analytic sky when
@@ -399,7 +395,10 @@ void main() {
         // Sobriety pass: a wall is plain body-colored water (no
         // streaks, no aeration white — polish, later). The override
         // still exists to kill the grazing mirror on vertical faces.
-        color = mix(color, bodyColor, simWallness * 0.85);
+        // Pull walls back toward the transmitted water (same family
+        // as everything else) — the override only kills the grazing
+        // mirror on vertical faces.
+        color = mix(color, transmitted, simWallness * 0.85);
     }
 #endif
 
