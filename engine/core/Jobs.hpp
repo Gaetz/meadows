@@ -64,6 +64,15 @@ public:
 
     u32 workerCount() const { return static_cast<u32>(workers.size()); }
 
+    // True once shutdown began. The destructor DRAINS the queue (a
+    // queued save must still land), so every EXPENSIVE, abandonable
+    // job (tile bakes, sim pre-rolls) must poll this and bail early —
+    // quitting mid-bake otherwise kept the process alive for minutes
+    // of full-speed baking behind a closed window (measured).
+    bool isStopping() const {
+        return stopRequested.load(std::memory_order_relaxed);
+    }
+
 private:
     void workerLoop();
 
@@ -72,6 +81,7 @@ private:
     std::mutex mutex;
     std::condition_variable cv;
     bool stopping { false };
+    std::atomic<bool> stopRequested { false };
 };
 
 } // namespace core

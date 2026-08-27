@@ -18,6 +18,7 @@ JobSystem::JobSystem(u32 threadCount) {
 }
 
 JobSystem::~JobSystem() {
+    stopRequested.store(true, std::memory_order_relaxed);
     {
         std::lock_guard lock { mutex };
         stopping = true;

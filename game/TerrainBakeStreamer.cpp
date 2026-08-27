@@ -315,7 +315,15 @@ u32 TerrainBakeStreamer::stage1Count() const {
 void TerrainBakeStreamer::request(i32 tx, i32 tz) {
     pending.insert(keyOf(tx, tz));
     const auto work = [params = params, cacheDir = cacheDir, tx, tz,
-                       queue = built, registry = stage1s] {
+                       queue = built, registry = stage1s,
+                       jobsRef = jobs] {
+        // Shutdown drains the job queue (a queued save must land) —
+        // an abandonable 20-40 s bake must NOT run behind a closed
+        // window: bail before the heavy stages. The tile simply
+        // rebakes next launch.
+        if (jobsRef && jobsRef->isStopping()) {
+            return;
+        }
         const std::string stem =
             "tile_" + std::to_string(tx) + "_" + std::to_string(tz) +
             "_v" +
@@ -362,10 +370,16 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
             sptr<const render::terraingen::TileStage1> stage1s[3][3];
             for (i32 dz = -1; dz <= 1; ++dz) {
                 for (i32 dx = -1; dx <= 1; ++dx) {
+                    if (jobsRef && jobsRef->isStopping()) {
+                        return; // mid-bake quit checkpoint
+                    }
                     stage1s[dz + 1][dx + 1] =
                         acquireStage1(*registry, cacheDir, params,
                                       tx + dx, tz + dz);
                 }
+            }
+            if (jobsRef && jobsRef->isStopping()) {
+                return;
             }
             render::terraingen::TileBakeResult baked =
                 render::terraingen::bakeTileStage2(

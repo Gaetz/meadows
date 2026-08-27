@@ -834,7 +834,10 @@ void WaterSystem::updateSim(rhi::Device& device,
         jobs->enqueue([sharedRef = shared, params, spec,
                        simParams = simCfg.params, fn = simSourcesFn,
                        bodiesRef = bodies, gen = generation,
-                       epoch = simEpoch, maxX, maxZ] {
+                       epoch = simEpoch, maxX, maxZ, jobsRef = jobs] {
+            if (jobsRef->isStopping()) {
+                return; // abandonable at shutdown (seconds of pre-roll)
+            }
             SimResult out;
             out.generation = gen;
             out.epoch = epoch;
@@ -908,7 +911,11 @@ void WaterSystem::updateSim(rhi::Device& device,
                    simParams = simCfg.params, fn = simSourcesFn,
                    bodiesRef = bodies, sources = simSrcCache,
                    gen = generation, epoch = simEpoch, dCol, dRow,
-                   substeps, refreshGround]() mutable {
+                   substeps, refreshGround,
+                   jobsRef = jobs]() mutable {
+        if (jobsRef->isStopping()) {
+            return; // abandonable at shutdown
+        }
         SimResult out;
         out.generation = gen;
         out.epoch = epoch;
