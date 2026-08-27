@@ -254,6 +254,9 @@ WaterSolveResult solveLevel(const GridSpec& spec,
                               (inflow - outflow) * dtOverArea + net);
             }
         }
+        // Border cells: open boundary — a fraction of their depth
+        // leaks off-grid, as if the terrain continued.
+        const f32 borderKeep = 1.0f - params.borderDrain;
         for (i32 col = 0; col < n; ++col) {
             for (const i32 row : { 0, n - 1 }) {
                 const size_t i = at(col, row);
@@ -272,8 +275,9 @@ WaterSolveResult solveLevel(const GridSpec& spec,
                 }
                 const f32 outflow = fE[i] + fW[i] + fS[i] + fN[i];
                 next[i] = glm::max(
-                    0.0f, depth[i] +
-                              (inflow - outflow) * dtOverArea + net);
+                    0.0f,
+                    (depth[i] + (inflow - outflow) * dtOverArea + net) *
+                        borderKeep);
             }
         }
         for (i32 row = 1; row < n - 1; ++row) {
@@ -289,8 +293,9 @@ WaterSolveResult solveLevel(const GridSpec& spec,
                 inflow += fS[i - spec.n] + fN[i + spec.n];
                 const f32 outflow = fE[i] + fW[i] + fS[i] + fN[i];
                 next[i] = glm::max(
-                    0.0f, depth[i] +
-                              (inflow - outflow) * dtOverArea + net);
+                    0.0f,
+                    (depth[i] + (inflow - outflow) * dtOverArea + net) *
+                        borderKeep);
             }
         }
         std::swap(depth, next);

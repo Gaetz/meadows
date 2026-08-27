@@ -47,6 +47,12 @@ struct WaterSolveParams {
     u32 checkInterval { 250 };
     // Depths under this are dried at the end (film noise, not water).
     f32 dryThreshold { 0.02f };
+    // Open borders: fraction of a border cell's depth that leaks
+    // off-grid per iteration — as if the terrain continued. A WALL
+    // border piled rain into a square water line around every map
+    // (measured); production crops the margin anyway, but pooling
+    // against the wall also pushed water back inward.
+    f32 borderDrain { 0.05f };
     // Multigrid: solve coarse levels first (min-downsampled terrain —
     // channels survive the downsample) and transfer the SURFACE as the
     // next level's warm start. The equilibrium is a large-scale
