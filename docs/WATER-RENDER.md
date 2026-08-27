@@ -135,5 +135,13 @@ Intégration :
   de la WaterInfoMap (les rubans ne se rendent plus qu'au loin), purge
   éventuelle des champs TRG3 de l'option D (le solveur reste : pre-roll
   + oracle).
+- Régénération visible de l'eau COURANTE au retour (constat dev,
+  réflexion sans fix) : conséquence assumée de l'eau transitoire — la
+  dormante re-arrive instantanément (pins+semis), la dynamique se
+  re-forme. Deux leviers si ça gêne : (a) révélation « settle-gated »
+  (garder le baké affiché tant que la fenêtre n'est pas calme /
+  rafale adaptative) ; (b) cache de session LRU des états de fenêtre
+  (~2 Mo pièce, jamais sérialisé — la doctrine save §2.4 intacte),
+  invalidé au sculpt. R3 n'y change rien.
 - updateTexture RHI (destroy+create par tick = provisoire éprouvé).
 - Cascade FX (voile + écume projetée) par-dessus la goulotte.
