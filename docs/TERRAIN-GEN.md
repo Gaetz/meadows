@@ -1441,3 +1441,37 @@ Nettoyages différés : reconcileWaterWithTerrain + dédup de lacs
 devenus non-rendus (métadonnées seulement), rubans RiverSurface
 sandbox morts dans WaterSystem si les story n'en gardent pas
 l'usage.
+
+**Correctif eau — plaques disjointes aux cellules (2026-08-27,
+bug-eau.png)** : en jeu, un ruisseau en pente rendait en damier de
+plaques 8 m détachées + un drap blanc flottant à flanc. Trois causes
+mesurées sur la capture : (1) les tronçons à film mince (< seuil de
+séchage du solveur) n'avaient AUCUNE géométrie — le cours est dans le
+FLUX, pas dans la profondeur (la doctrine de tracé s'applique aussi au
+rendu) ; (2) chaque cellule mouillée restante était une assiette plate
+à son niveau absolu — escalier sur toute pente ; (3) les coins secs
+« empruntaient » le niveau mouillé voisin même AU-DESSUS de leur
+propre terrain — drapeaux flottants blancs (shading torrent) sur les
+berges raides. Corrections :
+1. **Re-mouillage des cours au bake** : flux > courseFluxThreshold
+   (0,04 m³/s) ⇒ depth = max(depth, courseMinDepth 0,15 m) au
+   stockage — continuité des cours dans les CHAMPS (rendu, requêtes,
+   carte, tous d'accord). Le solveur calcule désormais la vitesse
+   AVANT le séchage (une cellule re-mouillée garde son courant).
+2. **Drapage + subdivision adaptative** (WaterSystem) : cellule
+   profonde (4 coins ≥ 0,6 m) = un quad au niveau absolu ; sinon
+   subdivision ~2 m, niveau = mix(sol_fin + depth, niveau_absolu,
+   smoothstep(0,2, 0,6, depth)) — l'eau mince épouse le terrain fin
+   en continu, les bassins restent plats. Le blend atteint exactement
+   1 à 0,6 m ⇒ l'arête d'un quad profond et les samples du voisin
+   subdivisé coïncident (pas de fissure aux T-junctions). Sol par
+   bilinéaire local (pas besoin du bicubique de rendu).
+3. **Coin sec = bordé SOUS la berge** : niveau = min(niveau mouillé
+   voisin, sol_local − 5 cm) — la nappe plonge toujours dans la
+   berge, jamais de flap au-dessus du terrain.
+kTileBakeVersion 57. À re-valider en jeu (spot de la capture :
+4152, 475, −1716 — à cheval sur la frontière de tuile x = 4096 : y
+vérifier aussi le raccord de niveau entre régions). Watch :
+coût du rebuild de géométrie au publish (~dizaines de ms, passage en
+worker si hitch), écart drapé↔surface absolue > 0,35 m sur pentes =
+l'info map ne prend pas le relais du flow (le vertex flow est juste).

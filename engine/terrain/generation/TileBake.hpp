@@ -85,6 +85,12 @@ struct TileBakeParams {
     bool solveWater { true };
     f32 waterSolveTexel { 8.0f };
     WaterSolveParams waterSolve { .rainRate = 4.0e-6f };
+    // Course continuity: cells whose through-flux says "a course runs
+    // here" are re-wetted to a minimum depth even where the film dried
+    // below the solver threshold — without it a stream on a steep
+    // stretch renders (and queries) as disconnected pools.
+    f32 courseFluxThreshold { 0.04f }; // m3/s worth existing
+    f32 courseMinDepth { 0.15f };      // m of guaranteed water on a course
     // Measured fine-erosion reintroduction (B6) — the carved-rock
     // character coming back on the slopes without re-hatching the
     // socles. All defaults are the LEGACY behavior (bit-exact); the
@@ -177,7 +183,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 56;
+constexpr u32 kTileBakeVersion = 57;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

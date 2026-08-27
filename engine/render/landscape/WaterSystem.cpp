@@ -367,17 +367,24 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
             prevR = right;
         }
     }
-    // Solved water fields: one heightfield sheet per region — a quad
-    // per cell with any wet corner, vertices AT the solved surface (the
-    // level slopes through rapids; the depth test clips the shoreline
-    // exactly, like the lake sheets). Dry corners borrow the highest
-    // wet neighbour level so the sheet overshoots the bank and dips
-    // under the terrain there. Current > kRiverCurrent shades as a
-    // river (advected ripples); still water keeps the lake field. No
-    // shore foam on field water (gate 0) — the pool map still foams the
-    // sea.
+    // Solved water fields: one heightfield sheet per region. DEEP flat
+    // cells (all four corners past kDeepDepth) render one quad at the
+    // ABSOLUTE solved level; every other wet cell is subdivided to
+    // ~2 m samples whose level DRAPES the fine terrain (ground + depth,
+    // blending toward the absolute level as the water deepens) — a
+    // thin stream then hugs the slope continuously instead of stepping
+    // down as detached 8 m plates (measured in-game). The blend hits
+    // exactly 1 at kDeepDepth, so a deep quad's straight edge and the
+    // subdivided neighbour's samples agree along the shared border —
+    // no cracks. Dry samples tuck UNDER the bank (never above their
+    // own ground: a borrowed level above terrain floated white flaps
+    // off every steep bank). Current > kRiverCurrent shades as a river
+    // (advected ripples); still water keeps the lake field; no shore
+    // foam on field water (gate 0) — the pool map still foams the sea.
     if (hasFields) {
         constexpr f32 kRiverCurrent = 0.3f; // m/s
+        constexpr f32 kDeepDepth = 0.6f;    // m — flat-quad fast path
+        constexpr f32 kWetEps = 0.005f;     // m — sample counts as wet
         for (const TerrainRegion& region : bodies->fields->regions) {
             const u32 wN = region.waterWidth;
             const u32 hN = region.waterHeight;
@@ -387,6 +394,8 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                 continue;
             }
             const f32 texel = region.waterTexel;
+            const u32 subN = glm::max(
+                static_cast<u32>(texel / 2.0f + 0.5f), 1u);
             // The shared margin band belongs to ONE emitter: each
             // region keeps the cells inside its owned tile rect, the
             // neighbour emits the rest (both solved the band, levels
@@ -396,60 +405,84 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
             const f32 ownMaxX = region.originX + region.spanX() - inset;
             const f32 ownMinZ = region.originZ + inset;
             const f32 ownMaxZ = region.originZ + region.spanZ() - inset;
-            const auto wet = [&](i32 c, i32 r) {
-                return c >= 0 && r >= 0 && c < static_cast<i32>(wN) &&
-                       r < static_cast<i32>(hN) &&
-                       region.waterDepth[static_cast<size_t>(r) * wN +
-                                         c] != 0;
+            const auto depthAt = [&](u32 c, u32 r) {
+                return static_cast<f32>(
+                           region.waterDepth[static_cast<size_t>(r) * wN +
+                                             c]) *
+                       (1.0f / 32.0f);
             };
-            vector<u32> cornerIndex(static_cast<size_t>(wN) * hN, ~0u);
-            const auto corner = [&](u32 c, u32 r) {
-                u32& slot = cornerIndex[static_cast<size_t>(r) * wN + c];
-                if (slot != ~0u) {
-                    return slot;
-                }
-                const size_t i = static_cast<size_t>(r) * wN + c;
-                const f32 x =
-                    region.originX + static_cast<f32>(c) * texel;
-                const f32 z =
-                    region.originZ + static_cast<f32>(r) * texel;
-                f32 level = -1.0e9f;
+            // Cheap bilinear ground (the drape does not need the
+            // bicubic render surface: the water rides >= centimeters
+            // above it).
+            const auto groundAt = [&](f32 x, f32 z) {
+                const f32 u = glm::clamp(
+                    (x - region.originX) / region.texelSize, 0.0f,
+                    static_cast<f32>(region.width - 1));
+                const f32 v = glm::clamp(
+                    (z - region.originZ) / region.texelSize, 0.0f,
+                    static_cast<f32>(region.height - 1));
+                const u32 u0 =
+                    glm::min(static_cast<u32>(u), region.width - 2);
+                const u32 v0 =
+                    glm::min(static_cast<u32>(v), region.height - 2);
+                const f32 tu = u - static_cast<f32>(u0);
+                const f32 tv = v - static_cast<f32>(v0);
+                const auto h = [&](u32 cc, u32 rr) {
+                    return region.heights[static_cast<size_t>(rr) *
+                                              region.width +
+                                          cc];
+                };
+                const f32 a =
+                    h(u0, v0) + (h(u0 + 1, v0) - h(u0, v0)) * tu;
+                const f32 b = h(u0, v0 + 1) +
+                              (h(u0 + 1, v0 + 1) - h(u0, v0 + 1)) * tu;
+                return a + (b - a) * tv;
+            };
+            // One vertex from one world sample — the SAME formula at
+            // every granularity, so shared positions always agree.
+            const auto sampleVertex = [&](f32 x, f32 z, bool& wetOut) {
+                const terrain::WaterSample s =
+                    terrain::waterSample(region, x, z);
+                const f32 ground = groundAt(x, z);
+                f32 level;
                 f32 flowX = 0.0f;
                 f32 flowZ = 0.0f;
                 f32 riverHalf = 0.0f;
-                if (region.waterDepth[i] != 0) {
-                    level = region.waterSurface[i];
-                    flowX =
-                        static_cast<f32>(region.waterVelX[i]) * 0.1f;
-                    flowZ =
-                        static_cast<f32>(region.waterVelZ[i]) * 0.1f;
+                wetOut = s.depth > kWetEps;
+                if (wetOut) {
+                    const f32 blend =
+                        glm::smoothstep(0.2f, kDeepDepth, s.depth);
+                    level = glm::mix(ground + s.depth, s.surface, blend);
+                    flowX = s.velocityX;
+                    flowZ = s.velocityZ;
                     if (flowX * flowX + flowZ * flowZ >
                         kRiverCurrent * kRiverCurrent) {
                         riverHalf = 4.0f;
                     }
                 } else {
-                    for (i32 dz = -1; dz <= 1; ++dz) {
-                        for (i32 dx = -1; dx <= 1; ++dx) {
-                            const i32 nc = static_cast<i32>(c) + dx;
-                            const i32 nr = static_cast<i32>(r) + dz;
-                            if (wet(nc, nr)) {
-                                level = glm::max(
-                                    level,
-                                    region.waterSurface
-                                        [static_cast<size_t>(nr) * wN +
-                                         nc]);
-                            }
-                        }
+                    // Bank tuck: at most 5 cm under the local ground,
+                    // and never above the wet neighbourhood level.
+                    level = ground - 0.05f;
+                    if (s.surface > 0.0f) {
+                        level = glm::min(level, s.surface);
                     }
                 }
-                slot = vertex(x, level, z, flowX, flowZ, riverHalf,
+                return vertex(x, level, z, flowX, flowZ, riverHalf,
                               0.0f, 0.0f, 1.0e6f, 0.0f);
-                return slot;
             };
+            // Per-cell sample cache ((subN+1)² lattice, reset lazily).
+            vector<u32> cache;
+            vector<u8> cacheWet;
+            const size_t lattice =
+                static_cast<size_t>(subN + 1) * (subN + 1);
             for (u32 r = 0; r + 1 < hN; ++r) {
                 for (u32 c = 0; c + 1 < wN; ++c) {
-                    if (!wet(c, r) && !wet(c + 1, r) && !wet(c, r + 1) &&
-                        !wet(c + 1, r + 1)) {
+                    const f32 d00 = depthAt(c, r);
+                    const f32 d10 = depthAt(c + 1, r);
+                    const f32 d01 = depthAt(c, r + 1);
+                    const f32 d11 = depthAt(c + 1, r + 1);
+                    if (d00 <= 0.0f && d10 <= 0.0f && d01 <= 0.0f &&
+                        d11 <= 0.0f) {
                         continue;
                     }
                     const f32 cx = region.originX +
@@ -460,13 +493,52 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                         cz > ownMaxZ) {
                         continue;
                     }
-                    const u32 v00 = corner(c, r);
-                    const u32 v10 = corner(c + 1, r);
-                    const u32 v01 = corner(c, r + 1);
-                    const u32 v11 = corner(c + 1, r + 1);
-                    for (const u32 v :
-                         { v00, v11, v10, v00, v01, v11 }) {
-                        indices.push_back(v);
+                    const f32 x0 =
+                        region.originX + static_cast<f32>(c) * texel;
+                    const f32 z0 =
+                        region.originZ + static_cast<f32>(r) * texel;
+                    const bool deep = d00 >= kDeepDepth &&
+                                      d10 >= kDeepDepth &&
+                                      d01 >= kDeepDepth &&
+                                      d11 >= kDeepDepth;
+                    const u32 cellSub = deep ? 1 : subN;
+                    const f32 step =
+                        texel / static_cast<f32>(cellSub);
+                    cache.assign(lattice, ~0u);
+                    cacheWet.assign(lattice, 0);
+                    const auto sub = [&](u32 sc, u32 sr) {
+                        const size_t slot =
+                            static_cast<size_t>(sr) * (subN + 1) + sc;
+                        if (cache[slot] == ~0u) {
+                            bool wet = false;
+                            cache[slot] = sampleVertex(
+                                x0 + static_cast<f32>(sc) * step,
+                                z0 + static_cast<f32>(sr) * step, wet);
+                            cacheWet[slot] = wet ? 1 : 0;
+                        }
+                        return cache[slot];
+                    };
+                    const auto subWet = [&](u32 sc, u32 sr) {
+                        return cacheWet[static_cast<size_t>(sr) *
+                                            (subN + 1) +
+                                        sc] != 0;
+                    };
+                    for (u32 sr = 0; sr < cellSub; ++sr) {
+                        for (u32 sc = 0; sc < cellSub; ++sc) {
+                            const u32 v00 = sub(sc, sr);
+                            const u32 v10 = sub(sc + 1, sr);
+                            const u32 v01 = sub(sc, sr + 1);
+                            const u32 v11 = sub(sc + 1, sr + 1);
+                            if (!subWet(sc, sr) && !subWet(sc + 1, sr) &&
+                                !subWet(sc, sr + 1) &&
+                                !subWet(sc + 1, sr + 1)) {
+                                continue;
+                            }
+                            for (const u32 v :
+                                 { v00, v11, v10, v00, v01, v11 }) {
+                                indices.push_back(v);
+                            }
+                        }
                     }
                 }
             }

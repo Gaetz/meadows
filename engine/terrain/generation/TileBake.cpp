@@ -786,7 +786,11 @@ TileBakeResult bakeTileStage2(
                                    glm::max(water.flux[j], 0.0f)) *
                             (255.0f / 4.0f),
                         0.0f, 255.0f));
-                    const f32 depth = water.depth[j];
+                    f32 depth = water.depth[j];
+                    // Course continuity re-wet (see courseFluxThreshold).
+                    if (water.flux[j] > params.courseFluxThreshold) {
+                        depth = glm::max(depth, params.courseMinDepth);
+                    }
                     if (depth <= 0.0f) {
                         continue;
                     }

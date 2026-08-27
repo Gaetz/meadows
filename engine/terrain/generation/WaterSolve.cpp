@@ -347,24 +347,28 @@ WaterSolveResult solveLevel(const GridSpec& spec,
             // At steady state outflow ~= inflow: the total outflow IS
             // the cell's through-discharge.
             out.flux[i] = fE[i] + fW[i] + fS[i] + fN[i];
+            // Velocity is computed BEFORE the drying, like the flux: a
+            // consumer re-wetting a course cell by flux (the bake's
+            // continuity pass) needs its current too, not a dead pool.
+            if (depth[i] > 0.0f) {
+                const f32 flowX = fE[i] - fW[i];
+                const f32 flowZ = fS[i] - fN[i];
+                const f32 div = glm::max(depth[i], 0.05f) * texel;
+                f32 vx = flowX / div;
+                f32 vz = flowZ / div;
+                // Thin-film ghosts at waterfalls divide by near-nothing
+                // — cap at a physical torrent speed.
+                const f32 speed = std::hypot(vx, vz);
+                if (speed > 12.0f) {
+                    vx *= 12.0f / speed;
+                    vz *= 12.0f / speed;
+                }
+                out.velocityX[i] = vx;
+                out.velocityZ[i] = vz;
+            }
             if (depth[i] <= params.dryThreshold) {
                 depth[i] = 0.0f;
-                continue;
             }
-            const f32 flowX = fE[i] - fW[i];
-            const f32 flowZ = fS[i] - fN[i];
-            const f32 div = glm::max(depth[i], 0.05f) * texel;
-            f32 vx = flowX / div;
-            f32 vz = flowZ / div;
-            // Thin-film ghosts at waterfalls divide by near-nothing —
-            // cap at a physical torrent speed.
-            const f32 speed = std::hypot(vx, vz);
-            if (speed > 12.0f) {
-                vx *= 12.0f / speed;
-                vz *= 12.0f / speed;
-            }
-            out.velocityX[i] = vx;
-            out.velocityZ[i] = vz;
         }
     }
     out.depth = std::move(depth);
