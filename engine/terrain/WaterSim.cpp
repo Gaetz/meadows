@@ -433,6 +433,13 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
     const GridSpec& spec = state.spec;
     const size_t cells = spec.cells();
     state.pinned.assign(cells, kWaterInfoDry);
+    // Per-cell seed target (max covered lake level), then a BFS from
+    // the pins: only basin cells CONNECTED to the pinned core get
+    // seeded — a mask overhang patch on a downhill slope is
+    // disconnected and stays dry (seeded blindly, those became 15 m
+    // water TOWERS refilled at every scroll, measured in-game).
+    vector<f32>& seedLevel = state.headBuf; // scratch reuse
+    seedLevel.assign(cells, kWaterInfoDry);
     const f32 texel = spec.texelSize;
     const f32 maxX = spec.originX + static_cast<f32>(spec.n - 1) * texel;
     const f32 maxZ = spec.originZ + static_cast<f32>(spec.n - 1) * texel;
@@ -468,19 +475,9 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 if (!lake.covers(x, z)) {
                     continue;
                 }
-                // SEED the full baked footprint: any covered cell that
-                // is (near) dry fills once to the baked level — the
-                // bake is the authority on standing water, and without
-                // this the lake started as its eroded pin core alone,
-                // a "flan" slowly creeping toward its own shores at
-                // the weir rate (measured in-game). A mis-covered
-                // overhang cell drains once and stays dry (no pin =
-                // no spring).
-                if (state.depth[i] < 0.01f) {
-                    state.depth[i] =
-                        glm::max(state.depth[i],
-                                 lake.level - state.terrain[i]);
-                }
+                // Seed candidate (validated by the pin-connectivity
+                // BFS below).
+                seedLevel[i] = glm::max(seedLevel[i], lake.level);
                 // PIN the mask INTERIOR only (eroded by one mask
                 // texel): the 8 m mask rasterized at sim resolution
                 // overhangs its banks, and an over-hanging pin is an
@@ -495,6 +492,50 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 }
                 state.pinned[i] =
                     glm::max(state.pinned[i], lake.level);
+            }
+        }
+    }
+    // Seed by CONNECTIVITY: BFS from the pinned core through covered
+    // basin cells (terrain below the level) — the lake occupies its
+    // whole baked footprint immediately (the "flan" fix), and a mask
+    // overhang disconnected from the core never receives a drop.
+    vector<u32> queue;
+    vector<u8> visited(cells, 0);
+    queue.reserve(1024);
+    for (size_t i = 0; i < cells; ++i) {
+        if (state.pinned[i] > kWaterInfoDry + 1.0f) {
+            visited[i] = 1;
+            queue.push_back(static_cast<u32>(i));
+        }
+    }
+    const i32 n = static_cast<i32>(spec.n);
+    while (!queue.empty()) {
+        const u32 i = queue.back();
+        queue.pop_back();
+        const i32 col = static_cast<i32>(i % spec.n);
+        const i32 row = static_cast<i32>(i / spec.n);
+        const i32 dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
+                                 { 0, -1 } };
+        for (const auto& d : dirs) {
+            const i32 nc = col + d[0];
+            const i32 nr = row + d[1];
+            if (nc < 0 || nr < 0 || nc >= n || nr >= n) {
+                continue;
+            }
+            const size_t j =
+                static_cast<size_t>(nr) * spec.n + static_cast<size_t>(nc);
+            if (visited[j]) {
+                continue;
+            }
+            const f32 level = seedLevel[j];
+            if (level <= kWaterInfoDry + 1.0f ||
+                state.terrain[j] >= level - 0.02f) {
+                continue;
+            }
+            visited[j] = 1;
+            queue.push_back(static_cast<u32>(j));
+            if (state.depth[j] < 0.01f) {
+                state.depth[j] = level - state.terrain[j];
             }
         }
     }

@@ -386,8 +386,10 @@ void main() {
                                 2.8 +
                             vWorldPos.y * 1.3 -
                             t * (3.0 + 2.0 * flowSpeed));
-        float aeration =
-            smoothstep(1.0, 4.0, flowSpeed + simDepth * 0.5);
+        // Aeration comes from SPEED ALONE: the old + depth·0.5 term
+        // painted every deep STILL front solid white (the pale towers
+        // with white ovals, measured in-game).
+        float aeration = smoothstep(1.0, 3.5, flowSpeed);
         vec3 wall = mix(bodyColor, mFoam,
                         (0.10 + 0.45 * streak) * aeration);
         color = mix(color, wall, simWallness * 0.85);
@@ -443,8 +445,11 @@ void main() {
 
 #ifdef WATER_SIM
     // Meniscus: a thin lapping line where the volume meets the ground
-    // (its contact edge) — the torrent whitewater above still stacks.
-    foam = max(foam, (1.0 - smoothstep(0.0, 0.6, thickness)) * 0.45);
+    // (its contact edge) — FLAT surfaces only: on a vertical wall the
+    // view-ray thickness is tiny everywhere, and the meniscus washed
+    // whole side faces white.
+    foam = max(foam, (1.0 - smoothstep(0.0, 0.6, thickness)) * 0.45 *
+                         (1.0 - simWallness));
 #endif
 #ifdef WATER_FAR
     // Far baked bodies carry NO foam family: shore foam, whitewater
