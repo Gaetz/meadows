@@ -112,6 +112,15 @@ Shading :
   plein fresnel peint les rivières en blanc-ciel au rasant.
 - Le feather d'épaisseur optique dissolvait le corps des ruisseaux
   drapés — la colonne SIM compte dans le fondu.
+- **La COULEUR ne lit jamais le champ simulé** : toute variante
+  (brute, lissée croix, lissée 3×3) peignait des taches évolutives —
+  ronds/croix/losanges — au rythme des fluctuations du champ, même à
+  écoulement stable. La couleur sim = absorption par épaisseur
+  OPTIQUE (géométrie, stable) + teinte constante ; le champ ne sert
+  au visuel que pour la direction d'advection (lisse par nature).
+- L'underside est une décision UNIFORME (caméra immergée via
+  uSubmersionInfo.x) — le test par fragment coupait toute eau en
+  pente d'une ligne nette à hauteur d'œil (bug d'avant la sim).
 - Murs : seuil de pente serré (~81°+) — à 45-60° une nappe drapée est
   une surface, pas un mur (collines rayées sinon).
 
