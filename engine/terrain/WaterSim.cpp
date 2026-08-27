@@ -510,14 +510,58 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 if (!lake.covers(x, z)) {
                     continue;
                 }
-                // Seed candidate (validated by the pin-connectivity
-                // BFS below).
-                seedLevel[i] = glm::max(seedLevel[i], lake.level);
+                // Deepest covered cell FIRST (before the crest
+                // guard): it is the narrow-lake fallback PIN — a
+                // ledge pond surrounded by drops must keep its
+                // lifeline even where the guard blocks seeding.
                 const f32 column = lake.level - state.terrain[i];
                 if (column > deepestColumn) {
                     deepestColumn = column;
                     deepest = i;
                 }
+                // Crest-overhang guard: the 8 m mask can overrun an
+                // ERODED edge by up to one mask texel (4 sim cells),
+                // and seeding those plants a full-height water column
+                // jutting past the crest above the falls (the "lake
+                // cube", measured dev, seen from above). A cell whose
+                // neighbourhood (one mask texel around) holds
+                // UNCOVERED ground far below the lake level sits past
+                // the crest, not in the basin (a true shore rises
+                // back toward the level): skip seed AND pin — the
+                // pour wets the lip dynamically with a realistic film
+                // instead, and a steep-shore ring skipped here floods
+                // back from the seeded interior within seconds.
+                {
+                    bool pastCrest = false;
+                    for (i32 dz = -4; dz <= 4 && !pastCrest; ++dz) {
+                        for (i32 dx = -4; dx <= 4; ++dx) {
+                            const i32 nc = col + dx;
+                            const i32 nr = row + dz;
+                            if (nc < 0 || nr < 0 ||
+                                nc >= static_cast<i32>(spec.n) ||
+                                nr >= static_cast<i32>(spec.n)) {
+                                continue;
+                            }
+                            const size_t nj =
+                                static_cast<size_t>(nr) * spec.n +
+                                static_cast<size_t>(nc);
+                            if (state.terrain[nj] <
+                                    lake.level - 2.0f &&
+                                !lake.covers(
+                                    spec.x(static_cast<u32>(nc)),
+                                    spec.z(static_cast<u32>(nr)))) {
+                                pastCrest = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (pastCrest) {
+                        continue;
+                    }
+                }
+                // Seed candidate (validated by the pin-connectivity
+                // BFS below).
+                seedLevel[i] = glm::max(seedLevel[i], lake.level);
                 // PIN the mask INTERIOR only (eroded by one mask
                 // texel): the 8 m mask rasterized at sim resolution
                 // overhangs its banks, and an over-hanging pin is an

@@ -351,9 +351,15 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
     // eroded rim ring outside the pins (the "flan" fix: the lake must
     // occupy its baked shape, not creep toward it at the weir rate).
     {
-        const size_t rimCell = 30u * spec.n + 21u; // inside mask, near
-                                                   // its edge
-        CHECK(state.depth[rimCell] > 4.0f); // ~level - terrain
+        // This synthetic lake stands 5 m above ALL surrounding
+        // ground, so every covered cell near the mask edge counts as
+        // past-crest for the overhang guard and the seed ring is
+        // empty — the reservoir CORE must still be pinned (the
+        // immediate-footprint seeding of a realistic shore is proven
+        // in the crest-overhang case below).
+        const size_t rimCell = 30u * spec.n + 16u;
+        CHECK(state.pinned[rimCell] >
+              render::terrain::kWaterInfoDry + 1.0f);
     }
     WaterSimParams params = closedParams();
     params.borderDrainPerSecond = 0.9f;
@@ -471,6 +477,46 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     extractSnapshot(state, params, again);
     CHECK(snap.meshVerts == again.meshVerts);
     CHECK(snap.meshIndices == again.meshIndices);
+}
+
+TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
+    // A REALISTIC shelf pond (level ~1.5 m over its shore — a baked
+    // level sits at its spill) whose mask overruns the crest of a
+    // 30 m drop by two sim cells: seeding those cells planted a full
+    // water column jutting over the falls (the "lake cube"). They
+    // must stay dry after pinLakes; the basin still seeds/pins.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto shelf = [](f32 x, f32) {
+        return x < 44.0f ? 300.0f : 270.0f;
+    };
+    WaterSimState state;
+    initWindow(state, spec, shelf, -1000.0f);
+    render::WaterBodies bodies;
+    render::LakeSurface lake;
+    lake.level = 301.5f;
+    lake.minX = 0.0f;
+    lake.minZ = 0.0f;
+    lake.maxX = 48.0f; // overhangs the x=44 crest
+    lake.maxZ = 128.0f;
+    lake.maskTexel = 4.0f;
+    lake.maskWidth = 12;
+    lake.maskHeight = 32;
+    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                         lake.maskHeight,
+                     1);
+    bodies.lakes.push_back(lake);
+    pinLakes(state, bodies);
+    const size_t overhang = 30u * spec.n + 22u;  // x=44, terrain 270
+    const size_t crestEdge = 30u * spec.n + 21u; // x=42, near crest
+    const size_t interior = 30u * spec.n + 15u;  // x=30, mask core
+    const size_t seedRim = 63u * spec.n + 15u;   // z=126: seeded, not
+                                                 // pinned (erosion)
+    CHECK(state.depth[overhang] == 0.0f);
+    CHECK(state.depth[crestEdge] == 0.0f);
+    CHECK(state.pinned[interior] ==
+          doctest::Approx(301.5f).epsilon(0.001));
+    CHECK(state.depth[seedRim] ==
+          doctest::Approx(1.5f).epsilon(0.01));
 }
 
 TEST_CASE("water sim: a narrow lake still pins and seeds (fallback)") {
