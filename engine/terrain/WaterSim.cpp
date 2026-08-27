@@ -155,7 +155,17 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
                     glm::max(dh * eqCap, 0.0f));
                 total += fN[i];
             }
-            const f32 held = depth[i] * cellArea;
+            // Real-time drain cap: at most a QUARTER of the held
+            // volume leaves per substep (the offline limiter allows
+            // 100%). A cell that fully empties each substep turns a
+            // cliff flow into m³ PACKETS hopping one cell per substep
+            // — and a pinned reservoir, refilled instantly, machine-
+            // gunned them (the accumulating checkerboard of detached
+            // quads across the fall, measured in-game). The cap only
+            // binds in that regime: gentle flows never drain 25% of a
+            // cell in one substep; steep-cell equilibria shift by at
+            // most ~0.2 m under storm rain (oracle cross-check bound).
+            const f32 held = depth[i] * cellArea * 0.25f;
             if (total * params.dt > held && total > 0.0f) {
                 const f32 k = held / (total * params.dt);
                 fE[i] *= k;
@@ -433,6 +443,9 @@ void extractSnapshot(const WaterSimState& state,
     out.velZ.assign(cells, 0.0f);
     out.display.resize(cells);
     const f32 texel = spec.texelSize;
+    const auto wetAt = [&](size_t j) {
+        return state.depth[j] > params.dryThreshold;
+    };
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
         out.display[i] = state.terrain[i] - 0.25f; // dry tuck default
@@ -442,6 +455,19 @@ void extractSnapshot(const WaterSimState& state,
         // Sea-pinned: the ocean sheet's territory, read dry.
         if (state.terrain[i] < params.seaLevel &&
             state.terrain[i] + d <= params.seaLevel + 0.01f) {
+            continue;
+        }
+        // An isolated wet cell (no wet 4-neighbour) is transient spray,
+        // not a water body — real threads are flow-connected. Rendered,
+        // each one made a detached diamond around its node.
+        const size_t col = i % spec.n;
+        const size_t row = i / spec.n;
+        const bool connected =
+            (col > 0 && wetAt(i - 1)) ||
+            (col + 1 < spec.n && wetAt(i + 1)) ||
+            (row > 0 && wetAt(i - spec.n)) ||
+            (row + 1 < spec.n && wetAt(i + spec.n));
+        if (!connected) {
             continue;
         }
         out.depth[i] = d;
