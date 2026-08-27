@@ -128,7 +128,7 @@ public:
         return { static_cast<f32>(simCfg.params.marginCells) *
                      simCfg.texel,
                  simCfg.fadeBand, static_cast<f32>(simCfg.debugMode),
-                 0.0f };
+                 simCfg.texel }; // w: the debug-box footprint
     }
     f32 simCostMs() const { return simLastMs; } // worker job, F6 line
     bool simIsValid() const { return simValid; }
@@ -248,6 +248,19 @@ private:
     // water even where the sheet would lose the depth fight (the
     // unambiguous "is the sim alive here" view).
     rhi::PipelineHandle simPipelineOverlay {};
+    // Vertical skirts closing the volume at exposed column ends
+    // (rebuilt per snapshot; world-space verts, water_sim shading).
+    rhi::BufferHandle simSkirtVertexBuffer {};
+    rhi::BufferHandle simSkirtIndexBuffer {};
+    u32 simSkirtIndexCount { 0 };
+    rhi::PipelineHandle simSkirtPipeline {};
+    // Debug volume boxes (Sim mode "Volumes debug"): one translucent
+    // column per wet cell, instanced.
+    rhi::BufferHandle simBoxVertexBuffer {};
+    rhi::BufferHandle simBoxIndexBuffer {};
+    rhi::BufferHandle simBoxInstanceBuffer {};
+    u32 simBoxInstances { 0 };
+    rhi::PipelineHandle simBoxPipeline {};
 };
 
 } // namespace render

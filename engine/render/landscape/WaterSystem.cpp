@@ -19,6 +19,8 @@ namespace {
 constexpr const char* kWaterShader = "water";
 constexpr const char* kWaterLocalShader = "waterlocal";
 constexpr const char* kWaterSimShader = "water_sim";
+constexpr const char* kWaterSimSkirtShader = "water_simskirt";
+constexpr const char* kWaterSimBoxShader = "water_simdbg";
 
 // Worker-side pool-depth bake: vertical water column over the terrain
 // (sea + lakes + river ribbons when bodies are set), then a separable
@@ -191,6 +193,22 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                .format = rhi::TextureFormat::RGBA16F,
                                .usage = rhi::TextureUsage_Sampled },
                              kZeros);
+    // Unit cube for the debug volume boxes (8 verts, 12 tris).
+    constexpr f32 kCubeVerts[] = {
+        0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,
+        0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1,
+    };
+    constexpr u16 kCubeIndices[] = {
+        0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
+        3, 6, 2, 3, 7, 6, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5,
+    };
+    simBoxVertexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kCubeVerts) },
+        kCubeVerts);
+    simBoxIndexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = sizeof(kCubeIndices) },
+        kCubeIndices);
     rebuildMaterials(device); // also builds the map bind group
 
     shaders.load(kWaterShader, { { "FrameUbo", 0 } },
@@ -222,6 +240,17 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
+    shaders.load(kWaterSimSkirtShader,
+                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { { "uSceneColor", 0 },
+                   { "uSceneDepth", 1 },
+                   { "uPoolDepth", 3 },
+                   { "uSkyClouds", 4 },
+                   { "uWaterInfoA", 5 },
+                   { "uWaterInfoB", 6 },
+                   { "uWaterSimA", 7 },
+                   { "uWaterSimB", 8 } });
+    shaders.load(kWaterSimBoxShader, { { "FrameUbo", 0 } }, {});
     buildPipeline(device, shaders);
 }
 
@@ -273,12 +302,28 @@ void WaterSystem::destroy(rhi::Device& device) {
     device.destroyBuffer(simIndexBuffer);
     device.destroyPipeline(simPipeline);
     device.destroyPipeline(simPipelineOverlay);
+    device.destroyPipeline(simSkirtPipeline);
+    device.destroyPipeline(simBoxPipeline);
+    device.destroyBuffer(simSkirtVertexBuffer);
+    device.destroyBuffer(simSkirtIndexBuffer);
+    device.destroyBuffer(simBoxVertexBuffer);
+    device.destroyBuffer(simBoxIndexBuffer);
+    device.destroyBuffer(simBoxInstanceBuffer);
     simMapA = {};
     simMapB = {};
     simVertexBuffer = {};
     simIndexBuffer = {};
     simPipeline = {};
     simPipelineOverlay = {};
+    simSkirtPipeline = {};
+    simBoxPipeline = {};
+    simSkirtVertexBuffer = {};
+    simSkirtIndexBuffer = {};
+    simSkirtIndexCount = 0;
+    simBoxVertexBuffer = {};
+    simBoxIndexBuffer = {};
+    simBoxInstanceBuffer = {};
+    simBoxInstances = 0;
     simWetCells = 0;
     simIndexCount = 0;
     simMeshN = 0;
@@ -646,6 +691,142 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
         extras.data());
     rebuildMapGroup(device);
     ensureSimMesh(device, n);
+
+    // --- Vertical skirts: close the VOLUME wherever a water column
+    // ends against air (flood front, fall lip, dam face) — a quad from
+    // the surface straight down to the dry neighbour's ground. The
+    // top sheet alone read as a floating film from the side.
+    {
+        const auto& spec = snap.spec;
+        const f32 texel = spec.texelSize;
+        vector<f32> verts;
+        vector<u32> indices;
+        const auto dryGround = [&](size_t j) {
+            return snap.display[j] + 0.25f; // the dry tuck, undone
+        };
+        const auto emit = [&](f32 ax, f32 az, f32 bx, f32 bz, f32 top,
+                              f32 bottom, f32 u, f32 v) {
+            const u32 base = static_cast<u32>(verts.size() / 5);
+            const f32 quad[4][3] = { { ax, top, az },
+                                     { bx, top, bz },
+                                     { bx, bottom, bz },
+                                     { ax, bottom, az } };
+            for (const auto& p : quad) {
+                verts.push_back(p[0]);
+                verts.push_back(p[1]);
+                verts.push_back(p[2]);
+                verts.push_back(u);
+                verts.push_back(v);
+            }
+            for (const u32 k : { base, base + 1, base + 2, base,
+                                 base + 2, base + 3 }) {
+                indices.push_back(k);
+            }
+        };
+        const f32 texSizeInv = 1.0f / static_cast<f32>(spec.n);
+        for (u32 row = 0; row < spec.n; ++row) {
+            for (u32 col = 0; col < spec.n; ++col) {
+                const size_t i = static_cast<size_t>(row) * spec.n + col;
+                if (snap.depth[i] <= 0.0f) {
+                    continue;
+                }
+                const f32 s = snap.surface[i];
+                const f32 cx =
+                    spec.originX + static_cast<f32>(col) * texel;
+                const f32 cz =
+                    spec.originZ + static_cast<f32>(row) * texel;
+                const f32 u =
+                    (static_cast<f32>(col) + 0.5f) * texSizeInv;
+                const f32 v =
+                    (static_cast<f32>(row) + 0.5f) * texSizeInv;
+                const f32 h = texel * 0.5f;
+                const auto side = [&](i32 dc, i32 dr) {
+                    const i32 nc = static_cast<i32>(col) + dc;
+                    const i32 nr = static_cast<i32>(row) + dr;
+                    if (nc < 0 || nr < 0 ||
+                        nc >= static_cast<i32>(spec.n) ||
+                        nr >= static_cast<i32>(spec.n)) {
+                        return;
+                    }
+                    const size_t j =
+                        static_cast<size_t>(nr) * spec.n + nc;
+                    if (snap.depth[j] > 0.0f) {
+                        return; // wet-wet: the sheet already connects
+                    }
+                    const f32 ground = dryGround(j);
+                    if (ground >= s - 0.10f) {
+                        return; // normal shoreline: bank above water
+                    }
+                    // Boundary segment between i and j.
+                    if (dc != 0) {
+                        const f32 x = cx + static_cast<f32>(dc) * h;
+                        emit(x, cz - h, x, cz + h, s, ground - 0.3f, u,
+                             v);
+                    } else {
+                        const f32 z = cz + static_cast<f32>(dr) * h;
+                        emit(cx - h, z, cx + h, z, s, ground - 0.3f, u,
+                             v);
+                    }
+                };
+                side(1, 0);
+                side(-1, 0);
+                side(0, 1);
+                side(0, -1);
+            }
+        }
+        device.destroyBuffer(simSkirtVertexBuffer);
+        device.destroyBuffer(simSkirtIndexBuffer);
+        simSkirtVertexBuffer = {};
+        simSkirtIndexBuffer = {};
+        simSkirtIndexCount = 0;
+        if (!indices.empty()) {
+            simSkirtVertexBuffer = device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = verts.size() * sizeof(f32) },
+                verts.data());
+            simSkirtIndexBuffer = device.createBuffer(
+                { .usage = rhi::BufferUsage::Index,
+                  .size = indices.size() * sizeof(u32) },
+                indices.data());
+            simSkirtIndexCount = static_cast<u32>(indices.size());
+        }
+    }
+
+    // --- Debug volume boxes: only while the mode shows them.
+    device.destroyBuffer(simBoxInstanceBuffer);
+    simBoxInstanceBuffer = {};
+    simBoxInstances = 0;
+    if (simCfg.debugMode == 3) {
+        const auto& spec = snap.spec;
+        const f32 texel = spec.texelSize;
+        vector<f32> cells;
+        cells.reserve(4096);
+        for (u32 row = 0; row < spec.n; ++row) {
+            for (u32 col = 0; col < spec.n; ++col) {
+                const size_t i = static_cast<size_t>(row) * spec.n + col;
+                const f32 d = snap.depth[i];
+                if (d <= 0.0f) {
+                    continue;
+                }
+                cells.push_back(spec.originX +
+                                static_cast<f32>(col) * texel);
+                cells.push_back(snap.surface[i] - d);
+                cells.push_back(spec.originZ +
+                                static_cast<f32>(row) * texel);
+                cells.push_back(d);
+                if (cells.size() >= 4u * 80000u) {
+                    break;
+                }
+            }
+        }
+        if (!cells.empty()) {
+            simBoxInstanceBuffer = device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = cells.size() * sizeof(f32) },
+                cells.data());
+            simBoxInstances = static_cast<u32>(cells.size() / 4);
+        }
+    }
 }
 
 void WaterSystem::ensureSimMesh(rhi::Device& device, u32 n) {
@@ -1052,6 +1233,47 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                                     .offset = 0 } } } },
           .depth = { .testEnable = false, .writeEnable = false },
           .cull = rhi::CullMode::None });
+    if (simSkirtPipeline.id != 0) {
+        device.destroyPipeline(simSkirtPipeline);
+    }
+    // Skirts: world-space verts + the wet cell's uv, water_sim shading.
+    simSkirtPipeline = device.createPipeline(
+        { .shader = shaders.get(kWaterSimSkirtShader),
+          .vertexBuffers =
+              { { .stride = 5 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = 0 },
+                                  { .location = 1,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = 3 * sizeof(f32) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Greater },
+          .cull = rhi::CullMode::None,
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
+    if (simBoxPipeline.id != 0) {
+        device.destroyPipeline(simBoxPipeline);
+    }
+    // Debug volume boxes: instanced translucent columns.
+    simBoxPipeline = device.createPipeline(
+        { .shader = shaders.get(kWaterSimBoxShader),
+          .vertexBuffers =
+              { { .stride = 3 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = 0 } } },
+                { .stride = 4 * sizeof(f32),
+                  .stepMode = rhi::VertexStepMode::Instance,
+                  .attributes = { { .location = 1,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = 0 } } } },
+          .blend = rhi::BlendMode::Alpha,
+          .depth = { .testEnable = true,
+                     .writeEnable = false,
+                     .compare = rhi::CompareFunc::Greater },
+          .cull = rhi::CullMode::None });
     // The watch recorded every shader the build consumed: a reload of
     // any of them rebuilds the pipelines.
     shaderWatch = shaders.endWatch();
@@ -1097,6 +1319,26 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setVertexBuffer(0, simVertexBuffer);
         cmd.setIndexBuffer(simIndexBuffer, rhi::IndexFormat::U32);
         cmd.drawIndexed(simIndexCount);
+        if (simSkirtIndexCount > 0 && simCfg.debugMode != 2) {
+            // The volume's side walls (exposed column ends).
+            cmd.setPipeline(simSkirtPipeline);
+            cmd.setBindGroup(0, frameBindGroup);
+            cmd.setBindGroup(1, sceneBindGroup);
+            cmd.setBindGroup(2, poolMapGroup);
+            cmd.setVertexBuffer(0, simSkirtVertexBuffer);
+            cmd.setIndexBuffer(simSkirtIndexBuffer,
+                               rhi::IndexFormat::U32);
+            cmd.drawIndexed(simSkirtIndexCount);
+        }
+        if (simCfg.debugMode == 3 && simBoxInstances > 0) {
+            // Debug volume columns: "where the water IS".
+            cmd.setPipeline(simBoxPipeline);
+            cmd.setBindGroup(0, frameBindGroup);
+            cmd.setVertexBuffer(0, simBoxVertexBuffer);
+            cmd.setVertexBuffer(1, simBoxInstanceBuffer);
+            cmd.setIndexBuffer(simBoxIndexBuffer, rhi::IndexFormat::U16);
+            cmd.drawIndexed(36, simBoxInstances);
+        }
     }
 }
 

@@ -756,7 +756,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            &sim.params.reservoirOutflow, 0.2f, 20.0f,
                            "%.1f");
         ImGui::Combo("Sim mode", &sim.debugMode,
-                     "Sim + baked\0Force baked\0Seam overlay\0");
+                     "Sim + baked\0Force baked\0Seam overlay\0"
+                     "Volumes debug\0");
         // On-site debugging: freeze the live window to disk;
         // `cooker water-replay` reproduces and steps it offline.
         if (ImGui::Button("Dump sim state")) {
