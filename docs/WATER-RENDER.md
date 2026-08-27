@@ -118,6 +118,19 @@ Shading :
   écoulement stable. La couleur sim = absorption par épaisseur
   OPTIQUE (géométrie, stable) + teinte constante ; le champ ne sert
   au visuel que pour la direction d'advection (lisse par nature).
+- **Un lac est UNE nappe bakée continue — la sim le publie SEC
+  (règle mer étendue)** : même à recettes strictement identiques, une
+  moitié sim contre une moitié bakée redessinait la frontière du rect
+  sur les grands lacs (aplat LOD asymétrique, bande de fondu vers le
+  sol réfracté = liseré verdâtre). Le carré de sim sert à l'eau qui
+  BOUGE ; un lac épinglé à son niveau baké n'y gagne rien. Donc :
+  plane `lakeLevel` (cœur épinglé + empreinte semée), extraction
+  publie sec tant que la surface reste au niveau baké (une crue
+  au-dessus publie), et le discard in-rect du baké ne s'applique
+  qu'aux rubans — la nappe de lac se dessine partout, une frontière
+  sur un lac est impossible par construction. La sim simule toujours
+  les lacs (niveau tenu, déversoirs) ; seule la peau appartient au
+  baké.
 - **La sobriété doit être SYMÉTRIQUE — la recette sim = la recette
   mer, à l'identique** : chaque simplification appliquée au seul
   chemin sim (normale plate, fresnel plafonné 0.28, ciel sans soleil)
