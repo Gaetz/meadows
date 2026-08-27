@@ -298,9 +298,14 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     if (state.pinned.size() != state.spec.cells()) {
         state.pinned.assign(state.spec.cells(), kWaterInfoDry);
     }
+    if (state.wetMask.size() != state.spec.cells()) {
+        state.wetMask.assign(state.spec.cells(), 0);
+    }
     // The pinned plane shifts with the rest; the caller rebuilds it
     // via pinLakes after every scroll (whole-plane, cheap), so the
-    // entered strips never keep stale pins for long.
+    // entered strips never keep stale pins for long. The wetMask MUST
+    // shift too, or the render hysteresis reads misaligned cells after
+    // every scroll (flicker).
     vector<f32>* planes[] = { &state.terrain, &state.depth,  &state.fE,
                               &state.fW,      &state.fS,     &state.fN,
                               &state.pinned };
@@ -309,6 +314,14 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                static_cast<size_t>(col);
     };
 
+    // Entered strips start DRY (terrain sampled, water/pipes/wet
+    // memory zeroed). The old "flood bounded by the survivor edge"
+    // sweep INVENTED water: flying past a pinned lake painted its
+    // level across every entered strip — 20 m of flood over whole
+    // valleys (replay-measured, 3.9M m³). Doctrine: the sim moves
+    // water, it never invents it — the caller's pinLakes re-rasterizes
+    // baked lakes into the strips right after, sources refill the
+    // rivers, and the settle margin hides the transition.
     // --- X shift, per row (avoids row-wrap bleed).
     if (dCol != 0) {
         const i32 keep = n - std::abs(dCol);
@@ -327,34 +340,36 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 }
             }
         }
+        {
+            u8* mask = state.wetMask.data();
+            for (i32 row = 0; row < n; ++row) {
+                u8* r = mask + at(0, row);
+                if (dCol > 0) {
+                    std::memmove(r, r + dCol,
+                                 static_cast<size_t>(keep));
+                } else {
+                    std::memmove(r - dCol, r,
+                                 static_cast<size_t>(keep));
+                }
+            }
+        }
         state.spec.originX +=
             static_cast<f32>(dCol) * state.spec.texelSize;
-        // Entered columns: terrain, then depth swept outward from the
-        // surviving edge surface (lakes arrive full), pipes copied
-        // from the surviving edge (rivers arrive moving).
         const i32 firstNew = dCol > 0 ? keep : 0;
         const i32 lastNew = dCol > 0 ? n - 1 : std::abs(dCol) - 1;
-        const i32 sweepFrom = dCol > 0 ? firstNew : lastNew;
-        const i32 sweepStep = dCol > 0 ? 1 : -1;
         for (i32 row = 0; row < n; ++row) {
             for (i32 col = firstNew; col <= lastNew; ++col) {
-                state.terrain[at(col, row)] = height(
+                const size_t i = at(col, row);
+                state.terrain[i] = height(
                     state.spec.x(static_cast<u32>(col)),
                     state.spec.z(static_cast<u32>(row)));
-            }
-            const i32 edge = sweepFrom - sweepStep; // survivor column
-            for (i32 col = sweepFrom; col >= firstNew && col <= lastNew;
-                 col += sweepStep) {
-                const size_t i = at(col, row);
-                const size_t prev = at(col - sweepStep, row);
-                const f32 prevSurface =
-                    state.terrain[prev] + state.depth[prev];
-                state.depth[i] = glm::max(
-                    0.0f, prevSurface - state.terrain[i]);
-                state.fE[i] = state.fE[at(edge, row)];
-                state.fW[i] = state.fW[at(edge, row)];
-                state.fS[i] = state.fS[at(edge, row)];
-                state.fN[i] = state.fN[at(edge, row)];
+                state.depth[i] = 0.0f;
+                state.fE[i] = 0.0f;
+                state.fW[i] = 0.0f;
+                state.fS[i] = 0.0f;
+                state.fN[i] = 0.0f;
+                state.pinned[i] = kWaterInfoDry;
+                state.wetMask[i] = 0;
             }
         }
     }
@@ -362,44 +377,46 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     // --- Z shift, whole-block move.
     if (dRow != 0) {
         const i32 keep = n - std::abs(dRow);
-        const size_t rowBytes = static_cast<size_t>(n) * sizeof(f32);
+        const size_t rowFloats = static_cast<size_t>(n);
         for (vector<f32>* plane : planes) {
             f32* data = plane->data();
             if (dRow > 0) {
                 std::memmove(data, data + at(0, dRow),
-                             static_cast<size_t>(keep) * rowBytes);
+                             static_cast<size_t>(keep) * rowFloats *
+                                 sizeof(f32));
             } else {
                 std::memmove(data + at(0, -dRow), data,
-                             static_cast<size_t>(keep) * rowBytes);
+                             static_cast<size_t>(keep) * rowFloats *
+                                 sizeof(f32));
+            }
+        }
+        {
+            u8* mask = state.wetMask.data();
+            if (dRow > 0) {
+                std::memmove(mask, mask + at(0, dRow),
+                             static_cast<size_t>(keep) * rowFloats);
+            } else {
+                std::memmove(mask + at(0, -dRow), mask,
+                             static_cast<size_t>(keep) * rowFloats);
             }
         }
         state.spec.originZ +=
             static_cast<f32>(dRow) * state.spec.texelSize;
         const i32 firstNew = dRow > 0 ? keep : 0;
         const i32 lastNew = dRow > 0 ? n - 1 : std::abs(dRow) - 1;
-        const i32 sweepFrom = dRow > 0 ? firstNew : lastNew;
-        const i32 sweepStep = dRow > 0 ? 1 : -1;
-        const i32 edge = sweepFrom - sweepStep;
         for (i32 row = firstNew; row <= lastNew; ++row) {
             for (i32 col = 0; col < n; ++col) {
-                state.terrain[at(col, row)] = height(
+                const size_t i = at(col, row);
+                state.terrain[i] = height(
                     state.spec.x(static_cast<u32>(col)),
                     state.spec.z(static_cast<u32>(row)));
-            }
-        }
-        for (i32 row = sweepFrom; row >= firstNew && row <= lastNew;
-             row += sweepStep) {
-            for (i32 col = 0; col < n; ++col) {
-                const size_t i = at(col, row);
-                const size_t prev = at(col, row - sweepStep);
-                const f32 prevSurface =
-                    state.terrain[prev] + state.depth[prev];
-                state.depth[i] = glm::max(
-                    0.0f, prevSurface - state.terrain[i]);
-                state.fE[i] = state.fE[at(col, edge)];
-                state.fW[i] = state.fW[at(col, edge)];
-                state.fS[i] = state.fS[at(col, edge)];
-                state.fN[i] = state.fN[at(col, edge)];
+                state.depth[i] = 0.0f;
+                state.fE[i] = 0.0f;
+                state.fW[i] = 0.0f;
+                state.fS[i] = 0.0f;
+                state.fN[i] = 0.0f;
+                state.pinned[i] = kWaterInfoDry;
+                state.wetMask[i] = 0;
             }
         }
     }

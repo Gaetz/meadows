@@ -208,6 +208,27 @@ TEST_CASE("water sim: scroll shifts the interior bit-exactly") {
     }
 }
 
+TEST_CASE("water sim: scroll strips enter dry — no invented water") {
+    // The old strip init swept the surviving edge's surface across the
+    // whole strip: flying past a lake painted its level over entered
+    // valleys (replay-measured flood). Strips must enter DRY; lakes
+    // re-arrive through pinLakes, rivers through the sources.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    WaterSimState state;
+    initWindow(state, spec, bowlHeight, -1000.0f);
+    // Deep water column sitting right at the future survivor edge.
+    for (u32 row = 20; row < 45; ++row) {
+        state.depth[static_cast<size_t>(row) * spec.n + 58u] = 30.0f;
+    }
+    scrollWindow(state, 6, 0, bowlHeight, -1000.0f);
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 59; col < spec.n; ++col) {
+            CHECK(state.depth[static_cast<size_t>(row) * spec.n + col] ==
+                  0.0f);
+        }
+    }
+}
+
 TEST_CASE("water sim: command list is bit-deterministic") {
     const auto run = [] {
         const GridSpec spec = makeSpec(65, 2.0f);
