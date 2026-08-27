@@ -85,6 +85,7 @@ void initWindow(WaterSimState& state, const GridSpec& spec,
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
     state.pinned.assign(cells, kWaterInfoDry);
+    state.lakeLevel.assign(cells, kWaterInfoDry);
     // Start DRY (sea pin only). The old priority-flood warm start
     // filled EVERY window-enclosed basin to its pass — a mountain
     // valley whose true exit lies past the window rim became a 138 m
@@ -333,6 +334,9 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     if (state.wetMask.size() != state.spec.cells()) {
         state.wetMask.assign(state.spec.cells(), 0);
     }
+    if (state.lakeLevel.size() != state.spec.cells()) {
+        state.lakeLevel.assign(state.spec.cells(), kWaterInfoDry);
+    }
     // The pinned plane shifts with the rest; the caller rebuilds it
     // via pinLakes after every scroll (whole-plane, cheap), so the
     // entered strips never keep stale pins for long. The wetMask MUST
@@ -340,7 +344,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     // every scroll (flicker).
     vector<f32>* planes[] = { &state.terrain, &state.depth,  &state.fE,
                               &state.fW,      &state.fS,     &state.fN,
-                              &state.pinned };
+                              &state.pinned,  &state.lakeLevel };
     const auto at = [&](i32 col, i32 row) {
         return static_cast<size_t>(row) * state.spec.n +
                static_cast<size_t>(col);
@@ -401,6 +405,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fS[i] = 0.0f;
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
+                state.lakeLevel[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
             }
         }
@@ -448,6 +453,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fS[i] = 0.0f;
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
+                state.lakeLevel[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
             }
         }
@@ -465,6 +471,7 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
     const GridSpec& spec = state.spec;
     const size_t cells = spec.cells();
     state.pinned.assign(cells, kWaterInfoDry);
+    state.lakeLevel.assign(cells, kWaterInfoDry);
     // Per-cell seed target (max covered lake level), then a BFS from
     // the pins: only basin cells CONNECTED to the pinned core get
     // seeded — a mask overhang patch on a downhill slope is
@@ -532,6 +539,8 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 }
                 state.pinned[i] =
                     glm::max(state.pinned[i], lake.level);
+                state.lakeLevel[i] =
+                    glm::max(state.lakeLevel[i], lake.level);
                 pinnedAny = true;
             }
         }
@@ -543,6 +552,8 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
         if (!pinnedAny && deepestColumn > 0.02f) {
             state.pinned[deepest] =
                 glm::max(state.pinned[deepest], lake.level);
+            state.lakeLevel[deepest] =
+                glm::max(state.lakeLevel[deepest], lake.level);
         }
     }
     // Seed by CONNECTIVITY: BFS from the pinned core through covered
@@ -584,6 +595,7 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
             }
             visited[j] = 1;
             queue.push_back(static_cast<u32>(j));
+            state.lakeLevel[j] = glm::max(state.lakeLevel[j], level);
             if (state.depth[j] < 0.01f) {
                 state.depth[j] = level - state.terrain[j];
             }
@@ -629,6 +641,19 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         if (wet && state.terrain[i] < params.seaLevel &&
             state.terrain[i] + d <= params.seaLevel + 0.01f) {
             wet = false;
+        }
+        // Lake territory: the BAKED lake sheet's, published dry too
+        // (same rule) — the baked sheet renders everywhere, so no
+        // window boundary can exist on a lake (a sim-rendered half
+        // next to a baked half re-drew the trusted rect however close
+        // the recipes got). Water genuinely ABOVE the baked level (a
+        // flood pouring across the lake) still publishes.
+        if (wet && state.lakeLevel.size() == cells) {
+            const f32 lakeLvl = state.lakeLevel[i];
+            if (lakeLvl > kWaterInfoDry + 1.0f &&
+                state.terrain[i] + d <= lakeLvl + 0.05f) {
+                wet = false;
+            }
         }
         state.wetMask[i] = wet ? 1 : 0;
     }
@@ -860,6 +885,7 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
     state.pinned.assign(cells, kWaterInfoDry);
+    state.lakeLevel.assign(cells, kWaterInfoDry);
     pinSea(state, state.depth, params.seaLevel);
     zeroBorderWalls(state);
     return state;
@@ -976,6 +1002,11 @@ bool loadSimState(const char* path, WaterSimState& state,
     } else {
         state.pinned.assign(cells, kWaterInfoDry);
     }
+    // Not in the dump: the replay bench re-derives it via pinLakes
+    // when it has the bodies, and an empty plane reads as "no lake"
+    // (the extraction guard) — replays then show lake cells wet,
+    // which is what a sim bench wants to judge anyway.
+    state.lakeLevel.assign(cells, kWaterInfoDry);
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
     return static_cast<bool>(file);

@@ -377,6 +377,33 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
         }
     }
     CHECK(wetRows > 40);
+    // Lake territory publishes DRY (the baked sheet renders it — sea
+    // rule): the snapshot must not carry the lake, but the pour over
+    // the rim (outside the footprint) must still be there. A flood
+    // rising above the baked level publishes again.
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+    CHECK(state.lakeLevel[inLake] ==
+          doctest::Approx(310.0f).epsilon(0.001));
+    CHECK(snap.depth[inLake] == 0.0f);
+    u32 pourWet = 0;
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 26; col < spec.n; ++col) {
+            if (snap.depth[static_cast<size_t>(row) * spec.n + col] >
+                0.0f) {
+                ++pourWet;
+            }
+        }
+    }
+    CHECK(pourWet > 100);
+    // Flood over the lake: a 2x2 block (a lone wet cell is erased as
+    // spray by the connectivity pass).
+    state.depth[inLake] += 0.5f;
+    state.depth[inLake + 1] += 0.5f;
+    state.depth[inLake + spec.n] += 0.5f;
+    state.depth[inLake + spec.n + 1] += 0.5f;
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[inLake] > 0.0f);
 }
 
 TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {

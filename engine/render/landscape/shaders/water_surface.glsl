@@ -118,17 +118,22 @@ void main() {
     }
 #endif
 #if defined(WATER_LOCAL) && !defined(WATER_SIM)
-    // Inside the sim window the LIVE volumes are the ONLY water. The
-    // first arbitration was per texel ("yield where the sim has water
-    // here") — but the sim's courses legitimately differ from the
-    // baked ones, so wherever they disagreed BOTH networks showed:
-    // baked ribbons snaking up the hillsides beside the sim's valley
-    // water (measured in-game). The baked bodies are DATA for the sim
-    // (pinned lakes, entry sources), never geometry, anywhere inside
-    // the trusted rect; the crossfade band ties the two worlds.
+    // Inside the sim window the LIVE volumes are the only MOVING
+    // water. The first arbitration was per texel ("yield where the sim
+    // has water here") — but the sim's courses legitimately differ
+    // from the baked ones, so wherever they disagreed BOTH networks
+    // showed: baked ribbons snaking up the hillsides beside the sim's
+    // valley water (measured in-game). RIBBONS therefore yield to the
+    // sim anywhere inside the trusted rect, crossfade band as the
+    // seam. LAKES (vInfo.x == 0) are the exception: the sim pins them
+    // AT the baked sheet and publishes their cells dry (sea rule), so
+    // the baked sheet renders them EVERYWHERE — one continuous
+    // surface, no window boundary possible on a lake (a sim half next
+    // to a baked half re-drew the rect however close the recipes got).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
-        if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
+        if (uWaterSimMapInfo.w > 0.5 && simMode != 1 &&
+            vInfo.x > 0.001) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;
             if (all(greaterThan(rel, vec2(0.0))) &&
