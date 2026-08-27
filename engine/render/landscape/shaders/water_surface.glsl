@@ -309,9 +309,19 @@ void main() {
     // the view-ray optical thickness — a 20 cm flow reads as a body
     // of water, not a transparent film. Shallow water is a vivid
     // turquoise, deep water falls to the dark deep color.
+    // The color keys on a SMOOTHED depth (5 taps, ~2 texels): the raw
+    // per-cell depth turned every micro-pool of a bumpy bed into a
+    // dark disc with a light bilinear rim (measured in-game).
+    vec2 simTx = 1.0 / vec2(textureSize(uWaterSimB, 0));
+    float depthSmooth =
+        (simTexB.x + texture(uWaterSimB, vSimUv + vec2(simTx.x, 0)).x +
+         texture(uWaterSimB, vSimUv - vec2(simTx.x, 0)).x +
+         texture(uWaterSimB, vSimUv + vec2(0, simTx.y)).x +
+         texture(uWaterSimB, vSimUv - vec2(0, simTx.y)).x) *
+        0.2;
     vec3 bodyColor = mix(vec3(0.10, 0.34, 0.42), mDeep,
-                         clamp(simDepth * 0.18, 0.0, 1.0));
-    float bodyMix = 1.0 - exp(-simDepth * 1.6);
+                         clamp(depthSmooth * 0.18, 0.0, 1.0));
+    float bodyMix = 1.0 - exp(-depthSmooth * 1.6);
     transmitted = mix(transmitted, bodyColor, bodyMix * 0.75);
 #endif
 
