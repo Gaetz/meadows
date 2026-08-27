@@ -344,7 +344,15 @@ void main() {
     } else {
         vec3 reflectDir = reflect(viewDir, n);
         reflectDir.y = abs(reflectDir.y); // never reflect below the horizon
+#ifdef WATER_SIM
+        // NO sun disc on the sim water: a flat pond whose mirror
+        // aligns with the sun caught the disc's radiance on EVERY
+        // fragment — whole lakes burned white with bloom fringes
+        // (measured in-game). Sun glints are polish, later.
+        reflected = skyGradient(reflectDir);
+#else
         reflected = skyWithSun(reflectDir);
+#endif
     }
     // Volumetric sky clouds live in a main-view screen buffer
     // (composited by the tonemap), so the mirrored scene never contains
@@ -485,10 +493,13 @@ void main() {
         color = mix(color, vec3(1.0, 0.25, 0.2), 0.30);
     }
     // Last-resort sanitize: ONE NaN fragment poisons the bloom chain
-    // tile by tile (black rectangles) — never let one out.
+    // tile by tile (black rectangles), and a huge-but-finite value
+    // burns it just as well (white blobs, chromatic fringes) — never
+    // let either out.
     if (any(isnan(color)) || any(isinf(color))) {
         color = vec3(0.02, 0.10, 0.12);
     }
+    color = min(color, vec3(6.0));
 #endif
 
     // Debug views (render panel > Water > Debug view). Modes 4-6 show
