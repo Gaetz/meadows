@@ -326,7 +326,8 @@ void WaterSystem::setBodies(sptr<const WaterBodies> next) {
     bodiesDirty = true;
 }
 
-void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
+void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
+                                       const TerrainParams& params) {
     device.destroyBuffer(localIndexBuffer);
     device.destroyBuffer(localVertexBuffer);
     localIndexBuffer = {};
@@ -406,33 +407,55 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                                  kFoamLakeArea
                                  ? 1.0f
                                  : 0.0f;
+        // One quad per covered texel, with PER-SIDE extension:
+        // covered neighbour -> flush (adjacent quads share the edge
+        // exactly); uncovered RISING bank -> grown 0.75 texel so the
+        // sheet reaches under the bank and the depth test cuts the
+        // exact shoreline (the historical behavior); uncovered
+        // FALLING ground (below the level: an eroded crest) -> flush.
+        // The old whole-run growth pushed the sheet 6 m into thin air
+        // past every outlet crest — the jutting corner floating over
+        // the void at the spawn lake (measured dev). Terrain is
+        // sampled only on uncovered sides (the perimeter), so the
+        // rebuild stays cheap.
         const f32 grow = lake.maskTexel * 0.75f;
+        const f32 mt = lake.maskTexel;
+        const auto covered = [&](i32 mc, i32 mr) {
+            return mc >= 0 && mr >= 0 &&
+                   mc < static_cast<i32>(lake.maskWidth) &&
+                   mr < static_cast<i32>(lake.maskHeight) &&
+                   lake.mask[static_cast<size_t>(mr) * lake.maskWidth +
+                             static_cast<size_t>(mc)] != 0;
+        };
         for (u32 row = 0; row < lake.maskHeight; ++row) {
-            const f32 z0 =
-                lake.minZ + static_cast<f32>(row) * lake.maskTexel - grow;
-            const f32 z1 = z0 + lake.maskTexel + 2.0f * grow;
-            u32 col = 0;
-            while (col < lake.maskWidth) {
-                if (!lake.mask[static_cast<size_t>(row) * lake.maskWidth +
-                               col]) {
-                    ++col;
+            for (u32 col = 0; col < lake.maskWidth; ++col) {
+                if (!covered(static_cast<i32>(col),
+                             static_cast<i32>(row))) {
                     continue;
                 }
-                u32 end = col;
-                while (end + 1 < lake.maskWidth &&
-                       lake.mask[static_cast<size_t>(row) *
-                                     lake.maskWidth +
-                                 end + 1]) {
-                    ++end;
-                }
-                quad(lake.minX + static_cast<f32>(col) * lake.maskTexel -
-                         grow,
-                     z0,
-                     lake.minX + static_cast<f32>(end) * lake.maskTexel +
-                         lake.maskTexel + grow,
-                     z1, lake.level, materialOf(lake.materialIndex),
-                     foamGate);
-                col = end + 1;
+                const f32 tx0 =
+                    lake.minX + static_cast<f32>(col) * mt;
+                const f32 tz0 =
+                    lake.minZ + static_cast<f32>(row) * mt;
+                const f32 cx = tx0 + 0.5f * mt;
+                const f32 cz = tz0 + 0.5f * mt;
+                const auto ext = [&](i32 dc, i32 dr, f32 px, f32 pz) {
+                    if (covered(static_cast<i32>(col) + dc,
+                                static_cast<i32>(row) + dr)) {
+                        return 0.0f;
+                    }
+                    return terrain::height(params, px, pz) >=
+                                   lake.level - 2.0f
+                               ? grow
+                               : 0.0f;
+                };
+                const f32 west = ext(-1, 0, tx0 - 0.5f * mt, cz);
+                const f32 east = ext(1, 0, tx0 + 1.5f * mt, cz);
+                const f32 north = ext(0, -1, cx, tz0 - 0.5f * mt);
+                const f32 south = ext(0, 1, cx, tz0 + 1.5f * mt);
+                quad(tx0 - west, tz0 - north, tx0 + mt + east,
+                     tz0 + mt + south, lake.level,
+                     materialOf(lake.materialIndex), foamGate);
             }
         }
     }
@@ -561,7 +584,7 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
     }
 
     if (bodiesDirty) {
-        rebuildLocalGeometry(device);
+        rebuildLocalGeometry(device, params);
         rebuildMaterials(device);
         bodiesDirty = false;
     }

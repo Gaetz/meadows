@@ -173,7 +173,8 @@ private:
     };
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
-    void rebuildLocalGeometry(rhi::Device& device);
+    void rebuildLocalGeometry(rhi::Device& device,
+                              const TerrainParams& params);
     void rebuildMapGroup(rhi::Device& device);
     void rebuildMaterials(rhi::Device& device);
     void uploadSimTextures(rhi::Device& device,
