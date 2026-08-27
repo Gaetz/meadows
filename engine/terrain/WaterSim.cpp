@@ -463,19 +463,34 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 if (lake.level <= state.terrain[i] + 0.02f) {
                     continue; // rim/bank cell above the water
                 }
-                // Mask-INTERIOR only (eroded by one mask texel): the
-                // 8 m mask rasterized at sim resolution overhangs its
-                // banks, and an over-hanging pin is an artesian spring
-                // pouring on the hillside forever (water appearing
-                // UPHILL of the lake, measured in-game). The interior
-                // core still supplies; the true rim overflow is the
-                // sim's own job on the fine terrain.
                 const f32 x = spec.x(static_cast<u32>(col));
                 const f32 z = spec.z(static_cast<u32>(row));
+                if (!lake.covers(x, z)) {
+                    continue;
+                }
+                // SEED the full baked footprint: any covered cell that
+                // is (near) dry fills once to the baked level — the
+                // bake is the authority on standing water, and without
+                // this the lake started as its eroded pin core alone,
+                // a "flan" slowly creeping toward its own shores at
+                // the weir rate (measured in-game). A mis-covered
+                // overhang cell drains once and stays dry (no pin =
+                // no spring).
+                if (state.depth[i] < 0.01f) {
+                    state.depth[i] =
+                        glm::max(state.depth[i],
+                                 lake.level - state.terrain[i]);
+                }
+                // PIN the mask INTERIOR only (eroded by one mask
+                // texel): the 8 m mask rasterized at sim resolution
+                // overhangs its banks, and an over-hanging pin is an
+                // artesian spring pouring on the hillside forever
+                // (water appearing UPHILL of the lake, measured
+                // in-game). The interior core supplies; the rim ring
+                // lives on seeding + dynamics.
                 const f32 mt = lake.maskTexel;
-                if (!lake.covers(x, z) || !lake.covers(x - mt, z) ||
-                    !lake.covers(x + mt, z) || !lake.covers(x, z - mt) ||
-                    !lake.covers(x, z + mt)) {
+                if (!lake.covers(x - mt, z) || !lake.covers(x + mt, z) ||
+                    !lake.covers(x, z - mt) || !lake.covers(x, z + mt)) {
                     continue;
                 }
                 state.pinned[i] =

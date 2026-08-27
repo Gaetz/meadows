@@ -347,6 +347,14 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
                      1);
     bodies.lakes.push_back(lake);
     pinLakes(state, bodies);
+    // Seeding: the FULL baked footprint is wet immediately — even the
+    // eroded rim ring outside the pins (the "flan" fix: the lake must
+    // occupy its baked shape, not creep toward it at the weir rate).
+    {
+        const size_t rimCell = 30u * spec.n + 21u; // inside mask, near
+                                                   // its edge
+        CHECK(state.depth[rimCell] > 4.0f); // ~level - terrain
+    }
     WaterSimParams params = closedParams();
     params.borderDrainPerSecond = 0.9f;
     stepWindow(state, params, {}, 1200);

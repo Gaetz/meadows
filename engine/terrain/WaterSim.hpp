@@ -119,10 +119,12 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
 // changed under the window — the water then reacts live).
 void refreshTerrain(WaterSimState& state, const HeightFn& height);
 
-// Rebuild the pinned-reservoir plane from the baked lakes (call after
-// init, scroll or terrain refresh; the whole plane is cheap). A cell
-// pins where a lake's mask covers it and its level stands above the
-// local ground.
+// Rebuild the pinned-reservoir plane from the baked lakes AND seed
+// their full footprint (call after init, scroll or terrain refresh;
+// the whole plane is cheap). Seeding fills every (near-dry) covered
+// cell once to the baked level — the lake occupies its whole baked
+// shape immediately; the PIN itself only holds the mask interior
+// (eroded one mask texel — overhang pins were artesian springs).
 void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 
 // Shift the window by whole cells (positive = origin moves +x/+z).
