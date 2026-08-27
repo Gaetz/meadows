@@ -2,9 +2,11 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Log.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 
 namespace render::terrain {
@@ -402,6 +404,11 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
             lake.maxZ < spec.originZ || lake.minZ > maxZ) {
             continue;
         }
+        // Masked (generated) lakes only: a maskless authored pond pins
+        // its whole BBOX and would flood slopes the rectangle clips.
+        if (lake.mask.empty() || lake.maskWidth == 0) {
+            continue;
+        }
         const i32 c0 = glm::max(
             static_cast<i32>((lake.minX - spec.originX) / texel), 0);
         const i32 c1 = glm::min(
@@ -419,8 +426,19 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 if (lake.level <= state.terrain[i] + 0.02f) {
                     continue; // rim/bank cell above the water
                 }
-                if (!lake.covers(spec.x(static_cast<u32>(col)),
-                                 spec.z(static_cast<u32>(row)))) {
+                // Mask-INTERIOR only (eroded by one mask texel): the
+                // 8 m mask rasterized at sim resolution overhangs its
+                // banks, and an over-hanging pin is an artesian spring
+                // pouring on the hillside forever (water appearing
+                // UPHILL of the lake, measured in-game). The interior
+                // core still supplies; the true rim overflow is the
+                // sim's own job on the fine terrain.
+                const f32 x = spec.x(static_cast<u32>(col));
+                const f32 z = spec.z(static_cast<u32>(row));
+                const f32 mt = lake.maskTexel;
+                if (!lake.covers(x, z) || !lake.covers(x - mt, z) ||
+                    !lake.covers(x + mt, z) || !lake.covers(x, z - mt) ||
+                    !lake.covers(x, z + mt)) {
                     continue;
                 }
                 state.pinned[i] =
@@ -550,6 +568,113 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
     pinSea(state, state.depth, params.seaLevel);
     zeroBorderWalls(state);
     return state;
+}
+
+namespace {
+constexpr char kDumpMagic[4] = { 'W', 'S', 'D', '1' };
+}
+
+bool dumpSimState(const WaterSimState& state,
+                  const WaterSimParams& params,
+                  const vector<terraingen::WaterSource>& sources,
+                  const char* path) {
+    if (!state.valid()) {
+        return false;
+    }
+    std::ofstream file { path, std::ios::binary | std::ios::trunc };
+    if (!file) {
+        LOG_ERROR("dumpSimState: cannot open {}", path);
+        return false;
+    }
+    const auto write = [&](const auto& v) {
+        file.write(reinterpret_cast<const char*>(&v), sizeof(v));
+    };
+    const auto writePlane = [&](const vector<f32>& plane) {
+        file.write(reinterpret_cast<const char*>(plane.data()),
+                   static_cast<std::streamsize>(plane.size() *
+                                                sizeof(f32)));
+    };
+    file.write(kDumpMagic, 4);
+    write(state.spec.n);
+    write(state.spec.originX);
+    write(state.spec.originZ);
+    write(state.spec.texelSize);
+    write(params);
+    const u32 count = static_cast<u32>(sources.size());
+    write(count);
+    for (const terraingen::WaterSource& s : sources) {
+        write(s);
+    }
+    writePlane(state.terrain);
+    writePlane(state.depth);
+    writePlane(state.fE);
+    writePlane(state.fW);
+    writePlane(state.fS);
+    writePlane(state.fN);
+    const bool hasPins = state.pinned.size() == state.spec.cells();
+    const u8 pins = hasPins ? 1 : 0;
+    write(pins);
+    if (hasPins) {
+        writePlane(state.pinned);
+    }
+    return static_cast<bool>(file);
+}
+
+bool loadSimState(const char* path, WaterSimState& state,
+                  WaterSimParams& params,
+                  vector<terraingen::WaterSource>& sources) {
+    std::ifstream file { path, std::ios::binary };
+    if (!file) {
+        LOG_ERROR("loadSimState: cannot open {}", path);
+        return false;
+    }
+    const auto read = [&](auto& v) {
+        file.read(reinterpret_cast<char*>(&v), sizeof(v));
+    };
+    char magic[4] = {};
+    file.read(magic, 4);
+    read(state.spec.n);
+    read(state.spec.originX);
+    read(state.spec.originZ);
+    read(state.spec.texelSize);
+    read(params);
+    if (!file || std::memcmp(magic, kDumpMagic, 4) != 0 ||
+        state.spec.n < 8 || state.spec.n > 4096 ||
+        state.spec.texelSize <= 0.0f) {
+        LOG_ERROR("loadSimState: not a WSD1 dump: {}", path);
+        return false;
+    }
+    u32 count = 0;
+    read(count);
+    if (!file || count > 4096) {
+        return false;
+    }
+    sources.resize(count);
+    for (terraingen::WaterSource& s : sources) {
+        read(s);
+    }
+    const size_t cells = state.spec.cells();
+    const auto readPlane = [&](vector<f32>& plane) {
+        plane.resize(cells);
+        file.read(reinterpret_cast<char*>(plane.data()),
+                  static_cast<std::streamsize>(cells * sizeof(f32)));
+    };
+    readPlane(state.terrain);
+    readPlane(state.depth);
+    readPlane(state.fE);
+    readPlane(state.fW);
+    readPlane(state.fS);
+    readPlane(state.fN);
+    u8 pins = 0;
+    read(pins);
+    if (pins != 0) {
+        readPlane(state.pinned);
+    } else {
+        state.pinned.assign(cells, kWaterInfoDry);
+    }
+    state.headBuf.assign(cells, 0.0f);
+    state.scratch.assign(cells, 0.0f);
+    return static_cast<bool>(file);
 }
 
 WaterSimSample sampleSnapshot(const WaterSimSnapshot& snap, f32 x,

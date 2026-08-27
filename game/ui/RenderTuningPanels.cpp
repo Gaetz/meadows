@@ -5,6 +5,7 @@
 
 #include "engine/core/FrameProbe.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/platform/Paths.hpp"
 #include "engine/render/AtmosphereParams.hpp"
 #include "engine/render/WorldRenderer.hpp"
 
@@ -753,6 +754,13 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            64.0f, "%.0f");
         ImGui::Combo("Sim mode", &sim.debugMode,
                      "Sim + baked\0Force baked\0Seam overlay\0");
+        // On-site debugging: freeze the live window to disk;
+        // `cooker water-replay` reproduces and steps it offline.
+        if (ImGui::Button("Dump sim state")) {
+            r.waterSystem().requestSimDump(
+                (platform::executableDir() / "water-sim-dump.wsd")
+                    .string());
+        }
     }
     if (ImGui::CollapsingHeader("Post-processing")) {
         ImGui::Checkbox("Filmic tonemap (A/B)", &r.tuning.tonemap);

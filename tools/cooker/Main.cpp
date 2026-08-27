@@ -29,6 +29,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
+#include "WaterReplayTool.hpp"
 #include "WaterSolveTool.hpp"
 #include "data/plugins/Validate.hpp"
 #include "engine/core/Log.hpp"
@@ -384,6 +385,9 @@ int main(int argc, char** argv) {
     }
     if (command == "water-solve" && argc >= 6 && argc <= 8) {
         return cooker::waterSolve(argv, argc);
+    }
+    if (command == "water-replay" && (argc == 4 || argc == 5)) {
+        return cooker::waterReplay(argv, argc);
     }
     return usage();
 }

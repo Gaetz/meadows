@@ -142,4 +142,16 @@ struct WaterSimSample {
 WaterSimSample sampleSnapshot(const WaterSimSnapshot& snap, f32 x,
                               f32 z);
 
+// On-site debugging (dev request): dump the LIVE window (all planes +
+// params + sources) to a binary file, reload it offline and replay it
+// deterministically — `cooker water-replay` renders judgment maps from
+// these. The dump is a diagnostic artifact, never a save format.
+bool dumpSimState(const WaterSimState& state,
+                  const WaterSimParams& params,
+                  const vector<terraingen::WaterSource>& sources,
+                  const char* path);
+bool loadSimState(const char* path, WaterSimState& state,
+                  WaterSimParams& params,
+                  vector<terraingen::WaterSource>& sources);
+
 } // namespace render::terrain

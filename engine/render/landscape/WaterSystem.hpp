@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include <functional>
+#include <string>
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
@@ -133,6 +134,12 @@ public:
     bool simIsValid() const { return simValid; }
     bool simIsPreRolling() const { return simInFlight && !simState; }
     u32 simWetCellCount() const { return simWetCells; } // last upload
+    // On-site debugging: dump the live window (planes + params +
+    // sources) to `path` at the next moment main owns the state —
+    // `cooker water-replay` then reproduces it offline.
+    void requestSimDump(std::string path) {
+        simDumpPath = std::move(path);
+    }
 
 private:
     struct BakedMap {
@@ -235,6 +242,7 @@ private:
     u32 simIndexCount { 0 };
     u32 simMeshN { 0 };
     u32 simWetCells { 0 };
+    std::string simDumpPath; // non-empty = dump requested
     rhi::PipelineHandle simPipeline {};
     // Seam-overlay variant: no depth test — shows where the sim HAS
     // water even where the sheet would lose the depth fight (the

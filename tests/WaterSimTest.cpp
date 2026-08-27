@@ -314,7 +314,15 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
     lake.minX = 0.0f;
     lake.minZ = 0.0f;
     lake.maxX = 44.0f;
-    lake.maxZ = 128.0f; // maskless: the whole bbox is water
+    lake.maxZ = 128.0f;
+    // Masked (generated) lake — maskless ponds are excluded from
+    // pinning; the interior erosion trims one mask texel off the rim.
+    lake.maskTexel = 4.0f;
+    lake.maskWidth = 12;
+    lake.maskHeight = 33;
+    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                         lake.maskHeight,
+                     1);
     bodies.lakes.push_back(lake);
     pinLakes(state, bodies);
     WaterSimParams params = closedParams();

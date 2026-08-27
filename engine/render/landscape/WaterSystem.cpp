@@ -5,6 +5,7 @@
 
 #include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/terrain/RiverGeometry.hpp"
 #include "engine/terrain/WaterInfoMap.hpp"
@@ -746,6 +747,14 @@ void WaterSystem::updateSim(rhi::Device& device,
     }
     if (simInFlight) {
         return;
+    }
+    // Main owns the state here: honor a pending dump request.
+    if (!simDumpPath.empty() && simState) {
+        if (terrain::dumpSimState(*simState, simCfg.params, simSrcCache,
+                                  simDumpPath.c_str())) {
+            LOG_INFO("Water sim: state dumped to {}", simDumpPath);
+        }
+        simDumpPath.clear();
     }
     const f32 texel = glm::max(simCfg.texel, 0.5f);
     // Live span/texel knob change: rebuild the window from scratch.
