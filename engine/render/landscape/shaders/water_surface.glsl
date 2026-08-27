@@ -92,8 +92,11 @@ void main() {
 #ifdef WATER_SIM
     // Character from the sim textures; dry fragments dissolve (the
     // bilinear depth softens the shoreline past the mesh tuck).
+    // The EXTRACTION already gated what counts as water (dry threshold
+    // + fast-film exception + connectivity): anything published is
+    // meant to show — this only trims the bilinear shoreline fringe.
     vec4 simTexB = texture(uWaterSimB, vSimUv);
-    if (simTexB.x < 0.02) {
+    if (simTexB.x < 0.004) {
         discard;
     }
     float simDepth = simTexB.x; // the SIMULATED column under this texel

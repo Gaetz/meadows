@@ -730,7 +730,14 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
             r.waterSystem().simConfig();
         ImGui::Checkbox("Sim enabled", &sim.enabled);
         ImGui::SameLine();
-        ImGui::Text("job %.2f ms", r.waterSystem().simCostMs());
+        ImGui::Text("%s | %u wet | job %.2f ms",
+                    r.waterSystem().simIsValid()
+                        ? "LIVE"
+                        : (r.waterSystem().simIsPreRolling()
+                               ? "pre-roll..."
+                               : "OFF/waiting"),
+                    r.waterSystem().simWetCellCount(),
+                    r.waterSystem().simCostMs());
         ImGui::SliderFloat("Sim span (m)", &sim.span, 256.0f, 1024.0f,
                            "%.0f");
         ImGui::SliderFloat("Sim texel (m)", &sim.texel, 1.0f, 4.0f,

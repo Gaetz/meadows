@@ -130,6 +130,9 @@ public:
                  0.0f };
     }
     f32 simCostMs() const { return simLastMs; } // worker job, F6 line
+    bool simIsValid() const { return simValid; }
+    bool simIsPreRolling() const { return simInFlight && !simState; }
+    u32 simWetCellCount() const { return simWetCells; } // last upload
 
 private:
     struct BakedMap {
@@ -231,7 +234,12 @@ private:
     rhi::BufferHandle simIndexBuffer {};
     u32 simIndexCount { 0 };
     u32 simMeshN { 0 };
+    u32 simWetCells { 0 };
     rhi::PipelineHandle simPipeline {};
+    // Seam-overlay variant: no depth test — shows where the sim HAS
+    // water even where the sheet would lose the depth fight (the
+    // unambiguous "is the sim alive here" view).
+    rhi::PipelineHandle simPipelineOverlay {};
 };
 
 } // namespace render

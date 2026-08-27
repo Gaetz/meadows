@@ -271,11 +271,14 @@ void WaterSystem::destroy(rhi::Device& device) {
     device.destroyBuffer(simVertexBuffer);
     device.destroyBuffer(simIndexBuffer);
     device.destroyPipeline(simPipeline);
+    device.destroyPipeline(simPipelineOverlay);
     simMapA = {};
     simMapB = {};
     simVertexBuffer = {};
     simIndexBuffer = {};
     simPipeline = {};
+    simPipelineOverlay = {};
+    simWetCells = 0;
     simIndexCount = 0;
     simMeshN = 0;
     simState.reset();
@@ -612,6 +615,11 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
     // backends defer deletion). An updateTexture RHI fast path is a
     // known later optimization.
     const u32 n = snap.spec.n;
+    u32 wet = 0;
+    for (const f32 d : snap.depth) {
+        wet += d > 0.0f ? 1u : 0u;
+    }
+    simWetCells = wet;
     device.destroyTexture(simMapA);
     device.destroyTexture(simMapB);
     simMapA = device.createTexture(
@@ -1022,6 +1030,19 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .cull = rhi::CullMode::None,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f });
+    if (simPipelineOverlay.id != 0) {
+        device.destroyPipeline(simPipelineOverlay);
+    }
+    // Seam overlay: depth test OFF — the diagnosis view.
+    simPipelineOverlay = device.createPipeline(
+        { .shader = shaders.get(kWaterSimShader),
+          .vertexBuffers =
+              { { .stride = 2 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = 0 } } } },
+          .depth = { .testEnable = false, .writeEnable = false },
+          .cull = rhi::CullMode::None });
     // The watch recorded every shader the build consumed: a reload of
     // any of them rebuilds the pipelines.
     shaderWatch = shaders.endWatch();
@@ -1057,7 +1078,10 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
     if (simValid && simIndexCount > 0 && simCfg.debugMode != 1) {
         // The live sim sheet (drawn last: its fragments discard where
         // dry, the baked ones discard where the sim owns the texel).
-        cmd.setPipeline(simPipeline);
+        // Seam overlay renders WITHOUT depth test: the unambiguous
+        // "where does the sim have water" view.
+        cmd.setPipeline(simCfg.debugMode == 2 ? simPipelineOverlay
+                                              : simPipeline);
         cmd.setBindGroup(0, frameBindGroup);
         cmd.setBindGroup(1, sceneBindGroup);
         cmd.setBindGroup(2, poolMapGroup);

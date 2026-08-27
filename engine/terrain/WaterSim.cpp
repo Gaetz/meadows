@@ -443,13 +443,26 @@ void extractSnapshot(const WaterSimState& state,
     out.velZ.assign(cells, 0.0f);
     out.display.resize(cells);
     const f32 texel = spec.texelSize;
+    // A cell publishes when its film beats the dry threshold — or when
+    // it moves FAST with any substance at all: on a near-vertical face
+    // the physical film runs centimeters, and drying it erased whole
+    // waterfalls from the render while the sim carried them fine.
     const auto wetAt = [&](size_t j) {
-        return state.depth[j] > params.dryThreshold;
+        if (state.depth[j] > params.dryThreshold) {
+            return true;
+        }
+        if (state.depth[j] > 0.004f) {
+            const f32 fx = state.fE[j] - state.fW[j];
+            const f32 fz = state.fS[j] - state.fN[j];
+            const f32 div = glm::max(state.depth[j], 0.05f) * texel;
+            return (fx * fx + fz * fz) / (div * div) > 1.5f * 1.5f;
+        }
+        return false;
     };
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
         out.display[i] = state.terrain[i] - 0.25f; // dry tuck default
-        if (d <= params.dryThreshold) {
+        if (!wetAt(i)) {
             continue;
         }
         // Sea-pinned: the ocean sheet's territory, read dry.
@@ -457,16 +470,31 @@ void extractSnapshot(const WaterSimState& state,
             state.terrain[i] + d <= params.seaLevel + 0.01f) {
             continue;
         }
-        // An isolated wet cell (no wet 4-neighbour) is transient spray,
-        // not a water body — real threads are flow-connected. Rendered,
-        // each one made a detached diamond around its node.
+        // An isolated wet cell (no wet neighbour at all) is transient
+        // spray, not a water body — rendered, each one made a detached
+        // diamond. EIGHT-connected: a thread descending a cliff hops
+        // DIAGONALLY cell to cell, and the 4-neighbour test erased
+        // whole waterfalls (measured in-game — "only the baked water
+        // shows").
         const size_t col = i % spec.n;
         const size_t row = i / spec.n;
-        const bool connected =
-            (col > 0 && wetAt(i - 1)) ||
-            (col + 1 < spec.n && wetAt(i + 1)) ||
-            (row > 0 && wetAt(i - spec.n)) ||
-            (row + 1 < spec.n && wetAt(i + spec.n));
+        bool connected = false;
+        for (i32 dz = -1; dz <= 1 && !connected; ++dz) {
+            for (i32 dx = -1; dx <= 1 && !connected; ++dx) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                const i32 nc = static_cast<i32>(col) + dx;
+                const i32 nr = static_cast<i32>(row) + dz;
+                if (nc >= 0 && nr >= 0 &&
+                    nc < static_cast<i32>(spec.n) &&
+                    nr < static_cast<i32>(spec.n) &&
+                    wetAt(static_cast<size_t>(nr) * spec.n +
+                          static_cast<size_t>(nc))) {
+                    connected = true;
+                }
+            }
+        }
         if (!connected) {
             continue;
         }
