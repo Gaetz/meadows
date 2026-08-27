@@ -1941,55 +1941,20 @@ void LandscapeScene::reconcileWaterWithTerrain(
 void LandscapeScene::publishWaterBodies() {
     auto next = std::make_shared<render::WaterBodies>(
         *world::buildWaterBodies(forms, tuning.seaLevel));
-    for (const render::terraingen::Lake& lake : sandboxLakes) {
-        render::LakeSurface surface;
-        surface.level = lake.level;
-        surface.minX = lake.minX;
-        surface.minZ = lake.minZ;
-        surface.maxX = lake.maxX;
-        surface.maxZ = lake.maxZ;
-        surface.maskWidth = lake.maskWidth;
-        surface.maskHeight = lake.maskHeight;
-        surface.maskTexel = lake.maskTexel;
-        surface.mask = lake.mask;
-        next->lakes.push_back(std::move(surface));
-    }
-    for (const render::terraingen::River& river : sandboxRivers) {
-        render::RiverSurface surface;
-        // Tier character: the ruisseau ambles, the rivière flows, the
-        // fleuve DRAGS (the swim controller multiplies by
-        // swimDriftFactor — the fleuve is the obstacle tier).
-        surface.flowSpeed = river.tier == 0   ? 0.6f
-                            : river.tier == 2 ? 1.8f
-                                              : 1.0f;
-        surface.minX = surface.minZ = 1.0e30f;
-        surface.maxX = surface.maxZ = -1.0e30f;
-        for (const render::terraingen::RiverPoint& pt : river.points) {
-            render::RiverNode node;
-            node.x = pt.x;
-            node.z = pt.z;
-            node.surface = pt.surface;
-            node.halfWidth = pt.halfWidth;
-            surface.nodes.push_back(node);
-            surface.minX = glm::min(surface.minX, pt.x - pt.halfWidth);
-            surface.maxX = glm::max(surface.maxX, pt.x + pt.halfWidth);
-            surface.minZ = glm::min(surface.minZ, pt.z - pt.halfWidth);
-            surface.maxZ = glm::max(surface.maxZ, pt.z + pt.halfWidth);
-        }
-        if (surface.nodes.size() >= 2) {
-            next->rivers.push_back(std::move(surface));
-        }
-    }
+    // Sandbox water renders and queries from the SOLVED FIELDS riding
+    // the published regions (option D, docs/WATER-RESEARCH.md) — no
+    // flat lake sheets or ribbon polylines anymore: the field surface
+    // slopes through rapids and holds every pool at its true level.
+    // The story lakes/rivers from buildWaterBodies stay as authored.
+    // sandboxLakes/sandboxRivers remain gameplay metadata (tiers,
+    // fords, minimap labels), not render geometry.
+    next->fields = terrainBase;
     waterBodies = next;
     renderer.waterSystem().setBodies(waterBodies);
     // The scatter rules read the same set (underLocalWater): no trees
-    // or grass under altitude lakes/rivers. Same immutable-publish
-    // contract as base/patches.
+    // or grass under field water, lakes or rivers. Same
+    // immutable-publish contract as base/patches.
     renderer.terrainParams().water = waterBodies;
-    if (!next->lakes.empty() || !next->rivers.empty()) {
-        LOG_INFO("Water: {} lake(s), {} river(s)", next->lakes.size(),
-                 next->rivers.size());
-    }
 }
 
 void LandscapeScene::publishBakedTiles(

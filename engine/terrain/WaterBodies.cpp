@@ -81,6 +81,19 @@ std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
             best = level;
         }
     }
+    if (bodies.fields) {
+        if (const TerrainRegion* region = bodies.fields->regionAt(x, z)) {
+            const WaterSample sample = waterSample(*region, x, z);
+            // Field-wet is genuinely underwater (the masked-lake rule:
+            // any depth below the solved level counts — no below-slack,
+            // which would read deep basin floors as dry).
+            if (sample.depth > 0.0f &&
+                probeY < sample.surface + kAboveSlack &&
+                (!best || sample.surface > *best)) {
+                best = sample.surface;
+            }
+        }
+    }
     return best;
 }
 
@@ -138,6 +151,16 @@ Vec2 waterFlowAt(const WaterBodies& bodies, f32 x, f32 z, f32 probeY) {
         }
         sum += sample.flow * sample.weight;
         weightSum += sample.weight;
+    }
+    if (bodies.fields) {
+        if (const TerrainRegion* region = bodies.fields->regionAt(x, z)) {
+            const WaterSample sample = waterSample(*region, x, z);
+            if (sample.depth > 0.0f &&
+                probeY < sample.surface + kAboveSlack) {
+                sum += Vec2 { sample.velocityX, sample.velocityZ };
+                weightSum += 1.0f;
+            }
+        }
     }
     return weightSum > 0.0f ? sum / weightSum : Vec2 { 0.0f, 0.0f };
 }

@@ -196,7 +196,17 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
     localIndexBuffer = {};
     localVertexBuffer = {};
     localIndexCount = 0;
-    if (!bodies || (bodies->lakes.empty() && bodies->rivers.empty())) {
+    bool hasFields = false;
+    if (bodies && bodies->fields) {
+        for (const TerrainRegion& region : bodies->fields->regions) {
+            if (region.waterWidth >= 2 && region.waterHeight >= 2) {
+                hasFields = true;
+                break;
+            }
+        }
+    }
+    if (!bodies || (bodies->lakes.empty() && bodies->rivers.empty() &&
+                    !hasFields)) {
         return;
     }
     // Layout: pos (3) + flow dir*speed (2) + {halfWidth, lateral (lake
@@ -356,6 +366,114 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
             prevL = left;
             prevR = right;
         }
+    }
+    // Solved water fields: one heightfield sheet per region — a quad
+    // per cell with any wet corner, vertices AT the solved surface (the
+    // level slopes through rapids; the depth test clips the shoreline
+    // exactly, like the lake sheets). Dry corners borrow the highest
+    // wet neighbour level so the sheet overshoots the bank and dips
+    // under the terrain there. Current > kRiverCurrent shades as a
+    // river (advected ripples); still water keeps the lake field. No
+    // shore foam on field water (gate 0) — the pool map still foams the
+    // sea.
+    if (hasFields) {
+        constexpr f32 kRiverCurrent = 0.3f; // m/s
+        for (const TerrainRegion& region : bodies->fields->regions) {
+            const u32 wN = region.waterWidth;
+            const u32 hN = region.waterHeight;
+            if (wN < 2 || hN < 2 ||
+                region.waterDepth.size() !=
+                    static_cast<size_t>(wN) * hN) {
+                continue;
+            }
+            const f32 texel = region.waterTexel;
+            // The shared margin band belongs to ONE emitter: each
+            // region keeps the cells inside its owned tile rect, the
+            // neighbour emits the rest (both solved the band, levels
+            // agree closely).
+            const f32 inset = region.edgeBlend * 0.5f;
+            const f32 ownMinX = region.originX + inset;
+            const f32 ownMaxX = region.originX + region.spanX() - inset;
+            const f32 ownMinZ = region.originZ + inset;
+            const f32 ownMaxZ = region.originZ + region.spanZ() - inset;
+            const auto wet = [&](i32 c, i32 r) {
+                return c >= 0 && r >= 0 && c < static_cast<i32>(wN) &&
+                       r < static_cast<i32>(hN) &&
+                       region.waterDepth[static_cast<size_t>(r) * wN +
+                                         c] != 0;
+            };
+            vector<u32> cornerIndex(static_cast<size_t>(wN) * hN, ~0u);
+            const auto corner = [&](u32 c, u32 r) {
+                u32& slot = cornerIndex[static_cast<size_t>(r) * wN + c];
+                if (slot != ~0u) {
+                    return slot;
+                }
+                const size_t i = static_cast<size_t>(r) * wN + c;
+                const f32 x =
+                    region.originX + static_cast<f32>(c) * texel;
+                const f32 z =
+                    region.originZ + static_cast<f32>(r) * texel;
+                f32 level = -1.0e9f;
+                f32 flowX = 0.0f;
+                f32 flowZ = 0.0f;
+                f32 riverHalf = 0.0f;
+                if (region.waterDepth[i] != 0) {
+                    level = region.waterSurface[i];
+                    flowX =
+                        static_cast<f32>(region.waterVelX[i]) * 0.1f;
+                    flowZ =
+                        static_cast<f32>(region.waterVelZ[i]) * 0.1f;
+                    if (flowX * flowX + flowZ * flowZ >
+                        kRiverCurrent * kRiverCurrent) {
+                        riverHalf = 4.0f;
+                    }
+                } else {
+                    for (i32 dz = -1; dz <= 1; ++dz) {
+                        for (i32 dx = -1; dx <= 1; ++dx) {
+                            const i32 nc = static_cast<i32>(c) + dx;
+                            const i32 nr = static_cast<i32>(r) + dz;
+                            if (wet(nc, nr)) {
+                                level = glm::max(
+                                    level,
+                                    region.waterSurface
+                                        [static_cast<size_t>(nr) * wN +
+                                         nc]);
+                            }
+                        }
+                    }
+                }
+                slot = vertex(x, level, z, flowX, flowZ, riverHalf,
+                              0.0f, 0.0f, 1.0e6f, 0.0f);
+                return slot;
+            };
+            for (u32 r = 0; r + 1 < hN; ++r) {
+                for (u32 c = 0; c + 1 < wN; ++c) {
+                    if (!wet(c, r) && !wet(c + 1, r) && !wet(c, r + 1) &&
+                        !wet(c + 1, r + 1)) {
+                        continue;
+                    }
+                    const f32 cx = region.originX +
+                                   (static_cast<f32>(c) + 0.5f) * texel;
+                    const f32 cz = region.originZ +
+                                   (static_cast<f32>(r) + 0.5f) * texel;
+                    if (cx < ownMinX || cx > ownMaxX || cz < ownMinZ ||
+                        cz > ownMaxZ) {
+                        continue;
+                    }
+                    const u32 v00 = corner(c, r);
+                    const u32 v10 = corner(c + 1, r);
+                    const u32 v01 = corner(c, r + 1);
+                    const u32 v11 = corner(c + 1, r + 1);
+                    for (const u32 v :
+                         { v00, v11, v10, v00, v01, v11 }) {
+                        indices.push_back(v);
+                    }
+                }
+            }
+        }
+    }
+    if (verts.empty() || indices.empty()) {
+        return;
     }
     localVertexBuffer = device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,
