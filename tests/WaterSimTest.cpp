@@ -328,7 +328,9 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
     WaterSimParams params = closedParams();
     params.borderDrainPerSecond = 0.9f;
     stepWindow(state, params, {}, 1200);
-    // The lake stands at its pinned level...
+    // The lake HOLDS its pinned level (the supply is bounded on the
+    // way out — reservoirOutflow — not by starving the refill, which
+    // collapsed the surface into a drawdown cone).
     const size_t inLake = 30u * spec.n + 10u;
     CHECK(state.terrain[inLake] + state.depth[inLake] ==
           doctest::Approx(310.0f).epsilon(0.001));

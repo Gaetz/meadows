@@ -24,13 +24,21 @@ void pinSea(const WaterSimState& state, vector<f32>& depth,
             depth[i] = seaLevel - state.terrain[i];
         }
     }
-    // Pinned reservoirs (baked lakes): held level, absorb and supply.
-    if (state.pinned.size() == cells) {
-        for (size_t i = 0; i < cells; ++i) {
-            const f32 level = state.pinned[i];
-            if (level > kWaterInfoDry + 1.0f) {
-                depth[i] = glm::max(0.0f, level - state.terrain[i]);
-            }
+}
+
+// Pinned reservoirs (baked lakes): the surface is HELD at the level —
+// absorb and supply. The supply is bounded on the way OUT instead
+// (reservoirOutflow in updatePipes), so holding the level here stays
+// safe.
+void applyPins(const WaterSimState& state, vector<f32>& depth) {
+    const size_t cells = state.spec.cells();
+    if (state.pinned.size() != cells) {
+        return;
+    }
+    for (size_t i = 0; i < cells; ++i) {
+        const f32 level = state.pinned[i];
+        if (level > kWaterInfoDry + 1.0f) {
+            depth[i] = glm::max(0.0f, level - state.terrain[i]);
         }
     }
 }
@@ -116,6 +124,8 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
     vector<f32>& headBuf = state.headBuf;
     vector<f32>& next = state.scratch;
     const vector<f32>& terrain = state.terrain;
+    const vector<f32>& pinned = state.pinned;
+    const bool hasPins = pinned.size() == cells;
     const auto at = [&](i32 col, i32 row) {
         return static_cast<size_t>(row) * spec.n +
                static_cast<size_t>(col);
@@ -167,7 +177,14 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
             // binds in that regime: gentle flows never drain 25% of a
             // cell in one substep; steep-cell equilibria shift by at
             // most ~0.2 m under storm rain (oracle cross-check bound).
-            const f32 held = depth[i] * cellArea * 0.25f;
+            // PINNED cells additionally cap at their weir rate: held
+            // by an infinite reservoir, their 25% would be meters of
+            // column per substep (the 6,200 m³/s replay measurement).
+            f32 held = depth[i] * cellArea * 0.25f;
+            if (hasPins && pinned[i] > kWaterInfoDry + 1.0f) {
+                held = glm::min(held,
+                                params.reservoirOutflow * params.dt);
+            }
             if (total * params.dt > held && total > 0.0f) {
                 const f32 k = held / (total * params.dt);
                 fE[i] *= k;
@@ -246,6 +263,7 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         }
         std::swap(depth, next);
         pinSea(state, depth, params.seaLevel);
+        applyPins(state, depth);
         // After the pin (a pinned source cell swallows its discharge).
         for (const WaterSource& source : sources) {
             const i32 col = static_cast<i32>(
@@ -571,7 +589,8 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
 }
 
 namespace {
-constexpr char kDumpMagic[4] = { 'W', 'S', 'D', '1' };
+constexpr char kDumpMagic[4] = { 'W', 'S', 'D', '2' };
+constexpr char kDumpMagicV1[4] = { 'W', 'S', 'D', '1' };
 }
 
 bool dumpSimState(const WaterSimState& state,
@@ -633,15 +652,23 @@ bool loadSimState(const char* path, WaterSimState& state,
     };
     char magic[4] = {};
     file.read(magic, 4);
+    const bool v2 = std::memcmp(magic, kDumpMagic, 4) == 0;
+    const bool v1 = std::memcmp(magic, kDumpMagicV1, 4) == 0;
     read(state.spec.n);
     read(state.spec.originX);
     read(state.spec.originZ);
     read(state.spec.texelSize);
-    read(params);
-    if (!file || std::memcmp(magic, kDumpMagic, 4) != 0 ||
-        state.spec.n < 8 || state.spec.n > 4096 ||
-        state.spec.texelSize <= 0.0f) {
-        LOG_ERROR("loadSimState: not a WSD1 dump: {}", path);
+    if (v2) {
+        read(params);
+    } else {
+        // WSD1: the params struct minus the appended weir field.
+        file.read(reinterpret_cast<char*>(&params),
+                  sizeof(WaterSimParams) - sizeof(f32));
+        params.reservoirOutflow = WaterSimParams {}.reservoirOutflow;
+    }
+    if (!file || (!v2 && !v1) || state.spec.n < 8 ||
+        state.spec.n > 4096 || state.spec.texelSize <= 0.0f) {
+        LOG_ERROR("loadSimState: not a WSD dump: {}", path);
         return false;
     }
     u32 count = 0;

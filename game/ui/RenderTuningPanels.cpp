@@ -752,6 +752,9 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         }
         ImGui::SliderFloat("Sim fade band (m)", &sim.fadeBand, 8.0f,
                            64.0f, "%.0f");
+        ImGui::SliderFloat("Reservoir outflow (m3/s/cell)",
+                           &sim.params.reservoirOutflow, 0.2f, 20.0f,
+                           "%.1f");
         ImGui::Combo("Sim mode", &sim.debugMode,
                      "Sim + baked\0Force baked\0Seam overlay\0");
         // On-site debugging: freeze the live window to disk;

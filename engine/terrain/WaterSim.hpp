@@ -42,6 +42,15 @@ struct WaterSimParams {
     // Trusted inset (cells): rendering and queries stay this far from
     // the window border; entering strips settle inside the margin.
     u32 marginCells { 32 };
+    // Max OUTFLOW of a pinned reservoir cell (m³/s) — its weir rate.
+    // The pin holds the lake level (instant refill: bounded refill
+    // collapsed the surface into a meters-deep drawdown cone), so the
+    // supply must be bounded on the way OUT: unbounded, the rim over a
+    // carved outlet poured ~6,200 m³/s (replay-measured, Amazon-grade)
+    // and flooded the gorge until water climbed the far slopes. Only
+    // cells with a real head difference leak at all — this caps each.
+    // (Appended LAST: WSD1 dumps read as a prefix of this struct.)
+    f32 reservoirOutflow { 2.0f };
 };
 
 // Live simulation state. spec.origin is snapped to whole texels.
