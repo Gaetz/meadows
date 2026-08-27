@@ -727,10 +727,14 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
         for (u32 row = 0; row < spec.n; ++row) {
             for (u32 col = 0; col < spec.n; ++col) {
                 const size_t i = static_cast<size_t>(row) * spec.n + col;
-                if (snap.depth[i] <= 0.0f) {
+                // Thin films skip skirts entirely: their side face is
+                // centimeters (invisible), and publish-flicker around
+                // the threshold popped walls in and out.
+                if (snap.depth[i] < 0.05f) {
                     continue;
                 }
                 const f32 s = snap.surface[i];
+                const f32 columnFloor = s - snap.depth[i] - 0.3f;
                 const f32 cx =
                     spec.originX + static_cast<f32>(col) * texel;
                 const f32 cz =
@@ -757,15 +761,26 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
                     if (ground >= s - 0.10f) {
                         return; // normal shoreline: bank above water
                     }
+                    // The face is at most as tall as the COLUMN behind
+                    // it: dropping to the dry neighbour's ground built
+                    // meters-tall water walls under every thin thread
+                    // crossing a steep slope — sheets "climbing the
+                    // mountain", appearing cell by cell as the flow
+                    // advanced (measured in-game). A deep front (dam
+                    // face) keeps its full wall; a film shows its
+                    // centimeters.
+                    const f32 bottom =
+                        glm::max(ground - 0.3f, columnFloor);
+                    if (bottom >= s - 0.02f) {
+                        return;
+                    }
                     // Boundary segment between i and j.
                     if (dc != 0) {
                         const f32 x = cx + static_cast<f32>(dc) * h;
-                        emit(x, cz - h, x, cz + h, s, ground - 0.3f, u,
-                             v);
+                        emit(x, cz - h, x, cz + h, s, bottom, u, v);
                     } else {
                         const f32 z = cz + static_cast<f32>(dr) * h;
-                        emit(cx - h, z, cx + h, z, s, ground - 0.3f, u,
-                             v);
+                        emit(cx - h, z, cx + h, z, s, bottom, u, v);
                     }
                 };
                 side(1, 0);
