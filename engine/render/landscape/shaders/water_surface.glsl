@@ -244,14 +244,15 @@ void main() {
             ? 1.0 - smoothstep(0.20, 0.45, abs(crossN.y / crossLen))
             : 0.0;
 
-    // Underside: only for surface-like fragments — a WALL below eye
-    // height must not flip to the seen-from-below look (it cut every
-    // waterfall with a horizontal seam at camera height).
-    if (uCameraPos.y < vWorldPos.y - 0.02 && simWallness < 0.5) {
-#else
-    // Underside: the camera is below THIS surface's level.
-    if (uCameraPos.y < vWorldPos.y - 0.02) {
 #endif
+    // Underside: a UNIFORM decision — is the CAMERA actually
+    // submerged? (uSubmersionInfo.x = the effective water surface at
+    // the eye, the same signal the tonemap tint uses.) The old
+    // per-fragment test (camera below THIS fragment) cut every sloped
+    // water surface with a razor line at eye height — blue underside
+    // look uphill of the eye, grazing-sky look downhill — a bug as
+    // old as the baked ribbons.
+    if (uCameraPos.y < uSubmersionInfo.x - 0.02) {
 #else
     vec3 n = waveNormal(vWorldPos.xz, t);
     // Sea path: the default-water constants (slot 0 of the presets).
@@ -317,18 +318,19 @@ void main() {
     // The color keys on a SMOOTHED depth (5 taps, ~2 texels): the raw
     // per-cell depth turned every micro-pool of a bumpy bed into a
     // dark disc with a light bilinear rim (measured in-game).
+    // 3x3 box (the 5-tap cross kernel stamped CROSS-shaped color
+    // spots around every locally deep cell — measured in-game).
     vec2 simTx = 1.0 / vec2(textureSize(uWaterSimB, 0));
-    float depthSmooth =
-        (simDepth +
-         clamp(texture(uWaterSimB, vSimUv + vec2(simTx.x, 0)).x, 0.0,
-               200.0) +
-         clamp(texture(uWaterSimB, vSimUv - vec2(simTx.x, 0)).x, 0.0,
-               200.0) +
-         clamp(texture(uWaterSimB, vSimUv + vec2(0, simTx.y)).x, 0.0,
-               200.0) +
-         clamp(texture(uWaterSimB, vSimUv - vec2(0, simTx.y)).x, 0.0,
-               200.0)) *
-        0.2;
+    float depthSmooth = 0.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            depthSmooth += clamp(
+                texture(uWaterSimB,
+                        vSimUv + vec2(dx, dy) * simTx).x,
+                0.0, 200.0);
+        }
+    }
+    depthSmooth *= (1.0 / 9.0);
     vec3 bodyColor = mix(vec3(0.10, 0.34, 0.42), mDeep,
                          clamp(depthSmooth * 0.18, 0.0, 1.0));
     float bodyMix = 1.0 - exp(-depthSmooth * 1.6);
@@ -395,8 +397,10 @@ void main() {
 #ifdef WATER_SIM
     // The sim sheet has no planar mirror (analytic sky only): a full
     // fresnel painted whole rivers sky-white at grazing angles — the
-    // BODY must dominate, the sky is a glaze.
-    fresnel *= 0.6;
+    // BODY must dominate, the sky is a glaze. The hard cap keeps even
+    // grazing water in the blue family (dev preference: the whitish
+    // sheen was the least liked side of the old eye-height cut).
+    fresnel = min(fresnel * 0.6, 0.28);
 #endif
 
     vec3 color = mix(transmitted, reflected, fresnel);

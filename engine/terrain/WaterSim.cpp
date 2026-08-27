@@ -267,15 +267,47 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         pinSea(state, depth, params.seaLevel);
         applyPins(state, depth);
         // After the pin (a pinned source cell swallows its discharge).
+        // Spread over a small DISC: dumped into one 2 m cell, a 45
+        // m³/s source out-raced the capped outflow and dug a ~6 m
+        // standing spike — a growing dark spot at every river entry
+        // (measured in-game).
         for (const WaterSource& source : sources) {
             const i32 col = static_cast<i32>(
                 std::lround((source.x - spec.originX) / texel));
             const i32 row = static_cast<i32>(
                 std::lround((source.z - spec.originZ) / texel));
-            if (col >= 0 && row >= 0 && col < n && row < n &&
-                terrain[at(col, row)] >= params.seaLevel) {
-                depth[at(col, row)] +=
-                    source.discharge * params.dt / cellArea;
+            i32 taps = 0;
+            for (i32 dz = -2; dz <= 2; ++dz) {
+                for (i32 dx = -2; dx <= 2; ++dx) {
+                    if (dx * dx + dz * dz > 4) {
+                        continue;
+                    }
+                    const i32 c = col + dx;
+                    const i32 r = row + dz;
+                    if (c >= 0 && r >= 0 && c < n && r < n &&
+                        terrain[at(c, r)] >= params.seaLevel) {
+                        ++taps;
+                    }
+                }
+            }
+            if (taps == 0) {
+                continue;
+            }
+            const f32 share =
+                source.discharge * params.dt / cellArea /
+                static_cast<f32>(taps);
+            for (i32 dz = -2; dz <= 2; ++dz) {
+                for (i32 dx = -2; dx <= 2; ++dx) {
+                    if (dx * dx + dz * dz > 4) {
+                        continue;
+                    }
+                    const i32 c = col + dx;
+                    const i32 r = row + dz;
+                    if (c >= 0 && r >= 0 && c < n && r < n &&
+                        terrain[at(c, r)] >= params.seaLevel) {
+                        depth[at(c, r)] += share;
+                    }
+                }
             }
         }
     }
