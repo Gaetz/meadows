@@ -76,13 +76,11 @@ struct TileBakeParams {
     MasterImprintParams imprint;
     FinalizeParams finalize;
     // Steady-state water solve over the published rect (option D,
-    // docs/WATER-RESEARCH.md) — fills the region's water* fields. The
-    // rain rate here is the judged demo value (the WaterSolveParams
-    // default is the physics doc value). Runs on the FINAL cropped
-    // heights, so a terrain patch re-bake re-solves its water
-    // deterministically (the terraforming contract: water is a pure
-    // function of the terrain).
-    bool solveWater { true };
+    // docs/WATER-RESEARCH.md) — fills the region's water* fields.
+    // OFF by default since the option-C pivot (the real-time windowed
+    // sim owns runtime water; docs/TERRAIN-GEN.md journal 2026-08-27);
+    // the path stays for diagnostics and as the sim's offline oracle.
+    bool solveWater { false };
     f32 waterSolveTexel { 8.0f };
     WaterSolveParams waterSolve { .rainRate = 4.0e-6f };
     // Course continuity: cells whose through-flux says "a course runs
@@ -183,7 +181,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 58;
+constexpr u32 kTileBakeVersion = 59;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

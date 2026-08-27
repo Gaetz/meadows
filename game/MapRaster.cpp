@@ -222,38 +222,6 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
                               glm::mix(kWaterShallow, kWaterDeep, tint));
             }
         }
-        // Solved water fields: per-pixel depth blues (the field IS what
-        // the world renders — still the honest-map rule). The flux
-        // trace keeps the drawn courses CONTINUOUS to the sea where the
-        // film runs thinner than a pixel: that water flows in-world too.
-        if (params.water->fields) {
-            constexpr f32 kTraceFlux = 0.5f; // m³/s worth drawing
-            for (u32 pz = 0; pz < size; ++pz) {
-                for (u32 px = 0; px < size; ++px) {
-                    const f32 x =
-                        desc.minX + (static_cast<f32>(px) + 0.5f) * stepX;
-                    const f32 z =
-                        desc.minZ + (static_cast<f32>(pz) + 0.5f) * stepZ;
-                    const render::TerrainRegion* region =
-                        params.water->fields->regionAt(x, z);
-                    if (!region || region->waterWidth < 2) {
-                        continue;
-                    }
-                    const render::terrain::WaterSample sample =
-                        render::terrain::waterSample(*region, x, z);
-                    if (sample.depth > 0.05f) {
-                        const f32 depth = glm::clamp(
-                            std::sqrt(sample.depth / kWaterDepthRange),
-                            0.0f, 1.0f);
-                        paint(static_cast<i32>(px), static_cast<i32>(pz),
-                              glm::mix(kWaterShallow, kWaterDeep, depth));
-                    } else if (sample.flux > kTraceFlux) {
-                        paint(static_cast<i32>(px), static_cast<i32>(pz),
-                              kWaterShallow);
-                    }
-                }
-            }
-        }
     }
     return pixels;
 }

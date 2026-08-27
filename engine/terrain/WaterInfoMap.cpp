@@ -141,31 +141,6 @@ WaterInfoMap bakeWaterInfo(const WaterBodies& bodies, Vec2 center,
         }
     }
 
-    // Solved water fields: per-texel sampled surface + current. The
-    // surface stacks by max like the other bodies; where the field
-    // wins the texel, its current IS the flow (no bank-profile blend —
-    // the solve already resolved the junctions).
-    vector<u8> fieldWon;
-    if (bodies.fields) {
-        fieldWon.assign(cells, 0);
-        for (size_t i = 0; i < cells; ++i) {
-            const f32 x = worldX(static_cast<i32>(i % size));
-            const f32 z = worldZ(static_cast<i32>(i / size));
-            const TerrainRegion* region = bodies.fields->regionAt(x, z);
-            if (!region || region->waterWidth < 2) {
-                continue;
-            }
-            const WaterSample sample = waterSample(*region, x, z);
-            if (sample.depth <= 0.0f ||
-                sample.surface <= map.surface[i]) {
-                continue;
-            }
-            map.surface[i] = sample.surface;
-            map.flow[i] = Vec2 { sample.velocityX, sample.velocityZ };
-            fieldWon[i] = 1;
-        }
-    }
-
     // Depth + final flow, wet texels only — the single height() pass.
     for (size_t i = 0; i < cells; ++i) {
         if (map.surface[i] <= kWaterInfoDry) {
@@ -175,8 +150,7 @@ WaterInfoMap bakeWaterInfo(const WaterBodies& bodies, Vec2 center,
         const i32 row = static_cast<i32>(i / size);
         map.depth[i] = glm::max(
             map.surface[i] - height(worldX(col), worldZ(row)), 0.0f);
-        if ((fieldWon.empty() || !fieldWon[i]) && !sumWeight.empty() &&
-            sumWeight[i] > 0.0f) {
+        if (!sumWeight.empty() && sumWeight[i] > 0.0f) {
             map.flow[i] = sumFlow[i] / sumWeight[i];
         }
     }

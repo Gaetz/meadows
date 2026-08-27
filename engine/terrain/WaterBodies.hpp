@@ -97,13 +97,6 @@ struct WaterBodies {
     f32 seaLevel { kDefaultSeaLevel };
     vector<LakeSurface> lakes;
     vector<RiverSurface> rivers;
-    // Solved per-texel water fields (docs/WATER-RESEARCH.md, option D):
-    // the regions' water* channels carry equilibrium depth/level/current
-    // — sandbox rivers AND lakes render and query from here (their
-    // surfaces slope through rapids and junctions honestly, which the
-    // flat lakes and monotone ribbons above cannot express; those stay
-    // for hand-authored story bodies). Null = no fields.
-    sptr<const TerrainBase> fields;
     // Shading presets; empty behaves as { default water }. Body
     // materialIndex values point in here (clamped by consumers).
     vector<WaterMaterialParams> materials;

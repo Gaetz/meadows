@@ -58,7 +58,11 @@ TEST_CASE("tile bakes are deterministic") {
 }
 
 TEST_CASE("a land tile ships solved water fields on the region rect") {
-    const TileBakeParams params = testParams();
+    // The offline solve is OFF by default since the option-C pivot;
+    // this keeps the bake path (sources + solve + quantize) covered
+    // as the real-time sim's offline oracle.
+    TileBakeParams params = testParams();
+    params.solveWater = true;
     // The test world's origin sits in open ocean (small 512 m tiles):
     // scan the analytic macro outward for the nearest emerged tile, then
     // bake THAT one — no wasted ocean bakes.
