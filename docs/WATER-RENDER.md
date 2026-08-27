@@ -107,6 +107,12 @@ Intégration :
 - Un seul job sim en vol (Phase-5) ; sources maître calculées sur le
   worker ; textures détruites/recréées par tick (chemin info-map
   éprouvé) ; FrameUbo append-only + rebuild propre.
+- La vitesse caméra n'invalide JAMAIS la fenêtre : elle SCROLLE (le
+  scroll préserve l'intérieur bit-exact) — l'invalidation à 25 m/s
+  faisait « rejouer la cascade » à chaque déplacement en spectateur
+  (mesuré dev). Seul un téléport > demi-fenêtre ré-initialise, et le
+  pre-roll épingle les lacs PUIS fait une rafale (~15 s de sim) pour
+  arriver « déjà en train de couler ».
 - `cooker water-replay <dump> <prefix> [substeps]` : TOUT correctif de
   simulation se vérifie sur un dump AVANT de re-déranger le dev.
 

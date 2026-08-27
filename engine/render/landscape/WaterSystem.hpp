@@ -99,7 +99,6 @@ public:
         f32 texel { 2.0f };
         u32 maxSubsteps { 4 };       // hitch clamp per job
         f32 anchorHysteresis { 16.0f }; // m before the window re-anchors
-        f32 invalidateSpeed { 25.0f };  // m/s sustained -> baked fallback
         f32 fadeBand { 32.0f };         // m of sim->baked edge crossfade
         i32 debugMode { 0 }; // 0 normal, 1 force baked, 2 seam overlay
         terrain::WaterSimParams params;

@@ -763,25 +763,27 @@ void WaterSystem::updateSim(rhi::Device& device,
         }
         return;
     }
-    // Sustained fast travel (fly mode): no margin survives 25+ m/s —
-    // drop the window, the baked bodies take over, and slowing down
-    // re-enters like a teleport (fresh pre-roll).
+    // Fast travel does NOT invalidate: the window SCROLLS at any
+    // speed (interior preserved bit-exactly, only entering strips
+    // re-init) — dropping the state made every spectator move replay
+    // the waterfall from scratch (measured by the dev). Only a true
+    // TELEPORT (a jump past half a window in one frame) re-enters
+    // through the pre-roll.
     const Vec2 camXz { cameraPos.x, cameraPos.z };
-    f32 speed = 0.0f;
-    if (simHasLastCam && dt > 1.0e-4f) {
-        speed = glm::distance(camXz, simLastCam) / dt;
+    Vec2 camDelta { 0.0f, 0.0f };
+    if (simHasLastCam) {
+        camDelta = camXz - simLastCam;
     }
     simLastCam = camXz;
     simHasLastCam = true;
-    if (speed > simCfg.invalidateSpeed) {
-        if (simState || simValid) {
-            simState.reset();
-            simSnap.reset();
-            simValid = false;
-            ++simEpoch;
-            simAccum = 0.0f;
-        }
-        return;
+    if (simState &&
+        (std::abs(camDelta.x) > simCfg.span * 0.5f ||
+         std::abs(camDelta.y) > simCfg.span * 0.5f)) {
+        simState.reset();
+        simSnap.reset();
+        simValid = false;
+        ++simEpoch;
+        simAccum = 0.0f;
     }
     if (simInFlight) {
         return;
@@ -855,10 +857,14 @@ void WaterSystem::updateSim(rhi::Device& device,
                     },
                     simParams, out.sources));
             if (bodiesRef) {
-                // Baked lakes = pinned reservoirs; one substep applies
-                // them so the first snapshot already holds the lakes.
+                // Baked lakes = pinned reservoirs, then a settling
+                // burst (~15 s of sim, well under a second of worker):
+                // the offline pre-roll knows nothing of the pins, so
+                // without this every (re)entry showed falls RESTARTING
+                // from a dry cliff instead of already flowing.
                 terrain::pinLakes(*state, *bodiesRef);
-                terrain::stepWindow(*state, simParams, out.sources, 1);
+                terrain::stepWindow(*state, simParams, out.sources,
+                                    450);
             }
             auto snap = std::make_shared<terrain::WaterSimSnapshot>();
             terrain::extractSnapshot(*state, simParams, *snap);
