@@ -118,9 +118,14 @@ void main() {
     }
 #endif
 #if defined(WATER_LOCAL) && !defined(WATER_SIM)
-    // The live sim owns its trusted interior: baked lake/ribbon
-    // fragments yield wherever the sim has water there (per FRAGMENT —
-    // thin creeks the 2 m grid cannot hold keep their ribbons).
+    // Inside the sim window the LIVE volumes are the ONLY water. The
+    // first arbitration was per texel ("yield where the sim has water
+    // here") — but the sim's courses legitimately differ from the
+    // baked ones, so wherever they disagreed BOTH networks showed:
+    // baked ribbons snaking up the hillsides beside the sim's valley
+    // water (measured in-game). The baked bodies are DATA for the sim
+    // (pinned lakes, entry sources), never geometry, anywhere inside
+    // the trusted rect; the crossfade band ties the two worlds.
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
         if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
@@ -132,9 +137,7 @@ void main() {
                                   min(rel.y, 1.0 - rel.y)) /
                               uWaterSimMapInfo.z;
                 if (edgeM > uWaterSimTuneInfo.x +
-                                uWaterSimTuneInfo.y * 0.5 &&
-                    texture(uWaterSimB, waterSimUv(vWorldPos.xz)).x >
-                        0.02) {
+                                uWaterSimTuneInfo.y * 0.5) {
                     discard;
                 }
             }
