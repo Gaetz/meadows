@@ -377,15 +377,12 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
         }
     }
     CHECK(wetRows > 40);
-    // Lake territory publishes DRY (the baked sheet renders it — sea
-    // rule): the snapshot must not carry the lake, but the pour over
-    // the rim (outside the footprint) must still be there. A flood
-    // rising above the baked level publishes again.
+    // The lake PUBLISHES (the sim mesh is the lake inside the rect —
+    // a publish-dry variant floated the baked overhang over the fall
+    // lip), and the pour over the rim is in the snapshot with it.
     WaterSimSnapshot snap;
     extractSnapshot(state, params, snap);
-    CHECK(state.lakeLevel[inLake] ==
-          doctest::Approx(310.0f).epsilon(0.001));
-    CHECK(snap.depth[inLake] == 0.0f);
+    CHECK(snap.depth[inLake] > 0.0f);
     u32 pourWet = 0;
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 26; col < spec.n; ++col) {
@@ -396,23 +393,6 @@ TEST_CASE("water sim: a pinned lake pours over its whole rim") {
         }
     }
     CHECK(pourWet > 100);
-    // Flood over the lake: a 2x2 block (a lone wet cell is erased as
-    // spray by the connectivity pass).
-    state.depth[inLake] += 0.5f;
-    state.depth[inLake + 1] += 0.5f;
-    state.depth[inLake + spec.n] += 0.5f;
-    state.depth[inLake + spec.n + 1] += 0.5f;
-    extractSnapshot(state, params, snap);
-    CHECK(snap.depth[inLake] > 0.0f);
-    // Fall lip under the mask overhang: lake TERRITORY, but the
-    // draped water runs well BELOW the sheet — it must publish (the
-    // at-or-under-the-level rule erased every lake waterfall's head).
-    state.depth[inLake] = 1.0f; // surface 306, sheet at 310
-    state.depth[inLake + 1] = 1.0f;
-    state.depth[inLake + spec.n] = 1.0f;
-    state.depth[inLake + spec.n + 1] = 1.0f;
-    extractSnapshot(state, params, snap);
-    CHECK(snap.depth[inLake] > 0.0f);
 }
 
 TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {

@@ -113,27 +113,32 @@ void main() {
     float simFade = smoothstep(uWaterSimTuneInfo.x,
                                uWaterSimTuneInfo.x + uWaterSimTuneInfo.y,
                                simEdgeM);
-    if (simFade <= 0.001) {
+    // GEOMETRIC cut, exactly complementary to the baked lakes' rim
+    // reveal (they render edgeM <= fadeStart): a smoothstep-epsilon
+    // cut left a thin dry ring between the two on lakes.
+    if (simEdgeM <= uWaterSimTuneInfo.x) {
         discard;
     }
 #endif
 #if defined(WATER_LOCAL) && !defined(WATER_SIM)
-    // Inside the sim window the LIVE volumes are the only MOVING
-    // water. The first arbitration was per texel ("yield where the sim
-    // has water here") — but the sim's courses legitimately differ
-    // from the baked ones, so wherever they disagreed BOTH networks
-    // showed: baked ribbons snaking up the hillsides beside the sim's
-    // valley water (measured in-game). RIBBONS therefore yield to the
-    // sim anywhere inside the trusted rect, crossfade band as the
-    // seam. LAKES (vInfo.x == 0) are the exception: the sim pins them
-    // AT the baked sheet and publishes their cells dry (sea rule), so
-    // the baked sheet renders them EVERYWHERE — one continuous
-    // surface, no window boundary possible on a lake (a sim half next
-    // to a baked half re-drew the rect however close the recipes got).
+    // Inside the sim window the LIVE volumes are the ONLY water. The
+    // first arbitration was per texel ("yield where the sim has water
+    // here") — but the sim's courses legitimately differ from the
+    // baked ones, so wherever they disagreed BOTH networks showed:
+    // baked ribbons snaking up the hillsides beside the sim's valley
+    // water (measured in-game). (Rendering the baked LAKE sheets
+    // in-rect was also tried: the rasterized sheet OVERHANGS the fall
+    // lip — a surface floating over the void at every outlet.) The
+    // baked bodies are DATA for the sim inside the trusted rect; the
+    // HANDOVER at the rim is per type: rivers keep the crossfade band
+    // (their sim course may differ from the baked ribbon), lakes cut
+    // at the sim's own discard edge — the sim lake is pinned AT the
+    // baked level with the identical recipe, so lake-for-lake the cut
+    // is invisible, while the old half-band overlap z-fought and the
+    // fade-to-ground painted a green rim band (measured).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
-        if (uWaterSimMapInfo.w > 0.5 && simMode != 1 &&
-            vInfo.x > 0.001) {
+        if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;
             if (all(greaterThan(rel, vec2(0.0))) &&
@@ -141,8 +146,11 @@ void main() {
                 float edgeM = min(min(rel.x, 1.0 - rel.x),
                                   min(rel.y, 1.0 - rel.y)) /
                               uWaterSimMapInfo.z;
-                if (edgeM > uWaterSimTuneInfo.x +
-                                uWaterSimTuneInfo.y * 0.5) {
+                float cut = vInfo.x > 0.001
+                                ? uWaterSimTuneInfo.x +
+                                      uWaterSimTuneInfo.y * 0.5
+                                : uWaterSimTuneInfo.x;
+                if (edgeM > cut) {
                     discard;
                 }
             }
@@ -228,13 +236,19 @@ void main() {
     n = normalize(mix(vec3(0.0, 1.0, 0.0), n,
                       mix(0.3, 1.0, lodFade)));
 #ifdef WATER_SIM
-    // ONE recipe for all calm water: the sim uses the SEA's exact
-    // wave normal — no ripple scaling, no two-phase advection (the
-    // advection blend was the source of the breathing concentric
-    // rings, not the waves themselves), no LOD flatten. A fully flat
-    // sim next to rippled baked lakes re-drew the trusted-rect square
-    // by CONTRAST (measured in-game); identical formulas erase it.
-    n = waveNormal(vWorldPos.xz, t);
+    // Calm sim cells keep the EXACT shared still-water path above —
+    // LOD flatten included (skipping it re-drew the window boundary
+    // as a texture contrast: full ripples against flattened baked at
+    // 200 m+). Only FLOWING cells override: the two-phase advection
+    // driven by the sim's noisy per-texel flow field aliased into
+    // breathing concentric rings (measured; the far ribbons' smooth
+    // analytic flow never did) — still-water field for them, same
+    // LOD flatten.
+    if (riverness > 0.5) {
+        n = waveNormal(vWorldPos.xz, t);
+        n = normalize(mix(vec3(0.0, 1.0, 0.0), n,
+                          mix(0.3, 1.0, lodFade)));
+    }
 #endif
 
 #ifdef WATER_SIM
@@ -488,9 +502,15 @@ void main() {
     // Preset emissive (lava): glows through the fog like any emitter.
     color += mtl.emissiveViscosity.rgb * mtl.deepEmissive.w;
 #ifdef WATER_SIM
-    // Trusted-rim crossfade toward the ground (the baked bodies pick
-    // the water up past the band), and the seam-overlay debug tint.
-    color = mix(refracted, color, simFade);
+    // Trusted-rim handover, per type: FLOWING water crossfades toward
+    // the ground over the band (its sim course may not match the
+    // baked ribbon beyond). CALM water hands over by IDENTITY — same
+    // recipe, pinned at the same level as the baked sheet that starts
+    // at the discard edge — so it stays FULL to that edge: fading it
+    // toward the refracted ground painted a translucent green band
+    // around the window on every big lake (measured).
+    float rimMix = riverness > 0.5 ? simFade : 1.0;
+    color = mix(refracted, color, rimMix);
     if (int(uWaterSimTuneInfo.z + 0.5) == 2) {
         color = mix(color, vec3(1.0, 0.25, 0.2), 0.30);
     }

@@ -69,14 +69,6 @@ struct WaterSimState {
     // sheet only implied. Breaching a rim by sculpting drains forever
     // (the reservoir never empties) — accepted, and very From Dust.
     vector<f32> pinned;
-    // Baked-lake territory (kWaterInfoDry = not a lake): the pinned
-    // core PLUS the connectivity-seeded footprint, holding the lake's
-    // baked level. Extraction publishes these cells DRY (sea rule):
-    // the BAKED lake sheet renders them everywhere — inside and
-    // outside the window — so no window boundary can exist on a lake.
-    // The sim still simulates them (level held, outflow feeds the
-    // rivers); only water rising ABOVE the baked level publishes.
-    vector<f32> lakeLevel;
     // Persistent RENDER wetness with hysteresis (updated at
     // extraction): cells near the publish threshold flickered wet/dry
     // per tick, blinking whole surfaces out and popping orphan walls

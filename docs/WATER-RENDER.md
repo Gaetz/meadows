@@ -118,19 +118,27 @@ Shading :
   écoulement stable. La couleur sim = absorption par épaisseur
   OPTIQUE (géométrie, stable) + teinte constante ; le champ ne sert
   au visuel que pour la direction d'advection (lisse par nature).
-- **Un lac est UNE nappe bakée continue — la sim le publie SEC
-  (règle mer étendue)** : même à recettes strictement identiques, une
-  moitié sim contre une moitié bakée redessinait la frontière du rect
-  sur les grands lacs (aplat LOD asymétrique, bande de fondu vers le
-  sol réfracté = liseré verdâtre). Le carré de sim sert à l'eau qui
-  BOUGE ; un lac épinglé à son niveau baké n'y gagne rien. Donc :
-  plane `lakeLevel` (cœur épinglé + empreinte semée), extraction
-  publie sec tant que la surface reste au niveau baké (une crue
-  au-dessus publie), et le discard in-rect du baké ne s'applique
-  qu'aux rubans — la nappe de lac se dessine partout, une frontière
-  sur un lac est impossible par construction. La sim simule toujours
-  les lacs (niveau tenu, déversoirs) ; seule la peau appartient au
-  baké.
+- **La peau d'un lac dans le rect appartient à la SIM ; la frontière
+  se tue par IDENTITÉ + passation nette, pas par retrait** : la
+  variante « lacs publiés secs, nappe bakée partout » (règle mer
+  étendue) a été essayée et ANNULÉE — la nappe bakée rasterisée
+  SURPLOMBE la lèvre de sortie : une surface flottant au-dessus du
+  vide à chaque exutoire, l'eau passant à côté (mesuré dev ; et sa
+  règle de cull décapitait les cascades de lac au passage). Le
+  maillage sim épouse l'eau réelle — c'est lui le lac dans le rect.
+  Le liseré verdâtre au bord de fenêtre se corrige au SHADER :
+  (a) parité TOTALE des recettes, aplat LOD inclus (le sauter =
+  contraste de texture pleines-rides contre aplati à 200 m+) ; les
+  cellules sim calmes exécutent le chemin partagé tel quel, seules
+  les cellules en écoulement gardent le champ immobile (l'advection
+  deux-phases sur le flux sim bruité faisait les anneaux) ;
+  (b) passation par type au bord : rubans = bande de fondu (leurs
+  cours divergent du baké), lacs = coupe GÉOMÉTRIQUE exacte
+  (sim rend edgeM > fadeStart, nappe bakée rend edgeM <= fadeStart,
+  coplanaires, même recette → coupe invisible ; l'epsilon de
+  smoothstep laissait un anneau sec de ~40 cm) ; l'eau calme reste
+  PLEINE jusqu'à la coupe — la fondre vers le sol réfracté peignait
+  la bande verte translucide autour de la fenêtre.
 - **La sobriété doit être SYMÉTRIQUE — la recette sim = la recette
   mer, à l'identique** : chaque simplification appliquée au seul
   chemin sim (normale plate, fresnel plafonné 0.28, ciel sans soleil)
