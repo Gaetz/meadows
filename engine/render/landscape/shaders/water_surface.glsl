@@ -96,6 +96,7 @@ void main() {
     if (simTexB.x < 0.02) {
         discard;
     }
+    float simDepth = simTexB.x; // the SIMULATED column under this texel
     vFlow = simTexB.yz;
     vInfo = vec4(dot(vFlow, vFlow) > 0.09 ? 4.0 : 0.0, 0.0, 0.0, 1.0e6);
     vMaterial = 0.0;
@@ -267,6 +268,16 @@ void main() {
     transmitted =
         mix(transmitted, mtl.tintStrength.rgb, mtl.tintStrength.w);
 #endif
+#ifdef WATER_SIM
+    // The From Dust BODY: color from the SIMULATED column, not only
+    // the view-ray optical thickness — a 20 cm flow reads as a body
+    // of water, not a transparent film. Shallow water is a vivid
+    // turquoise, deep water falls to the dark deep color.
+    vec3 bodyColor = mix(vec3(0.10, 0.34, 0.42), mDeep,
+                         clamp(simDepth * 0.18, 0.0, 1.0));
+    float bodyMix = 1.0 - exp(-simDepth * 1.6);
+    transmitted = mix(transmitted, bodyColor, bodyMix * 0.75);
+#endif
 
     // Reflection: the mirrored scene (terrain, trees, sky + sun glints all
     // included), wobbled by the waves; falls back to the analytic sky when
@@ -319,6 +330,27 @@ void main() {
     fresnel *= 0.75;
 
     vec3 color = mix(transmitted, reflected, fresnel);
+#ifdef WATER_SIM
+    // Side WALLS: steep sheet facets (flood fronts, fall lips, the
+    // dive into a bank) are the water body seen from the side — an
+    // opaque wall with falling streaks, never a grazing mirror. This
+    // is what turns the sheet into a VOLUME.
+    vec3 gpx = dFdx(vWorldPos);
+    vec3 gpy = dFdy(vWorldPos);
+    vec3 geoN = normalize(cross(gpy, gpx));
+    float wallness = 1.0 - smoothstep(0.30, 0.62, abs(geoN.y));
+    if (wallness > 0.001) {
+        float streak =
+            0.5 + 0.5 * sin(vWorldPos.y * 4.0 +
+                            dot(vWorldPos.xz, vec2(1.7, 2.3)) -
+                            t * 7.0);
+        vec3 wall = mix(bodyColor, mFoam,
+                        0.18 + 0.32 * streak *
+                                   smoothstep(0.5, 3.0,
+                                              flowSpeed + simDepth));
+        color = mix(color, wall, wallness * 0.85);
+    }
+#endif
 
     // Shore foam: a solid lapping line right at the waterline plus a wider
     // animated fringe further out.
@@ -367,6 +399,11 @@ void main() {
     foam *= poolGate;
 #endif
 
+#ifdef WATER_SIM
+    // Meniscus: a thin lapping line where the volume meets the ground
+    // (its contact edge) — the torrent whitewater above still stacks.
+    foam = max(foam, (1.0 - smoothstep(0.0, 0.6, thickness)) * 0.45);
+#endif
     color = mix(color, mFoam, clamp(foam * mFoamGain, 0.0, 1.0));
 
 #ifdef WATER_LOCAL
