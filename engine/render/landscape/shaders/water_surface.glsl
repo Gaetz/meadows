@@ -93,9 +93,14 @@ void main() {
     // Character from the sim textures. The EXTENT of the water is the
     // MESH (docs/WATER-RENDER.md §1.2): no dryness discard here, ever
     // — threshold discards blinked whole surfaces out (measured).
+    // Every read of the sim textures is CLAMPED to physical ranges:
+    // garbage samples (a recycled texture id read by an in-flight
+    // frame during the per-tick destroy+create churn) exploded the
+    // body-mix into electric-cyan burns with negative-red fringes
+    // (measured in-game).
     vec4 simTexB = texture(uWaterSimB, vSimUv);
-    float simDepth = max(simTexB.x, 0.01); // the SIMULATED column
-    vFlow = simTexB.yz;
+    float simDepth = clamp(simTexB.x, 0.01, 200.0);
+    vFlow = clamp(simTexB.yz, vec2(-20.0), vec2(20.0));
     vInfo = vec4(dot(vFlow, vFlow) > 0.09 ? 4.0 : 0.0, 0.0, 0.0, 1.0e6);
     vMaterial = 0.0;
     // Trusted-rim fade: 0 at the margin boundary, 1 a fade-band inside
@@ -314,10 +319,15 @@ void main() {
     // dark disc with a light bilinear rim (measured in-game).
     vec2 simTx = 1.0 / vec2(textureSize(uWaterSimB, 0));
     float depthSmooth =
-        (simTexB.x + texture(uWaterSimB, vSimUv + vec2(simTx.x, 0)).x +
-         texture(uWaterSimB, vSimUv - vec2(simTx.x, 0)).x +
-         texture(uWaterSimB, vSimUv + vec2(0, simTx.y)).x +
-         texture(uWaterSimB, vSimUv - vec2(0, simTx.y)).x) *
+        (simDepth +
+         clamp(texture(uWaterSimB, vSimUv + vec2(simTx.x, 0)).x, 0.0,
+               200.0) +
+         clamp(texture(uWaterSimB, vSimUv - vec2(simTx.x, 0)).x, 0.0,
+               200.0) +
+         clamp(texture(uWaterSimB, vSimUv + vec2(0, simTx.y)).x, 0.0,
+               200.0) +
+         clamp(texture(uWaterSimB, vSimUv - vec2(0, simTx.y)).x, 0.0,
+               200.0)) *
         0.2;
     vec3 bodyColor = mix(vec3(0.10, 0.34, 0.42), mDeep,
                          clamp(depthSmooth * 0.18, 0.0, 1.0));

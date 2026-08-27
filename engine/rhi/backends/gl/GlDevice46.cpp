@@ -55,16 +55,26 @@ GLenum toGlInternalFormat(TextureFormat format) {
 }
 
 bool acceptsPixelUpload(TextureFormat format) {
-    // R16F uploads take tightly packed f32 texels (GL converts on upload).
+    // Float formats upload tightly packed f32 texels (GL converts).
+    // R32F/RGBA16F were MISSING here while the water-info and sim maps
+    // created them WITH pixels: createTexture failed, handle 0 was
+    // bound, and the water shaders sampled undefined memory — the
+    // whole family of roaming water artifacts (rounds, crosses, cyan
+    // burns) traced back to this whitelist.
     return format == TextureFormat::RGBA8 ||
            format == TextureFormat::SRGBA8 ||
-           format == TextureFormat::R16F;
+           format == TextureFormat::R16F ||
+           format == TextureFormat::R32F ||
+           format == TextureFormat::RGBA16F;
 }
 
 void uploadFormatFor(TextureFormat format, GLenum& pixelFormat,
                      GLenum& pixelType) {
-    if (format == TextureFormat::R16F) {
+    if (format == TextureFormat::R16F || format == TextureFormat::R32F) {
         pixelFormat = GL_RED;
+        pixelType = GL_FLOAT;
+    } else if (format == TextureFormat::RGBA16F) {
+        pixelFormat = GL_RGBA;
         pixelType = GL_FLOAT;
     } else {
         pixelFormat = GL_RGBA;
