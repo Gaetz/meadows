@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -86,12 +88,16 @@ struct FluvialResult {
 // survive full stream-power dissection (plateauKeep). `erodibility` and
 // `capacityScale`, if given, scale k and the sediment capacity per texel
 // (biome character: hard rock vs sediment, cohesive vs loose cover).
+// `cancel`, when set and raised, aborts between iterations and returns
+// the partial surface — shutdown only (callers must DISCARD the
+// result: never cache or publish a partially eroded tile).
 FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const vector<f32>& uplift,
                            const FluvialParams& params,
                            const vector<f32>* keep = nullptr,
                            const vector<f32>* erodibility = nullptr,
-                           const vector<f32>* capacityScale = nullptr);
+                           const vector<f32>* capacityScale = nullptr,
+                           const std::atomic<bool>* cancel = nullptr);
 
 // Priority-flood depression fill (Barnes et al. 2014, epsilon variant):
 // returns the water-routing surface >= height where every node drains to

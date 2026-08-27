@@ -130,6 +130,11 @@ void Engine::loop(Game& game) {
 
         device->endFrame();
     }
+    // The frame loop is over: flag background work NOW, before scene
+    // teardown — abandonable jobs (tile bakes, sim pre-rolls) poll
+    // this and bail, while a queued save still lands in the
+    // JobSystem's draining destructor.
+    jobSystem->requestStop();
 }
 
 } // namespace engine

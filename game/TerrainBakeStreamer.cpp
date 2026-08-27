@@ -232,7 +232,8 @@ std::optional<render::terraingen::TileStage1> readStage1File(
 // Load-or-bake a stage-1 (disk-cache core, no dedup).
 render::terraingen::TileStage1 ensureStage1(
     const std::filesystem::path& cacheDir,
-    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz) {
+    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
+    const std::atomic<bool>* cancel) {
     const std::string stem =
         "s1_" + std::to_string(tx) + "_" + std::to_string(tz) + "_v" +
         std::to_string(render::terraingen::kStage1Version) + ".bin";
@@ -246,7 +247,10 @@ render::terraingen::TileStage1 ensureStage1(
                  path.string());
     }
     render::terraingen::TileStage1 s1 =
-        render::terraingen::bakeTileStage1(params, tx, tz);
+        render::terraingen::bakeTileStage1(params, tx, tz, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        return s1; // PARTIAL (shutdown) — never cache it to disk
+    }
     if (!writeStage1File(path, s1)) {
         LOG_WARN("Terrain cache: cannot write {}", path.string());
     }
@@ -258,7 +262,8 @@ render::terraingen::TileStage1 ensureStage1(
 sptr<const render::terraingen::TileStage1> acquireStage1(
     TerrainBakeStreamer::Stage1Registry& registry,
     const std::filesystem::path& cacheDir,
-    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz) {
+    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
+    const std::atomic<bool>* cancel) {
     const u64 key = (static_cast<u64>(static_cast<u32>(tx)) << 32) |
                     static_cast<u64>(static_cast<u32>(tz));
     {
@@ -276,7 +281,20 @@ sptr<const render::terraingen::TileStage1> acquireStage1(
         registry.inflight.insert(key);
     }
     auto s1 = std::make_shared<render::terraingen::TileStage1>(
-        ensureStage1(cacheDir, params, tx, tz));
+        ensureStage1(cacheDir, params, tx, tz, cancel));
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        // Shutdown mid-bake: the stage-1 is PARTIAL. Release the
+        // inflight key and WAKE the waiters regardless — a worker
+        // parked on registry.ready with no computing owner would hang
+        // the JobSystem join forever — but never publish the partial
+        // into `done` (a later requester would compose bad terrain).
+        {
+            std::lock_guard lock { registry.mutex };
+            registry.inflight.erase(key);
+        }
+        registry.ready.notify_all();
+        return s1;
+    }
     registry.completed.fetch_add(1, std::memory_order_relaxed);
     {
         std::lock_guard lock { registry.mutex };
@@ -324,6 +342,12 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
         if (jobsRef && jobsRef->isStopping()) {
             return;
         }
+        // Cooperative cancellation INSIDE the long kernels too: the
+        // erosion passes poll this between iterations, so a bake
+        // already minutes deep still aborts within one iteration of
+        // the quit instead of running to completion.
+        const std::atomic<bool>* cancel =
+            jobsRef ? &jobsRef->stopFlag() : nullptr;
         const std::string stem =
             "tile_" + std::to_string(tx) + "_" + std::to_string(tz) +
             "_v" +
@@ -375,7 +399,7 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
                     }
                     stage1s[dz + 1][dx + 1] =
                         acquireStage1(*registry, cacheDir, params,
-                                      tx + dx, tz + dz);
+                                      tx + dx, tz + dz, cancel);
                 }
             }
             if (jobsRef && jobsRef->isStopping()) {
@@ -392,7 +416,11 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
                             return nullptr;
                         }
                         return stage1s[dz + 1][dx + 1].get();
-                    });
+                    },
+                    cancel);
+            if (jobsRef && jobsRef->isStopping()) {
+                return; // partial stage-2: never cache, never publish
+            }
             tile.region = std::move(baked.region);
             tile.lakes = std::move(baked.lakes);
             tile.rivers = std::move(baked.rivers);

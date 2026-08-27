@@ -17,7 +17,8 @@ FineErosionResult amplifyFine(const GridSpec& spec,
                               const vector<f32>& allow,
                               const vector<f32>& discharge,
                               const FineErosionParams& params,
-                              const vector<f32>* scale) {
+                              const vector<f32>* scale,
+                              const std::atomic<bool>* cancel) {
     FineErosionResult out;
     out.height = height;
     out.incision.assign(spec.cells(), 0.0f);
@@ -36,6 +37,9 @@ FineErosionResult amplifyFine(const GridSpec& spec,
 
     const i32 interval = glm::max(params.routingInterval, 1);
     for (i32 iter = 0; iter < params.iterations; ++iter) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            break; // shutdown: partial surface, caller discards
+        }
         if (iter % interval == 0) {
             // Raw steepest-descent receivers on the CURRENT surface. No
             // depression routing: a pit keeps itself and never carves.

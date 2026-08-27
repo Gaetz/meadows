@@ -96,6 +96,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                const GridSpec& hydroSpec,
                                const FinalizeParams& params, u32 seed,
                                const vector<f32>* fineScale = nullptr,
-                               const vector<f32>* deposit = nullptr);
+                               const vector<f32>* deposit = nullptr,
+                               const std::atomic<bool>* cancel = nullptr);
 
 } // namespace render::terraingen

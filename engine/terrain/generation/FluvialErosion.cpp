@@ -126,7 +126,8 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const FluvialParams& params,
                            const vector<f32>* keep,
                            const vector<f32>* erodibility,
-                           const vector<f32>* capacityScale) {
+                           const vector<f32>* capacityScale,
+                           const std::atomic<bool>* cancel) {
     const size_t cells = spec.cells();
     const f32 cellArea = spec.texelSize * spec.texelSize;
     FluvialResult out;
@@ -145,6 +146,9 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
     vector<f32> routed;
     const i32 interval = glm::max(params.routingInterval, 1);
     for (i32 iter = 0; iter < params.iterations; ++iter) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            break; // shutdown: partial surface, caller discards
+        }
         if (iter % interval == 0) {
             // Depression-routed surface: every node can reach base
             // level. Reused for `interval` iterations (see the param).

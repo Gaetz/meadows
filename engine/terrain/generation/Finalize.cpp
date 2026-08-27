@@ -60,7 +60,8 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                const GridSpec& hydroSpec,
                                const FinalizeParams& params, u32 seed,
                                const vector<f32>* fineScale,
-                               const vector<f32>* deposit) {
+                               const vector<f32>* deposit,
+                               const std::atomic<bool>* cancel) {
     // World-coordinate sampler into the hydrology window grids.
     const auto hydroAt = [&](const vector<f32>& grid, f32 wx,
                              f32 wz) -> f32 {
@@ -206,7 +207,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
         }
         FineErosionResult amplified =
             amplifyFine(midSpec, mid, allow, discharge, params.fine,
-                        fineScale ? &scale : nullptr);
+                        fineScale ? &scale : nullptr, cancel);
         incision = std::move(amplified.incision);
         if (ratio == 1) {
             out.height = std::move(amplified.height);
@@ -229,8 +230,8 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
             thermal.iterations = params.fine.thermalIterations;
             thermal.talusTan = params.fine.thermalTalusTan;
             thermal.seaLevel = params.seaLevel;
-            ThermalResult relaxed =
-                erodeThermal(out.fineSpec, out.height, thermal);
+            ThermalResult relaxed = erodeThermal(
+                out.fineSpec, out.height, thermal, nullptr, cancel);
             out.height = std::move(relaxed.height);
         }
     } else {

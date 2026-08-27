@@ -73,6 +73,19 @@ public:
         return stopRequested.load(std::memory_order_relaxed);
     }
 
+    // Raise the stop flag WITHOUT joining: the frame loop calls this
+    // the moment it ends, so jobs already RUNNING (a minutes-long
+    // erosion bake) see the cancellation while scene teardown is
+    // still going — waiting for ~JobSystem to raise it left them
+    // running to completion first (the "game never closes" hang).
+    void requestStop() {
+        stopRequested.store(true, std::memory_order_relaxed);
+    }
+
+    // The flag itself, for long-running kernels that poll a raw
+    // atomic in their hot loops (terrain erosion, sim bursts).
+    const std::atomic<bool>& stopFlag() const { return stopRequested; }
+
 private:
     void workerLoop();
 

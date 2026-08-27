@@ -159,7 +159,12 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
                               const vector<u8>& biome,
                               const vector<BiomeErosion>& table);
 
-TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz);
+// `cancel` (all three functions below): when set and raised, the bake
+// aborts at the next pass/iteration boundary and returns a PARTIAL
+// result — shutdown only. Callers must discard it: never cache it to
+// disk, never publish it to the streamer.
+TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
+                          const std::atomic<bool>* cancel = nullptr);
 
 // `stage1At` must return the stage-1 of any tile in the 3x3
 // neighbourhood. The CENTER is mandatory (asserted; null returns an
@@ -167,11 +172,13 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz);
 // which covers the window thanks to the apron.
 TileBakeResult bakeTileStage2(
     const TileBakeParams& params, i32 tx, i32 tz,
-    const std::function<const TileStage1*(i32, i32)>& stage1At);
+    const std::function<const TileStage1*(i32, i32)>& stage1At,
+    const std::atomic<bool>* cancel = nullptr);
 
 // Convenience: both stages, computing the 3x3 stage-1s inline (tests,
 // the editor tool). The streamer caches stage-1s instead.
-TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
+TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
+                        const std::atomic<bool>* cancel = nullptr);
 
 // Cache identity, split by stage so a hydrology/finalize change does not
 // invalidate the expensive stage-1 terrain caches:

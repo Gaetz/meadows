@@ -65,7 +65,11 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
     return out;
 }
 
-TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
+TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
+                          const std::atomic<bool>* cancel) {
+    const auto cancelled = [cancel] {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    };
     TileStage1 out;
     out.sim = simSpecFor(params, tx, tz);
 
@@ -215,15 +219,24 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
         keep.empty() ? nullptr : &keep,
         character.erodibility.empty() ? nullptr : &character.erodibility,
         character.capacityScale.empty() ? nullptr
-                                        : &character.capacityScale);
+                                        : &character.capacityScale,
+        cancel);
+    if (cancelled()) {
+        out.eroded = eroded.height;
+        return out; // partial, discarded by the caller
+    }
 
     ThermalParams thermal = params.thermal;
     thermal.seaLevel = params.macro.seaLevel;
     ThermalResult relaxed = erodeThermal(
         out.sim, eroded.height, thermal,
-        character.talusScale.empty() ? nullptr : &character.talusScale);
+        character.talusScale.empty() ? nullptr : &character.talusScale,
+        cancel);
 
     out.eroded = std::move(relaxed.height);
+    if (cancelled()) {
+        return out; // partial, discarded by the caller
+    }
     // Round the knife edges the orogeny built. Uplift-gated: hill tops
     // and mesa rims keep their edge, peaks and aretes lose theirs.
     {
@@ -310,7 +323,11 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
 
 TileBakeResult bakeTileStage2(
     const TileBakeParams& params, i32 tx, i32 tz,
-    const std::function<const TileStage1*(i32, i32)>& stage1At) {
+    const std::function<const TileStage1*(i32, i32)>& stage1At,
+    const std::atomic<bool>* cancel) {
+    const auto cancelled = [cancel] {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    };
     const f32 tileMinX = static_cast<f32>(tx) * params.tileSize;
     const f32 tileMinZ = static_cast<f32>(tz) * params.tileSize;
     const TileStage1* center = stage1At(tx, tz);
@@ -395,6 +412,9 @@ TileBakeResult bakeTileStage2(
                       params.macroTexel) +
                1;
     const vector<f32> composite = composeWindow(window);
+    if (cancelled()) {
+        return {}; // shutdown: nothing published
+    }
 
     HydrologyParams hydrology = params.hydrology;
     hydrology.seaLevel = params.macro.seaLevel;
@@ -644,11 +664,14 @@ TileBakeResult bakeTileStage2(
     finalize.fineMinX = keepMinX - kFineErosionHalo;
     finalize.fineMinZ = keepMinZ - kFineErosionHalo;
     finalize.fineSpan = keepSpan + 2.0f * kFineErosionHalo;
+    if (cancelled()) {
+        return {}; // shutdown: nothing published
+    }
     const FinalizeResult fine = finalizeTerrain(
         sim, self.eroded, macroFields, hydro, window, finalize,
         params.worldSeed,
         character.fineScale.empty() ? nullptr : &character.fineScale,
-        self.deposit.empty() ? nullptr : &self.deposit);
+        self.deposit.empty() ? nullptr : &self.deposit, cancel);
 
     // Crop to tile + overlap margin. The margin ring is shared with the
     // neighbour bakes; height() blends the overlap by edge weight.
@@ -898,12 +921,16 @@ TileBakeResult bakeTileStage2(
     return out;
 }
 
-TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz) {
+TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
+                        const std::atomic<bool>* cancel) {
     TileStage1 stage1s[3][3];
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
+            if (cancel && cancel->load(std::memory_order_relaxed)) {
+                return {}; // shutdown: nothing published
+            }
             stage1s[dz + 1][dx + 1] =
-                bakeTileStage1(params, tx + dx, tz + dz);
+                bakeTileStage1(params, tx + dx, tz + dz, cancel);
         }
     }
     return bakeTileStage2(params, tx, tz,
@@ -915,7 +942,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz) {
                                   return nullptr;
                               }
                               return &stage1s[dz + 1][dx + 1];
-                          });
+                          },
+                          cancel);
 }
 
 } // namespace render::terraingen

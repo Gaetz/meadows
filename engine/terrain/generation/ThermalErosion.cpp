@@ -14,13 +14,17 @@ namespace {
 
 ThermalResult erodeThermal(const GridSpec& spec, const vector<f32>& height,
                            const ThermalParams& params,
-                           const vector<f32>* talusScale) {
+                           const vector<f32>* talusScale,
+                           const std::atomic<bool>* cancel) {
     const i32 n = static_cast<i32>(spec.n);
     ThermalResult out;
     out.height = height;
     out.deposit.assign(spec.cells(), 0.0f);
     vector<f32> delta(spec.cells());
     for (i32 iter = 0; iter < params.iterations; ++iter) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            break; // shutdown: partial surface, caller discards
+        }
         std::fill(delta.begin(), delta.end(), 0.0f);
         const vector<f32>& h = out.height; // Jacobi: read h, write delta
         for (i32 cz = 0; cz < n; ++cz) {

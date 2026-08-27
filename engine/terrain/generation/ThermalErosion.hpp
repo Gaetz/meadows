@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -27,9 +29,12 @@ struct ThermalResult {
     vector<f32> deposit; // meters of received material (scree mask)
 };
 
+// `cancel` (raised = abort between iterations, partial result) is for
+// shutdown only — callers must discard, never cache or publish.
 ThermalResult erodeThermal(const GridSpec& spec, const vector<f32>& height,
                            const ThermalParams& params,
-                           const vector<f32>* talusScale = nullptr);
+                           const vector<f32>* talusScale = nullptr,
+                           const std::atomic<bool>* cancel = nullptr);
 
 // Crest rounding: peaks and aretes (cells standing ABOVE their
 // neighbourhood mean) relax toward that mean; concave ground — valleys,

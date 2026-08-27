@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -56,6 +58,7 @@ FineErosionResult amplifyFine(const GridSpec& spec,
                               const vector<f32>& allow,
                               const vector<f32>& discharge,
                               const FineErosionParams& params,
-                              const vector<f32>* scale = nullptr);
+                              const vector<f32>* scale = nullptr,
+                              const std::atomic<bool>* cancel = nullptr);
 
 } // namespace render::terraingen
