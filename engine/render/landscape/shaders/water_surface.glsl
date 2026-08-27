@@ -90,16 +90,11 @@ void main() {
     vec2 screenUv = gl_FragCoord.xy * uScreenInfo.zw;
     float t = uWindInfo.x; // wind-scaled phase: waves slow down in a calm
 #ifdef WATER_SIM
-    // Character from the sim textures; dry fragments dissolve (the
-    // bilinear depth softens the shoreline past the mesh tuck).
-    // The EXTRACTION already gated what counts as water (dry threshold
-    // + fast-film exception + connectivity): anything published is
-    // meant to show — this only trims the bilinear shoreline fringe.
+    // Character from the sim textures. The EXTENT of the water is the
+    // MESH (docs/WATER-RENDER.md §1.2): no dryness discard here, ever
+    // — threshold discards blinked whole surfaces out (measured).
     vec4 simTexB = texture(uWaterSimB, vSimUv);
-    if (simTexB.x < 0.004) {
-        discard;
-    }
-    float simDepth = simTexB.x; // the SIMULATED column under this texel
+    float simDepth = max(simTexB.x, 0.01); // the SIMULATED column
     vFlow = simTexB.yz;
     vInfo = vec4(dot(vFlow, vFlow) > 0.09 ? 4.0 : 0.0, 0.0, 0.0, 1.0e6);
     vMaterial = 0.0;

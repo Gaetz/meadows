@@ -179,7 +179,6 @@ private:
     void rebuildMaterials(rhi::Device& device);
     void uploadSimTextures(rhi::Device& device,
                            const terrain::WaterSimSnapshot& snap);
-    void ensureSimMesh(rhi::Device& device, u32 n);
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
@@ -237,10 +236,11 @@ private:
     f32 simLastMs { 0.0f };
     rhi::TextureHandle simMapA {};
     rhi::TextureHandle simMapB {};
+    // The ONE closed water mesh (built worker-side in extractSnapshot,
+    // uploaded verbatim per tick).
     rhi::BufferHandle simVertexBuffer {};
     rhi::BufferHandle simIndexBuffer {};
     u32 simIndexCount { 0 };
-    u32 simMeshN { 0 };
     u32 simWetCells { 0 };
     std::string simDumpPath; // non-empty = dump requested
     rhi::PipelineHandle simPipeline {};
@@ -248,12 +248,6 @@ private:
     // water even where the sheet would lose the depth fight (the
     // unambiguous "is the sim alive here" view).
     rhi::PipelineHandle simPipelineOverlay {};
-    // Vertical skirts closing the volume at exposed column ends
-    // (rebuilt per snapshot; world-space verts, water_sim shading).
-    rhi::BufferHandle simSkirtVertexBuffer {};
-    rhi::BufferHandle simSkirtIndexBuffer {};
-    u32 simSkirtIndexCount { 0 };
-    rhi::PipelineHandle simSkirtPipeline {};
     // Debug volume boxes (Sim mode "Volumes debug"): one translucent
     // column per wet cell, instanced.
     rhi::BufferHandle simBoxVertexBuffer {};
