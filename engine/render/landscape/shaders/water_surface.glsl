@@ -222,6 +222,14 @@ void main() {
                                distance(uCameraPos.xyz, vWorldPos));
     n = normalize(mix(vec3(0.0, 1.0, 0.0), n,
                       mix(0.3, 1.0, lodFade)));
+#ifdef WATER_SIM
+    // Sobriety: NO wave field on the sim water — the analytic cosine
+    // normal aliased into faint concentric rings per cell, breathing
+    // with the 3 s two-phase advection cycle (measured in-game). A
+    // flat normal until the polish pass brings calibrated ripples
+    // back; the sea keeps its validated waves.
+    n = vec3(0.0, 1.0, 0.0);
+#endif
 
 #ifdef WATER_SIM
     // Wall factor, computed at TOP level (uniform control flow keeps
