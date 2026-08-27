@@ -1374,3 +1374,70 @@ rebattue : le SPAWN (8197, 230) est désormais en région ARIDE**
 lira en herbe sèche, à valider par le dev (levier si prairie verte
 voulue au départ : re-roll du salt climat ou biais d'humidité près
 du spawn).
+
+**Refonte eau — option D, W1→W4 (2026-08-26/27)** : constat dev — «
+les surfaces d'eau sont forcément plates… refonte totale du système
+d'eau et d'écoulement » ; le peuplement (B10-B13) est GELÉ le temps
+de la refonte. Recherche complète des solutions jeu vidéo dans
+`docs/WATER-RESEARCH.md` (A nappes plates, B rubans+flow maps,
+C sim temps réel type From Dust, D équilibre pré-calculé,
+E compléments) ; **décision dev : option D** — virtual pipes
+(Kellomäki) itérés HORS LIGNE jusqu'à l'équilibre, champs par texel
+(profondeur, niveau, courant, flux) ; **option C gardée en mémoire**
+pour de futurs sorts de création d'eau (couche d'animation de
+transition par-dessus D). Terraformage joueur : D reste la
+fondation — l'eau est une fonction PURE du terrain, un patch de
+terrain re-bake sa tuile et re-résout son eau, déterministe.
+1. **W1 — solveur** (`engine/terrain/generation/WaterSolve`) :
+   pluie/évaporation en m/s (évap STRICTEMENT < pluie sinon tout
+   gèle — mesuré), warm start priority-flood (les lacs partent
+   PLEINS), clamp d'égalisation dh·aire/(2·dt) (anti-ringing aux
+   falaises sans étouffer les pentes douces), mer épinglée, sources
+   APRÈS l'épinglage, vitesse plafonnée 12 m/s, bords OUVERTS
+   (borderDrain — un bord-mur empilait la pluie en ligne d'eau
+   carrée, vu par le dev), multigrid par surface (124 s → 12 s en
+   529² à 8 m). **Doctrine de tracé : le FLUX est le tracé** — la
+   conservation de masse rend les chemins à fort débit CONTINUS
+   jusqu'à la mer même où le film est mince ; la vue par profondeur
+   cassait les rivières en flaques (mesuré sur les cartes de
+   jugement). Outil : `cooker water-solve`.
+2. **W2 — bake + région (TRG3)** : le solve tourne dans le stage-2
+   sur la fenêtre fine complète (rect publié + halo 192 m — le bord
+   ouvert reste loin de la bande partagée, les voisins résolvent la
+   bande avec du vrai contexte des deux côtés) puis croppe ; champs
+   dans TerrainRegion (depth u16 1/32 m, surface f32 absolue —
+   PAS sol+depth, le niveau ne doit pas hériter du détail de lit à
+   2 m —, courant i8 0,1 m/s, flux log u8, grille 8 m propre).
+   Sampler `waterSample` wet-weighted : un coin sec ne tire jamais
+   le niveau vers le bas à la rive. Cellules mer stockées sèches (la
+   nappe océan les possède). kTileBakeVersion 56.
+3. **W4 (fondu dans W2) — ruissellement sous-linéaire** :
+   Q = pluie·A^0,75·Aref^0,25 (continu avec la pluie-fenêtre à
+   Aref = 1 km²) remplace le cap plat 350 m³/s ; les sources
+   frontière sont partagées bake/outil (`masterBoundarySources`).
+   Raffinement Manning des pentes douces : différé, le modèle
+   pipes+friction a passé le jugement visuel.
+4. **W3 — consommation** : `WaterBodies.fields` (le TerrainBase
+   publié) ; waterSurfaceAt/FlowAt/DepthAt échantillonnent les
+   champs (règle masked-lake : mouillé = immergé) → nage, courants,
+   scatter, pool map, tint de submersion. WaterInfoMap rasterise les
+   champs (le courant du champ EST le flow — les jonctions sont déjà
+   résolues). WaterSystem : nappe heightfield par région — un quad
+   par cellule mouillée AU niveau résolu, coins secs empruntés au
+   voisin (la nappe déborde la rive et le depth-test la coupe),
+   courant > 0,3 m/s = shading rivière, foam 0 sur les champs ; la
+   bande de marge n'est émise que par sa région propriétaire. La
+   scène publie les champs et NE publie plus lacs plats/rubans
+   sandbox (les corps story restent) ; sandboxLakes/Rivers = pures
+   métadonnées gameplay (tiers, gués). MapRaster peint par pixel +
+   trace de flux.
+Restes à valider en jeu (dev) : raccords de niveau aux bords de
+tuiles (les fenêtres diffèrent — proches, pas bit-exacts), coût
++~13 s/tuile au streaming (leviers : waterSolve.fineIterations,
+waterSolveTexel), plus de foam de rive sur les grands lacs (gate 0
+sur les champs — à réintroduire par composante si manque), largeur
+visuelle des petits ruisseaux (film < seuil sec = invisible).
+Nettoyages différés : reconcileWaterWithTerrain + dédup de lacs
+devenus non-rendus (métadonnées seulement), rubans RiverSurface
+sandbox morts dans WaterSystem si les story n'en gardent pas
+l'usage.
