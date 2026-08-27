@@ -523,14 +523,16 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                 // ERODED edge by up to one mask texel (4 sim cells),
                 // and seeding those plants a full-height water column
                 // jutting past the crest above the falls (the "lake
-                // cube", measured dev, seen from above). A cell whose
-                // neighbourhood (one mask texel around) holds
-                // UNCOVERED ground far below the lake level sits past
-                // the crest, not in the basin (a true shore rises
-                // back toward the level): skip seed AND pin — the
-                // pour wets the lip dynamically with a realistic film
-                // instead, and a steep-shore ring skipped here floods
-                // back from the seeded interior within seconds.
+                // cube", measured dev, seen from above). The void
+                // past the crest = ground far below the level and
+                // OUTSIDE THE LAKE'S BBOX — a mere mask gap will not
+                // do: rasterization holes, concave bays and island
+                // rings sit over deep water INSIDE the bbox, and
+                // keying the guard on coverage seeded a film crater
+                // (a 4-cell disc showing the floor) around every such
+                // texel — circles at the freshly scrolled margins,
+                // measured dev. Such a cell gets the connective film
+                // and no pin: the pour carves its real profile.
                 {
                     bool pastCrest = false;
                     for (i32 dz = -4; dz <= 4 && !pastCrest; ++dz) {
@@ -545,11 +547,16 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                             const size_t nj =
                                 static_cast<size_t>(nr) * spec.n +
                                 static_cast<size_t>(nc);
-                            if (state.terrain[nj] <
-                                    lake.level - 2.0f &&
-                                !lake.covers(
-                                    spec.x(static_cast<u32>(nc)),
-                                    spec.z(static_cast<u32>(nr)))) {
+                            if (state.terrain[nj] >=
+                                lake.level - 2.0f) {
+                                continue;
+                            }
+                            const f32 nx =
+                                spec.x(static_cast<u32>(nc));
+                            const f32 nz =
+                                spec.z(static_cast<u32>(nr));
+                            if (nx < lake.minX || nx > lake.maxX ||
+                                nz < lake.minZ || nz > lake.maxZ) {
                                 pastCrest = true;
                                 break;
                             }

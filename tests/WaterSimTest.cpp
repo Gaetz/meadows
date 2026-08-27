@@ -526,6 +526,43 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
           doctest::Approx(1.5f).epsilon(0.01));
 }
 
+TEST_CASE("water sim: a mask hole mid-lake never craters the seed") {
+    // The 8 m mask can carry uncovered texels OVER deep water
+    // (rasterization holes, concave bays, island rings). The crest
+    // guard must not fire there — keying it on mere coverage seeded a
+    // 4-cell film crater around every such texel: circles showing the
+    // floor at the freshly scrolled window margins (measured dev).
+    // Only ground below the level AND outside the lake's bbox is the
+    // void past a crest.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto basin = [](f32, f32) { return 294.0f; };
+    WaterSimState state;
+    initWindow(state, spec, basin, -1000.0f);
+    render::WaterBodies bodies;
+    render::LakeSurface lake;
+    lake.level = 300.0f;
+    lake.minX = 0.0f;
+    lake.minZ = 0.0f;
+    lake.maxX = 124.0f;
+    lake.maxZ = 124.0f;
+    lake.maskTexel = 4.0f;
+    lake.maskWidth = 31;
+    lake.maskHeight = 31;
+    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                         lake.maskHeight,
+                     1);
+    lake.mask[15u * lake.maskWidth + 15u] = 0; // hole near (60, 60)
+    bodies.lakes.push_back(lake);
+    pinLakes(state, bodies);
+    // Covered cell right next to the hole — close enough that the pin
+    // erosion rejects it (so the BFS seed sets its depth, pins carry
+    // none before the first step): FULL column, not the film.
+    const size_t nearHole = 29u * spec.n + 27u; // (54, 58)
+    CHECK(state.pinned[nearHole] < render::terrain::kWaterInfoDry + 1.0f);
+    CHECK(state.terrain[nearHole] + state.depth[nearHole] ==
+          doctest::Approx(300.0f).epsilon(0.001));
+}
+
 TEST_CASE("water sim: a narrow lake still pins and seeds (fallback)") {
     // One mask texel wide: the interior erosion leaves NO pin — the
     // fallback pins the deepest covered cell so the BFS still seeds
