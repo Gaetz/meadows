@@ -526,6 +526,56 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
           doctest::Approx(1.5f).epsilon(0.01));
 }
 
+TEST_CASE("water sim: chooseCachedWindow picks the best resumable state") {
+    // The session LRU lever (docs/WATER-RENDER.md §4): a cached
+    // window resumes via scrollWindow when it overlaps the target
+    // enough; knob changes (n/texel) disqualify; best overlap wins.
+    const auto specAt = [](f32 ox, f32 oz, u32 n = 65, f32 t = 2.0f) {
+        GridSpec s;
+        s.originX = ox;
+        s.originZ = oz;
+        s.texelSize = t;
+        s.n = n;
+        return s;
+    };
+    const GridSpec target = specAt(64.0f, -32.0f);
+    // Empty cache: no pick.
+    CHECK(chooseCachedWindow({}, target).index == -1);
+    // Exact match: shift 0/0.
+    {
+        const auto pick =
+            chooseCachedWindow({ specAt(64.0f, -32.0f) }, target);
+        CHECK(pick.index == 0);
+        CHECK(pick.dCol == 0);
+        CHECK(pick.dRow == 0);
+    }
+    // Overlapping candidate: picked, with the scroll shift.
+    {
+        const auto pick =
+            chooseCachedWindow({ specAt(0.0f, 0.0f) }, target);
+        CHECK(pick.index == 0);
+        CHECK(pick.dCol == 32);  // (64-0)/2
+        CHECK(pick.dRow == -16); // (-32-0)/2
+    }
+    // Too little overlap (a 9-column sliver, ~14 %) or knob mismatch:
+    // rejected.
+    CHECK(chooseCachedWindow({ specAt(-48.0f, -32.0f) }, target)
+              .index == -1);
+    CHECK(chooseCachedWindow({ specAt(64.0f, -32.0f, 33) }, target)
+              .index == -1);
+    CHECK(chooseCachedWindow({ specAt(64.0f, -32.0f, 65, 4.0f) },
+                             target)
+              .index == -1);
+    // Best of several: the closer window wins.
+    {
+        const auto pick = chooseCachedWindow(
+            { specAt(0.0f, 0.0f), specAt(60.0f, -30.0f) }, target);
+        CHECK(pick.index == 1);
+        CHECK(pick.dCol == 2);
+        CHECK(pick.dRow == -1);
+    }
+}
+
 TEST_CASE("water sim: a tile seam between lake pieces never films") {
     // A big lake is baked as PER-TILE pieces: past one piece's bbox
     // lies the SAME lake, not the void. The crest guard must see the

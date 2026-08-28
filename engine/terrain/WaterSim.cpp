@@ -1088,6 +1088,46 @@ bool loadSimState(const char* path, WaterSimState& state,
     return static_cast<bool>(file);
 }
 
+CachedWindowPick chooseCachedWindow(
+    const vector<terraingen::GridSpec>& cached,
+    const terraingen::GridSpec& target, f32 minOverlap) {
+    CachedWindowPick pick;
+    f32 best = glm::max(minOverlap, 1.0e-4f);
+    const f32 texel = target.texelSize;
+    const i32 n = static_cast<i32>(target.n);
+    for (size_t c = 0; c < cached.size(); ++c) {
+        const terraingen::GridSpec& spec = cached[c];
+        if (spec.n != target.n ||
+            std::abs(spec.texelSize - texel) > 1.0e-3f) {
+            continue; // knob changed since it was cached
+        }
+        // Origins are texel-snapped, so the shift is (near-)integral.
+        const f32 fCol = (target.originX - spec.originX) / texel;
+        const f32 fRow = (target.originZ - spec.originZ) / texel;
+        const i32 dCol = static_cast<i32>(std::lround(fCol));
+        const i32 dRow = static_cast<i32>(std::lround(fRow));
+        if (std::abs(fCol - static_cast<f32>(dCol)) > 0.01f ||
+            std::abs(fRow - static_cast<f32>(dRow)) > 0.01f) {
+            continue; // off-grid (shouldn't happen — be safe)
+        }
+        const i32 keepX = n - std::abs(dCol);
+        const i32 keepZ = n - std::abs(dRow);
+        if (keepX <= 0 || keepZ <= 0) {
+            continue; // disjoint
+        }
+        const f32 overlap = static_cast<f32>(keepX) *
+                            static_cast<f32>(keepZ) /
+                            (static_cast<f32>(n) * static_cast<f32>(n));
+        if (overlap > best) {
+            best = overlap;
+            pick.index = static_cast<i32>(c);
+            pick.dCol = dCol;
+            pick.dRow = dRow;
+        }
+    }
+    return pick;
+}
+
 WaterSimSample sampleSnapshot(const WaterSimSnapshot& snap, f32 x,
                               f32 z) {
     WaterSimSample out;

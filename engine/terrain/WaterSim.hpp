@@ -150,6 +150,26 @@ WaterSimState preRollWindow(const terraingen::GridSpec& spec,
                             const WaterSimParams& params,
                             const vector<terraingen::WaterSource>& sources);
 
+// Session LRU of evicted window states (the re-entry lever,
+// docs/WATER-RENDER.md §4): pick the cached window that best overlaps
+// the target, so the runtime resumes it via scrollWindow instead of
+// re-running the pre-roll solver — returning water is "already
+// flowing". Pure and headless; the cache itself lives with the
+// renderer (main thread) and is NEVER serialized (§2.4: a save is a
+// patch layer, not sim state).
+struct CachedWindowPick {
+    i32 index { -1 }; // -1 = no usable candidate
+    i32 dCol { 0 };   // scrollWindow shift from the cached origin
+    i32 dRow { 0 };
+};
+// Candidates must match the target's texel and n exactly (a knob
+// change makes old states unusable); `minOverlap` is the kept-area
+// fraction below which a fresh pre-roll beats scrolling mostly-dry
+// strips.
+CachedWindowPick chooseCachedWindow(
+    const vector<terraingen::GridSpec>& cached,
+    const terraingen::GridSpec& target, f32 minOverlap = 0.25f);
+
 // Bilinear sample of a snapshot at a world position; wet-weighted like
 // the region sampler (a dry corner never drags the level down at the
 // bank). Returns depth 0 outside the trusted rect.

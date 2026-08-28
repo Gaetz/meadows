@@ -1553,3 +1553,21 @@ transitoire (jamais sérialisée — le terrain persisté suffit), cadence
 **CHECKPOINT VISUEL DEV (avant C4/C5)** : ruisseau en pente (4015,
 407, −1666), chute (4117, 396, −1592), bord de fenêtre/couture (mode
 « Seam overlay »), un coup de sculpt dans un ruisseau, coût F6/panneau.
+
+## 2026-08-28 — question dev « retour du modèle D ? » : NON, leviers runtime
+
+Réétude sur inventaire complet (solveur, TRG3, .twb, coûts, couplage
+eau↔terrain du bake). Décisions actées (AskUserQuestion) et
+implémentées le jour même — détail dans docs/WATER-RENDER.md §4 :
+- PAS de re-bake D (+13 s/tuile pour rien ; l'échec rendu 8 m/2 m
+  était structurel) — le solveur garde ses deux rôles : pre-roll +
+  oracle ; `solveWater` reste OFF.
+- PAS de carve terrain depuis une lame résolue — l'adaptation
+  eau→terrain passe déjà par la topologie de drainage (imprint
+  fleuve, channel keep, lits par tier, bassins, érosion fine par
+  débit) ; backlog sans solveur : plages lacustres, ruisseaux.
+- La régénération au retour (le vrai besoin derrière la question) est
+  TRAITÉE : cache LRU de session des fenêtres (reprise par
+  chooseCachedWindow + scrollWindow, jamais sérialisé) + révélation
+  settle-gated (le baké reste affiché jusqu'au calme, |Δvolume| < 2e-3
+  × 8 ticks, plafond 3 s ; case au panneau Water).

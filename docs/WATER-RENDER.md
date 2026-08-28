@@ -185,13 +185,40 @@ Intégration :
   de la WaterInfoMap (les rubans ne se rendent plus qu'au loin), purge
   éventuelle des champs TRG3 de l'option D (le solveur reste : pre-roll
   + oracle).
-- Régénération visible de l'eau COURANTE au retour (constat dev,
-  réflexion sans fix) : conséquence assumée de l'eau transitoire — la
-  dormante re-arrive instantanément (pins+semis), la dynamique se
-  re-forme. Deux leviers si ça gêne : (a) révélation « settle-gated »
-  (garder le baké affiché tant que la fenêtre n'est pas calme /
-  rafale adaptative) ; (b) cache de session LRU des états de fenêtre
-  (~2 Mo pièce, jamais sérialisé — la doctrine save §2.4 intacte),
-  invalidé au sculpt. R3 n'y change rien.
+- Régénération de l'eau COURANTE au retour : **TRAITÉE (2026-08-28)**
+  par les deux leviers prévus. (a) Cache LRU de session des états de
+  fenêtre (WaterSystem::simCache, cap 4 × ~2-3 Mo, jamais sérialisé —
+  doctrine save §2.4 intacte) : un téléport pousse l'état évincé, le
+  retour le REPREND via `chooseCachedWindow` (helper pur doctesté,
+  seuil 25 % de recouvrement) + scrollWindow — pas de re-solve.
+  Invalidé au sculpt, au changement de bodies, au reset. (b)
+  Révélation « settle-gated » (SimConfig::settleGated, défaut ON,
+  case au panneau Water) : après pre-roll ou reprise, la fenêtre
+  simule DERRIÈRE l'affichage baké (simMapInfo publie w=0, maillage
+  non dessiné) jusqu'au calme — |Δvolume publié| relatif < 2e-3
+  pendant 8 résultats consécutifs, plafonné à 3 s. Statut
+  « settling... » sur la ligne d'état.
+
+### Décisions du 2026-08-28 — le modèle D ne revient pas
+
+- **Re-bake de l'eau D écarté** (question dev, inventaire complet à
+  l'appui) : le solveur `solveSteadyWater` garde ses DEUX rôles
+  sanctuarisés — pre-roll de la fenêtre (~2 s worker) et oracle des
+  tests — et `TileBakeParams::solveWater` reste OFF. Le re-baker par
+  tuile coûtait +13 s/tuile (mesuré à l'époque du branchement) pour un
+  gain nul : l'échec RENDU de D était structurel (grille de solve 8 m
+  incapable de suivre le terrain 2 m — 3 validations échouées), et le
+  besoin réel derrière la question (l'eau « déjà en place ») est
+  couvert par le cache LRU + settle-gate ci-dessus, runtime purs.
+- **Carve du terrain depuis une lame d'eau résolue écarté** : le
+  terrain est DÉJÀ adapté à l'eau par la topologie de drainage —
+  fleuves IMPRIMÉS avant l'érosion (chenal + plaine + lit monotone),
+  channel keep du fastscape, lits creusés par tier avec gués, bassins
+  de lacs carvés par distance à la rive, érosion fine pilotée par le
+  champ de débit partagé entre tuiles. Carver depuis une lame 8 m
+  graverait la classe de bugs 8 m/2 m dans le terrain lui-même.
+  Backlog retenu (sans solveur, données de masques existantes, bump
+  kTileBakeVersion à prévoir) : plages/berges lacustres, visibilité
+  des petits ruisseaux.
 - updateTexture RHI (destroy+create par tick = provisoire éprouvé).
 - Cascade FX (voile + écume projetée) par-dessus la goulotte.

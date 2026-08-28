@@ -311,6 +311,8 @@ void WaterSystem::destroy(rhi::Device& device) {
     simState.reset();
     simSnap.reset();
     simSrcCache.clear();
+    simCache.clear();
+    simSettling = false;
     simInFlight = false;
     simGroundDirty = false;
     simValid = false;
@@ -324,6 +326,8 @@ void WaterSystem::setBodies(sptr<const WaterBodies> next) {
     bodies = std::move(next);
     ++bodiesStamp;
     bodiesDirty = true;
+    // Cached windows pinned/seeded against the old bodies are stale.
+    simCache.clear();
 }
 
 void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
@@ -667,7 +671,10 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
 }
 
 Vec4 WaterSystem::simMapInfo() const {
-    if (!simValid || !simSnap || simSnap->spec.n < 2) {
+    // While the settle gate holds, the shaders see "no sim" (w = 0):
+    // the baked water stays on screen everywhere and the window keeps
+    // simulating behind the curtain.
+    if (!simValid || simSettling || !simSnap || simSnap->spec.n < 2) {
         return { 0.0f, 0.0f, 0.0f, 0.0f };
     }
     const auto& spec = simSnap->spec;
@@ -767,6 +774,30 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
     }
 }
 
+void WaterSystem::simCachePush(sptr<terrain::WaterSimState> state) {
+    if (!state || !state->valid()) {
+        return;
+    }
+    // One entry per window footprint: an overlapping older entry is
+    // superseded (same zone, staler water).
+    for (size_t i = 0; i < simCache.size(); ++i) {
+        const auto& spec = simCache[i]->spec;
+        if (spec.n == state->spec.n &&
+            std::abs(spec.texelSize - state->spec.texelSize) < 1.0e-3f &&
+            std::abs(spec.originX - state->spec.originX) <
+                state->spec.texelSize * static_cast<f32>(spec.n) * 0.5f &&
+            std::abs(spec.originZ - state->spec.originZ) <
+                state->spec.texelSize * static_cast<f32>(spec.n) * 0.5f) {
+            simCache.erase(simCache.begin() + static_cast<i32>(i));
+            break;
+        }
+    }
+    if (simCache.size() >= kSimCacheCap) {
+        simCache.erase(simCache.begin()); // front = least recent
+    }
+    simCache.push_back(std::move(state));
+}
+
 void WaterSystem::updateSim(rhi::Device& device,
                             const TerrainParams& params,
                             const Vec3& cameraPos, f32 dt) {
@@ -779,7 +810,11 @@ void WaterSystem::updateSim(rhi::Device& device,
         }
         simInFlight = false;
         if (res.epoch != simEpoch) {
-            continue; // invalidated while the job ran
+            // Invalidated while the job ran (teleport): the state is
+            // still a perfectly settled window — cache it for the
+            // return trip instead of dropping it.
+            simCachePush(std::move(res.state));
+            continue;
         }
         simState = res.state;
         simLastMs = res.millis;
@@ -790,6 +825,31 @@ void WaterSystem::updateSim(rhi::Device& device,
             uploadSimTextures(device, *res.snap);
             simSnap = res.snap;
             simValid = true;
+            // Settle-gate calm metric: consecutive published volumes
+            // within a relative epsilon = the window is calm, reveal.
+            if (simSettling) {
+                const f64 ref = glm::max(std::abs(simLastVolume), 1.0);
+                if (simLastVolume >= 0.0 &&
+                    std::abs(res.volume - simLastVolume) / ref <
+                        static_cast<f64>(kSimCalmEps)) {
+                    ++simCalmTicks;
+                } else {
+                    simCalmTicks = 0;
+                }
+                simLastVolume = res.volume;
+                if (simCalmTicks >= kSimCalmTicks) {
+                    simSettling = false;
+                }
+            }
+        }
+    }
+    // The reveal never blocks: a window that keeps sloshing (heavy
+    // inflow) shows after the cap regardless. Toggling the gate off
+    // reveals immediately.
+    if (simSettling) {
+        simSettleTimer += dt;
+        if (!simCfg.settleGated || simSettleTimer > kSimSettleCap) {
+            simSettling = false;
         }
     }
     if (!simCfg.enabled || !params.base) {
@@ -818,6 +878,8 @@ void WaterSystem::updateSim(rhi::Device& device,
     if (simState &&
         (std::abs(camDelta.x) > simCfg.span * 0.5f ||
          std::abs(camDelta.y) > simCfg.span * 0.5f)) {
+        // Teleport: keep the settled window for the return trip.
+        simCachePush(std::move(simState));
         simState.reset();
         simSnap.reset();
         simValid = false;
@@ -865,6 +927,46 @@ void WaterSystem::updateSim(rhi::Device& device,
         spec.originZ =
             std::floor((cameraPos.z - simCfg.span * 0.5f) / texel) *
             texel;
+        // Session cache first: a window evicted here earlier RESUMES
+        // (scrolled by the regular path below) instead of re-running
+        // the pre-roll solver — returning water is already flowing.
+        {
+            vector<terraingen::GridSpec> specs;
+            specs.reserve(simCache.size());
+            for (const auto& s : simCache) {
+                specs.push_back(s->spec);
+            }
+            const terrain::CachedWindowPick pick =
+                terrain::chooseCachedWindow(specs, spec);
+            if (pick.index >= 0) {
+                simState = std::move(
+                    simCache[static_cast<size_t>(pick.index)]);
+                simCache.erase(simCache.begin() + pick.index);
+                // The ground may have re-baked while evicted: refresh
+                // it on the next job; the regular path scrolls the
+                // window to the new origin and re-pins the lakes.
+                simGroundDirty = true;
+                simSettling = simCfg.settleGated;
+                simCalmTicks = 0;
+                simLastVolume = -1.0;
+                simSettleTimer = 0.0f;
+            }
+        }
+    }
+    if (!simState) {
+        terraingen::GridSpec spec;
+        spec.texelSize = texel;
+        spec.n = static_cast<u32>(simCfg.span / texel) + 1;
+        spec.originX =
+            std::floor((cameraPos.x - simCfg.span * 0.5f) / texel) *
+            texel;
+        spec.originZ =
+            std::floor((cameraPos.z - simCfg.span * 0.5f) / texel) *
+            texel;
+        simSettling = simCfg.settleGated;
+        simCalmTicks = 0;
+        simLastVolume = -1.0;
+        simSettleTimer = 0.0f;
         simInFlight = true;
         const f32 maxX =
             spec.originX + static_cast<f32>(spec.n - 1) * texel;
@@ -910,6 +1012,11 @@ void WaterSystem::updateSim(rhi::Device& device,
             }
             auto snap = std::make_shared<terrain::WaterSimSnapshot>();
             terrain::extractSnapshot(*state, simParams, *snap);
+            f64 volume = 0.0;
+            for (const f32 d : snap->depth) {
+                volume += d;
+            }
+            out.volume = volume * spec.texelSize * spec.texelSize;
             out.state = std::move(state);
             out.snap = std::move(snap);
             out.millis =
@@ -994,6 +1101,12 @@ void WaterSystem::updateSim(rhi::Device& device,
         terrain::stepWindow(*state, simParams, sources, substeps);
         auto snap = std::make_shared<terrain::WaterSimSnapshot>();
         terrain::extractSnapshot(*state, simParams, *snap);
+        f64 volume = 0.0;
+        for (const f32 d : snap->depth) {
+            volume += d;
+        }
+        out.volume =
+            volume * state->spec.texelSize * state->spec.texelSize;
         out.state = std::move(state);
         out.snap = std::move(snap);
         out.sources = std::move(sources);
@@ -1201,11 +1314,14 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setIndexBuffer(localIndexBuffer, rhi::IndexFormat::U32);
         cmd.drawIndexed(localIndexCount);
     }
-    if (simValid && simIndexCount > 0 && simCfg.debugMode != 1) {
+    if (simValid && !simSettling && simIndexCount > 0 &&
+        simCfg.debugMode != 1) {
         // The live sim sheet (drawn last: its fragments discard where
         // dry, the baked ones discard where the sim owns the texel).
-        // Seam overlay renders WITHOUT depth test: the unambiguous
-        // "where does the sim have water" view.
+        // Settle gate: while settling, only the baked water shows
+        // (simMapInfo already reads invalid) — the mesh stays hidden
+        // with it. Seam overlay renders WITHOUT depth test: the
+        // unambiguous "where does the sim have water" view.
         cmd.setPipeline(simCfg.debugMode == 2 ? simPipelineOverlay
                                               : simPipeline);
         cmd.setBindGroup(0, frameBindGroup);

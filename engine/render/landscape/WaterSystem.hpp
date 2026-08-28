@@ -101,6 +101,11 @@ public:
         f32 anchorHysteresis { 16.0f }; // m before the window re-anchors
         f32 fadeBand { 32.0f };         // m of sim->baked edge crossfade
         i32 debugMode { 0 }; // 0 normal, 1 force baked, 2 seam overlay
+        // Settle-gated reveal: after a pre-roll or a cache resume the
+        // window keeps SIMULATING but the BAKED water stays on screen
+        // until the published volume is calm — the "waterfall
+        // restarting from a dry cliff" happens behind the curtain.
+        bool settleGated { true };
         terrain::WaterSimParams params;
     };
     SimConfig& simConfig() { return simCfg; }
@@ -111,8 +116,12 @@ public:
                                                       f32)>;
     void setSimSources(SimSourcesFn fn) { simSourcesFn = std::move(fn); }
     // Terraforming hook: the sculpt overlay changed — the next step job
-    // re-samples the window's ground and the water reacts live.
-    void notifySimGroundChanged() { simGroundDirty = true; }
+    // re-samples the window's ground and the water reacts live; the
+    // cached windows hold pre-sculpt ground, drop them.
+    void notifySimGroundChanged() {
+        simGroundDirty = true;
+        simCache.clear();
+    }
     // Once per frame, after update(). dt = real frame seconds.
     void updateSim(rhi::Device& device, const TerrainParams& params,
                    const Vec3& cameraPos, f32 dt);
@@ -132,6 +141,7 @@ public:
     f32 simCostMs() const { return simLastMs; } // worker job, F6 line
     bool simIsValid() const { return simValid; }
     bool simIsPreRolling() const { return simInFlight && !simState; }
+    bool simIsSettling() const { return simSettling; } // gate active
     u32 simWetCellCount() const { return simWetCells; } // last upload
     // On-site debugging: dump the live window (planes + params +
     // sources) to `path` at the next moment main owns the state —
@@ -165,6 +175,7 @@ private:
         vector<terraingen::WaterSource> sources;
         bool sourcesFresh { false };
         f32 millis { 0.0f };
+        f64 volume { 0.0 }; // published m³ (settle-gate calm metric)
     };
     struct Shared {
         core::ConcurrentQueue<BakedMap> baked;
@@ -234,6 +245,26 @@ private:
     Vec2 simLastCam { 0.0f, 0.0f };
     bool simHasLastCam { false };
     f32 simLastMs { 0.0f };
+    // Session LRU of evicted window states (~2-3 MB each): a teleport
+    // back into a zone RESUMES its water via scrollWindow instead of
+    // re-running the pre-roll solver — no visible re-settling. Never
+    // serialized (§2.4); cleared on sculpt, bodies change, reset.
+    // Back = most recent.
+    static constexpr size_t kSimCacheCap = 4;
+    vector<sptr<terrain::WaterSimState>> simCache;
+    // Settle-gated reveal (SimConfig::settleGated): true while the
+    // window simulates behind the baked display. Cleared when the
+    // published volume is calm for kSimCalmTicks consecutive results
+    // (relative delta under kSimCalmEps) or after simSettleCap
+    // seconds.
+    bool simSettling { false };
+    u32 simCalmTicks { 0 };
+    f64 simLastVolume { -1.0 };
+    f32 simSettleTimer { 0.0f };
+    static constexpr f32 kSimCalmEps = 2.0e-3f;
+    static constexpr u32 kSimCalmTicks = 8;
+    static constexpr f32 kSimSettleCap = 3.0f; // s, never blocks longer
+    void simCachePush(sptr<terrain::WaterSimState> state);
     rhi::TextureHandle simMapA {};
     rhi::TextureHandle simMapB {};
     // The ONE closed water mesh (built worker-side in extractSnapshot,
