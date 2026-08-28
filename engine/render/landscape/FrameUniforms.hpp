@@ -219,6 +219,12 @@ struct FrameUniforms {
     // x = trusted inset (m), y = edge fade band (m), z = debug mode
     // (0 normal, 1 force baked, 2 seam overlay), w free.
     Vec4 waterSimTuneInfo { 64.0f, 32.0f, 0.0f, 0.0f };
+    // Frozen sim windows (WaterSystem::simFrozen — static meshes of
+    // past window states, drawn beyond the live rect): per entry
+    // xy = window ORIGIN (min corner), z = 1/span (0 = slot empty),
+    // w free. Array order is oldest -> NEWEST (the shader resolves
+    // overlaps by recency).
+    Vec4 waterSimFrozen[4] {};
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -301,7 +307,8 @@ static_assert(offsetof(FrameUniforms, ssaoInfo) == 2032);
 static_assert(offsetof(FrameUniforms, surfSheenInfo) == 2048);
 static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 2064);
 static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 2080);
-static_assert(sizeof(FrameUniforms) == 2096,
+static_assert(offsetof(FrameUniforms, waterSimFrozen) == 2096);
+static_assert(sizeof(FrameUniforms) == 2160,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

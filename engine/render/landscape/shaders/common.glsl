@@ -160,4 +160,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     // x = trusted inset (m), y = edge fade band (m), z = debug mode
     // (0 normal, 1 force baked, 2 seam overlay), w free.
     vec4 uWaterSimTuneInfo;
+    // Frozen sim windows (static meshes of past window states): per
+    // entry xy = origin, z = 1/span (0 = empty), w free. Ordered
+    // oldest -> NEWEST.
+    vec4 uWaterSimFrozen[4];
 };

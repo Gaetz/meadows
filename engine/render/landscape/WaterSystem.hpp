@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <functional>
 #include <string>
 
@@ -121,6 +122,7 @@ public:
     void notifySimGroundChanged() {
         simGroundDirty = true;
         simCache.clear();
+        simFrozenClearPending = true; // frozen meshes hold old ground
     }
     // Once per frame, after update(). dt = real frame seconds.
     void updateSim(rhi::Device& device, const TerrainParams& params,
@@ -132,6 +134,10 @@ public:
     }
     // FrameUniforms feeds: origin/1-span/valid + trusted/fade/debug.
     Vec4 simMapInfo() const;
+    // Frozen windows lane (oldest -> newest; z = 1/span, 0 = empty).
+    // Zeroed in force-baked mode so the baked never yields to meshes
+    // that are not drawn.
+    std::array<Vec4, 4> simFrozenInfo() const;
     Vec4 simTuneInfo() const {
         return { static_cast<f32>(simCfg.params.marginCells) *
                      simCfg.texel,
@@ -272,6 +278,26 @@ private:
     static constexpr u32 kSimCalmTicks = 8;
     static constexpr f32 kSimSettleCap = 3.0f; // s, never blocks longer
     void simCachePush(sptr<terrain::WaterSimState> state);
+    // Frozen windows: at every crumb/teleport push, the current
+    // snapshot MESH is also kept as a static draw — the sim stays
+    // visible (frozen) beyond the live rect along the travel trail.
+    // From afar frozen water is indistinguishable (waves are
+    // LOD-flattened, advection invisible); the alternative — growing
+    // the window — scales n² in kernel, uploads and pre-roll.
+    struct FrozenWindow {
+        rhi::BufferHandle vertexBuffer {};
+        rhi::BufferHandle indexBuffer {};
+        u32 indexCount { 0 };
+        f32 originX { 0.0f };
+        f32 originZ { 0.0f };
+        f32 span { 0.0f };
+    };
+    vector<FrozenWindow> simFrozen; // oldest -> newest
+    bool simFrozenClearPending { false };
+    void simFreeze(rhi::Device& device,
+                   const terrain::WaterSimSnapshot& snap);
+    void simFrozenClearNow(rhi::Device& device);
+    rhi::PipelineHandle simFrozenPipeline {};
     rhi::TextureHandle simMapA {};
     rhi::TextureHandle simMapB {};
     // The ONE closed water mesh (built worker-side in extractSnapshot,

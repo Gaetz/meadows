@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
@@ -158,6 +160,8 @@ struct FrameComposerInputs {
     // tune = trusted inset (m), fade band (m), debug mode.
     Vec4 waterSimMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     Vec4 waterSimTuneInfo { 64.0f, 32.0f, 0.0f, 0.0f };
+    // Frozen sim windows (oldest -> newest; z = 1/span, 0 = empty).
+    std::array<Vec4, 4> waterSimFrozen {};
     // Region shading maps (TerrainShadeMap::info()).
     Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };

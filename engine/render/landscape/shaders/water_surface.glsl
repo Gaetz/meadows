@@ -89,7 +89,67 @@ vec3 waveNormal(vec2 p, float t) {
 void main() {
     vec2 screenUv = gl_FragCoord.xy * uScreenInfo.zw;
     float t = uWindInfo.x; // wind-scaled phase: waves slow down in a calm
-#ifdef WATER_SIM
+#ifdef WATER_SIM_FROZEN
+    // Frozen window: the static mesh of a PAST window state, drawn
+    // beyond the live rect. The sim textures belong to the LIVE
+    // window — do not touch them: calm character (the flow field is
+    // visually inert on the sobriety sim path anyway).
+    vFlow = vec2(0.0);
+    vInfo = vec4(0.0, 0.0, 0.0, 1.0e6);
+    vMaterial = 0.0;
+    {
+        // Yield to the live window wherever it exists (interior AND
+        // margin ring — the ring belongs to the baked lakes).
+        if (uWaterSimMapInfo.w > 0.5) {
+            vec2 liveRel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
+                           uWaterSimMapInfo.z;
+            if (all(greaterThan(liveRel, vec2(0.0))) &&
+                all(lessThan(liveRel, vec2(1.0)))) {
+                discard;
+            }
+        }
+        // Yield to any FRESHER frozen window (trails overlap up to
+        // half a window; recency wins). This fragment's own window is
+        // recovered from its mesh uv — entries sit at least a quarter
+        // window apart, so a loose origin match is unambiguous.
+        float frozenSpan = 0.0;
+        for (int k = 0; k < 4; ++k) {
+            if (uWaterSimFrozen[k].z > 1.0e-9) {
+                frozenSpan = 1.0 / uWaterSimFrozen[k].z;
+                break;
+            }
+        }
+        if (frozenSpan > 0.0) {
+            float fzTexel = max(uWaterSimTuneInfo.w, 0.5);
+            float fzTex = floor(frozenSpan / fzTexel + 0.5) + 1.0;
+            vec2 relMine =
+                (vSimUv * fzTex - 0.5) / max(fzTex - 1.0, 1.0);
+            vec2 originMine = vWorldPos.xz - relMine * frozenSpan;
+            int myIdx = -1;
+            for (int k = 0; k < 4; ++k) {
+                if (uWaterSimFrozen[k].z <= 1.0e-9) {
+                    continue;
+                }
+                vec2 d = abs(uWaterSimFrozen[k].xy - originMine);
+                if (max(d.x, d.y) < frozenSpan * 0.2) {
+                    myIdx = k;
+                }
+            }
+            for (int k = 0; k < 4; ++k) {
+                if (k <= myIdx || uWaterSimFrozen[k].z <= 1.0e-9) {
+                    continue;
+                }
+                vec2 rel = (vWorldPos.xz - uWaterSimFrozen[k].xy) *
+                           uWaterSimFrozen[k].z;
+                if (all(greaterThan(rel, vec2(0.0))) &&
+                    all(lessThan(rel, vec2(1.0)))) {
+                    discard;
+                }
+            }
+        }
+    }
+#endif
+#if defined(WATER_SIM) && !defined(WATER_SIM_FROZEN)
     // Character from the sim textures. The EXTENT of the water is the
     // MESH (docs/WATER-RENDER.md §1.2): no dryness discard here, ever
     // — threshold discards blinked whole surfaces out (measured).
@@ -141,11 +201,13 @@ void main() {
     // fade-to-ground painted a green rim band (measured).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
+        bool insideLive = false;
         if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;
             if (all(greaterThan(rel, vec2(0.0))) &&
                 all(lessThan(rel, vec2(1.0)))) {
+                insideLive = true;
                 float edgeM = min(min(rel.x, 1.0 - rel.x),
                                   min(rel.y, 1.0 - rel.y)) /
                               uWaterSimMapInfo.z;
@@ -154,6 +216,24 @@ void main() {
                                       uWaterSimTuneInfo.y * 0.5
                                 : uWaterSimTuneInfo.x;
                 if (edgeM > cut) {
+                    discard;
+                }
+            }
+        }
+        // FROZEN windows own their rect OUTSIDE the live window: the
+        // static past-sim mesh covers both the courses and the lakes
+        // there. Inside the live window the live rules above govern
+        // (the frozen meshes yield there too). Entries are zeroed by
+        // the CPU in force-baked mode, so no gating needed here.
+        if (!insideLive && simMode != 1) {
+            for (int k = 0; k < 4; ++k) {
+                if (uWaterSimFrozen[k].z <= 1.0e-9) {
+                    continue;
+                }
+                vec2 rel = (vWorldPos.xz - uWaterSimFrozen[k].xy) *
+                           uWaterSimFrozen[k].z;
+                if (all(greaterThan(rel, vec2(0.0))) &&
+                    all(lessThan(rel, vec2(1.0)))) {
                     discard;
                 }
             }

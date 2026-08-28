@@ -19,6 +19,7 @@ namespace {
 constexpr const char* kWaterShader = "water";
 constexpr const char* kWaterLocalShader = "waterlocal";
 constexpr const char* kWaterSimShader = "water_sim";
+constexpr const char* kWaterSimFrozenShader = "water_simfrozen";
 constexpr const char* kWaterSimBoxShader = "water_simdbg";
 
 // Worker-side pool-depth bake: vertical water column over the terrain
@@ -239,6 +240,16 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
+    shaders.load(kWaterSimFrozenShader,
+                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { { "uSceneColor", 0 },
+                   { "uSceneDepth", 1 },
+                   { "uPoolDepth", 3 },
+                   { "uSkyClouds", 4 },
+                   { "uWaterInfoA", 5 },
+                   { "uWaterInfoB", 6 },
+                   { "uWaterSimA", 7 },
+                   { "uWaterSimB", 8 } });
     shaders.load(kWaterSimBoxShader, { { "FrameUbo", 0 } }, {});
     buildPipeline(device, shaders);
 }
@@ -291,6 +302,9 @@ void WaterSystem::destroy(rhi::Device& device) {
     device.destroyBuffer(simIndexBuffer);
     device.destroyPipeline(simPipeline);
     device.destroyPipeline(simPipelineOverlay);
+    device.destroyPipeline(simFrozenPipeline);
+    simFrozenPipeline = {};
+    simFrozenClearNow(device);
     device.destroyPipeline(simBoxPipeline);
     device.destroyBuffer(simBoxVertexBuffer);
     device.destroyBuffer(simBoxIndexBuffer);
@@ -327,8 +341,10 @@ void WaterSystem::setBodies(sptr<const WaterBodies> next) {
     bodies = std::move(next);
     ++bodiesStamp;
     bodiesDirty = true;
-    // Cached windows pinned/seeded against the old bodies are stale.
+    // Cached windows pinned/seeded against the old bodies are stale;
+    // frozen meshes too (destroyed next updateSim, device in hand).
     simCache.clear();
+    simFrozenClearPending = true;
 }
 
 void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
@@ -799,10 +815,78 @@ void WaterSystem::simCachePush(sptr<terrain::WaterSimState> state) {
     simCache.push_back(std::move(state));
 }
 
+void WaterSystem::simFreeze(rhi::Device& device,
+                            const terrain::WaterSimSnapshot& snap) {
+    if (snap.meshIndices.empty() || snap.spec.n < 2) {
+        return;
+    }
+    const f32 span =
+        static_cast<f32>(snap.spec.n - 1) * snap.spec.texelSize;
+    // One entry per footprint: an overlapping older mesh is superseded
+    // (same zone, staler water) — mirrors simCachePush.
+    for (size_t i = 0; i < simFrozen.size(); ++i) {
+        if (std::abs(simFrozen[i].span - span) < 1.0e-3f &&
+            std::abs(simFrozen[i].originX - snap.spec.originX) <
+                span * 0.5f &&
+            std::abs(simFrozen[i].originZ - snap.spec.originZ) <
+                span * 0.5f) {
+            device.destroyBuffer(simFrozen[i].vertexBuffer);
+            device.destroyBuffer(simFrozen[i].indexBuffer);
+            simFrozen.erase(simFrozen.begin() + static_cast<i32>(i));
+            break;
+        }
+    }
+    if (simFrozen.size() >= kSimCacheCap) {
+        device.destroyBuffer(simFrozen.front().vertexBuffer);
+        device.destroyBuffer(simFrozen.front().indexBuffer);
+        simFrozen.erase(simFrozen.begin());
+    }
+    FrozenWindow fz;
+    fz.vertexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = snap.meshVerts.size() * sizeof(f32) },
+        snap.meshVerts.data());
+    fz.indexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = snap.meshIndices.size() * sizeof(u32) },
+        snap.meshIndices.data());
+    fz.indexCount = static_cast<u32>(snap.meshIndices.size());
+    fz.originX = snap.spec.originX;
+    fz.originZ = snap.spec.originZ;
+    fz.span = span;
+    simFrozen.push_back(fz);
+}
+
+void WaterSystem::simFrozenClearNow(rhi::Device& device) {
+    for (FrozenWindow& fz : simFrozen) {
+        device.destroyBuffer(fz.vertexBuffer);
+        device.destroyBuffer(fz.indexBuffer);
+    }
+    simFrozen.clear();
+    simFrozenClearPending = false;
+}
+
+std::array<Vec4, 4> WaterSystem::simFrozenInfo() const {
+    std::array<Vec4, 4> out {};
+    if (simCfg.debugMode == 1) {
+        return out; // force baked: meshes hidden, the baked never yields
+    }
+    const size_t count = glm::min(simFrozen.size(), out.size());
+    for (size_t i = 0; i < count; ++i) {
+        const FrozenWindow& fz = simFrozen[i];
+        out[i] = { fz.originX, fz.originZ,
+                   fz.span > 0.0f ? 1.0f / fz.span : 0.0f, 0.0f };
+    }
+    return out;
+}
+
 void WaterSystem::updateSim(rhi::Device& device,
                             const TerrainParams& params,
                             const Vec3& cameraPos, f32 dt) {
     using terrain::WaterSimState;
+    if (simFrozenClearPending) {
+        simFrozenClearNow(device);
+    }
     // Apply finished jobs (newest wins; at most one is ever in flight).
     SimResult res;
     while (shared->simDone.tryPop(res)) {
@@ -813,7 +897,11 @@ void WaterSystem::updateSim(rhi::Device& device,
         if (res.epoch != simEpoch) {
             // Invalidated while the job ran (teleport): the state is
             // still a perfectly settled window — cache it for the
-            // return trip instead of dropping it.
+            // return trip instead of dropping it, and keep its mesh
+            // frozen on screen.
+            if (res.snap) {
+                simFreeze(device, *res.snap);
+            }
             simCachePush(std::move(res.state));
             continue;
         }
@@ -880,7 +968,11 @@ void WaterSystem::updateSim(rhi::Device& device,
     if (simState &&
         (std::abs(camDelta.x) > simCfg.span * 0.5f ||
          std::abs(camDelta.y) > simCfg.span * 0.5f)) {
-        // Teleport: keep the settled window for the return trip.
+        // Teleport: keep the settled window for the return trip, and
+        // its mesh frozen on screen.
+        if (simSnap) {
+            simFreeze(device, *simSnap);
+        }
         simCachePush(std::move(simState));
         simState.reset();
         simSnap.reset();
@@ -1065,6 +1157,9 @@ void WaterSystem::updateSim(rhi::Device& device,
                std::abs(spec.originZ - simLastCrumb.y) >
                    simCfg.span * 0.5f) {
         simCachePush(std::make_shared<WaterSimState>(*simState));
+        if (simSnap) {
+            simFreeze(device, *simSnap); // trail stays visible behind
+        }
         simLastCrumb = { spec.originX, spec.originZ };
     }
     // Crumbs for the entering strips (immutable while the job reads
@@ -1274,6 +1369,26 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .cull = rhi::CullMode::None,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f });
+    if (simFrozenPipeline.id != 0) {
+        device.destroyPipeline(simFrozenPipeline);
+    }
+    // Frozen windows: same mesh layout and states, frozen shading.
+    simFrozenPipeline = device.createPipeline(
+        { .shader = shaders.get(kWaterSimFrozenShader),
+          .vertexBuffers =
+              { { .stride = 5 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = 0 },
+                                  { .location = 1,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = 3 * sizeof(f32) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Greater },
+          .cull = rhi::CullMode::None,
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
     if (simPipelineOverlay.id != 0) {
         device.destroyPipeline(simPipelineOverlay);
     }
@@ -1359,6 +1474,20 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setVertexBuffer(0, simVertexBuffer);
         cmd.setIndexBuffer(simIndexBuffer, rhi::IndexFormat::U32);
         cmd.drawIndexed(simIndexCount);
+    }
+    if (!simFrozen.empty() && simCfg.debugMode != 1) {
+        // Frozen windows: static past-sim meshes along the travel
+        // trail (their shader yields inside the live window and to
+        // fresher frozen rects; the baked yields inside them).
+        cmd.setPipeline(simFrozenPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, sceneBindGroup);
+        cmd.setBindGroup(2, poolMapGroup);
+        for (const FrozenWindow& fz : simFrozen) {
+            cmd.setVertexBuffer(0, fz.vertexBuffer);
+            cmd.setIndexBuffer(fz.indexBuffer, rhi::IndexFormat::U32);
+            cmd.drawIndexed(fz.indexCount);
+        }
         if (simCfg.debugMode == 3 && simBoxInstances > 0) {
             // Debug volume columns: "where the water IS".
             cmd.setPipeline(simBoxPipeline);

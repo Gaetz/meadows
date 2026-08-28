@@ -198,7 +198,23 @@ Intégration :
   ENTRANTES depuis la miette la plus récente qui les couvre (eau
   copiée — profondeur, tuyaux, mémoire de mouillage — jamais
   inventée : la doctrine bandes-sèches interdit l'invention, pas le
-  souvenir). (b)
+  souvenir). Et la sim reste VISIBLE de loin via les FENÊTRES GELÉES
+  (demande dev 2026-08-28 — « agrandir la fenêtre » écarté : coût en
+  n² du kernel/uploads/pre-roll) : à chaque pose de miette ou
+  téléport, le maillage du snapshot courant est copié en buffers GPU
+  persistants (≤ 4, même plafond) et dessiné en statique au-delà du
+  rect vivant — de loin une eau figée est indiscernable (vagues
+  aplaties par le LOD, advection invisible). Arbitrage 3 couches :
+  le gelé cède PARTOUT dans la fenêtre vivante (l'anneau de marge
+  appartient aux lacs bakés) et aux rects gelés plus récents (le
+  fragment retrouve sa fenêtre d'origine par ses UV — les entrées
+  sont à ≥ un quart de fenêtre l'une de l'autre, le match d'origine
+  est non ambigu) ; le baké cède dans les rects gelés hors fenêtre
+  vivante. Lane FrameUbo `uWaterSimFrozen[4]` (append-only), shader
+  `WATER_SIM_FROZEN` sans AUCUNE lecture des textures sim (elles
+  appartiennent à la fenêtre vivante), entrées zérotées en mode
+  « Force baked ». Invalidation avec le cache (sculpt, bodies,
+  reset). (b)
   Révélation « settle-gated » (SimConfig::settleGated, défaut ON,
   case au panneau Water) : après pre-roll ou reprise, la fenêtre
   simule DERRIÈRE l'affichage baké (simMapInfo publie w=0, maillage

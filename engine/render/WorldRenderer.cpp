@@ -2175,6 +2175,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .waterInfoMapInfo = water.infoMapInfo(),
         .waterSimMapInfo = water.simMapInfo(),
         .waterSimTuneInfo = water.simTuneInfo(),
+        .waterSimFrozen = water.simFrozenInfo(),
         .terrainShadeMapInfo = terrainShadeMap.info(),
     });
     const render::FrameUniforms& uniforms = composed.base;
