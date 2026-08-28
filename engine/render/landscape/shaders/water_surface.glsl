@@ -110,12 +110,15 @@ void main() {
     float simEdgeM = min(min(simRel.x, 1.0 - simRel.x),
                          min(simRel.y, 1.0 - simRel.y)) /
                      uWaterSimMapInfo.z;
-    float simFade = smoothstep(uWaterSimTuneInfo.x,
-                               uWaterSimTuneInfo.x + uWaterSimTuneInfo.y,
-                               simEdgeM);
     // GEOMETRIC cut, exactly complementary to the baked lakes' rim
     // reveal (they render edgeM <= fadeStart): a smoothstep-epsilon
-    // cut left a thin dry ring between the two on lakes.
+    // cut left a thin dry ring between the two on lakes. And the cut
+    // is ALL there is — no fade toward the refracted ground near the
+    // rim: the flow-keyed rim fade painted per-cell GROUND-colored
+    // lobes all around the window on lakes (bilinear velocity lobes
+    // crossing the riverness threshold, measured dev — the speckled
+    // chevron), and calm water fading to ground was the translucent
+    // green rim band before it.
     if (simEdgeM <= uWaterSimTuneInfo.x) {
         discard;
     }
@@ -502,15 +505,14 @@ void main() {
     // Preset emissive (lava): glows through the fog like any emitter.
     color += mtl.emissiveViscosity.rgb * mtl.deepEmissive.w;
 #ifdef WATER_SIM
-    // Trusted-rim handover, per type: FLOWING water crossfades toward
-    // the ground over the band (its sim course may not match the
-    // baked ribbon beyond). CALM water hands over by IDENTITY — same
-    // recipe, pinned at the same level as the baked sheet that starts
-    // at the discard edge — so it stays FULL to that edge: fading it
-    // toward the refracted ground painted a translucent green band
-    // around the window on every big lake (measured).
-    float rimMix = riverness > 0.5 ? simFade : 1.0;
-    color = mix(refracted, color, rimMix);
+    // Trusted-rim handover is the GEOMETRIC cut alone (top of file):
+    // the sim stays FULL to its edge. Every rim fade toward the
+    // refracted ground has been measured as an artifact — the calm
+    // fade was the translucent green rim band on big lakes, and the
+    // flow-keyed variant painted per-cell ground-colored lobes
+    // wherever bilinear velocity crossed the riverness threshold.
+    // Rivers dissolve at their thin edges via the thickness feather
+    // above; the baked ribbons overlap the outer half-band.
     if (int(uWaterSimTuneInfo.z + 0.5) == 2) {
         color = mix(color, vec3(1.0, 0.25, 0.2), 0.30);
     }
