@@ -555,8 +555,33 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                                 spec.x(static_cast<u32>(nc));
                             const f32 nz =
                                 spec.z(static_cast<u32>(nr));
-                            if (nx < lake.minX || nx > lake.maxX ||
-                                nz < lake.minZ || nz > lake.maxZ) {
+                            if (nx >= lake.minX && nx <= lake.maxX &&
+                                nz >= lake.minZ && nz <= lake.maxZ) {
+                                continue;
+                            }
+                            // Beyond THIS piece's bbox — but a big
+                            // lake is baked as PER-TILE pieces: the
+                            // ground past a tile seam is the same
+                            // lake, not the void. A sibling piece at
+                            // the same level covering the point keeps
+                            // the cell in the basin (without this,
+                            // every interior tile seam grew a 16 m
+                            // film band — "the floor rising as if
+                            // the lake ended", measured dev).
+                            bool sibling = false;
+                            for (const LakeSurface& other :
+                                 bodies.lakes) {
+                                if (&other == &lake) {
+                                    continue;
+                                }
+                                if (glm::abs(other.level - lake.level) <
+                                        1.0f &&
+                                    other.covers(nx, nz)) {
+                                    sibling = true;
+                                    break;
+                                }
+                            }
+                            if (!sibling) {
                                 pastCrest = true;
                                 break;
                             }

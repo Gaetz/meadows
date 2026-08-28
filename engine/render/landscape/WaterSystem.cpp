@@ -444,10 +444,26 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                                 static_cast<i32>(row) + dr)) {
                         return 0.0f;
                     }
-                    return terrain::height(params, px, pz) >=
-                                   lake.level - 2.0f
-                               ? grow
-                               : 0.0f;
+                    if (terrain::height(params, px, pz) >=
+                        lake.level - 2.0f) {
+                        return grow; // rising bank: depth test cuts it
+                    }
+                    // Deep ground past this piece's mask: a SIBLING
+                    // piece of the same lake (per-tile bake) covering
+                    // it means a tile seam, and the grown overlap is
+                    // the bridge that hides any raster misalignment
+                    // between the two masks. No sibling = the void
+                    // past a crest: flush.
+                    for (const LakeSurface& other : bodies->lakes) {
+                        if (&other == &lake) {
+                            continue;
+                        }
+                        if (glm::abs(other.level - lake.level) < 1.0f &&
+                            other.covers(px, pz)) {
+                            return grow;
+                        }
+                    }
+                    return 0.0f;
                 };
                 const f32 west = ext(-1, 0, tx0 - 0.5f * mt, cz);
                 const f32 east = ext(1, 0, tx0 + 1.5f * mt, cz);

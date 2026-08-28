@@ -526,6 +526,41 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
           doctest::Approx(1.5f).epsilon(0.01));
 }
 
+TEST_CASE("water sim: a tile seam between lake pieces never films") {
+    // A big lake is baked as PER-TILE pieces: past one piece's bbox
+    // lies the SAME lake, not the void. The crest guard must see the
+    // sibling piece — without it, every interior seam grew a 16 m
+    // band of 8 cm film ("the floor rising as if the lake ended",
+    // measured dev, the chevron screenshot).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto basin = [](f32, f32) { return 294.0f; };
+    WaterSimState state;
+    initWindow(state, spec, basin, -1000.0f);
+    render::WaterBodies bodies;
+    const auto piece = [](f32 minX, f32 maxX) {
+        render::LakeSurface p;
+        p.level = 300.0f;
+        p.minX = minX;
+        p.minZ = 0.0f;
+        p.maxX = maxX;
+        p.maxZ = 124.0f;
+        p.maskTexel = 4.0f;
+        p.maskWidth = static_cast<u32>((maxX - minX) / 4.0f);
+        p.maskHeight = 31;
+        p.mask.assign(static_cast<size_t>(p.maskWidth) * p.maskHeight,
+                      1);
+        return p;
+    };
+    bodies.lakes.push_back(piece(0.0f, 64.0f));
+    bodies.lakes.push_back(piece(64.0f, 124.0f));
+    pinLakes(state, bodies);
+    // Cell near the seam, inside piece A, deep basin: FULL column
+    // (not pinned: its pin-erosion probe crosses the seam).
+    const size_t nearSeam = 30u * spec.n + 31u; // (62, 60)
+    CHECK(state.terrain[nearSeam] + state.depth[nearSeam] ==
+          doctest::Approx(300.0f).epsilon(0.001));
+}
+
 TEST_CASE("water sim: a mask hole mid-lake never craters the seed") {
     // The 8 m mask can carry uncovered texels OVER deep water
     // (rasterization holes, concave bays, island rings). The crest
