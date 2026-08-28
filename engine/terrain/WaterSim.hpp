@@ -129,11 +129,15 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 
 // Shift the window by whole cells (positive = origin moves +x/+z).
 // Interior content moves bit-exactly (memmove); entered strips get
-// terrain from `height`, depth from an outward sweep bounded by the
-// surviving edge surface (lakes arrive full), and the adjacent edge's
-// pipe fluxes (through-flowing rivers arrive MOVING, not stalled).
-void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
-                  const HeightFn& height, f32 seaLevel);
+// terrain from `height` and start DRY (the sim moves water, it never
+// invents it) — UNLESS a breadcrumb covers the cell: `crumbs` are
+// previously SIMULATED window states (the session cache) and their
+// water is remembered, not invented — depth, pipes and wet memory are
+// copied over, so walking back to a waterfall finds it flowing.
+void scrollWindow(
+    WaterSimState& state, i32 dCol, i32 dRow, const HeightFn& height,
+    f32 seaLevel,
+    const vector<sptr<const WaterSimState>>* crumbs = nullptr);
 
 // Build the immutable snapshot AND its render mesh (dry threshold,
 // hysteresis, velocity derivation and geometry all live here, not in

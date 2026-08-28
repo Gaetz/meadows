@@ -252,6 +252,13 @@ private:
     // Back = most recent.
     static constexpr size_t kSimCacheCap = 4;
     vector<sptr<terrain::WaterSimState>> simCache;
+    // Breadcrumbs: while the window SCROLLS away (no teleport, so no
+    // eviction ever happens), a COPY of the state is dropped into the
+    // cache every half-window of travel — scrollWindow refills its
+    // entering strips from them, so walking back to a waterfall finds
+    // it flowing instead of re-forming from dry strips.
+    Vec2 simLastCrumb { 0.0f, 0.0f };
+    bool simHasLastCrumb { false };
     // Settle-gated reveal (SimConfig::settleGated): true while the
     // window simulates behind the baked display. Cleared when the
     // published volume is calm for kSimCalmTicks consecutive results

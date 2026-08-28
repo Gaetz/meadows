@@ -314,7 +314,8 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
 }
 
 void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
-                  const HeightFn& height, f32 seaLevel) {
+                  const HeightFn& height, f32 seaLevel,
+                  const vector<sptr<const WaterSimState>>* crumbs) {
     const i32 n = static_cast<i32>(state.spec.n);
     if ((dCol == 0 && dRow == 0) || std::abs(dCol) >= n ||
         std::abs(dRow) >= n) {
@@ -344,6 +345,47 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     const auto at = [&](i32 col, i32 row) {
         return static_cast<size_t>(row) * state.spec.n +
                static_cast<size_t>(col);
+    };
+    // Breadcrumb refill for an ENTERED cell: copy the remembered water
+    // (depth, pipes, wet memory — NOT terrain, which is freshly
+    // sampled, and NOT pins, which the caller re-rasterizes) from the
+    // newest crumb covering the cell's world position. Called AFTER
+    // the dry reset; leaves the cell dry when no crumb covers it.
+    const auto refillFromCrumbs = [&](size_t i, i32 col, i32 row) {
+        if (!crumbs) {
+            return;
+        }
+        const f32 texel = state.spec.texelSize;
+        const f32 x = state.spec.x(static_cast<u32>(col));
+        const f32 z = state.spec.z(static_cast<u32>(row));
+        for (auto it = crumbs->rbegin(); it != crumbs->rend(); ++it) {
+            const WaterSimState& crumb = **it;
+            if (std::abs(crumb.spec.texelSize - texel) > 1.0e-3f) {
+                continue;
+            }
+            const i32 cc = static_cast<i32>(
+                std::lround((x - crumb.spec.originX) / texel));
+            const i32 cr = static_cast<i32>(
+                std::lround((z - crumb.spec.originZ) / texel));
+            if (cc < 0 || cr < 0 ||
+                cc >= static_cast<i32>(crumb.spec.n) ||
+                cr >= static_cast<i32>(crumb.spec.n)) {
+                continue;
+            }
+            const size_t j =
+                static_cast<size_t>(cr) * crumb.spec.n +
+                static_cast<size_t>(cc);
+            state.depth[i] = crumb.depth[j];
+            state.fE[i] = crumb.fE[j];
+            state.fW[i] = crumb.fW[j];
+            state.fS[i] = crumb.fS[j];
+            state.fN[i] = crumb.fN[j];
+            if (j < crumb.wetMask.size() &&
+                i < state.wetMask.size()) {
+                state.wetMask[i] = crumb.wetMask[j];
+            }
+            return;
+        }
     };
 
     // Entered strips start DRY (terrain sampled, water/pipes/wet
@@ -402,6 +444,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
+                refillFromCrumbs(i, col, row);
             }
         }
     }
@@ -449,6 +492,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
+                refillFromCrumbs(i, col, row);
             }
         }
     }

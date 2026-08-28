@@ -313,6 +313,7 @@ void WaterSystem::destroy(rhi::Device& device) {
     simSrcCache.clear();
     simCache.clear();
     simSettling = false;
+    simHasLastCrumb = false;
     simInFlight = false;
     simGroundDirty = false;
     simValid = false;
@@ -859,6 +860,7 @@ void WaterSystem::updateSim(rhi::Device& device,
             simValid = false;
             ++simEpoch;
             simAccum = 0.0f;
+            simHasLastCrumb = false;
         }
         return;
     }
@@ -885,6 +887,7 @@ void WaterSystem::updateSim(rhi::Device& device,
         simValid = false;
         ++simEpoch;
         simAccum = 0.0f;
+        simHasLastCrumb = false;
     }
     if (simInFlight) {
         return;
@@ -909,6 +912,7 @@ void WaterSystem::updateSim(rhi::Device& device,
         simValid = false;
         ++simEpoch;
         simAccum = 0.0f;
+        simHasLastCrumb = false;
     }
     if (!simState) {
         // Wait for the ground truth: pre-rolling before the camera's
@@ -1050,6 +1054,29 @@ void WaterSystem::updateSim(rhi::Device& device,
     if (substeps == 0 && dCol == 0 && dRow == 0 && !simGroundDirty) {
         return;
     }
+    // Breadcrumb drop: every half-window of TRAVEL (scroll never
+    // evicts, so without this the cache only ever saw teleports), a
+    // copy of the current state joins the cache (~2.4 MB, sub-ms).
+    if (!simHasLastCrumb) {
+        simLastCrumb = { spec.originX, spec.originZ };
+        simHasLastCrumb = true;
+    } else if (std::abs(spec.originX - simLastCrumb.x) >
+                   simCfg.span * 0.5f ||
+               std::abs(spec.originZ - simLastCrumb.y) >
+                   simCfg.span * 0.5f) {
+        simCachePush(std::make_shared<WaterSimState>(*simState));
+        simLastCrumb = { spec.originX, spec.originZ };
+    }
+    // Crumbs for the entering strips (immutable while the job reads
+    // them: one job in flight, and a cache pop can only happen after
+    // it lands).
+    vector<sptr<const WaterSimState>> crumbs;
+    if (dCol != 0 || dRow != 0) {
+        crumbs.reserve(simCache.size());
+        for (const auto& c : simCache) {
+            crumbs.push_back(c);
+        }
+    }
     simInFlight = true;
     const bool refreshGround = simGroundDirty;
     simGroundDirty = false;
@@ -1058,6 +1085,7 @@ void WaterSystem::updateSim(rhi::Device& device,
                    bodiesRef = bodies, sources = simSrcCache,
                    gen = generation, epoch = simEpoch, dCol, dRow,
                    substeps, refreshGround,
+                   crumbs = std::move(crumbs),
                    jobsRef = jobs]() mutable {
         if (jobsRef->isStopping()) {
             return; // abandonable at shutdown
@@ -1074,7 +1102,8 @@ void WaterSystem::updateSim(rhi::Device& device,
         }
         if (dCol != 0 || dRow != 0) {
             terrain::scrollWindow(*state, dCol, dRow, heightFn,
-                                  simParams.seaLevel);
+                                  simParams.seaLevel,
+                                  crumbs.empty() ? nullptr : &crumbs);
             const auto& sp = state->spec;
             const f32 sMaxX =
                 sp.originX + static_cast<f32>(sp.n - 1) * sp.texelSize;

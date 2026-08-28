@@ -526,6 +526,44 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
           doctest::Approx(1.5f).epsilon(0.01));
 }
 
+TEST_CASE("water sim: scroll strips refill from breadcrumbs") {
+    // Walking away scrolls (never evicts): breadcrumb states dropped
+    // along the way let the ENTERING strips remember their water —
+    // copied, not invented (the dry-strips doctrine bans invention).
+    const GridSpec spec = makeSpec(65, 2.0f); // covers [0, 128]
+    const auto flat = [](f32, f32) { return 300.0f; };
+    WaterSimState state;
+    initWindow(state, spec, flat, -1000.0f);
+    auto crumb = std::make_shared<WaterSimState>();
+    initWindow(*crumb, makeSpec(65, 2.0f, 64.0f, 0.0f), flat,
+               -1000.0f); // covers [64, 192]
+    // wetMask is lazily sized at the first extraction — size it like
+    // a live (extracted-at-least-once) window would have it.
+    crumb->wetMask.assign(crumb->spec.cells(), 0);
+    for (u32 row = 0; row < crumb->spec.n; ++row) {
+        for (u32 col = 0; col < crumb->spec.n; ++col) {
+            const f32 x = crumb->spec.x(col);
+            if (x >= 140.0f && x <= 150.0f) {
+                const size_t j =
+                    static_cast<size_t>(row) * crumb->spec.n + col;
+                crumb->depth[j] = 2.0f;
+                crumb->fE[j] = 0.5f;
+                crumb->wetMask[j] = 1;
+            }
+        }
+    }
+    vector<sptr<const WaterSimState>> crumbs { crumb };
+    scrollWindow(state, 16, 0, flat, -1000.0f, &crumbs); // -> [32,160]
+    const auto idxAt = [&](f32 x) {
+        return 30u * state.spec.n +
+               static_cast<u32>((x - state.spec.originX) / 2.0f);
+    };
+    CHECK(state.depth[idxAt(144.0f)] == 2.0f); // remembered
+    CHECK(state.fE[idxAt(144.0f)] == 0.5f);    // pipes too (moving)
+    CHECK(state.wetMask[idxAt(144.0f)] == 1);
+    CHECK(state.depth[idxAt(156.0f)] == 0.0f); // crumb dry there: dry
+}
+
 TEST_CASE("water sim: chooseCachedWindow picks the best resumable state") {
     // The session LRU lever (docs/WATER-RENDER.md §4): a cached
     // window resumes via scrollWindow when it overlaps the target

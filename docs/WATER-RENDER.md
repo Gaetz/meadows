@@ -191,7 +191,14 @@ Intégration :
   doctrine save §2.4 intacte) : un téléport pousse l'état évincé, le
   retour le REPREND via `chooseCachedWindow` (helper pur doctesté,
   seuil 25 % de recouvrement) + scrollWindow — pas de re-solve.
-  Invalidé au sculpt, au changement de bodies, au reset. (b)
+  Invalidé au sculpt, au changement de bodies, au reset. Le cache
+  couvre aussi le RETOUR EN MARCHANT (le scroll n'évince jamais) via
+  les MIETTES DE PAIN : une copie de l'état rejoint le cache toutes
+  les demi-fenêtres de trajet, et `scrollWindow` remplit ses bandes
+  ENTRANTES depuis la miette la plus récente qui les couvre (eau
+  copiée — profondeur, tuyaux, mémoire de mouillage — jamais
+  inventée : la doctrine bandes-sèches interdit l'invention, pas le
+  souvenir). (b)
   Révélation « settle-gated » (SimConfig::settleGated, défaut ON,
   case au panneau Water) : après pre-roll ou reprise, la fenêtre
   simule DERRIÈRE l'affichage baké (simMapInfo publie w=0, maillage
