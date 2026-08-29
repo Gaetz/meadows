@@ -460,36 +460,57 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                     lake.minZ + static_cast<f32>(row) * mt;
                 const f32 cx = tx0 + 0.5f * mt;
                 const f32 cz = tz0 + 0.5f * mt;
-                const auto ext = [&](i32 dc, i32 dr, f32 px, f32 pz) {
+                const auto ext = [&](i32 dc, i32 dr, f32 ex, f32 ez) {
                     if (covered(static_cast<i32>(col) + dc,
                                 static_cast<i32>(row) + dr)) {
                         return 0.0f;
                     }
-                    if (terrain::height(params, px, pz) >=
-                        lake.level - 2.0f) {
-                        return grow; // rising bank: depth test cuts it
-                    }
-                    // Deep ground past this piece's mask: a SIBLING
-                    // piece of the same lake (per-tile bake) covering
-                    // it means a tile seam, and the grown overlap is
-                    // the bridge that hides any raster misalignment
-                    // between the two masks. No sibling = the void
-                    // past a crest: flush.
-                    for (const LakeSurface& other : bodies->lakes) {
-                        if (&other == &lake) {
+                    // Probe a FULL mask texel past the edge (three
+                    // samples), not just half a texel: at a mountain
+                    // COL the near sample lands on the rising saddle
+                    // while the ground plunges right behind — the
+                    // grown sheet jutted square over the drop
+                    // (measured dev). The extension is granted only
+                    // if the ground HOLDS the level along the whole
+                    // probe (a true bank, cut by the depth test); one
+                    // deep, sibling-uncovered point = the void past a
+                    // crest — flush, the water stops at its fall. A
+                    // deep point covered by a SIBLING piece of the
+                    // same lake is a tile seam: the grown overlap
+                    // bridges the raster misalignment as before.
+                    for (i32 s = 0; s < 3; ++s) {
+                        const f32 px =
+                            ex + static_cast<f32>(dc) *
+                                     (0.5f + static_cast<f32>(s)) * mt;
+                        const f32 pz =
+                            ez + static_cast<f32>(dr) *
+                                     (0.5f + static_cast<f32>(s)) * mt;
+                        if (terrain::height(params, px, pz) >=
+                            lake.level - 2.0f) {
                             continue;
                         }
-                        if (glm::abs(other.level - lake.level) < 1.0f &&
-                            other.covers(px, pz)) {
-                            return grow;
+                        bool seam = false;
+                        for (const LakeSurface& other : bodies->lakes) {
+                            if (&other == &lake) {
+                                continue;
+                            }
+                            if (glm::abs(other.level - lake.level) <
+                                    1.0f &&
+                                other.covers(px, pz)) {
+                                seam = true;
+                                break;
+                            }
+                        }
+                        if (!seam) {
+                            return 0.0f;
                         }
                     }
-                    return 0.0f;
+                    return grow;
                 };
-                const f32 west = ext(-1, 0, tx0 - 0.5f * mt, cz);
-                const f32 east = ext(1, 0, tx0 + 1.5f * mt, cz);
-                const f32 north = ext(0, -1, cx, tz0 - 0.5f * mt);
-                const f32 south = ext(0, 1, cx, tz0 + 1.5f * mt);
+                const f32 west = ext(-1, 0, tx0, cz);
+                const f32 east = ext(1, 0, tx0 + mt, cz);
+                const f32 north = ext(0, -1, cx, tz0);
+                const f32 south = ext(0, 1, cx, tz0 + mt);
                 quad(tx0 - west, tz0 - north, tx0 + mt + east,
                      tz0 + mt + south, lake.level,
                      materialOf(lake.materialIndex), foamGate);
