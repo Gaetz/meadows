@@ -143,6 +143,58 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
                                        // a flat sheet on a hillside
 }
 
+TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
+    // A river baked BEFORE the carves: flat old surface 297 over a
+    // bed the fine erosion later dropped to 288 past x=100, plus a
+    // reconciled lake at 294 crossing the course upstream. Nodes must
+    // ride the final bed (+ tier depth), snap to the lake level, and
+    // keep the monotone-downhill contract.
+    render::TerrainRegion region;
+    region.width = 100;
+    region.height = 100;
+    region.originX = 0.0f;
+    region.originZ = 0.0f;
+    region.texelSize = 2.0f;
+    region.heights.assign(static_cast<size_t>(region.width) *
+                              region.height,
+                          300.0f);
+    for (u32 r = 0; r < region.height; ++r) {
+        for (u32 c = 0; c < region.width; ++c) {
+            const f32 x = static_cast<f32>(c) * 2.0f;
+            const f32 z = static_cast<f32>(r) * 2.0f;
+            if (z >= 38.0f && z <= 46.0f) {
+                region.heights[static_cast<size_t>(r) * region.width +
+                               c] = x < 100.0f ? 296.0f : 288.0f;
+            }
+        }
+    }
+    vector<Lake> lakes(1);
+    lakes[0].level = 294.0f;
+    lakes[0].minX = 20.0f;
+    lakes[0].minZ = 30.0f;
+    lakes[0].maxX = 40.0f;
+    lakes[0].maxZ = 50.0f; // maskless: the bbox is the footprint
+    vector<River> rivers(1);
+    rivers[0].tier = 1;
+    for (i32 i = 0; i < 10; ++i) {
+        RiverPoint pt;
+        pt.x = 10.0f + static_cast<f32>(i) * 20.0f;
+        pt.z = 42.0f;
+        pt.surface = 297.0f;  // pre-carve, flat — hangs over the drop
+        pt.halfWidth = 5.0f;  // bed = clamp(0.18 * 10, 0.6, 4) = 1.8
+        rivers[0].points.push_back(pt);
+    }
+    FinalizeParams fin;
+    reconcileRiversWithTerrain(rivers, lakes, region, fin);
+    const auto& pts = rivers[0].points;
+    CHECK(pts[1].surface == doctest::Approx(294.0f)); // x=30: the lake
+    CHECK(pts[5].surface ==
+          doctest::Approx(289.8f).epsilon(0.001)); // x=110: bed+1.8
+    for (size_t i = 1; i < pts.size(); ++i) {
+        CHECK(pts[i].surface <= pts[i - 1].surface + 1.0e-4f);
+    }
+}
+
 TEST_CASE("tile bakes are deterministic") {
     const TileBakeParams params = testParams();
     const TileBakeResult a = bakeTile(params, 3, -2);

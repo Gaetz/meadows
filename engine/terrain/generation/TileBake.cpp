@@ -922,6 +922,10 @@ TileBakeResult bakeTileStage2(
             emit(std::move(run));
         }
     }
+    // Rivers carry pre-finalize surfaces — recolle them to the final
+    // ground and the reconciled lakes (see the header note).
+    reconcileRiversWithTerrain(out.rivers, out.lakes, out.region,
+                               params.finalize);
     return out;
 }
 
@@ -950,32 +954,40 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
                           cancel);
 }
 
+namespace {
+
+// Bilinear FINAL ground from the published region; outside its rect
+// = +inf wall — both reconcile passes stay conservative there.
+f32 finalGroundAt(const render::TerrainRegion& region, f32 x, f32 z) {
+    const f32 fx = (x - region.originX) / region.texelSize;
+    const f32 fz = (z - region.originZ) / region.texelSize;
+    if (fx < 0.0f || fz < 0.0f ||
+        fx > static_cast<f32>(region.width) - 1.001f ||
+        fz > static_cast<f32>(region.height) - 1.001f) {
+        return 1.0e9f;
+    }
+    const u32 c = static_cast<u32>(fx);
+    const u32 r = static_cast<u32>(fz);
+    const f32 tx = fx - static_cast<f32>(c);
+    const f32 tz = fz - static_cast<f32>(r);
+    const auto at = [&](u32 cc, u32 rr) {
+        return region.heights[static_cast<size_t>(rr) * region.width +
+                              cc];
+    };
+    return glm::mix(glm::mix(at(c, r), at(c + 1, r), tx),
+                    glm::mix(at(c, r + 1), at(c + 1, r + 1), tx), tz);
+}
+
+} // namespace
+
 void reconcileLakesWithTerrain(vector<Lake>& lakes,
                                const render::TerrainRegion& region) {
     if (region.heights.empty() || region.width < 2 ||
         region.height < 2 || region.texelSize <= 0.0f) {
         return;
     }
-    const auto groundAt = [&](f32 x, f32 z) -> f32 {
-        const f32 fx = (x - region.originX) / region.texelSize;
-        const f32 fz = (z - region.originZ) / region.texelSize;
-        if (fx < 0.0f || fz < 0.0f ||
-            fx > static_cast<f32>(region.width) - 1.001f ||
-            fz > static_cast<f32>(region.height) - 1.001f) {
-            return 1.0e9f; // outside the published rect: a wall
-        }
-        const u32 c = static_cast<u32>(fx);
-        const u32 r = static_cast<u32>(fz);
-        const f32 tx = fx - static_cast<f32>(c);
-        const f32 tz = fz - static_cast<f32>(r);
-        const auto at = [&](u32 cc, u32 rr) {
-            return region.heights[static_cast<size_t>(rr) *
-                                      region.width +
-                                  cc];
-        };
-        return glm::mix(glm::mix(at(c, r), at(c + 1, r), tx),
-                        glm::mix(at(c, r + 1), at(c + 1, r + 1), tx),
-                        tz);
+    const auto groundAt = [&](f32 x, f32 z) {
+        return finalGroundAt(region, x, z);
     };
     for (size_t li = 0; li < lakes.size();) {
         Lake& lake = lakes[li];
@@ -1173,6 +1185,68 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
         lake.mask = std::move(mask);
         lake.cells = kept;
         ++li;
+    }
+}
+
+void reconcileRiversWithTerrain(vector<River>& rivers,
+                                const vector<Lake>& lakes,
+                                const render::TerrainRegion& region,
+                                const FinalizeParams& finalize) {
+    if (region.heights.empty() || region.width < 2 ||
+        region.height < 2 || region.texelSize <= 0.0f) {
+        return;
+    }
+    // Mirror of LakeSurface::covers on the bake-side Lake.
+    const auto inLake = [](const Lake& lake, f32 x, f32 z) {
+        if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
+            z > lake.maxZ) {
+            return false;
+        }
+        if (lake.mask.empty() || lake.maskWidth == 0) {
+            return true;
+        }
+        const u32 mx = glm::min(
+            static_cast<u32>(glm::max(
+                (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f)),
+            lake.maskWidth - 1);
+        const u32 mz = glm::min(
+            static_cast<u32>(glm::max(
+                (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f)),
+            lake.maskHeight - 1);
+        return lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
+                         mx] != 0;
+    };
+    for (River& river : rivers) {
+        const f32 tierCap =
+            river.tier == 0
+                ? finalize.streamDepthMax
+                : (river.tier == 1 ? finalize.riverDepthMax
+                                   : finalize.fleuveDepthMax);
+        f32 prev = 1.0e9f;
+        for (RiverPoint& pt : river.points) {
+            f32 s = pt.surface;
+            const f32 ground = finalGroundAt(region, pt.x, pt.z);
+            if (ground < 1.0e8f) {
+                // The S5d bed formula: the surface may ride at most
+                // one carved-bed depth over the final ground.
+                const f32 bed = glm::clamp(
+                    finalize.riverDepthCoef * 2.0f * pt.halfWidth,
+                    finalize.riverDepthMin, tierCap);
+                s = glm::min(s, ground + bed);
+            }
+            for (const Lake& lake : lakes) {
+                if (inLake(lake, pt.x, pt.z)) {
+                    // Crossing a reconciled lake: the water surface
+                    // there IS the lake's (possibly lowered) level.
+                    s = lake.level;
+                    break;
+                }
+            }
+            // The monotone-downhill contract survives every clamp.
+            s = glm::min(s, prev);
+            prev = s;
+            pt.surface = s;
+        }
     }
 }
 

@@ -194,6 +194,19 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
 void reconcileLakesWithTerrain(vector<Lake>& lakes,
                                const render::TerrainRegion& region);
 
+// Same debt for the RIVERS: their node surfaces come from the
+// pre-finalize hydrology, and the carves (plus the lake reconcile
+// above) can leave ribbons hanging over deepened beds or lowered
+// lakes. Per node, downstream: clamp the surface to the FINAL ground
+// plus the tier's carved bed depth (the S5d formula), snap nodes
+// inside a reconciled lake to its level, then re-impose the monotone
+// downhill contract (running min). Ground outside the published rect
+// leaves the node untouched (conservative).
+void reconcileRiversWithTerrain(vector<River>& rivers,
+                                const vector<Lake>& lakes,
+                                const render::TerrainRegion& region,
+                                const FinalizeParams& finalize);
+
 // Cache identity, split by stage so a hydrology/finalize change does not
 // invalidate the expensive stage-1 terrain caches:
 //   kStage1Version   — bump when stage-1 output changes (S1 macro, S2
@@ -202,7 +215,7 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 61;
+constexpr u32 kTileBakeVersion = 62;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its
