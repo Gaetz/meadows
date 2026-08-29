@@ -265,6 +265,15 @@ private:
     // it flowing instead of re-forming from dry strips.
     Vec2 simLastCrumb { 0.0f, 0.0f };
     bool simHasLastCrumb { false };
+    // Purely DYNAMIC water (a spread pool, a flood film) exists in no
+    // baked body: it only survives eviction through the cache and the
+    // frozen meshes. Crumb/freeze drops tied to TRAVEL alone missed
+    // any water formed since the last drop (it vanished at the margin
+    // ring and was forgotten on return, measured dev) — so the
+    // CURRENT footprint's crumb + frozen mesh are also refreshed on a
+    // timer (the footprint dedup replaces in place; the trail stays).
+    f32 simFreshTimer { 0.0f };
+    static constexpr f32 kSimFreshSeconds = 4.0f;
     // Settle-gated reveal (SimConfig::settleGated): true while the
     // window simulates behind the baked display. Cleared when the
     // published volume is calm for kSimCalmTicks consecutive results

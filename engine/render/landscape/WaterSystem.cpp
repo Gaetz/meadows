@@ -1161,6 +1161,19 @@ void WaterSystem::updateSim(rhi::Device& device,
             simFreeze(device, *simSnap); // trail stays visible behind
         }
         simLastCrumb = { spec.originX, spec.originZ };
+        simFreshTimer = 0.0f;
+    } else {
+        // Timed refresh of the CURRENT footprint (see the member
+        // comment: dynamic-only water formed since the last drop must
+        // reach the crumb and the frozen mesh before it is evicted).
+        simFreshTimer += dt;
+        if (simFreshTimer >= kSimFreshSeconds) {
+            simFreshTimer = 0.0f;
+            simCachePush(std::make_shared<WaterSimState>(*simState));
+            if (simSnap) {
+                simFreeze(device, *simSnap);
+            }
+        }
     }
     // Crumbs for the entering strips (immutable while the job reads
     // them: one job in flight, and a cache pop can only happen after
