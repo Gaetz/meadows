@@ -816,23 +816,29 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
     }
 }
 
-void WaterSystem::simCachePush(sptr<terrain::WaterSimState> state) {
+void WaterSystem::simCachePush(sptr<terrain::WaterSimState> state,
+                               f32 replaceRadius, bool pushIfNoMatch) {
     if (!state || !state->valid()) {
         return;
     }
-    // One entry per window footprint: an overlapping older entry is
-    // superseded (same zone, staler water).
+    // One entry per window footprint: an entry within replaceRadius
+    // is superseded (same zone, staler water).
+    bool matched = false;
     for (size_t i = 0; i < simCache.size(); ++i) {
         const auto& spec = simCache[i]->spec;
         if (spec.n == state->spec.n &&
             std::abs(spec.texelSize - state->spec.texelSize) < 1.0e-3f &&
             std::abs(spec.originX - state->spec.originX) <
-                state->spec.texelSize * static_cast<f32>(spec.n) * 0.5f &&
+                replaceRadius &&
             std::abs(spec.originZ - state->spec.originZ) <
-                state->spec.texelSize * static_cast<f32>(spec.n) * 0.5f) {
+                replaceRadius) {
             simCache.erase(simCache.begin() + static_cast<i32>(i));
+            matched = true;
             break;
         }
+    }
+    if (!matched && !pushIfNoMatch) {
+        return; // refresh-only call: never grow, never evict the trail
     }
     if (simCache.size() >= kSimCacheCap) {
         simCache.erase(simCache.begin()); // front = least recent
@@ -841,25 +847,31 @@ void WaterSystem::simCachePush(sptr<terrain::WaterSimState> state) {
 }
 
 void WaterSystem::simFreeze(rhi::Device& device,
-                            const terrain::WaterSimSnapshot& snap) {
+                            const terrain::WaterSimSnapshot& snap,
+                            f32 replaceRadius, bool pushIfNoMatch) {
     if (snap.meshIndices.empty() || snap.spec.n < 2) {
         return;
     }
     const f32 span =
         static_cast<f32>(snap.spec.n - 1) * snap.spec.texelSize;
-    // One entry per footprint: an overlapping older mesh is superseded
-    // (same zone, staler water) — mirrors simCachePush.
+    // One entry per footprint: an entry within replaceRadius is
+    // superseded (same zone, staler water) — mirrors simCachePush.
+    bool matched = false;
     for (size_t i = 0; i < simFrozen.size(); ++i) {
         if (std::abs(simFrozen[i].span - span) < 1.0e-3f &&
             std::abs(simFrozen[i].originX - snap.spec.originX) <
-                span * 0.5f &&
+                replaceRadius &&
             std::abs(simFrozen[i].originZ - snap.spec.originZ) <
-                span * 0.5f) {
+                replaceRadius) {
             device.destroyBuffer(simFrozen[i].vertexBuffer);
             device.destroyBuffer(simFrozen[i].indexBuffer);
             simFrozen.erase(simFrozen.begin() + static_cast<i32>(i));
+            matched = true;
             break;
         }
+    }
+    if (!matched && !pushIfNoMatch) {
+        return; // refresh-only call: never grow, never evict the trail
     }
     if (simFrozen.size() >= kSimCacheCap) {
         device.destroyBuffer(simFrozen.front().vertexBuffer);
@@ -925,9 +937,10 @@ void WaterSystem::updateSim(rhi::Device& device,
             // return trip instead of dropping it, and keep its mesh
             // frozen on screen.
             if (res.snap) {
-                simFreeze(device, *res.snap);
+                simFreeze(device, *res.snap, simCfg.span * 0.5f, true);
             }
-            simCachePush(std::move(res.state));
+            simCachePush(std::move(res.state), simCfg.span * 0.5f,
+                         true);
             continue;
         }
         simState = res.state;
@@ -996,9 +1009,9 @@ void WaterSystem::updateSim(rhi::Device& device,
         // Teleport: keep the settled window for the return trip, and
         // its mesh frozen on screen.
         if (simSnap) {
-            simFreeze(device, *simSnap);
+            simFreeze(device, *simSnap, simCfg.span * 0.5f, true);
         }
-        simCachePush(std::move(simState));
+        simCachePush(std::move(simState), simCfg.span * 0.5f, true);
         simState.reset();
         simSnap.reset();
         simValid = false;
@@ -1189,25 +1202,32 @@ void WaterSystem::updateSim(rhi::Device& device,
                    simCfg.span * 0.5f ||
                std::abs(spec.originZ - simLastCrumb.y) >
                    simCfg.span * 0.5f) {
-        simCachePush(std::make_shared<WaterSimState>(*simState));
+        simCachePush(std::make_shared<WaterSimState>(*simState),
+                     simCfg.span * 0.5f, true);
         if (simSnap) {
-            simFreeze(device, *simSnap); // trail stays visible behind
+            // Trail stays visible behind.
+            simFreeze(device, *simSnap, simCfg.span * 0.5f, true);
         }
         simLastCrumb = { spec.originX, spec.originZ };
         simFreshTimer = 0.0f;
     } else {
         // Timed refresh of the CURRENT footprint (see the member
         // comment: dynamic-only water formed since the last drop must
-        // reach the crumb and the frozen mesh before it is evicted).
-        // Faster sim = faster-changing water: the footprint refresh
-        // keeps pace so the crumbs/frozen never lag more than ~4
-        // SIMULATED seconds.
+        // reach the crumb and the frozen mesh before it is evicted;
+        // faster sim = faster cadence). REPLACE-ONLY, tight radius:
+        // with the travel-wide radius it superseded the previous
+        // trail entry every few seconds of walking — ONE entry slid
+        // along with the player and the waterfall behind vanished
+        // past ~half a window (measured dev). While moving, the
+        // jalons own the trail (a jalon's window still covers the
+        // 256 m behind it, so water formed on the move is captured).
         simFreshTimer += dt * glm::max(timeScale, 1.0f);
         if (simFreshTimer >= kSimFreshSeconds) {
             simFreshTimer = 0.0f;
-            simCachePush(std::make_shared<WaterSimState>(*simState));
+            simCachePush(std::make_shared<WaterSimState>(*simState),
+                         kSimFreshRadius, false);
             if (simSnap) {
-                simFreeze(device, *simSnap);
+                simFreeze(device, *simSnap, kSimFreshRadius, false);
             }
         }
     }

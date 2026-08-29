@@ -279,6 +279,8 @@ private:
     // timer (the footprint dedup replaces in place; the trail stays).
     f32 simFreshTimer { 0.0f };
     static constexpr f32 kSimFreshSeconds = 4.0f;
+    // Replace-only radius of the timed refresh (see simCachePush).
+    static constexpr f32 kSimFreshRadius = 64.0f;
     // Settle-gated reveal (SimConfig::settleGated): true while the
     // window simulates behind the baked display. Cleared when the
     // published volume is calm for kSimCalmTicks consecutive results
@@ -291,7 +293,16 @@ private:
     static constexpr f32 kSimCalmEps = 2.0e-3f;
     static constexpr u32 kSimCalmTicks = 8;
     static constexpr f32 kSimSettleCap = 3.0f; // s, never blocks longer
-    void simCachePush(sptr<terrain::WaterSimState> state);
+    // `replaceRadius` = how close an existing entry's origin must be
+    // to be SUPERSEDED; `pushIfNoMatch` = false makes it a pure
+    // in-place refresh (never grows the cache, never evicts the
+    // trail). The TIMED refresh must use tight/replace-only: with the
+    // travel-wide radius it replaced the previous entry every few
+    // seconds of walking — ONE entry slid along with the player
+    // instead of a trail, and the waterfall behind vanished past
+    // ~half a window (measured dev).
+    void simCachePush(sptr<terrain::WaterSimState> state,
+                      f32 replaceRadius, bool pushIfNoMatch);
     // Frozen windows: at every crumb/teleport push, the current
     // snapshot MESH is also kept as a static draw — the sim stays
     // visible (frozen) beyond the live rect along the travel trail.
@@ -309,7 +320,8 @@ private:
     vector<FrozenWindow> simFrozen; // oldest -> newest
     bool simFrozenClearPending { false };
     void simFreeze(rhi::Device& device,
-                   const terrain::WaterSimSnapshot& snap);
+                   const terrain::WaterSimSnapshot& snap,
+                   f32 replaceRadius, bool pushIfNoMatch);
     void simFrozenClearNow(rhi::Device& device);
     rhi::PipelineHandle simFrozenPipeline {};
     rhi::TextureHandle simMapA {};
