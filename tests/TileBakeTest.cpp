@@ -40,11 +40,11 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
     // overhanging finger dropped; a basin breached below ~0.5 m of
     // depth vanishes entirely.
     render::TerrainRegion region;
-    region.width = 130;
-    region.height = 130;
+    region.width = 180;
+    region.height = 180;
     region.originX = 0.0f;
     region.originZ = 0.0f;
-    region.texelSize = 2.0f; // covers [0, 258]
+    region.texelSize = 2.0f; // covers [0, 358]
     region.heights.assign(static_cast<size_t>(region.width) *
                               region.height,
                           302.0f);
@@ -62,9 +62,13 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
         }
     };
     paint(40.0f, 40.0f, 120.0f, 120.0f, 290.0f);  // basin A
-    paint(120.0f, 76.0f, 258.0f, 84.0f, 293.5f);  // carved breach A
+    paint(120.0f, 76.0f, 140.0f, 84.0f, 293.5f);  // carved saddle A
+    paint(140.0f, 76.0f, 220.0f, 84.0f, 280.0f);  // descending gorge A
+    paint(220.0f, 40.0f, 358.0f, 140.0f, 275.0f); // open lowland: the
+                                                  // gorge truly ESCAPES
     paint(160.0f, 160.0f, 200.0f, 200.0f, 290.0f); // basin B
-    paint(200.0f, 176.0f, 258.0f, 184.0f, 290.3f); // deep breach B
+    paint(200.0f, 176.0f, 358.0f, 184.0f, 290.3f); // deep breach B, to
+                                                   // the open border
 
     vector<Lake> lakes(2);
     const auto maskFromGround = [&](Lake& lake, f32 below) {
@@ -99,10 +103,14 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
     lakes[0].level = 300.0f; // pre-carve flood: 10 m too high
     lakes[0].minX = 32.0f;
     lakes[0].minZ = 32.0f;
-    lakes[0].maxX = 136.0f;
+    lakes[0].maxX = 160.0f; // the phantom finger reaches the gorge
     lakes[0].maxZ = 136.0f;
     lakes[0].maskTexel = 8.0f;
-    maskFromGround(lakes[0], 300.0f); // basin + the breach finger
+    // basin + saddle finger + GORGE cells (the lake-5 scenario: the
+    // deepest MASKED cell is down the gorge, and a depth-picked
+    // reference dragged the level to the gorge floor while the naive
+    // re-cut painted a sheet along the descending canyon).
+    maskFromGround(lakes[0], 300.0f);
     lakes[1].level = 295.0f;
     lakes[1].minX = 152.0f;
     lakes[1].minZ = 152.0f;
@@ -130,7 +138,9 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
                              c];
     };
     CHECK(maskAt(80.0f, 80.0f) == 1);  // mid-basin
-    CHECK(maskAt(128.0f, 80.0f) == 0); // the breach finger
+    CHECK(maskAt(128.0f, 80.0f) == 0); // the saddle finger
+    CHECK(maskAt(150.0f, 80.0f) == 0); // the descending gorge: NEVER
+                                       // a flat sheet on a hillside
 }
 
 TEST_CASE("tile bakes are deterministic") {

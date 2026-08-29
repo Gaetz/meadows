@@ -979,38 +979,40 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
     };
     for (size_t li = 0; li < lakes.size();) {
         Lake& lake = lakes[li];
-        const i32 w = static_cast<i32>(lake.maskWidth);
-        const i32 h = static_cast<i32>(lake.maskHeight);
-        if (lake.mask.empty() || w <= 0 || h <= 0) {
+        const i32 mw = static_cast<i32>(lake.maskWidth);
+        const i32 mh = static_cast<i32>(lake.maskHeight);
+        if (lake.mask.empty() || mw <= 0 || mh <= 0) {
             ++li;
             continue; // maskless authored pond: not this pass's call
         }
         const f32 mt = lake.maskTexel;
+        // Flood window = the mask bbox PADDED well past it: the bbox
+        // bounds the WATERLINE, so the enclosing rim lies just
+        // outside it — an unpadded flood saw escapes all along the
+        // shoreline and drained the whole lake (bench: 1 of 8954
+        // cells kept). Beyond the published rect groundAt returns a
+        // wall (conservative).
+        const i32 pad = 16;
+        const i32 w = mw + 2 * pad;
+        const i32 h = mh + 2 * pad;
+        const f32 wx0 = lake.minX - static_cast<f32>(pad) * mt;
+        const f32 wz0 = lake.minZ - static_cast<f32>(pad) * mt;
         const size_t cells = static_cast<size_t>(w) * h;
         vector<f32> ground(cells);
-        size_t deepest = 0;
-        f32 deepestGround = 1.0e9f;
         for (i32 r = 0; r < h; ++r) {
             for (i32 c = 0; c < w; ++c) {
-                const size_t i = static_cast<size_t>(r) * w + c;
-                ground[i] =
-                    groundAt(lake.minX + static_cast<f32>(c) * mt,
-                             lake.minZ + static_cast<f32>(r) * mt);
-                if (lake.mask[i] != 0 && ground[i] < deepestGround) {
-                    deepestGround = ground[i];
-                    deepest = i;
-                }
+                ground[static_cast<size_t>(r) * w + c] =
+                    groundAt(wx0 + static_cast<f32>(c) * mt,
+                             wz0 + static_cast<f32>(r) * mt);
             }
         }
-        if (deepestGround > 1.0e8f) {
-            // Nothing of it lies in the published rect: leave it to
-            // the tile that can actually see it.
-            ++li;
-            continue;
-        }
+        const auto pIdx = [&](i32 mc, i32 mr) {
+            return static_cast<size_t>(mr + pad) * w +
+                   static_cast<size_t>(mc + pad);
+        };
         // Priority flood from the window border: fill[i] = the level
-        // water AT i must reach to escape the window — the true spill
-        // on the final ground.
+        // water AT i must reach to escape — per-cell ENCLOSURE on the
+        // final ground.
         vector<f32> fill(cells, 1.0e9f);
         vector<u8> seen(cells, 0);
         using Node = std::pair<f32, u32>;
@@ -1048,8 +1050,8 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
                 if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
                     continue;
                 }
-                const size_t j =
-                    static_cast<size_t>(nr) * w + static_cast<size_t>(nc);
+                const size_t j = static_cast<size_t>(nr) * w +
+                                 static_cast<size_t>(nc);
                 const f32 nf = glm::max(ground[j], fill[i]);
                 if (!seen[j] || nf < fill[j] - 1.0e-6f) {
                     fill[j] = nf;
@@ -1058,41 +1060,117 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
                 }
             }
         }
-        const f32 level = glm::min(lake.level, fill[deepest]);
-        if (level - deepestGround < 0.5f) {
-            // The carve breached the basin below a real lake: drop it.
+        // New level = the candidate (a claimed cell's fill, floored
+        // to 0.25 m, capped at the old level) retaining the LARGEST
+        // WATER VOLUME. The max-fill cell kept a one-cell perched
+        // pocket and dropped the lake; the deepest claimed cell was a
+        // phantom-finger cell down the gorge and dragged the level to
+        // the canyon floor (both bench-measured on the real lake 5).
+        vector<f32> cands;
+        for (i32 r = 0; r < mh; ++r) {
+            for (i32 c = 0; c < mw; ++c) {
+                if (lake.mask[static_cast<size_t>(r) * mw + c] == 0) {
+                    continue;
+                }
+                // Clamped to the OLD level: a basin still fully
+                // enclosed above it keeps its baked level (fills
+                // above the claim are not an excuse to drop it).
+                const f32 fv =
+                    glm::min(fill[pIdx(c, r)], lake.level);
+                if (fv < 1.0e8f) {
+                    cands.push_back(std::floor(fv * 4.0f) * 0.25f);
+                }
+            }
+        }
+        std::sort(cands.begin(), cands.end());
+        cands.erase(std::unique(cands.begin(), cands.end()),
+                    cands.end());
+        f32 level = -1.0e9f;
+        f64 bestVol = 0.0;
+        for (const f32 cand : cands) {
+            f64 vol = 0.0;
+            for (i32 r = 0; r < mh; ++r) {
+                for (i32 c = 0; c < mw; ++c) {
+                    if (lake.mask[static_cast<size_t>(r) * mw + c] ==
+                        0) {
+                        continue;
+                    }
+                    const size_t i = pIdx(c, r);
+                    if (fill[i] >= cand - 0.01f && ground[i] < cand) {
+                        vol += static_cast<f64>(cand - ground[i]);
+                    }
+                }
+            }
+            if (vol > bestVol) {
+                bestVol = vol;
+                level = cand;
+            }
+        }
+        level = glm::min(level, lake.level);
+        // Deepest ENCLOSED claimed cell = the re-cut's BFS root; a
+        // basin breached below ~0.5 m of real depth is dropped.
+        size_t root = 0;
+        f32 rootGround = 1.0e9f;
+        for (i32 r = 0; r < mh; ++r) {
+            for (i32 c = 0; c < mw; ++c) {
+                if (lake.mask[static_cast<size_t>(r) * mw + c] == 0) {
+                    continue;
+                }
+                const size_t i = pIdx(c, r);
+                if (fill[i] >= level - 0.01f && ground[i] < rootGround) {
+                    rootGround = ground[i];
+                    root = i;
+                }
+            }
+        }
+        if (bestVol <= 0.0 || rootGround > 1.0e8f ||
+            level - rootGround < 0.5f) {
             lakes.erase(lakes.begin() + static_cast<i32>(li));
             continue;
         }
-        // Re-cut the mask: the cells actually enclosed under the
-        // (possibly lowered) level, connected to the deepest cell.
-        vector<u8> mask(cells, 0);
+        // Re-cut: a cell belongs to the lake iff it is UNDER the
+        // level AND enclosed at it (fill >= level — mere "connected
+        // under the level" painted a flat sheet down the descending
+        // gorge: baked water on the hillside, measured dev),
+        // connected to the root, and inside the stored bbox.
+        vector<u8> mask(static_cast<size_t>(mw) * mh, 0);
         vector<u32> stack;
-        stack.push_back(static_cast<u32>(deepest));
-        mask[deepest] = 1;
-        u32 kept = 1;
+        stack.push_back(static_cast<u32>(root));
+        vector<u8> visited(cells, 0);
+        visited[root] = 1;
+        u32 kept = 0;
         while (!stack.empty()) {
             const size_t i = stack.back();
             stack.pop_back();
             const i32 c = static_cast<i32>(i % static_cast<size_t>(w));
             const i32 r = static_cast<i32>(i / static_cast<size_t>(w));
+            const i32 mc = c - pad;
+            const i32 mr = r - pad;
+            if (mc >= 0 && mr >= 0 && mc < mw && mr < mh) {
+                mask[static_cast<size_t>(mr) * mw + mc] = 1;
+                ++kept;
+            }
             for (const auto& d : dirs) {
                 const i32 nc = c + d[0];
                 const i32 nr = r + d[1];
                 if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
                     continue;
                 }
-                const size_t j =
-                    static_cast<size_t>(nr) * w + static_cast<size_t>(nc);
-                if (mask[j] == 0 && ground[j] < level - 0.02f) {
-                    mask[j] = 1;
-                    ++kept;
+                const size_t j = static_cast<size_t>(nr) * w +
+                                 static_cast<size_t>(nc);
+                if (visited[j] == 0 && ground[j] < level - 0.02f &&
+                    fill[j] >= level - 0.01f) {
+                    visited[j] = 1;
                     stack.push_back(static_cast<u32>(j));
                 }
             }
         }
+        if (kept == 0) {
+            lakes.erase(lakes.begin() + static_cast<i32>(li));
+            continue;
+        }
         lake.level = level;
-        lake.mask.assign(mask.begin(), mask.end());
+        lake.mask = std::move(mask);
         lake.cells = kept;
         ++li;
     }
