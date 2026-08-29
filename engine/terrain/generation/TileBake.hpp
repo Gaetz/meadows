@@ -207,6 +207,14 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
                                 const render::TerrainRegion& region,
                                 const FinalizeParams& finalize);
 
+// Does any lake's footprint still cover the neighbourhood of (x, z)
+// (a dilated probe, ~2 mask texels)? Used to drop lake-fed courses
+// whose feeding lake RECEDED after reconciliation: the course was
+// traced when the lake overflowed its old spill — keeping it paints
+// a water slope down a col nothing feeds any more (measured dev at
+// the spawn col).
+bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
+
 // Cache identity, split by stage so a hydrology/finalize change does not
 // invalidate the expensive stage-1 terrain caches:
 //   kStage1Version   — bump when stage-1 output changes (S1 macro, S2
@@ -215,7 +223,7 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 62;
+constexpr u32 kTileBakeVersion = 63;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

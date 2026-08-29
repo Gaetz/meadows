@@ -881,6 +881,12 @@ TileBakeResult bakeTileStage2(
     // The flood predates the finalize carves — re-validate every
     // published lake against the FINAL ground (see the header note).
     reconcileLakesWithTerrain(out.lakes, out.region);
+    // ALL window lakes reconciled too (not just the owned ones): the
+    // river source check below must see a NEIGHBOUR-owned lake in its
+    // post-reconcile state. Deterministic per tile; the region rect
+    // walls keep it conservative.
+    vector<Lake> allLakes = hydro.lakes;
+    reconcileLakesWithTerrain(allLakes, out.region);
     const f32 keepMaxX = keepMinX + keepSpan;
     const f32 keepMaxZ = keepMinZ + keepSpan;
     const auto inKeep = [&](const RiverPoint& pt) {
@@ -888,6 +894,18 @@ TileBakeResult bakeTileStage2(
                pt.z <= keepMaxZ;
     };
     for (const River& river : hydro.rivers) {
+        // A lake-fed course whose feeding lake RECEDED (reconcile)
+        // has no source any more: the whole course is dropped — the
+        // hydrology traced it when the lake still overflowed its old
+        // spill, and keeping it painted a water slope down a col
+        // nothing feeds (measured dev at the spawn col). The sim
+        // still creates REAL outflow dynamically if the reconciled
+        // lake overflows elsewhere.
+        if (river.lakeFed != 0 && !river.points.empty() &&
+            !lakeReachesPoint(allLakes, river.points.front().x,
+                              river.points.front().z)) {
+            continue;
+        }
         // Each kept run inherits the course's tier and the fords its
         // points can reach (the ford grid is world-anchored, so both
         // sides of a border keep the same spots).
@@ -1186,6 +1204,46 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
         lake.cells = kept;
         ++li;
     }
+}
+
+bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
+    for (const Lake& lake : lakes) {
+        if (lake.mask.empty() || lake.maskWidth == 0 ||
+            lake.cells == 0) {
+            continue;
+        }
+        const f32 reach = 2.0f * lake.maskTexel;
+        if (x < lake.minX - reach || x > lake.maxX + reach ||
+            z < lake.minZ - reach || z > lake.maxZ + reach) {
+            continue;
+        }
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const f32 px = x + static_cast<f32>(dx) * reach;
+                const f32 pz = z + static_cast<f32>(dz) * reach;
+                if (px < lake.minX || px > lake.maxX ||
+                    pz < lake.minZ || pz > lake.maxZ) {
+                    continue;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (px - lake.minX) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (pz - lake.minZ) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskHeight - 1);
+                if (lake.mask[static_cast<size_t>(mz) *
+                                  lake.maskWidth +
+                              mx] != 0) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 void reconcileRiversWithTerrain(vector<River>& rivers,

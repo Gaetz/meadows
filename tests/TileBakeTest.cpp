@@ -143,6 +143,37 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
                                        // a flat sheet on a hillside
 }
 
+TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
+    // Un lac dont le reconcile a retiré la moitié nord : une tête de
+    // cours près de la moitié couverte est encore nourrie ; près de
+    // l'ancienne moitié (retirée), elle ne l'est plus — le cours
+    // orphelin sera lâché.
+    vector<Lake> lakes(1);
+    Lake& lake = lakes[0];
+    lake.level = 200.0f;
+    lake.minX = 0.0f;
+    lake.minZ = 0.0f;
+    lake.maxX = 80.0f;
+    lake.maxZ = 80.0f;
+    lake.maskTexel = 8.0f;
+    lake.maskWidth = 10;
+    lake.maskHeight = 10;
+    lake.mask.assign(100, 0);
+    u32 cells = 0;
+    for (u32 r = 0; r < 5; ++r) { // seule la moitié SUD couverte
+        for (u32 c = 0; c < 10; ++c) {
+            lake.mask[r * 10 + c] = 1;
+            ++cells;
+        }
+    }
+    lake.cells = cells;
+    CHECK(lakeReachesPoint(lakes, 40.0f, 44.0f));  // bord sud: ~8 m
+    CHECK(!lakeReachesPoint(lakes, 40.0f, 76.0f)); // moitié retirée
+    CHECK(!lakeReachesPoint(lakes, 200.0f, 200.0f)); // loin de tout
+    lake.cells = 0; // lac vidé par le reconcile: ne nourrit plus rien
+    CHECK(!lakeReachesPoint(lakes, 40.0f, 44.0f));
+}
+
 TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
     // A river baked BEFORE the carves: flat old surface 297 over a
     // bed the fine erosion later dropped to 288 past x=100, plus a
