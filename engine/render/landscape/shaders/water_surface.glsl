@@ -106,6 +106,15 @@ void main() {
         // frozen mesh now carries the water (its lake sheet is
         // coplanar with the live one, the geometric cut stays
         // invisible), and the baked yields to frozen rects there.
+        // Every handover keeps a 4-texel OVERLAP: an exact cut along
+        // a world plane opens a parallax slit at grazing angles (the
+        // two water sheets differ slightly since the freeze — seen
+        // edge-on, the gap between the cut curtains shows the rock
+        // behind, measured dev). In the overlap band both sheets
+        // draw and the depth test resolves; where they coincide
+        // (pinned lakes) the fragments are identical, so the overlap
+        // is invisible by construction.
+        float fzOverlapM = 4.0 * max(uWaterSimTuneInfo.w, 0.5);
         if (uWaterSimMapInfo.w > 0.5) {
             vec2 liveRel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                            uWaterSimMapInfo.z;
@@ -115,7 +124,7 @@ void main() {
                     min(min(liveRel.x, 1.0 - liveRel.x),
                         min(liveRel.y, 1.0 - liveRel.y)) /
                     uWaterSimMapInfo.z;
-                if (liveEdgeM > uWaterSimTuneInfo.x) {
+                if (liveEdgeM > uWaterSimTuneInfo.x + fzOverlapM) {
                     discard;
                 }
             }
@@ -155,7 +164,12 @@ void main() {
                            uWaterSimFrozen[k].z;
                 if (all(greaterThan(rel, vec2(0.0))) &&
                     all(lessThan(rel, vec2(1.0)))) {
-                    discard;
+                    float edgeK = min(min(rel.x, 1.0 - rel.x),
+                                      min(rel.y, 1.0 - rel.y)) /
+                                  uWaterSimFrozen[k].z;
+                    if (edgeK > fzOverlapM) {
+                        discard;
+                    }
                 }
             }
         }
@@ -240,6 +254,11 @@ void main() {
         // — the frozen mesh covers both). Entries are zeroed by the
         // CPU in force-baked mode, so no gating needed here.
         if (simMode != 1) {
+            // 4-texel overlap: yield only clearly INSIDE a frozen
+            // rect, so no parallax slit opens at its outer edge (the
+            // frozen mesh and the baked bodies both draw in the band;
+            // the depth test resolves, coplanar lakes are identical).
+            float fzOverlapM = 4.0 * max(uWaterSimTuneInfo.w, 0.5);
             for (int k = 0; k < 4; ++k) {
                 if (uWaterSimFrozen[k].z <= 1.0e-9) {
                     continue;
@@ -248,7 +267,12 @@ void main() {
                            uWaterSimFrozen[k].z;
                 if (all(greaterThan(rel, vec2(0.0))) &&
                     all(lessThan(rel, vec2(1.0)))) {
-                    discard;
+                    float edgeK = min(min(rel.x, 1.0 - rel.x),
+                                      min(rel.y, 1.0 - rel.y)) /
+                                  uWaterSimFrozen[k].z;
+                    if (edgeK > fzOverlapM) {
+                        discard;
+                    }
                 }
             }
         }
