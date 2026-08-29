@@ -1122,11 +1122,19 @@ void WaterSystem::updateSim(rhi::Device& device,
         return;
     }
     // Regular tick: fixed-dt accumulator (hitch-clamped), re-anchor by
-    // hysteresis, ground refresh on terraforming.
-    simAccum += glm::min(dt, 0.25f);
+    // hysteresis, ground refresh on terraforming. The time scale
+    // multiplies accumulated sim-time only — per-substep dt is fixed
+    // (CFL intact), and the hitch clamp scales with it so a fast sim
+    // is not silently throttled back to 1x.
+    const f32 timeScale = glm::clamp(simCfg.timeScale, 0.25f, 8.0f);
+    simAccum += glm::min(dt, 0.25f) * timeScale;
     const f32 tickDt = glm::max(simCfg.params.dt, 1.0f / 240.0f);
     u32 substeps = static_cast<u32>(simAccum / tickDt);
-    substeps = glm::min(substeps, simCfg.maxSubsteps);
+    substeps = glm::min(
+        substeps,
+        static_cast<u32>(glm::ceil(
+            static_cast<f32>(simCfg.maxSubsteps) *
+            glm::max(timeScale, 1.0f))));
     simAccum = glm::min(simAccum - static_cast<f32>(substeps) * tickDt,
                         tickDt);
     const auto& spec = simState->spec;
@@ -1166,7 +1174,10 @@ void WaterSystem::updateSim(rhi::Device& device,
         // Timed refresh of the CURRENT footprint (see the member
         // comment: dynamic-only water formed since the last drop must
         // reach the crumb and the frozen mesh before it is evicted).
-        simFreshTimer += dt;
+        // Faster sim = faster-changing water: the footprint refresh
+        // keeps pace so the crumbs/frozen never lag more than ~4
+        // SIMULATED seconds.
+        simFreshTimer += dt * glm::max(timeScale, 1.0f);
         if (simFreshTimer >= kSimFreshSeconds) {
             simFreshTimer = 0.0f;
             simCachePush(std::make_shared<WaterSimState>(*simState));

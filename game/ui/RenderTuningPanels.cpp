@@ -748,6 +748,9 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            "%.1f");
         ImGui::SliderInt("Sim max substeps",
                          reinterpret_cast<int*>(&sim.maxSubsteps), 1, 8);
+        ImGui::SliderFloat("Sim time scale", &sim.timeScale, 0.25f,
+                           8.0f, "%.2fx",
+                           ImGuiSliderFlags_Logarithmic);
         f32 rainMmh = sim.params.rainRate * 3.6e6f;
         if (ImGui::SliderFloat("Sim rain (mm/h)", &rainMmh, 0.0f, 60.0f,
                                "%.1f")) {

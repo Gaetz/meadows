@@ -98,7 +98,12 @@ public:
         bool enabled { true };
         f32 span { 512.0f };
         f32 texel { 2.0f };
-        u32 maxSubsteps { 4 };       // hitch clamp per job
+        u32 maxSubsteps { 4 };       // hitch clamp per job, at 1x
+        // Simulated seconds per real second (0.25x..8x). Per-substep
+        // dt never changes (CFL intact): the scale only multiplies
+        // how many substeps a real second accumulates — worker cost
+        // is linear in it (~1 ms/substep on the 257² window).
+        f32 timeScale { 1.0f };
         f32 anchorHysteresis { 16.0f }; // m before the window re-anchors
         f32 fadeBand { 32.0f };         // m of sim->baked edge crossfade
         i32 debugMode { 0 }; // 0 normal, 1 force baked, 2 seam overlay
