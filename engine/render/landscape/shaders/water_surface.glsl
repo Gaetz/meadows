@@ -98,14 +98,26 @@ void main() {
     vInfo = vec4(0.0, 0.0, 0.0, 1.0e6);
     vMaterial = 0.0;
     {
-        // Yield to the live window wherever it exists (interior AND
-        // margin ring — the ring belongs to the baked lakes).
+        // Yield to the live window ONLY where the live sim actually
+        // RENDERS (its trusted interior). Yielding across the whole
+        // window left the 64 m margin ring to the baked ribbons — a
+        // band of baked waterfall between the frozen view and the
+        // live one on every approach (measured dev). In the ring the
+        // frozen mesh now carries the water (its lake sheet is
+        // coplanar with the live one, the geometric cut stays
+        // invisible), and the baked yields to frozen rects there.
         if (uWaterSimMapInfo.w > 0.5) {
             vec2 liveRel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                            uWaterSimMapInfo.z;
             if (all(greaterThan(liveRel, vec2(0.0))) &&
                 all(lessThan(liveRel, vec2(1.0)))) {
-                discard;
+                float liveEdgeM =
+                    min(min(liveRel.x, 1.0 - liveRel.x),
+                        min(liveRel.y, 1.0 - liveRel.y)) /
+                    uWaterSimMapInfo.z;
+                if (liveEdgeM > uWaterSimTuneInfo.x) {
+                    discard;
+                }
             }
         }
         // Yield to any FRESHER frozen window (trails overlap up to
@@ -201,13 +213,11 @@ void main() {
     // fade-to-ground painted a green rim band (measured).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
-        bool insideLive = false;
         if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;
             if (all(greaterThan(rel, vec2(0.0))) &&
                 all(lessThan(rel, vec2(1.0)))) {
-                insideLive = true;
                 float edgeM = min(min(rel.x, 1.0 - rel.x),
                                   min(rel.y, 1.0 - rel.y)) /
                               uWaterSimMapInfo.z;
@@ -220,12 +230,16 @@ void main() {
                 }
             }
         }
-        // FROZEN windows own their rect OUTSIDE the live window: the
-        // static past-sim mesh covers both the courses and the lakes
-        // there. Inside the live window the live rules above govern
-        // (the frozen meshes yield there too). Entries are zeroed by
-        // the CPU in force-baked mode, so no gating needed here.
-        if (!insideLive && simMode != 1) {
+        // FROZEN windows own their rect wherever the LIVE sim does
+        // not render — including the live margin ring: leaving the
+        // ring to the baked painted a band of baked waterfall between
+        // the frozen view and the live one on every approach
+        // (measured dev). Inside the live interior this discard is
+        // redundant with the live cuts above (insideLive fragments
+        // that survived them are the ring and the ribbons' half-band
+        // — the frozen mesh covers both). Entries are zeroed by the
+        // CPU in force-baked mode, so no gating needed here.
+        if (simMode != 1) {
             for (int k = 0; k < 4; ++k) {
                 if (uWaterSimFrozen[k].z <= 1.0e-9) {
                     continue;
