@@ -114,8 +114,13 @@ public:
         bool settleGated { true };
         // E1b: ribbons at or above this half-width are PINNED (the
         // baked river PLACES its water, the sim animates the margins)
-        // — below it, rivers stay 100% sim, fed by entry sources.
-        f32 pinRiverHalfWidth { 10.0f };
+        // — below it, rivers stay 100% sim, fed by entry sources and
+        // rain. The threshold is the answer to "does the water
+        // renew?": a mid river's real drainage basin spans kilometres
+        // the window never sees, so any course wider than a brook
+        // must be reservoir-fed (dev: 10 m left established rivers
+        // nearly dry).
+        f32 pinRiverHalfWidth { 4.0f };
         terrain::WaterSimParams params;
     };
     SimConfig& simConfig() { return simCfg; }
