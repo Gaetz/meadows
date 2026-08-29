@@ -96,9 +96,11 @@ struct WaterSimSnapshot {
     // minus a tuck where dry (kept for texture-side consumers).
     vector<f32> display;
     // The ONE render geometry (docs/WATER-RENDER.md §2): a closed
-    // heightfield skin built on the worker — top faces over wet cells
-    // (shared corner nodes) + side faces at wet/dry boundaries, capped
-    // by the water column. Vertex = pos3 + uv2 (sim-texture uv).
+    // skin built on the worker by MARCHING SQUARES on the dual grid
+    // (cell centers as samples) — tops cover the wet-region polygon
+    // per 2x2 block, one column-capped wall per contour segment; the
+    // shoreline is a 45°-chamfered polyline refined sub-texel by
+    // depth interpolation. Vertex = pos3 + uv2 (sim-texture uv).
     vector<f32> meshVerts;
     vector<u32> meshIndices;
 };

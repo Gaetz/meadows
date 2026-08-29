@@ -828,66 +828,26 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         out.velZ[i] = vz;
     }
 
-    // --- Pass 4: the ONE closed mesh (docs/WATER-RENDER.md §2).
-    // Corner nodes (n+1)² carry the MEAN surface of their adjacent wet
-    // cells; tops are two triangles per wet cell on shared nodes; side
-    // faces close every wet/dry boundary, never taller than the column
-    // that backs them. Extent lives in this geometry — the shader has
-    // no dryness discard at all.
+    // --- Pass 4: the ONE closed mesh — MARCHING SQUARES on the DUAL
+    // grid (docs/WATER-RENDER.md §2). Samples live at CELL CENTERS
+    // (wetness, surface, depth); every 2x2 block of cells is a dual
+    // cell whose wet corners pick one of the 16 contour cases. Tops
+    // cover the wet-region polygon; ONE wall follows every contour
+    // segment down to the column-capped bottom. The shoreline is a
+    // 45-degree-chamfered polyline refined sub-texel by depth
+    // interpolation — never the axis-aligned 2 m staircase — and the
+    // mesh NEVER leaves the wet cells' footprint (the From Dust
+    // intersection ring put geometry on dry slopes and climbed
+    // hillsides — reverted, see the ledger). Extent still lives in
+    // this geometry: the shader has no dryness discard at all.
     {
-        const u32 nn = n + 1;
-        const size_t nodeCount = static_cast<size_t>(nn) * nn;
-        vector<f32> nodeSum(nodeCount, 0.0f);
-        vector<f32> nodeTerr(nodeCount, -1.0e9f);
-        vector<u8> nodeCnt(nodeCount, 0);
+        const u32 dn = n - 1;
         const auto cellAt = [&](u32 c, u32 r) {
             return static_cast<size_t>(r) * n + c;
         };
-        for (u32 r = 0; r < n; ++r) {
-            for (u32 c = 0; c < n; ++c) {
-                const size_t i = cellAt(c, r);
-                if (!state.wetMask[i]) {
-                    continue;
-                }
-                const f32 s = out.surface[i];
-                for (u32 dz = 0; dz <= 1; ++dz) {
-                    for (u32 dx = 0; dx <= 1; ++dx) {
-                        const size_t nIdx =
-                            static_cast<size_t>(r + dz) * nn + (c + dx);
-                        nodeSum[nIdx] += s;
-                        nodeTerr[nIdx] = glm::max(nodeTerr[nIdx],
-                                                  state.terrain[i]);
-                        ++nodeCnt[nIdx];
-                    }
-                }
-            }
-        }
-        // A node is at least a thin film ABOVE the highest adjacent
-        // wet cell's ground: on a fall face the mean of the adjacent
-        // surfaces sinks below the UPHILL cell's terrain, burying the
-        // sheet inside the slope — the visible water thinned to a
-        // skin (dev feedback: the debug columns sat behind the
-        // ground). The clamp keeps the whole drape on the visible
-        // side; flat water is untouched (its mean already stands
-        // above every adjacent floor).
-        const auto nodeHeight = [&](u32 nc, u32 nr) {
-            const size_t nIdx = static_cast<size_t>(nr) * nn + nc;
-            if (nodeCnt[nIdx] == 0) {
-                return 0.0f;
-            }
-            const f32 mean =
-                nodeSum[nIdx] / static_cast<f32>(nodeCnt[nIdx]);
-            return glm::max(mean, nodeTerr[nIdx] + 0.05f);
+        const auto wetAt = [&](u32 c, u32 r) {
+            return state.wetMask[cellAt(c, r)] != 0;
         };
-        const auto nodeX = [&](u32 nc) {
-            return spec.originX +
-                   (static_cast<f32>(nc) - 0.5f) * texel;
-        };
-        const auto nodeZ = [&](u32 nr) {
-            return spec.originZ +
-                   (static_cast<f32>(nr) - 0.5f) * texel;
-        };
-        vector<u32> nodeSlot(nodeCount, ~0u);
         const auto pushVert = [&](f32 x, f32 y, f32 z, f32 u, f32 v) {
             out.meshVerts.push_back(x);
             out.meshVerts.push_back(y);
@@ -896,81 +856,268 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
             out.meshVerts.push_back(v);
             return static_cast<u32>(out.meshVerts.size() / 5 - 1);
         };
-        const auto topNode = [&](u32 nc, u32 nr) {
-            u32& slot = nodeSlot[static_cast<size_t>(nr) * nn + nc];
+        const auto centerU = [&](u32 c) {
+            return (static_cast<f32>(c) + 0.5f) / static_cast<f32>(n);
+        };
+        const auto centerV = [&](u32 r) {
+            return (static_cast<f32>(r) + 0.5f) / static_cast<f32>(n);
+        };
+        vector<u32> centerSlot(cells, ~0u);
+        const auto centerVert = [&](u32 c, u32 r) {
+            u32& slot = centerSlot[cellAt(c, r)];
             if (slot == ~0u) {
-                slot = pushVert(nodeX(nc), nodeHeight(nc, nr),
-                                nodeZ(nr),
-                                static_cast<f32>(nc) /
-                                    static_cast<f32>(n),
-                                static_cast<f32>(nr) /
-                                    static_cast<f32>(n));
+                slot = pushVert(spec.x(c), out.surface[cellAt(c, r)],
+                                spec.z(r), centerU(c), centerV(r));
             }
             return slot;
         };
-        for (u32 r = 0; r < n; ++r) {
-            for (u32 c = 0; c < n; ++c) {
-                const size_t i = cellAt(c, r);
-                if (!state.wetMask[i]) {
+        // A cut dual edge (exactly one wet end) carries one contour
+        // vertex, interpolated from the WET center toward the dry one
+        // by the depth (iso at ~1.5 cm, clamped [0.2, 0.8] so shore
+        // triangles never degenerate). The vertex sits at the WET
+        // surface height — the sheet stays level to its edge, the
+        // wall drops from there.
+        struct EdgeV {
+            u32 slot;
+            f32 x, z, top, bottom;
+        };
+        const auto edgeInfo = [&](u32 pc, u32 pr, u32 qc, u32 qr) {
+            const size_t pi = cellAt(pc, pr);
+            const bool pWet = state.wetMask[pi] != 0;
+            const u32 wc = pWet ? pc : qc;
+            const u32 wr = pWet ? pr : qr;
+            const u32 dc = pWet ? qc : pc;
+            const u32 dr = pWet ? qr : pr;
+            const size_t wi = cellAt(wc, wr);
+            const size_t di = cellAt(dc, dr);
+            const f32 d = out.depth[wi];
+            const f32 t = glm::clamp(
+                d > 1.0e-4f ? 1.0f - 0.015f / d : 0.5f, 0.2f, 0.8f);
+            EdgeV ev;
+            ev.x = glm::mix(spec.x(wc), spec.x(dc), t);
+            ev.z = glm::mix(spec.z(wr), spec.z(dr), t);
+            ev.top = out.surface[wi];
+            const f32 ground =
+                glm::mix(state.terrain[wi], state.terrain[di], t);
+            ev.bottom = glm::max(ground - 0.15f,
+                                 out.surface[wi] - out.depth[wi] -
+                                     0.15f);
+            ev.slot = ~0u;
+            return ev;
+        };
+        // Shared contour-vertex slots: one per cut dual edge.
+        // Horizontal edges join (c,r)-(c+1,r); vertical (c,r)-(c,r+1).
+        vector<u32> hSlot(static_cast<size_t>(dn) * n, ~0u);
+        vector<u32> vSlot(static_cast<size_t>(n) * dn, ~0u);
+        const auto hEdge = [&](u32 c, u32 r) {
+            EdgeV ev = edgeInfo(c, r, c + 1, r);
+            u32& slot = hSlot[static_cast<size_t>(r) * dn + c];
+            if (slot == ~0u) {
+                slot = pushVert(
+                    ev.x, ev.top, ev.z,
+                    glm::mix(centerU(c), centerU(c + 1),
+                             (ev.x - spec.x(c)) / texel),
+                    centerV(r));
+            }
+            ev.slot = slot;
+            return ev;
+        };
+        const auto vEdge = [&](u32 c, u32 r) {
+            EdgeV ev = edgeInfo(c, r, c, r + 1);
+            u32& slot = vSlot[static_cast<size_t>(r) * n + c];
+            if (slot == ~0u) {
+                slot = pushVert(
+                    ev.x, ev.top, ev.z, centerU(c),
+                    glm::mix(centerV(r), centerV(r + 1),
+                             (ev.z - spec.z(r)) / texel));
+            }
+            ev.slot = slot;
+            return ev;
+        };
+        const auto wall = [&](const EdgeV& a, const EdgeV& b, u32 c,
+                              u32 r) {
+            if (a.bottom >= a.top - 0.01f &&
+                b.bottom >= b.top - 0.01f) {
+                return; // degenerate sliver on flat ground
+            }
+            const f32 u = centerU(c);
+            const f32 v = centerV(r);
+            const u32 ta = pushVert(a.x, a.top, a.z, u, v);
+            const u32 tb = pushVert(b.x, b.top, b.z, u, v);
+            const u32 ba = pushVert(a.x, a.bottom, a.z, u, v);
+            const u32 bb = pushVert(b.x, b.bottom, b.z, u, v);
+            for (const u32 k : { ta, tb, bb, ta, bb, ba }) {
+                out.meshIndices.push_back(k);
+            }
+        };
+        const auto tri = [&](u32 a, u32 b, u32 cIdx) {
+            out.meshIndices.push_back(a);
+            out.meshIndices.push_back(b);
+            out.meshIndices.push_back(cIdx);
+        };
+        for (u32 r = 0; r < dn; ++r) {
+            for (u32 c = 0; c < dn; ++c) {
+                // Corners: A=(c,r) B=(c+1,r) C=(c+1,r+1) D=(c,r+1).
+                const bool wA = wetAt(c, r);
+                const bool wB = wetAt(c + 1, r);
+                const bool wC = wetAt(c + 1, r + 1);
+                const bool wD = wetAt(c, r + 1);
+                const u32 mask = (wA ? 1u : 0u) | (wB ? 2u : 0u) |
+                                 (wC ? 4u : 0u) | (wD ? 8u : 0u);
+                if (mask == 0u) {
                     continue;
                 }
-                // Top.
-                const u32 v00 = topNode(c, r);
-                const u32 v10 = topNode(c + 1, r);
-                const u32 v01 = topNode(c, r + 1);
-                const u32 v11 = topNode(c + 1, r + 1);
-                for (const u32 v : { v00, v11, v10, v00, v01, v11 }) {
-                    out.meshIndices.push_back(v);
+                if (mask == 15u) {
+                    const u32 a = centerVert(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    tri(a, b, cc);
+                    tri(a, cc, dd);
+                    continue;
                 }
-                // Side faces toward dry in-window 4-neighbours. Corner
-                // node pairs per direction, in (dc,dr) order E,W,S,N.
-                const f32 columnFloor =
-                    out.surface[i] - out.depth[i] - 0.15f;
-                const auto side = [&](i32 dc, i32 dr, u32 na_c, u32 na_r,
-                                      u32 nb_c, u32 nb_r) {
-                    const i32 jc = static_cast<i32>(c) + dc;
-                    const i32 jr = static_cast<i32>(r) + dr;
-                    if (jc < 0 || jr < 0 || jc >= static_cast<i32>(n) ||
-                        jr >= static_cast<i32>(n)) {
-                        return; // window rim: the fade band hides it
-                    }
-                    const size_t j =
-                        cellAt(static_cast<u32>(jc),
-                               static_cast<u32>(jr));
-                    if (state.wetMask[j]) {
-                        return; // wet-wet: the top already connects
-                    }
-                    const f32 edgeGround =
-                        (state.terrain[i] + state.terrain[j]) * 0.5f;
-                    const f32 bottom =
-                        glm::max(edgeGround - 0.15f, columnFloor);
-                    const f32 hA = nodeHeight(na_c, na_r);
-                    const f32 hB = nodeHeight(nb_c, nb_r);
-                    if (bottom >= glm::min(hA, hB) - 0.01f) {
-                        return;
-                    }
-                    const f32 u =
-                        (static_cast<f32>(c) + 0.5f) /
-                        static_cast<f32>(n);
-                    const f32 v =
-                        (static_cast<f32>(r) + 0.5f) /
-                        static_cast<f32>(n);
-                    const u32 ta = pushVert(nodeX(na_c), hA,
-                                            nodeZ(na_r), u, v);
-                    const u32 tb = pushVert(nodeX(nb_c), hB,
-                                            nodeZ(nb_r), u, v);
-                    const u32 ba = pushVert(nodeX(na_c), bottom,
-                                            nodeZ(na_r), u, v);
-                    const u32 bb = pushVert(nodeX(nb_c), bottom,
-                                            nodeZ(nb_r), u, v);
-                    for (const u32 k : { ta, tb, bb, ta, bb, ba }) {
-                        out.meshIndices.push_back(k);
-                    }
-                };
-                side(1, 0, c + 1, r, c + 1, r + 1);  // east edge
-                side(-1, 0, c, r, c, r + 1);         // west edge
-                side(0, 1, c, r + 1, c + 1, r + 1);  // south edge
-                side(0, -1, c, r, c + 1, r);         // north edge
+                switch (mask) {
+                case 1u: { // A alone
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV da = vEdge(c, r);
+                    tri(centerVert(c, r), ab.slot, da.slot);
+                    wall(ab, da, c, r);
+                    break;
+                }
+                case 2u: { // B alone
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV bc = vEdge(c + 1, r);
+                    tri(centerVert(c + 1, r), bc.slot, ab.slot);
+                    wall(bc, ab, c + 1, r);
+                    break;
+                }
+                case 4u: { // C alone
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const EdgeV cd = hEdge(c, r + 1);
+                    tri(centerVert(c + 1, r + 1), cd.slot, bc.slot);
+                    wall(cd, bc, c + 1, r + 1);
+                    break;
+                }
+                case 8u: { // D alone
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const EdgeV da = vEdge(c, r);
+                    tri(centerVert(c, r + 1), da.slot, cd.slot);
+                    wall(da, cd, c, r + 1);
+                    break;
+                }
+                case 3u: { // A + B
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const EdgeV da = vEdge(c, r);
+                    const u32 a = centerVert(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    tri(a, b, bc.slot);
+                    tri(a, bc.slot, da.slot);
+                    wall(bc, da, c, r);
+                    break;
+                }
+                case 6u: { // B + C
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const EdgeV ab = hEdge(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    tri(b, cc, cd.slot);
+                    tri(b, cd.slot, ab.slot);
+                    wall(cd, ab, c + 1, r);
+                    break;
+                }
+                case 12u: { // C + D
+                    const EdgeV da = vEdge(c, r);
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    tri(cc, dd, da.slot);
+                    tri(cc, da.slot, bc.slot);
+                    wall(da, bc, c, r + 1);
+                    break;
+                }
+                case 9u: { // D + A
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    const u32 a = centerVert(c, r);
+                    tri(dd, a, ab.slot);
+                    tri(dd, ab.slot, cd.slot);
+                    wall(ab, cd, c, r);
+                    break;
+                }
+                case 5u: { // A + C diagonal: kept DISCONNECTED
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV da = vEdge(c, r);
+                    tri(centerVert(c, r), ab.slot, da.slot);
+                    wall(ab, da, c, r);
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const EdgeV bc = vEdge(c + 1, r);
+                    tri(centerVert(c + 1, r + 1), cd.slot, bc.slot);
+                    wall(cd, bc, c + 1, r + 1);
+                    break;
+                }
+                case 10u: { // B + D diagonal: kept DISCONNECTED
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const EdgeV ab = hEdge(c, r);
+                    tri(centerVert(c + 1, r), bc.slot, ab.slot);
+                    wall(bc, ab, c + 1, r);
+                    const EdgeV da = vEdge(c, r);
+                    const EdgeV cd = hEdge(c, r + 1);
+                    tri(centerVert(c, r + 1), da.slot, cd.slot);
+                    wall(da, cd, c, r + 1);
+                    break;
+                }
+                case 7u: { // D dry
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const EdgeV da = vEdge(c, r);
+                    const u32 a = centerVert(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    tri(a, b, cc);
+                    tri(a, cc, cd.slot);
+                    tri(a, cd.slot, da.slot);
+                    wall(cd, da, c, r);
+                    break;
+                }
+                case 14u: { // A dry
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV da = vEdge(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    tri(b, cc, dd);
+                    tri(b, dd, da.slot);
+                    tri(b, da.slot, ab.slot);
+                    wall(da, ab, c + 1, r);
+                    break;
+                }
+                case 13u: { // B dry
+                    const EdgeV ab = hEdge(c, r);
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const u32 cc = centerVert(c + 1, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    const u32 a = centerVert(c, r);
+                    tri(cc, dd, a);
+                    tri(cc, a, ab.slot);
+                    tri(cc, ab.slot, bc.slot);
+                    wall(ab, bc, c, r);
+                    break;
+                }
+                case 11u: { // C dry
+                    const EdgeV bc = vEdge(c + 1, r);
+                    const EdgeV cd = hEdge(c, r + 1);
+                    const u32 dd = centerVert(c, r + 1);
+                    const u32 a = centerVert(c, r);
+                    const u32 b = centerVert(c + 1, r);
+                    tri(dd, a, b);
+                    tri(dd, b, bc.slot);
+                    tri(dd, bc.slot, cd.slot);
+                    wall(bc, cd, c, r + 1);
+                    break;
+                }
+                default:
+                    break;
+                }
             }
         }
     }

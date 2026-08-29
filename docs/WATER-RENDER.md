@@ -52,20 +52,34 @@ Rôles autour :
 
 ## 2. Le maillage (construit dans extractSnapshot, worker)
 
-- Grille de nœuds (n+1)² aux coins de cellules ; un nœud porte la
-  MOYENNE des surfaces des cellules mouillées qui le touchent.
-- Dessus : 2 triangles par cellule mouillée (connexité-8 exigée — un
-  filet descend une paroi en DIAGONALE ; le test à 4 voisins a effacé
-  des chutes entières).
-- Faces latérales : à chaque frontière mouillé/sec, un quad des deux
-  nœuds de dessus vers bottom = max(terrain de bord moyen,
+**MARCHING SQUARES sur la grille DUALE** (décision 2026-08-29, rivages
+fluides) :
+
+- Les échantillons sont les CENTRES de cellules (mouillé hystérétique,
+  surface, profondeur) ; chaque bloc 2×2 de cellules est une cellule
+  duale dont les coins mouillés choisissent l'un des 16 cas.
+- Dessus : le polygone de la région mouillée par cellule duale
+  (2 triangles à l'intérieur, coins coupés à la frontière — la
+  connexité-8 des chutes en diagonale est portée par les cas
+  diagonaux, gardés DÉCONNECTÉS pour le déterminisme).
+- Sommets de contour : sur chaque arête duale coupée, interpolés
+  depuis le centre MOUILLÉ vers le sec par la profondeur (iso
+  ~1,5 cm, borné [0,2 ; 0,8]) — la silhouette est une polyligne à 45°
+  affinée sous-texel, plus jamais l'escalier axis-aligned de 2 m.
+  Hauteur = la surface mouillée (la nappe reste de niveau jusqu'à son
+  bord, le mur tombe de là).
+- UN mur par segment de contour, vers bottom = max(sol interpolé,
   surface − colonne) − petite marge. **La face ne dépasse JAMAIS la
-  colonne qui la soutient** : descendre au sol du voisin sec plantait
-  des murs de 3-10 m sous chaque filet de 10 cm traversant une pente
-  (mesuré — « surfaces qui montent sur la montagne »). Un vrai front
-  profond (barrage, lèvre de chute) garde son grand mur.
+  colonne qui la soutient** (descendre au sol du voisin sec plantait
+  des murs de 3-10 m sous chaque filet de 10 cm — mesuré). Un vrai
+  front profond garde son grand mur.
+- Le maillage ne quitte JAMAIS l'empreinte des cellules mouillées —
+  voir la leçon « anneau From Dust » au grand livre.
 - Vertex = pos3 + uv2 (uv = position dans les textures sim, pour le
-  shading par fragment).
+  shading par fragment ; les gelés reconstruisent leur origine depuis
+  ces uv).
+- Comptabilité d'étanchéité doctestée par la table des 16 cas
+  (tris(masque) + segments(masque)).
 
 ## 3. Leçons mesurées (le grand livre — ne pas repayer)
 
@@ -177,6 +191,18 @@ Intégration :
   commande.
 - `cooker water-replay <dump> <prefix> [substeps]` : TOUT correctif de
   simulation se vérifie sur un dump AVANT de re-déranger le dev.
+
+- **Rivages : l'anneau d'intersection From Dust a ÉCHOUÉ, les
+  marching squares duaux tiennent** (2026-08-29). L'anneau (dessus
+  étendu d'une cellule sèche, plongé de 25 cm sous le terrain, ligne
+  d'eau = intersection depth-testée) supposait deux surfaces LISSES :
+  chez nous le bord d'eau est en marches par cellule et le terrain de
+  rendu porte un détail fin que l'anneau échantillonné aux centres ne
+  suit pas — pans de « polygones escaladant les berges » + ligne
+  toujours crénelée (mesuré dev, reverté). Le contour MS vit dans
+  NOTRE grille (aucune géométrie hors de l'empreinte mouillée, aucune
+  dépendance au détail du terrain) — c'est le critère : tout lissage
+  de rivage doit rester interne à la grille de sim.
 
 ## 4. Restes connus / prochaines briques
 

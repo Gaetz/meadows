@@ -434,37 +434,32 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     }
     REQUIRE(wet > 50);
     REQUIRE(!snap.meshIndices.empty());
-    // Watertight accounting: tops (6 indices per wet cell) + one side
-    // quad (6 indices) per wet/dry boundary edge with a real drop.
-    u32 sides = 0;
-    const auto wetAt = [&](i32 c, i32 r) {
-        return c >= 0 && r >= 0 && c < static_cast<i32>(spec.n) &&
-               r < static_cast<i32>(spec.n) &&
-               snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f;
+    // Watertight accounting, marching-squares dual grid: every 2x2
+    // block of cells contributes tops(mask) triangles and one wall
+    // quad per contour segment (basin drops are real, none skipped
+    // as degenerate).
+    const auto wetAt = [&](u32 c, u32 r) {
+        return snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f
+                   ? 1u
+                   : 0u;
     };
-    for (u32 r = 0; r < spec.n; ++r) {
-        for (u32 c = 0; c < spec.n; ++c) {
-            if (!wetAt(static_cast<i32>(c), static_cast<i32>(r))) {
-                continue;
-            }
-            const i32 dirs[4][2] = {
-                { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }
-            };
-            for (const auto& d : dirs) {
-                const i32 nc = static_cast<i32>(c) + d[0];
-                const i32 nr = static_cast<i32>(r) + d[1];
-                if (nc < 0 || nr < 0 || nc >= static_cast<i32>(spec.n) ||
-                    nr >= static_cast<i32>(spec.n)) {
-                    continue;
-                }
-                if (!wetAt(nc, nr)) {
-                    ++sides; // basin wall: ground drop guarantees one
-                }
-            }
+    static const u8 kTris[16] = { 0, 1, 1, 2, 1, 2, 2, 3,
+                                  1, 2, 2, 3, 2, 3, 3, 2 };
+    static const u8 kSegs[16] = { 0, 1, 1, 1, 1, 2, 1, 1,
+                                  1, 1, 2, 1, 1, 1, 1, 0 };
+    size_t topTris = 0;
+    size_t walls = 0;
+    for (u32 r = 0; r + 1 < spec.n; ++r) {
+        for (u32 c = 0; c + 1 < spec.n; ++c) {
+            const u32 mask = wetAt(c, r) | (wetAt(c + 1, r) << 1) |
+                             (wetAt(c + 1, r + 1) << 2) |
+                             (wetAt(c, r + 1) << 3);
+            topTris += kTris[mask];
+            walls += kSegs[mask];
         }
     }
-    CHECK(snap.meshIndices.size() ==
-          static_cast<size_t>(wet) * 6 + static_cast<size_t>(sides) * 6);
+    CHECK(snap.meshIndices.size() == topTris * 3 + walls * 6);
+    CHECK(walls > 0);
     // Column cap: no vertex sinks below any wet column's floor.
     f32 minY = 1.0e9f;
     for (size_t v = 0; v + 4 < snap.meshVerts.size(); v += 5) {
