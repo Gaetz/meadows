@@ -834,6 +834,14 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
     // faces close every wet/dry boundary, never taller than the column
     // that backs them. Extent lives in this geometry — the shader has
     // no dryness discard at all.
+    // SHORE RING (the From Dust intersection trick): every dry cell
+    // bordering the water at near-surface ground ALSO emits a top
+    // whose outer nodes dive under the terrain — the waterline then
+    // is the depth-tested intersection of two CONTINUOUS surfaces,
+    // smooth by construction, instead of the 2 m staircase of
+    // axis-aligned cell edges. Dry ground clearly BELOW the surface
+    // (a flood front, a fall lip) gets no ring — the vertical wall
+    // keeps doing the volume there.
     {
         const u32 nn = n + 1;
         const size_t nodeCount = static_cast<size_t>(nn) * nn;
@@ -873,7 +881,29 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         const auto nodeHeight = [&](u32 nc, u32 nr) {
             const size_t nIdx = static_cast<size_t>(nr) * nn + nc;
             if (nodeCnt[nIdx] == 0) {
-                return 0.0f;
+                // Pure shore-ring node (no wet neighbour): dive under
+                // the local ground — the ring top slopes from the
+                // shared water nodes down below the terrain within
+                // one cell, and the depth test draws the waterline.
+                f32 terrSum = 0.0f;
+                u32 terrCnt = 0;
+                for (i32 dr2 = -1; dr2 <= 0; ++dr2) {
+                    for (i32 dc2 = -1; dc2 <= 0; ++dc2) {
+                        const i32 cc = static_cast<i32>(nc) + dc2;
+                        const i32 rr = static_cast<i32>(nr) + dr2;
+                        if (cc < 0 || rr < 0 ||
+                            cc >= static_cast<i32>(n) ||
+                            rr >= static_cast<i32>(n)) {
+                            continue;
+                        }
+                        terrSum += state.terrain[cellAt(
+                            static_cast<u32>(cc), static_cast<u32>(rr))];
+                        ++terrCnt;
+                    }
+                }
+                return terrCnt > 0
+                           ? terrSum / static_cast<f32>(terrCnt) - 0.25f
+                           : 0.0f;
             }
             const f32 mean =
                 nodeSum[nIdx] / static_cast<f32>(nodeCnt[nIdx]);
@@ -908,19 +938,61 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
             }
             return slot;
         };
+        // Shore-ring mask: a DRY cell whose (8-way) wet neighbourhood
+        // has its water surface near or below this cell's ground — a
+        // true waterline, where the ring top can dive under the
+        // terrain. Ground clearly below the surface (> 0.6 m) is a
+        // flood front or fall lip: no ring, the wall owns it.
+        vector<u8> shoreRing(cells, 0);
         for (u32 r = 0; r < n; ++r) {
             for (u32 c = 0; c < n; ++c) {
                 const size_t i = cellAt(c, r);
-                if (!state.wetMask[i]) {
+                if (state.wetMask[i]) {
                     continue;
                 }
-                // Top.
+                f32 maxAdjSurface = -1.0e9f;
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 nc = static_cast<i32>(c) + dx;
+                        const i32 nr = static_cast<i32>(r) + dz;
+                        if (nc < 0 || nr < 0 ||
+                            nc >= static_cast<i32>(n) ||
+                            nr >= static_cast<i32>(n)) {
+                            continue;
+                        }
+                        const size_t j = cellAt(static_cast<u32>(nc),
+                                                static_cast<u32>(nr));
+                        if (state.wetMask[j]) {
+                            maxAdjSurface = glm::max(maxAdjSurface,
+                                                     out.surface[j]);
+                        }
+                    }
+                }
+                if (maxAdjSurface > -1.0e8f &&
+                    state.terrain[i] > maxAdjSurface - 0.6f) {
+                    shoreRing[i] = 1;
+                }
+            }
+        }
+        for (u32 r = 0; r < n; ++r) {
+            for (u32 c = 0; c < n; ++c) {
+                const size_t i = cellAt(c, r);
+                const bool wet = state.wetMask[i] != 0;
+                if (!wet && !shoreRing[i]) {
+                    continue;
+                }
+                // Top (wet cells AND shore-ring cells — the ring top
+                // slopes below the terrain, the depth test cuts the
+                // smooth waterline).
                 const u32 v00 = topNode(c, r);
                 const u32 v10 = topNode(c + 1, r);
                 const u32 v01 = topNode(c, r + 1);
                 const u32 v11 = topNode(c + 1, r + 1);
                 for (const u32 v : { v00, v11, v10, v00, v01, v11 }) {
                     out.meshIndices.push_back(v);
+                }
+                if (!wet) {
+                    continue; // ring cells carry no walls
                 }
                 // Side faces toward dry in-window 4-neighbours. Corner
                 // node pairs per direction, in (dc,dr) order E,W,S,N.
