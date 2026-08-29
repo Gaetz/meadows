@@ -103,7 +103,7 @@ public:
         // dt never changes (CFL intact): the scale only multiplies
         // how many substeps a real second accumulates — worker cost
         // is linear in it (~1 ms/substep on the 257² window).
-        f32 timeScale { 1.0f };
+        f32 timeScale { 2.0f }; // dev default: 2x reads better in-game
         f32 anchorHysteresis { 16.0f }; // m before the window re-anchors
         f32 fadeBand { 32.0f };         // m of sim->baked edge crossfade
         i32 debugMode { 0 }; // 0 normal, 1 force baked, 2 seam overlay
