@@ -464,10 +464,20 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                     lake.minZ + static_cast<f32>(row) * mt;
                 const f32 cx = tx0 + 0.5f * mt;
                 const f32 cz = tz0 + 0.5f * mt;
+                // Per-side extension AND crest flag: a crest side (the
+                // void past the edge) ends flush and then POURS — a
+                // short outward-dipping skirt replaces the square slab
+                // silhouette with an edge that starts its fall (the
+                // "flan" softening, step 3a of the shores plan).
+                struct SideExt {
+                    f32 grow { 0.0f };
+                    bool crest { false };
+                };
                 const auto ext = [&](i32 dc, i32 dr, f32 ex, f32 ez) {
+                    SideExt se;
                     if (covered(static_cast<i32>(col) + dc,
                                 static_cast<i32>(row) + dr)) {
-                        return 0.0f;
+                        return se;
                     }
                     // Probe a FULL mask texel past the edge (three
                     // samples), not just half a texel: at a mountain
@@ -506,18 +516,60 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                             }
                         }
                         if (!seam) {
-                            return 0.0f;
+                            se.crest = true;
+                            return se;
                         }
                     }
-                    return grow;
+                    se.grow = grow;
+                    return se;
                 };
-                const f32 west = ext(-1, 0, tx0, cz);
-                const f32 east = ext(1, 0, tx0 + mt, cz);
-                const f32 north = ext(0, -1, cx, tz0);
-                const f32 south = ext(0, 1, cx, tz0 + mt);
-                quad(tx0 - west, tz0 - north, tx0 + mt + east,
-                     tz0 + mt + south, lake.level,
+                const SideExt west = ext(-1, 0, tx0, cz);
+                const SideExt east = ext(1, 0, tx0 + mt, cz);
+                const SideExt north = ext(0, -1, cx, tz0);
+                const SideExt south = ext(0, 1, cx, tz0 + mt);
+                const f32 x0 = tx0 - west.grow;
+                const f32 z0 = tz0 - north.grow;
+                const f32 x1 = tx0 + mt + east.grow;
+                const f32 z1 = tz0 + mt + south.grow;
+                quad(x0, z0, x1, z1, lake.level,
                      materialOf(lake.materialIndex), foamGate);
+                // Crest skirts: the pouring edge — a short quad
+                // dipping OUTWARD from the flush crest side, so the
+                // slab silhouette reads as water starting its fall
+                // instead of a square shelf over the void.
+                constexpr f32 kSkirtOut = 2.0f;  // m outward
+                constexpr f32 kSkirtDrop = 2.5f; // m down
+                const f32 mat = materialOf(lake.materialIndex);
+                const auto skirt = [&](f32 ax, f32 az, f32 bx, f32 bz,
+                                       f32 ox, f32 oz) {
+                    const u32 v0 = vertex(ax, lake.level, az, 0.0f,
+                                          0.0f, 0.0f, foamGate, 0.0f,
+                                          1.0e6f, mat);
+                    const u32 v1 = vertex(bx, lake.level, bz, 0.0f,
+                                          0.0f, 0.0f, foamGate, 0.0f,
+                                          1.0e6f, mat);
+                    const u32 v2 = vertex(bx + ox, lake.level - kSkirtDrop,
+                                          bz + oz, 0.0f, 0.0f, 0.0f,
+                                          foamGate, 0.0f, 1.0e6f, mat);
+                    const u32 v3 = vertex(ax + ox, lake.level - kSkirtDrop,
+                                          az + oz, 0.0f, 0.0f, 0.0f,
+                                          foamGate, 0.0f, 1.0e6f, mat);
+                    for (const u32 k : { v0, v2, v1, v0, v3, v2 }) {
+                        indices.push_back(k);
+                    }
+                };
+                if (west.crest) {
+                    skirt(x0, z0, x0, z1, -kSkirtOut, 0.0f);
+                }
+                if (east.crest) {
+                    skirt(x1, z0, x1, z1, kSkirtOut, 0.0f);
+                }
+                if (north.crest) {
+                    skirt(x0, z0, x1, z0, 0.0f, -kSkirtOut);
+                }
+                if (south.crest) {
+                    skirt(x0, z1, x1, z1, 0.0f, kSkirtOut);
+                }
             }
         }
     }
