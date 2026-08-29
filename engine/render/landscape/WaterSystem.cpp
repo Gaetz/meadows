@@ -531,17 +531,81 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                 const f32 z0 = tz0 - north.grow;
                 const f32 x1 = tx0 + mt + east.grow;
                 const f32 z1 = tz0 + mt + south.grow;
-                quad(x0, z0, x1, z1, lake.level,
-                     materialOf(lake.materialIndex), foamGate);
-                // Crest skirts: the pouring edge — a short quad
-                // dipping OUTWARD from the flush crest side, so the
-                // slab silhouette reads as water starting its fall
-                // instead of a square shelf over the void.
+                // Step 3b: where TWO crest sides meet, the square
+                // corner is CHAMFERED at 45° (half a texel per side)
+                // — the horizontal silhouette softening, mirroring
+                // what marching squares did for the sim shore. Crest
+                // sides have grow = 0, so the cuts live on the raw
+                // texel edges; bank/seam corners stay square (the
+                // depth test owns those).
+                const f32 ck = 0.5f * mt;
+                const bool cutNW = west.crest && north.crest;
+                const bool cutNE = east.crest && north.crest;
+                const bool cutSE = east.crest && south.crest;
+                const bool cutSW = west.crest && south.crest;
+                f32 pxs[8];
+                f32 pzs[8];
+                u32 pcount = 0;
+                const auto pt = [&](f32 px, f32 pz) {
+                    if (pcount > 0 &&
+                        std::abs(pxs[pcount - 1] - px) < 1.0e-4f &&
+                        std::abs(pzs[pcount - 1] - pz) < 1.0e-4f) {
+                        return;
+                    }
+                    pxs[pcount] = px;
+                    pzs[pcount] = pz;
+                    ++pcount;
+                };
+                if (cutNW) {
+                    pt(x0 + ck, z0);
+                } else {
+                    pt(x0, z0);
+                }
+                if (cutNE) {
+                    pt(x1 - ck, z0);
+                    pt(x1, z0 + ck);
+                } else {
+                    pt(x1, z0);
+                }
+                if (cutSE) {
+                    pt(x1, z1 - ck);
+                    pt(x1 - ck, z1);
+                } else {
+                    pt(x1, z1);
+                }
+                if (cutSW) {
+                    pt(x0 + ck, z1);
+                    pt(x0, z1 - ck);
+                }  else {
+                    pt(x0, z1);
+                }
+                if (cutNW) {
+                    pt(x0, z0 + ck);
+                }
+                const f32 mat = materialOf(lake.materialIndex);
+                u32 vids[8];
+                for (u32 q = 0; q < pcount; ++q) {
+                    vids[q] = vertex(pxs[q], lake.level, pzs[q], 0.0f,
+                                     0.0f, 0.0f, foamGate, 0.0f,
+                                     1.0e6f, mat);
+                }
+                for (u32 q = 1; q + 1 < pcount; ++q) {
+                    indices.push_back(vids[0]);
+                    indices.push_back(vids[q + 1]);
+                    indices.push_back(vids[q]);
+                }
+                // Crest skirts (step 3a): the pouring edge — a short
+                // quad dipping OUTWARD from every crest segment
+                // (shortened sides AND chamfer diagonals), so the
+                // slab silhouette reads as water starting its fall.
                 constexpr f32 kSkirtOut = 2.0f;  // m outward
                 constexpr f32 kSkirtDrop = 2.5f; // m down
-                const f32 mat = materialOf(lake.materialIndex);
                 const auto skirt = [&](f32 ax, f32 az, f32 bx, f32 bz,
                                        f32 ox, f32 oz) {
+                    if (std::abs(ax - bx) < 1.0e-3f &&
+                        std::abs(az - bz) < 1.0e-3f) {
+                        return; // side fully consumed by its chamfers
+                    }
                     const u32 v0 = vertex(ax, lake.level, az, 0.0f,
                                           0.0f, 0.0f, foamGate, 0.0f,
                                           1.0e6f, mat);
@@ -558,17 +622,38 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                         indices.push_back(k);
                     }
                 };
+                constexpr f32 kDiag = 0.70710678f;
                 if (west.crest) {
-                    skirt(x0, z0, x0, z1, -kSkirtOut, 0.0f);
+                    skirt(x0, cutNW ? z0 + ck : z0, x0,
+                          cutSW ? z1 - ck : z1, -kSkirtOut, 0.0f);
                 }
                 if (east.crest) {
-                    skirt(x1, z0, x1, z1, kSkirtOut, 0.0f);
+                    skirt(x1, cutNE ? z0 + ck : z0, x1,
+                          cutSE ? z1 - ck : z1, kSkirtOut, 0.0f);
                 }
                 if (north.crest) {
-                    skirt(x0, z0, x1, z0, 0.0f, -kSkirtOut);
+                    skirt(cutNW ? x0 + ck : x0, z0,
+                          cutNE ? x1 - ck : x1, z0, 0.0f, -kSkirtOut);
                 }
                 if (south.crest) {
-                    skirt(x0, z1, x1, z1, 0.0f, kSkirtOut);
+                    skirt(cutSW ? x0 + ck : x0, z1,
+                          cutSE ? x1 - ck : x1, z1, 0.0f, kSkirtOut);
+                }
+                if (cutNW) {
+                    skirt(x0, z0 + ck, x0 + ck, z0,
+                          -kDiag * kSkirtOut, -kDiag * kSkirtOut);
+                }
+                if (cutNE) {
+                    skirt(x1 - ck, z0, x1, z0 + ck,
+                          kDiag * kSkirtOut, -kDiag * kSkirtOut);
+                }
+                if (cutSE) {
+                    skirt(x1, z1 - ck, x1 - ck, z1,
+                          kDiag * kSkirtOut, kDiag * kSkirtOut);
+                }
+                if (cutSW) {
+                    skirt(x0 + ck, z1, x0, z1 - ck,
+                          -kDiag * kSkirtOut, kDiag * kSkirtOut);
                 }
             }
         }
