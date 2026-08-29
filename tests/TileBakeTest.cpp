@@ -167,11 +167,14 @@ TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
         }
     }
     lake.cells = cells;
-    CHECK(lakeReachesPoint(lakes, 40.0f, 44.0f));  // bord sud: ~8 m
+    CHECK(lakeReachesPoint(lakes, 40.0f, 36.0f));  // bord sud: ~4 m
     CHECK(!lakeReachesPoint(lakes, 40.0f, 76.0f)); // moitié retirée
+    CHECK(!lakeReachesPoint(lakes, 40.0f, 60.0f)); // à 24 m du bord :
+                                                   // coïncidence, pas
+                                                   // une alimentation
     CHECK(!lakeReachesPoint(lakes, 200.0f, 200.0f)); // loin de tout
     lake.cells = 0; // lac vidé par le reconcile: ne nourrit plus rien
-    CHECK(!lakeReachesPoint(lakes, 40.0f, 44.0f));
+    CHECK(!lakeReachesPoint(lakes, 40.0f, 36.0f));
 }
 
 TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {

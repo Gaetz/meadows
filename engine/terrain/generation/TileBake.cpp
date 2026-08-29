@@ -1212,7 +1212,13 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
             lake.cells == 0) {
             continue;
         }
-        const f32 reach = 2.0f * lake.maskTexel;
+        // ONE mask texel of reach: the original head-to-lake
+        // adjacency was 8 m (the hydro grid) — a receded lake whose
+        // nearest covered cell sits farther is a COINCIDENCE, not a
+        // supply (measured dev at the spawn col: a pocket of the
+        // receded lake 32 m from the head, walled off by its own
+        // rim, kept the orphan fleuve alive at 2 texels of reach).
+        const f32 reach = lake.maskTexel;
         if (x < lake.minX - reach || x > lake.maxX + reach ||
             z < lake.minZ - reach || z > lake.maxZ + reach) {
             continue;
