@@ -434,44 +434,14 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
     }
     REQUIRE(wet > 50);
     REQUIRE(!snap.meshIndices.empty());
-    // Watertight accounting: tops (6 indices per wet cell AND per
-    // shore-ring cell — the dry rim whose ground sits near/above the
-    // adjacent surface dives under the terrain for the smooth
-    // waterline) + one side quad (6 indices) per wet/dry boundary
-    // edge with a real drop.
+    // Watertight accounting: tops (6 indices per wet cell) + one side
+    // quad (6 indices) per wet/dry boundary edge with a real drop.
     u32 sides = 0;
     const auto wetAt = [&](i32 c, i32 r) {
         return c >= 0 && r >= 0 && c < static_cast<i32>(spec.n) &&
                r < static_cast<i32>(spec.n) &&
                snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f;
     };
-    u32 ring = 0;
-    for (u32 r = 0; r < spec.n; ++r) {
-        for (u32 c = 0; c < spec.n; ++c) {
-            if (wetAt(static_cast<i32>(c), static_cast<i32>(r))) {
-                continue;
-            }
-            f32 maxSurf = -1.0e9f;
-            for (i32 dz = -1; dz <= 1; ++dz) {
-                for (i32 dx = -1; dx <= 1; ++dx) {
-                    const i32 nc = static_cast<i32>(c) + dx;
-                    const i32 nr = static_cast<i32>(r) + dz;
-                    if (wetAt(nc, nr)) {
-                        maxSurf = glm::max(
-                            maxSurf,
-                            snap.surface[static_cast<size_t>(nr) *
-                                             spec.n +
-                                         static_cast<size_t>(nc)]);
-                    }
-                }
-            }
-            if (maxSurf > -1.0e8f &&
-                state.terrain[static_cast<size_t>(r) * spec.n + c] >
-                    maxSurf - 0.6f) {
-                ++ring;
-            }
-        }
-    }
     for (u32 r = 0; r < spec.n; ++r) {
         for (u32 c = 0; c < spec.n; ++c) {
             if (!wetAt(static_cast<i32>(c), static_cast<i32>(r))) {
@@ -494,11 +464,8 @@ TEST_CASE("water sim: extraction builds one closed, column-capped mesh") {
         }
     }
     CHECK(snap.meshIndices.size() ==
-          static_cast<size_t>(wet) * 6 + static_cast<size_t>(ring) * 6 +
-              static_cast<size_t>(sides) * 6);
-    CHECK(ring > 0); // the basin rim ground sits above the surface
-    // Column cap: no vertex sinks below any wet column's floor (ring
-    // nodes dive only 0.25 m under their own — higher — ground).
+          static_cast<size_t>(wet) * 6 + static_cast<size_t>(sides) * 6);
+    // Column cap: no vertex sinks below any wet column's floor.
     f32 minY = 1.0e9f;
     for (size_t v = 0; v + 4 < snap.meshVerts.size(); v += 5) {
         CHECK(std::isfinite(snap.meshVerts[v + 1]));
@@ -717,59 +684,6 @@ TEST_CASE("water sim: a mask hole mid-lake never craters the seed") {
     CHECK(state.pinned[nearHole] < render::terrain::kWaterInfoDry + 1.0f);
     CHECK(state.terrain[nearHole] + state.depth[nearHole] ==
           doctest::Approx(300.0f).epsilon(0.001));
-}
-
-TEST_CASE("water sim: the shore ring skips flood fronts and fall lips") {
-    // A 1 m-deep pond on flat ground next to a cliff: every dry
-    // neighbour's ground is clearly BELOW the water surface (flat
-    // shore at surface-1, cliff at surface-11) — no ring anywhere,
-    // the vertical walls own the volume. Accounting must be exactly
-    // tops(wet) + sides.
-    const GridSpec spec = makeSpec(65, 2.0f);
-    const auto shelf = [](f32 x, f32) {
-        return x <= 100.0f ? 300.0f : 290.0f;
-    };
-    WaterSimState state;
-    initWindow(state, spec, shelf, -1000.0f);
-    for (u32 r = 20; r <= 40; ++r) {
-        for (u32 c = 20; c <= 40; ++c) {
-            state.depth[static_cast<size_t>(r) * spec.n + c] = 1.0f;
-        }
-    }
-    WaterSimParams params = closedParams();
-    WaterSimSnapshot snap;
-    extractSnapshot(state, params, snap);
-    u32 wet = 0;
-    for (const f32 d : snap.depth) {
-        wet += d > 0.0f ? 1u : 0u;
-    }
-    REQUIRE(wet > 100);
-    u32 sides = 0;
-    const auto wetAt = [&](i32 c, i32 r) {
-        return c >= 0 && r >= 0 && c < static_cast<i32>(spec.n) &&
-               r < static_cast<i32>(spec.n) &&
-               snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f;
-    };
-    for (u32 r = 0; r < spec.n; ++r) {
-        for (u32 c = 0; c < spec.n; ++c) {
-            if (!wetAt(static_cast<i32>(c), static_cast<i32>(r))) {
-                continue;
-            }
-            const i32 dirs[4][2] = {
-                { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }
-            };
-            for (const auto& d : dirs) {
-                const i32 nc = static_cast<i32>(c) + d[0];
-                const i32 nr = static_cast<i32>(r) + d[1];
-                if (nc >= 0 && nr >= 0 && nc < static_cast<i32>(spec.n) &&
-                    nr < static_cast<i32>(spec.n) && !wetAt(nc, nr)) {
-                    ++sides;
-                }
-            }
-        }
-    }
-    CHECK(snap.meshIndices.size() ==
-          static_cast<size_t>(wet) * 6 + static_cast<size_t>(sides) * 6);
 }
 
 TEST_CASE("water sim: a narrow lake still pins and seeds (fallback)") {

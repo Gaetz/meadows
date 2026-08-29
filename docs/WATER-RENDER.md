@@ -178,19 +178,6 @@ Intégration :
 - `cooker water-replay <dump> <prefix> [substeps]` : TOUT correctif de
   simulation se vérifie sur un dump AVANT de re-déranger le dev.
 
-- **Rivages lisses = anneau d'intersection (From Dust), pas marching
-  squares** (décision 2026-08-29, recherche à l'appui) : chaque
-  cellule sèche bordant l'eau à sol proche de la surface émet aussi
-  son dessus, dont les nœuds purement secs plongent à terrain − 0,25 ;
-  la ligne d'eau est l'intersection depth-testée de deux surfaces
-  CONTINUES — lisse par construction, sous-texel gratuit (bilinéaire),
-  coût = périmètre. Le sol nettement SOUS la surface (> 0,6 m : front
-  de crue, lèvre de chute) ne reçoit pas d'anneau — les murs
-  verticaux gardent le volume. Anneau dérivé du wetMask hystérétique,
-  AUCUN discard (la leçon anti-clignotement tient) ; les gelés
-  héritent gratuitement (même extraction) ; comptabilité d'étanchéité
-  doctestée = tops(mouillées + anneau) + murs.
-
 ## 4. Restes connus / prochaines briques
 
 - C4 : nage/courants/submersion lisant le snapshot dans le rect.
