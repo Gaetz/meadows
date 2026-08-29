@@ -129,6 +129,19 @@ void refreshTerrain(WaterSimState& state, const HeightFn& height);
 // (eroded one mask texel — overhang pins were artesian springs).
 void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 
+// The river-tier extension of the pins (E1b): ribbons at or above
+// `minHalfWidth` PLACE their water — their carved-bed cells are
+// seeded AND pinned to the baked ribbon surface (reconciled against
+// the final ground at bake), so a big river no longer "disappears"
+// under the sim window while the sim re-derives it from entry
+// sources. Guards inherited from the lakes: only ground clearly
+// BELOW the surface is pinned (banks never — the artesian lesson),
+// the pin core is eroded one texel inside the ribbon half-width, and
+// the reservoir weir cap bounds the outflow. Small rivers stay 100%
+// sim. Call AFTER pinLakes (which resets the pinned plane).
+void pinRivers(WaterSimState& state, const WaterBodies& bodies,
+               f32 minHalfWidth);
+
 // Shift the window by whole cells (positive = origin moves +x/+z).
 // Interior content moves bit-exactly (memmove); entered strips get
 // terrain from `height` and start DRY (the sim moves water, it never

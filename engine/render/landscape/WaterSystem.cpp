@@ -86,7 +86,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
     const render::WaterBodies& bodies,
     const render::terraingen::GridSpec& spec,
     const vector<render::terraingen::WaterSource>& master,
-    f32 rainRate) {
+    f32 rainRate, f32 pinnedHalfWidth) {
     using render::terraingen::WaterSource;
     render::terraingen::WaterSolveParams runoff;
     runoff.rainRate = rainRate;
@@ -116,6 +116,12 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 }
             }
             if (nearMaster) {
+                continue;
+            }
+            // A ribbon wide enough to be PINNED (E1b) supplies itself
+            // through its reservoir cells — injecting an entry source
+            // on top would double its discharge.
+            if (b.halfWidth >= pinnedHalfWidth) {
                 continue;
             }
             const f32 hw = glm::max(b.halfWidth, 0.5f);
@@ -1246,7 +1252,9 @@ void WaterSystem::updateSim(rhi::Device& device,
         jobs->enqueue([sharedRef = shared, params, spec,
                        simParams = simCfg.params, fn = simSourcesFn,
                        bodiesRef = bodies, gen = generation,
-                       epoch = simEpoch, maxX, maxZ, jobsRef = jobs] {
+                       epoch = simEpoch, maxX, maxZ,
+                       pinHw = simCfg.pinRiverHalfWidth,
+                       jobsRef = jobs] {
             if (jobsRef->isStopping()) {
                 return; // abandonable at shutdown (seconds of pre-roll)
             }
@@ -1259,7 +1267,8 @@ void WaterSystem::updateSim(rhi::Device& device,
             }
             if (bodiesRef) {
                 const auto baked = bakedEntrySources(
-                    *bodiesRef, spec, out.sources, simParams.rainRate);
+                    *bodiesRef, spec, out.sources, simParams.rainRate,
+                    pinHw);
                 out.sources.insert(out.sources.end(), baked.begin(),
                                    baked.end());
             }
@@ -1278,6 +1287,7 @@ void WaterSystem::updateSim(rhi::Device& device,
                 // without this every (re)entry showed falls RESTARTING
                 // from a dry cliff instead of already flowing.
                 terrain::pinLakes(*state, *bodiesRef);
+                terrain::pinRivers(*state, *bodiesRef, pinHw);
                 terrain::stepWindow(*state, simParams, out.sources,
                                     450);
             }
@@ -1387,6 +1397,7 @@ void WaterSystem::updateSim(rhi::Device& device,
                    gen = generation, epoch = simEpoch, dCol, dRow,
                    substeps, refreshGround,
                    crumbs = std::move(crumbs),
+                   pinHw = simCfg.pinRiverHalfWidth,
                    jobsRef = jobs]() mutable {
         if (jobsRef->isStopping()) {
             return; // abandonable at shutdown
@@ -1416,7 +1427,8 @@ void WaterSystem::updateSim(rhi::Device& device,
             }
             if (bodiesRef) {
                 const auto baked = bakedEntrySources(
-                    *bodiesRef, sp, sources, simParams.rainRate);
+                    *bodiesRef, sp, sources, simParams.rainRate,
+                    pinHw);
                 sources.insert(sources.end(), baked.begin(),
                                baked.end());
             }
@@ -1426,6 +1438,7 @@ void WaterSystem::updateSim(rhi::Device& device,
             // Ground or window moved: re-rasterize the reservoirs (and
             // apply them — at least one substep).
             terrain::pinLakes(*state, *bodiesRef);
+            terrain::pinRivers(*state, *bodiesRef, pinHw);
             substeps = glm::max(substeps, 1u);
         }
         terrain::stepWindow(*state, simParams, sources, substeps);

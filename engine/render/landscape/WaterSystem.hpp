@@ -112,6 +112,10 @@ public:
         // until the published volume is calm — the "waterfall
         // restarting from a dry cliff" happens behind the curtain.
         bool settleGated { true };
+        // E1b: ribbons at or above this half-width are PINNED (the
+        // baked river PLACES its water, the sim animates the margins)
+        // — below it, rivers stay 100% sim, fed by entry sources.
+        f32 pinRiverHalfWidth { 10.0f };
         terrain::WaterSimParams params;
     };
     SimConfig& simConfig() { return simCfg; }

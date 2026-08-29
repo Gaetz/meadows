@@ -720,6 +720,100 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
     }
 }
 
+void pinRivers(WaterSimState& state, const WaterBodies& bodies,
+               f32 minHalfWidth) {
+    const GridSpec& spec = state.spec;
+    const f32 texel = spec.texelSize;
+    const i32 n = static_cast<i32>(spec.n);
+    const f32 winMaxX =
+        spec.originX + static_cast<f32>(spec.n - 1) * texel;
+    const f32 winMaxZ =
+        spec.originZ + static_cast<f32>(spec.n - 1) * texel;
+    for (const RiverSurface& river : bodies.rivers) {
+        if (river.maxX < spec.originX || river.minX > winMaxX ||
+            river.maxZ < spec.originZ || river.minZ > winMaxZ) {
+            continue;
+        }
+        for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
+            const RiverNode& a = river.nodes[s];
+            const RiverNode& b = river.nodes[s + 1];
+            const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);
+            if (hwMax < minHalfWidth) {
+                continue;
+            }
+            const f32 reach = hwMax + texel;
+            const i32 c0 = glm::max(
+                static_cast<i32>((glm::min(a.x, b.x) - reach -
+                                  spec.originX) /
+                                 texel),
+                0);
+            const i32 c1 = glm::min(
+                static_cast<i32>((glm::max(a.x, b.x) + reach -
+                                  spec.originX) /
+                                 texel) +
+                    1,
+                n - 1);
+            const i32 r0 = glm::max(
+                static_cast<i32>((glm::min(a.z, b.z) - reach -
+                                  spec.originZ) /
+                                 texel),
+                0);
+            const i32 r1 = glm::min(
+                static_cast<i32>((glm::max(a.z, b.z) + reach -
+                                  spec.originZ) /
+                                 texel) +
+                    1,
+                n - 1);
+            const f32 abx = b.x - a.x;
+            const f32 abz = b.z - a.z;
+            const f32 abLen2 =
+                glm::max(abx * abx + abz * abz, 1.0e-6f);
+            for (i32 row = r0; row <= r1; ++row) {
+                for (i32 col = c0; col <= c1; ++col) {
+                    const f32 x = spec.x(static_cast<u32>(col));
+                    const f32 z = spec.z(static_cast<u32>(row));
+                    const f32 t = glm::clamp(
+                        ((x - a.x) * abx + (z - a.z) * abz) / abLen2,
+                        0.0f, 1.0f);
+                    const f32 px = a.x + t * abx;
+                    const f32 pz = a.z + t * abz;
+                    const f32 dx = x - px;
+                    const f32 dz = z - pz;
+                    const f32 dist =
+                        std::sqrt(dx * dx + dz * dz);
+                    const f32 hw =
+                        glm::mix(a.halfWidth, b.halfWidth, t);
+                    if (hw < minHalfWidth || dist > hw) {
+                        continue;
+                    }
+                    const size_t i =
+                        static_cast<size_t>(row) * spec.n +
+                        static_cast<size_t>(col);
+                    const f32 surf =
+                        glm::mix(a.surface, b.surface, t);
+                    const f32 ground = state.terrain[i];
+                    // Banks never pin/seed (artesian lesson); and a
+                    // surface hanging absurdly high over the ground
+                    // (residual data error past the reconciled bed
+                    // caps) is skipped rather than materialized.
+                    if (ground > surf - 0.3f ||
+                        surf - ground > 9.0f) {
+                        continue;
+                    }
+                    if (state.depth[i] < 0.01f) {
+                        state.depth[i] = surf - ground;
+                    }
+                    // Pin core: eroded one texel inside the ribbon.
+                    if (dist <= hw - texel) {
+                        state.pinned[i] =
+                            glm::max(state.pinned[i], surf);
+                    }
+                }
+            }
+        }
+    }
+}
+
 void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
                      WaterSimSnapshot& out) {
     const GridSpec& spec = state.spec;

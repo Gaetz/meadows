@@ -644,6 +644,56 @@ TEST_CASE("water sim: a tile seam between lake pieces never films") {
           doctest::Approx(300.0f).epsilon(0.001));
 }
 
+TEST_CASE("water sim: pinRivers pins the carved bed, never the banks") {
+    // E1b: a wide ribbon (hw >= threshold) PLACES its water — bed
+    // cells seeded and pinned at the ribbon surface; bank cells
+    // (ground above the surface) never touched (artesian lesson); a
+    // small ribbon stays 100% sim.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto channel = [](f32, f32 z) {
+        return (z >= 38.0f && z <= 46.0f) ? 296.0f : 300.0f;
+    };
+    WaterSimState state;
+    initWindow(state, spec, channel, -1000.0f);
+    render::WaterBodies bodies;
+    render::RiverSurface big;
+    big.nodes.push_back({ 10.0f, 42.0f, 297.0f, 12.0f });
+    big.nodes.push_back({ 120.0f, 42.0f, 296.5f, 12.0f });
+    big.minX = 0.0f;
+    big.minZ = 30.0f;
+    big.maxX = 128.0f;
+    big.maxZ = 54.0f;
+    bodies.rivers.push_back(big);
+    render::RiverSurface small;
+    small.nodes.push_back({ 10.0f, 100.0f, 301.0f, 5.0f });
+    small.nodes.push_back({ 120.0f, 100.0f, 300.8f, 5.0f });
+    small.minX = 0.0f;
+    small.minZ = 94.0f;
+    small.maxX = 128.0f;
+    small.maxZ = 106.0f;
+    bodies.rivers.push_back(small);
+    pinRivers(state, bodies, 10.0f);
+    const auto at = [&](f32 x, f32 z) {
+        return static_cast<size_t>(z / 2.0f) * spec.n +
+               static_cast<size_t>(x / 2.0f);
+    };
+    // Mid-bed: pinned at the interpolated surface, seeded ~1 m deep.
+    const size_t bed = at(60.0f, 42.0f);
+    CHECK(state.pinned[bed] > render::terrain::kWaterInfoDry + 1.0f);
+    CHECK(state.pinned[bed] ==
+          doctest::Approx(296.77f).epsilon(0.01));
+    CHECK(state.depth[bed] > 0.5f);
+    // Bank inside the ribbon reach but ABOVE the surface: untouched.
+    const size_t bank = at(60.0f, 50.0f);
+    CHECK(state.pinned[bank] < render::terrain::kWaterInfoDry + 1.0f);
+    CHECK(state.depth[bank] == 0.0f);
+    // Below-threshold ribbon: no pins anywhere on its course.
+    const size_t smallBed = at(60.0f, 100.0f);
+    CHECK(state.pinned[smallBed] <
+          render::terrain::kWaterInfoDry + 1.0f);
+    CHECK(state.depth[smallBed] == 0.0f);
+}
+
 TEST_CASE("water sim: a mask hole mid-lake never craters the seed") {
     // The 8 m mask can carry uncovered texels OVER deep water
     // (rasterization holes, concave bays, island rings). The crest
