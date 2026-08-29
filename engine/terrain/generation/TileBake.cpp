@@ -1286,29 +1286,38 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
                 ? finalize.streamDepthMax
                 : (river.tier == 1 ? finalize.riverDepthMax
                                    : finalize.fleuveDepthMax);
-        f32 prev = 1.0e9f;
-        for (RiverPoint& pt : river.points) {
-            f32 s = pt.surface;
+        // The profile is REBUILT from the mouth UPSTREAM: surface =
+        // final bed + the tier's carved depth, RAISED by the
+        // downstream water (backwater — a rising lip pools the water
+        // behind it). A downstream running-MIN did the opposite: one
+        // node clamped low over a local pothole dragged the whole
+        // reach UNDER every bed rise — a torrent flowing inside its
+        // channel walls, invisible from above, blue screen below
+        // (measured dev at (9622, 4131)). Monotone downhill holds by
+        // construction and the water always rides ABOVE its bed.
+        f32 next = -1.0e9f;
+        for (size_t k = river.points.size(); k-- > 0;) {
+            RiverPoint& pt = river.points[k];
             const f32 ground = finalGroundAt(region, pt.x, pt.z);
+            f32 s;
             if (ground < 1.0e8f) {
-                // The S5d bed formula: the surface may ride at most
-                // one carved-bed depth over the final ground.
                 const f32 bed = glm::clamp(
                     finalize.riverDepthCoef * 2.0f * pt.halfWidth,
                     finalize.riverDepthMin, tierCap);
-                s = glm::min(s, ground + bed);
+                s = ground + bed;
+            } else {
+                s = pt.surface; // outside the rect: keep the bake
             }
             for (const Lake& lake : lakes) {
                 if (inLake(lake, pt.x, pt.z)) {
-                    // Crossing a reconciled lake: the water surface
-                    // there IS the lake's (possibly lowered) level.
+                    // Crossing a reconciled lake: the surface there
+                    // IS the lake's (possibly lowered) level.
                     s = lake.level;
                     break;
                 }
             }
-            // The monotone-downhill contract survives every clamp.
-            s = glm::min(s, prev);
-            prev = s;
+            s = glm::max(s, next); // backwater from downstream
+            next = s;
             pt.surface = s;
         }
     }

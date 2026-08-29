@@ -197,11 +197,13 @@ void reconcileLakesWithTerrain(vector<Lake>& lakes,
 // Same debt for the RIVERS: their node surfaces come from the
 // pre-finalize hydrology, and the carves (plus the lake reconcile
 // above) can leave ribbons hanging over deepened beds or lowered
-// lakes. Per node, downstream: clamp the surface to the FINAL ground
-// plus the tier's carved bed depth (the S5d formula), snap nodes
-// inside a reconciled lake to its level, then re-impose the monotone
-// downhill contract (running min). Ground outside the published rect
-// leaves the node untouched (conservative).
+// lakes. The profile is REBUILT from the mouth upstream: surface =
+// final ground + the tier's carved bed depth (the S5d formula),
+// nodes inside a reconciled lake at its level, each raised by the
+// downstream water (backwater) — monotone downhill by construction
+// and always ABOVE the bed (a downstream running-min dived under
+// every local bed rise: torrents flowing inside their channel
+// walls). Ground outside the published rect keeps the baked surface.
 void reconcileRiversWithTerrain(vector<River>& rivers,
                                 const vector<Lake>& lakes,
                                 const render::TerrainRegion& region,
@@ -223,7 +225,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 64;
+constexpr u32 kTileBakeVersion = 65;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

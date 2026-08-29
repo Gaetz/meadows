@@ -180,9 +180,10 @@ TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
 TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
     // A river baked BEFORE the carves: flat old surface 297 over a
     // bed the fine erosion later dropped to 288 past x=100, plus a
-    // reconciled lake at 294 crossing the course upstream. Nodes must
-    // ride the final bed (+ tier depth), snap to the lake level, and
-    // keep the monotone-downhill contract.
+    // reconciled lake at 299 crossing the course upstream. The
+    // profile is rebuilt from the mouth: final bed + tier depth,
+    // lake level where crossed, backwater upstream — monotone and
+    // always above the bed.
     render::TerrainRegion region;
     region.width = 100;
     region.height = 100;
@@ -203,7 +204,7 @@ TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
         }
     }
     vector<Lake> lakes(1);
-    lakes[0].level = 294.0f;
+    lakes[0].level = 299.0f;
     lakes[0].minX = 20.0f;
     lakes[0].minZ = 30.0f;
     lakes[0].maxX = 40.0f;
@@ -221,11 +222,19 @@ TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
     FinalizeParams fin;
     reconcileRiversWithTerrain(rivers, lakes, region, fin);
     const auto& pts = rivers[0].points;
-    CHECK(pts[1].surface == doctest::Approx(294.0f)); // x=30: the lake
+    CHECK(pts[0].surface ==
+          doctest::Approx(299.0f)); // x=10: backwater of the lake
+    CHECK(pts[1].surface == doctest::Approx(299.0f)); // x=30: the lake
+    CHECK(pts[2].surface ==
+          doctest::Approx(297.8f).epsilon(0.001)); // x=50: bed+1.8
     CHECK(pts[5].surface ==
           doctest::Approx(289.8f).epsilon(0.001)); // x=110: bed+1.8
     for (size_t i = 1; i < pts.size(); ++i) {
         CHECK(pts[i].surface <= pts[i - 1].surface + 1.0e-4f);
+        // Above its bed everywhere: the old running-min dived under.
+        const f32 ground =
+            (pts[i].x < 100.0f) ? 296.0f : 288.0f;
+        CHECK(pts[i].surface >= ground);
     }
 }
 
