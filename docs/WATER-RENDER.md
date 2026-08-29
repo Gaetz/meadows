@@ -198,7 +198,11 @@ Intégration :
   ENTRANTES depuis la miette la plus récente qui les couvre (eau
   copiée — profondeur, tuyaux, mémoire de mouillage — jamais
   inventée : la doctrine bandes-sèches interdit l'invention, pas le
-  souvenir). Et la sim reste VISIBLE de loin via les FENÊTRES GELÉES
+  souvenir). L'empreinte COURANTE est en plus rafraîchie toutes les
+  4 s (miette + gel, remplacement par dédup d'empreinte) : l'eau
+  purement dynamique — étalements, films de crue, sans contrepartie
+  bakée — formée depuis le dernier jalon de trajet survivait sinon ni
+  à l'anneau de marge ni au retour (mesuré dev). Et la sim reste VISIBLE de loin via les FENÊTRES GELÉES
   (demande dev 2026-08-28 — « agrandir la fenêtre » écarté : coût en
   n² du kernel/uploads/pre-roll) : à chaque pose de miette ou
   téléport, le maillage du snapshot courant est copié en buffers GPU
