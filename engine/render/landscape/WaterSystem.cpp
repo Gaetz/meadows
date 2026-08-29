@@ -341,10 +341,14 @@ void WaterSystem::setBodies(sptr<const WaterBodies> next) {
     bodies = std::move(next);
     ++bodiesStamp;
     bodiesDirty = true;
-    // Cached windows pinned/seeded against the old bodies are stale;
-    // frozen meshes too (destroyed next updateSim, device in hand).
-    simCache.clear();
-    simFrozenClearPending = true;
+    // Do NOT clear the crumb cache or the frozen meshes here: bodies
+    // change on EVERY streamed tile, and wiping wiped the water
+    // memory every few seconds of travel (dev: "the saved water and
+    // its transitions are gone" — they only ever worked inside fully
+    // streamed zones). Staleness is self-healing: pinLakes
+    // re-rasterizes the pins from the CURRENT bodies on every resume
+    // and scroll, and the frozen footprint refreshes on its timer.
+    // The sculpt hook (a real ground change) keeps the full clear.
 }
 
 void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
