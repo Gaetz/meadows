@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 
 #include <glm/glm.hpp>
 
@@ -877,6 +878,9 @@ TileBakeResult bakeTileStage2(
         }
         out.lakes.push_back(lake);
     }
+    // The flood predates the finalize carves — re-validate every
+    // published lake against the FINAL ground (see the header note).
+    reconcileLakesWithTerrain(out.lakes, out.region);
     const f32 keepMaxX = keepMinX + keepSpan;
     const f32 keepMaxZ = keepMinZ + keepSpan;
     const auto inKeep = [&](const RiverPoint& pt) {
@@ -944,6 +948,154 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
                               return &stage1s[dz + 1][dx + 1];
                           },
                           cancel);
+}
+
+void reconcileLakesWithTerrain(vector<Lake>& lakes,
+                               const render::TerrainRegion& region) {
+    if (region.heights.empty() || region.width < 2 ||
+        region.height < 2 || region.texelSize <= 0.0f) {
+        return;
+    }
+    const auto groundAt = [&](f32 x, f32 z) -> f32 {
+        const f32 fx = (x - region.originX) / region.texelSize;
+        const f32 fz = (z - region.originZ) / region.texelSize;
+        if (fx < 0.0f || fz < 0.0f ||
+            fx > static_cast<f32>(region.width) - 1.001f ||
+            fz > static_cast<f32>(region.height) - 1.001f) {
+            return 1.0e9f; // outside the published rect: a wall
+        }
+        const u32 c = static_cast<u32>(fx);
+        const u32 r = static_cast<u32>(fz);
+        const f32 tx = fx - static_cast<f32>(c);
+        const f32 tz = fz - static_cast<f32>(r);
+        const auto at = [&](u32 cc, u32 rr) {
+            return region.heights[static_cast<size_t>(rr) *
+                                      region.width +
+                                  cc];
+        };
+        return glm::mix(glm::mix(at(c, r), at(c + 1, r), tx),
+                        glm::mix(at(c, r + 1), at(c + 1, r + 1), tx),
+                        tz);
+    };
+    for (size_t li = 0; li < lakes.size();) {
+        Lake& lake = lakes[li];
+        const i32 w = static_cast<i32>(lake.maskWidth);
+        const i32 h = static_cast<i32>(lake.maskHeight);
+        if (lake.mask.empty() || w <= 0 || h <= 0) {
+            ++li;
+            continue; // maskless authored pond: not this pass's call
+        }
+        const f32 mt = lake.maskTexel;
+        const size_t cells = static_cast<size_t>(w) * h;
+        vector<f32> ground(cells);
+        size_t deepest = 0;
+        f32 deepestGround = 1.0e9f;
+        for (i32 r = 0; r < h; ++r) {
+            for (i32 c = 0; c < w; ++c) {
+                const size_t i = static_cast<size_t>(r) * w + c;
+                ground[i] =
+                    groundAt(lake.minX + static_cast<f32>(c) * mt,
+                             lake.minZ + static_cast<f32>(r) * mt);
+                if (lake.mask[i] != 0 && ground[i] < deepestGround) {
+                    deepestGround = ground[i];
+                    deepest = i;
+                }
+            }
+        }
+        if (deepestGround > 1.0e8f) {
+            // Nothing of it lies in the published rect: leave it to
+            // the tile that can actually see it.
+            ++li;
+            continue;
+        }
+        // Priority flood from the window border: fill[i] = the level
+        // water AT i must reach to escape the window — the true spill
+        // on the final ground.
+        vector<f32> fill(cells, 1.0e9f);
+        vector<u8> seen(cells, 0);
+        using Node = std::pair<f32, u32>;
+        std::priority_queue<Node, vector<Node>, std::greater<Node>>
+            heap;
+        const auto seed = [&](size_t i) {
+            if (!seen[i]) {
+                fill[i] = ground[i];
+                seen[i] = 1;
+                heap.push({ fill[i], static_cast<u32>(i) });
+            }
+        };
+        for (i32 c = 0; c < w; ++c) {
+            seed(static_cast<size_t>(c));
+            seed(static_cast<size_t>(h - 1) * w + c);
+        }
+        for (i32 r = 0; r < h; ++r) {
+            seed(static_cast<size_t>(r) * w);
+            seed(static_cast<size_t>(r) * w + (w - 1));
+        }
+        const i32 dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
+                                 { 0, -1 } };
+        while (!heap.empty()) {
+            const Node top = heap.top();
+            heap.pop();
+            const size_t i = top.second;
+            if (top.first > fill[i] + 1.0e-6f) {
+                continue; // stale heap entry
+            }
+            const i32 c = static_cast<i32>(i % static_cast<size_t>(w));
+            const i32 r = static_cast<i32>(i / static_cast<size_t>(w));
+            for (const auto& d : dirs) {
+                const i32 nc = c + d[0];
+                const i32 nr = r + d[1];
+                if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
+                    continue;
+                }
+                const size_t j =
+                    static_cast<size_t>(nr) * w + static_cast<size_t>(nc);
+                const f32 nf = glm::max(ground[j], fill[i]);
+                if (!seen[j] || nf < fill[j] - 1.0e-6f) {
+                    fill[j] = nf;
+                    seen[j] = 1;
+                    heap.push({ nf, static_cast<u32>(j) });
+                }
+            }
+        }
+        const f32 level = glm::min(lake.level, fill[deepest]);
+        if (level - deepestGround < 0.5f) {
+            // The carve breached the basin below a real lake: drop it.
+            lakes.erase(lakes.begin() + static_cast<i32>(li));
+            continue;
+        }
+        // Re-cut the mask: the cells actually enclosed under the
+        // (possibly lowered) level, connected to the deepest cell.
+        vector<u8> mask(cells, 0);
+        vector<u32> stack;
+        stack.push_back(static_cast<u32>(deepest));
+        mask[deepest] = 1;
+        u32 kept = 1;
+        while (!stack.empty()) {
+            const size_t i = stack.back();
+            stack.pop_back();
+            const i32 c = static_cast<i32>(i % static_cast<size_t>(w));
+            const i32 r = static_cast<i32>(i / static_cast<size_t>(w));
+            for (const auto& d : dirs) {
+                const i32 nc = c + d[0];
+                const i32 nr = r + d[1];
+                if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
+                    continue;
+                }
+                const size_t j =
+                    static_cast<size_t>(nr) * w + static_cast<size_t>(nc);
+                if (mask[j] == 0 && ground[j] < level - 0.02f) {
+                    mask[j] = 1;
+                    ++kept;
+                    stack.push_back(static_cast<u32>(j));
+                }
+            }
+        }
+        lake.level = level;
+        lake.mask.assign(mask.begin(), mask.end());
+        lake.cells = kept;
+        ++li;
+    }
 }
 
 } // namespace render::terraingen

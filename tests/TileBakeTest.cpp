@@ -33,6 +33,106 @@ TileBakeParams testParams() {
 
 } // namespace
 
+TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
+    // The hydrology floods on the COMPOSITE terrain; the fine erosion
+    // then carves gorges the flood never saw. A lake claiming water
+    // over a carved breach must be lowered to the TRUE spill and its
+    // overhanging finger dropped; a basin breached below ~0.5 m of
+    // depth vanishes entirely.
+    render::TerrainRegion region;
+    region.width = 130;
+    region.height = 130;
+    region.originX = 0.0f;
+    region.originZ = 0.0f;
+    region.texelSize = 2.0f; // covers [0, 258]
+    region.heights.assign(static_cast<size_t>(region.width) *
+                              region.height,
+                          302.0f);
+    const auto paint = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 hgt) {
+        for (u32 r = 0; r < region.height; ++r) {
+            for (u32 c = 0; c < region.width; ++c) {
+                const f32 x = static_cast<f32>(c) * 2.0f;
+                const f32 z = static_cast<f32>(r) * 2.0f;
+                if (x >= x0 && x <= x1 && z >= z0 && z <= z1) {
+                    region.heights[static_cast<size_t>(r) *
+                                       region.width +
+                                   c] = hgt;
+                }
+            }
+        }
+    };
+    paint(40.0f, 40.0f, 120.0f, 120.0f, 290.0f);  // basin A
+    paint(120.0f, 76.0f, 258.0f, 84.0f, 293.5f);  // carved breach A
+    paint(160.0f, 160.0f, 200.0f, 200.0f, 290.0f); // basin B
+    paint(200.0f, 176.0f, 258.0f, 184.0f, 290.3f); // deep breach B
+
+    vector<Lake> lakes(2);
+    const auto maskFromGround = [&](Lake& lake, f32 below) {
+        lake.maskWidth = static_cast<u32>(
+            (lake.maxX - lake.minX) / lake.maskTexel);
+        lake.maskHeight = static_cast<u32>(
+            (lake.maxZ - lake.minZ) / lake.maskTexel);
+        lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                             lake.maskHeight,
+                         0);
+        u32 cells = 0;
+        for (u32 r = 0; r < lake.maskHeight; ++r) {
+            for (u32 c = 0; c < lake.maskWidth; ++c) {
+                const f32 x =
+                    lake.minX + static_cast<f32>(c) * lake.maskTexel;
+                const f32 z =
+                    lake.minZ + static_cast<f32>(r) * lake.maskTexel;
+                const u32 rc = static_cast<u32>(x / 2.0f);
+                const u32 rr = static_cast<u32>(z / 2.0f);
+                if (region.heights[static_cast<size_t>(rr) *
+                                       region.width +
+                                   rc] < below) {
+                    lake.mask[static_cast<size_t>(r) *
+                                  lake.maskWidth +
+                              c] = 1;
+                    ++cells;
+                }
+            }
+        }
+        lake.cells = cells;
+    };
+    lakes[0].level = 300.0f; // pre-carve flood: 10 m too high
+    lakes[0].minX = 32.0f;
+    lakes[0].minZ = 32.0f;
+    lakes[0].maxX = 136.0f;
+    lakes[0].maxZ = 136.0f;
+    lakes[0].maskTexel = 8.0f;
+    maskFromGround(lakes[0], 300.0f); // basin + the breach finger
+    lakes[1].level = 295.0f;
+    lakes[1].minX = 152.0f;
+    lakes[1].minZ = 152.0f;
+    lakes[1].maxX = 208.0f;
+    lakes[1].maxZ = 208.0f;
+    lakes[1].maskTexel = 8.0f;
+    maskFromGround(lakes[1], 295.0f);
+    const u32 cellsBefore = lakes[0].cells;
+    REQUIRE(cellsBefore > 0);
+    REQUIRE(lakes[1].cells > 0);
+
+    reconcileLakesWithTerrain(lakes, region);
+    // Lake B: breached to 0.3 m of depth — gone.
+    REQUIRE(lakes.size() == 1);
+    // Lake A: lowered to the breach spill, finger cells (ground at
+    // the spill) dropped, basin cells kept.
+    CHECK(lakes[0].level == doctest::Approx(293.5f).epsilon(0.001));
+    CHECK(lakes[0].cells < cellsBefore);
+    CHECK(lakes[0].cells > 0);
+    const auto maskAt = [&](f32 x, f32 z) {
+        const u32 c = static_cast<u32>((x - lakes[0].minX) / 8.0f);
+        const u32 r = static_cast<u32>((z - lakes[0].minZ) / 8.0f);
+        return lakes[0].mask[static_cast<size_t>(r) *
+                                 lakes[0].maskWidth +
+                             c];
+    };
+    CHECK(maskAt(80.0f, 80.0f) == 1);  // mid-basin
+    CHECK(maskAt(128.0f, 80.0f) == 0); // the breach finger
+}
+
 TEST_CASE("tile bakes are deterministic") {
     const TileBakeParams params = testParams();
     const TileBakeResult a = bakeTile(params, 3, -2);

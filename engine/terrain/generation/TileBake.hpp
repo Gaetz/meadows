@@ -180,6 +180,20 @@ TileBakeResult bakeTileStage2(
 TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
                         const std::atomic<bool>* cancel = nullptr);
 
+// The hydrology floods lakes on the COMPOSITE terrain, BEFORE the
+// finalize passes — and the discharge-driven fine erosion then carves
+// gorges the flood never saw. A lake mask can therefore claim water
+// over ground that no longer holds it (a floating slab pouring into a
+// carved canyon, measured in-game at (7918, 597)). Run AFTER the
+// region's final heights exist: per lake, a priority flood on the
+// PUBLISHED ground finds the true spill of its deepest cell — the
+// level is lowered to it (never raised), the mask re-cut to the cells
+// actually enclosed, and a lake left shallower than ~0.5 m is
+// dropped. Ground outside the region rect reads as a wall
+// (conservative: never deletes what it cannot see).
+void reconcileLakesWithTerrain(vector<Lake>& lakes,
+                               const render::TerrainRegion& region);
+
 // Cache identity, split by stage so a hydrology/finalize change does not
 // invalidate the expensive stage-1 terrain caches:
 //   kStage1Version   — bump when stage-1 output changes (S1 macro, S2
@@ -188,7 +202,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 59;
+constexpr u32 kTileBakeVersion = 60;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its
