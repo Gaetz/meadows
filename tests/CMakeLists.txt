@@ -70,7 +70,6 @@
     KillZTest.cpp
     FloatersTest.cpp
     RiverGeometryTest.cpp
-    WaterInfoMapTest.cpp
     WaterSolveTest.cpp
     WaterSimTest.cpp
     WaterQueryTest.cpp

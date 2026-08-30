@@ -154,8 +154,6 @@ struct FrameComposerInputs {
     Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
     // x = water debug view mode (0 off).
     Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Water-info map: xy = center, z = 1/span, w = valid.
-    Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Live water-sim window: xy = origin, z = 1/span, w = valid;
     // tune = trusted inset (m), fade band (m), debug mode.
     Vec4 waterSimMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };

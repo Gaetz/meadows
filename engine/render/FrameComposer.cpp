@@ -212,7 +212,6 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         resolved.mistInfo = Vec4 { 0.0f };
     }
     resolved.waterDebugInfo = in.waterDebugInfo;
-    resolved.waterInfoMapInfo = in.waterInfoMapInfo;
     resolved.waterSimMapInfo = in.waterSimMapInfo;
     resolved.waterSimTuneInfo = in.waterSimTuneInfo;
     for (size_t k = 0; k < in.waterSimFrozen.size(); ++k) {

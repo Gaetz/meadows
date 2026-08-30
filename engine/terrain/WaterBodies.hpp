@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 
 #include <glm/glm.hpp>
@@ -15,6 +16,14 @@
 // (world/terrain/WaterBodiesBuilder) and from sandbox tile bakes.
 
 namespace render {
+
+namespace terrain {
+// Shared across the water stack (sim, queries, navigator) — the
+// dry-surface sentinel and the height callback (§2.10: the sim samples
+// ground through this, never through the renderer).
+constexpr f32 kWaterInfoDry = -1.0e6f; // surface sentinel: no water
+using HeightFn = std::function<f32(f32, f32)>;
+} // namespace terrain
 
 // A water shading preset (WaterMaterialForm's flecs/Forms-free mirror):
 // index 0 is ALWAYS default water — the default-constructed values are

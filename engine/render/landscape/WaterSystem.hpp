@@ -43,14 +43,6 @@ public:
     static constexpr f32 kPoolMapSpan = 3072.0f; // meters covered
     static constexpr f32 kRebakeDistance = 512.0f;
 
-    // Water-info map (engine/terrain/WaterInfoMap): camera-local surface
-    // height / depth / composited flow for lakes+rivers — the per-pixel
-    // junction resolution. Same worker-bake mailbox as the pool map,
-    // tighter follow distance (finer texels).
-    static constexpr u32 kInfoMapSize = 1024;
-    static constexpr f32 kInfoMapSpan = 1536.0f;
-    static constexpr f32 kInfoRebakeDistance = 384.0f;
-
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobSystem);
     void destroy(rhi::Device& device);
@@ -108,15 +100,6 @@ public:
     Vec4 poolMapInfo() const {
         return { mapCenter.x, mapCenter.y, 1.0f / kPoolMapSpan, 0.0f };
     }
-    // For FrameUniforms::waterInfoMapInfo (xy = center, z = 1/span,
-    // w = valid). Invalid while the first bake runs or right after the
-    // bodies changed — the shader then falls back to pure vertex data,
-    // so a stale map can never show wrong junctions.
-    Vec4 infoMapInfo() const {
-        return { infoCenter.x, infoCenter.y, 1.0f / kInfoMapSpan,
-                 infoValid ? 1.0f : 0.0f };
-    }
-
     // `sceneBindGroup` holds the pre-water scene color+depth snapshot
     // (texture units 0 and 1) — owned by the scene, since the snapshot
     // textures track the window size.
@@ -215,14 +198,6 @@ private:
         u64 bodiesStamp { 0 };
         vector<f32> texels;
     };
-    struct BakedInfo {
-        Vec2 center {};
-        u64 generation { 0 };
-        u32 seed { 0 };
-        u64 bodiesStamp { 0 };
-        vector<f32> surface; // R32F payload
-        vector<f32> extras;  // RGBA16F payload: depth, flowXZ, spare
-    };
     // Local (lakes + ribbons) geometry, built on a WORKER: the build
     // grew heavy (per-texel lake quads with perimeter probes, ribbons
     // densified to 4 m with a terrain::height per node) and it runs
@@ -256,7 +231,6 @@ private:
     };
     struct Shared {
         core::ConcurrentQueue<BakedMap> baked;
-        core::ConcurrentQueue<BakedInfo> bakedInfo;
         core::ConcurrentQueue<SimResult> simDone;
         core::ConcurrentQueue<LocalMesh> localMesh;
         core::ConcurrentQueue<FarMesh> farMesh;
@@ -296,14 +270,6 @@ private:
     rhi::SamplerHandle poolMapSampler {};
     rhi::BindGroupHandle poolMapGroup {};
 
-    // Water-info map state (bindings 5/6 of poolMapGroup).
-    bool infoBakeInFlight { false };
-    bool infoValid { false };
-    Vec2 infoCenter { 1.0e9f, 1.0e9f };
-    u32 infoSeed { 0 };
-    u64 infoBodiesStamp { ~0ull };
-    rhi::TextureHandle infoMapA {};
-    rhi::TextureHandle infoMapB {};
     // Water material presets (WaterMaterialsUbo, binding 1 of the map
     // group): 16 slots, slot 0 = default water.
     static constexpr u32 kMaxWaterMaterials = 16;

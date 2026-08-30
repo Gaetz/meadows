@@ -8,7 +8,6 @@
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/terrain/RiverGeometry.hpp"
-#include "engine/terrain/WaterInfoMap.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -203,21 +202,7 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                      .format = rhi::TextureFormat::R16F,
                                      .usage = rhi::TextureUsage_Sampled },
                                    &kDeep);
-    // Water-info placeholders: dry everywhere, zero flow — the validity
-    // flag keeps the shader off them until a real bake lands anyway.
-    const f32 kDry = terrain::kWaterInfoDry;
-    infoMapA = device.createTexture({ .width = 1,
-                                      .height = 1,
-                                      .format = rhi::TextureFormat::R32F,
-                                      .usage = rhi::TextureUsage_Sampled },
-                                    &kDry);
     const f32 kZeros[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    infoMapB =
-        device.createTexture({ .width = 1,
-                               .height = 1,
-                               .format = rhi::TextureFormat::RGBA16F,
-                               .usage = rhi::TextureUsage_Sampled },
-                             kZeros);
     // Sim placeholders: dry everywhere until the first pre-roll lands
     // (created before the first bind-group build below).
     const f32 kTuck = -1.0e6f;
@@ -255,8 +240,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterLocalShader,
@@ -265,8 +248,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimShader,
@@ -275,8 +256,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimFrozenShader,
@@ -285,8 +264,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterInfoA", 5 },
-                   { "uWaterInfoB", 6 },
                    { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimBoxShader, { { "FrameUbo", 0 } }, {});
@@ -297,16 +274,8 @@ void WaterSystem::destroy(rhi::Device& device) {
     ++generation; // in-flight bakes die on arrival (shared queue outlives us)
     device.destroyBindGroup(poolMapGroup);
     device.destroyTexture(poolMap);
-    device.destroyTexture(infoMapA);
-    device.destroyTexture(infoMapB);
     device.destroyBuffer(materialsUbo);
     materialsUbo = {};
-    infoMapA = {};
-    infoMapB = {};
-    infoValid = false;
-    infoBakeInFlight = false;
-    infoCenter = { 1.0e9f, 1.0e9f };
-    infoBodiesStamp = ~0ull;
     device.destroySampler(poolMapSampler);
     device.destroyPipeline(pipeline);
     device.destroyBuffer(indexBuffer);
@@ -963,34 +932,6 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         bakedBodiesStamp = baked.bodiesStamp;
         bakeInFlight = false;
     }
-    BakedInfo info;
-    while (shared->bakedInfo.tryPop(info)) {
-        if (info.generation != generation) {
-            continue;
-        }
-        device.destroyTexture(infoMapA);
-        device.destroyTexture(infoMapB);
-        infoMapA = device.createTexture(
-            { .width = kInfoMapSize,
-              .height = kInfoMapSize,
-              .format = rhi::TextureFormat::R32F,
-              .filter = rhi::FilterMode::Linear,
-              .usage = rhi::TextureUsage_Sampled },
-            info.surface.data());
-        infoMapB = device.createTexture(
-            { .width = kInfoMapSize,
-              .height = kInfoMapSize,
-              .format = rhi::TextureFormat::RGBA16F,
-              .filter = rhi::FilterMode::Linear,
-              .usage = rhi::TextureUsage_Sampled },
-            info.extras.data());
-        rebuildMapGroup(device);
-        infoCenter = info.center;
-        infoSeed = info.seed;
-        infoBodiesStamp = info.bodiesStamp;
-        infoValid = true;
-        infoBakeInFlight = false;
-    }
 
     // Local geometry: WORKER-built (the synchronous build stuttered
     // the frame on every streamed tile — see LocalMesh); main uploads
@@ -1103,45 +1044,6 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         });
     }
 
-    // Water-info map: same predicate shape, its own (tighter) follow
-    // distance. On a CONTENT change the old texture must not resolve
-    // junctions against dead bodies — drop the validity flag until the
-    // fresh bake lands (the shader then uses pure vertex data, i.e.
-    // exactly the pre-info rendering).
-    const u64 wantedStamp = bodiesStamp + params.contentStamp;
-    const bool infoStale =
-        glm::distance(camXz, infoCenter) > kInfoRebakeDistance ||
-        infoSeed != params.seed || infoBodiesStamp != wantedStamp;
-    if (infoBodiesStamp != wantedStamp) {
-        infoValid = false;
-    }
-    if (infoStale && !infoBakeInFlight) {
-        infoBakeInFlight = true;
-        jobs->enqueue([sharedRef = shared, params, camXz,
-                       gen = generation, bodiesRef = bodies,
-                       stamp = wantedStamp] {
-            BakedInfo out;
-            out.generation = gen;
-            out.seed = params.seed;
-            out.bodiesStamp = stamp;
-            const WaterBodies empty;
-            terrain::WaterInfoMap map = terrain::bakeWaterInfo(
-                bodiesRef ? *bodiesRef : empty, camXz, kInfoMapSpan,
-                kInfoMapSize, [&params](f32 x, f32 z) {
-                    return terrain::height(params, x, z);
-                });
-            out.center = map.center;
-            out.surface = std::move(map.surface);
-            out.extras.resize(map.depth.size() * 4);
-            for (size_t i = 0; i < map.depth.size(); ++i) {
-                out.extras[i * 4 + 0] = map.depth[i];
-                out.extras[i * 4 + 1] = map.flow[i].x;
-                out.extras[i * 4 + 2] = map.flow[i].y;
-                out.extras[i * 4 + 3] = 0.0f;
-            }
-            sharedRef->bakedInfo.push(std::move(out));
-        });
-    }
 }
 
 Vec4 WaterSystem::simMapInfo() const {
@@ -1755,12 +1657,8 @@ void WaterSystem::rebuildMapGroup(rhi::Device& device) {
                        { .binding = 3,
                          .texture = poolMap,
                          .sampler = poolMapSampler },
-                       { .binding = 5,
-                         .texture = infoMapA,
-                         .sampler = poolMapSampler },
-                       { .binding = 6,
-                         .texture = infoMapB,
-                         .sampler = poolMapSampler },
+                       // Bindings 5/6: retired with the WaterInfoMap
+                       // (E5) — frozen, never renumbered.
                        { .binding = 7,
                          .texture = simMapA,
                          .sampler = poolMapSampler },

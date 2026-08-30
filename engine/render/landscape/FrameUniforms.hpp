@@ -180,8 +180,9 @@ struct FrameUniforms {
     // x = water debug view mode (0 off; see RenderTuningPanels' Water
     // combo), yzw free.
     Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Water-info map (WaterSystem): xy = center, z = 1/span, w = valid.
-    Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Retired lane (was the WaterInfoMap info, E5) — kept zeroed,
+    // never removed nor renumbered (append-only FrameUbo).
+    Vec4 waterReserved0 { 0.0f, 0.0f, 0.0f, 0.0f };
     // Seasons: x = autumn blend 0..1, y = leaf fall 0..1, zw free.
     // Applied per leaf-mask atlas slot through leafSeason below.
     Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -294,7 +295,7 @@ static_assert(offsetof(FrameUniforms, cloudVolShapeInfo) == 1472);
 static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1488);
 static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1504);
 static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
-static_assert(offsetof(FrameUniforms, waterInfoMapInfo) == 1536);
+static_assert(offsetof(FrameUniforms, waterReserved0) == 1536);
 static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
 static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
 static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1696);

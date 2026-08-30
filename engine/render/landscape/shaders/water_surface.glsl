@@ -15,11 +15,7 @@ layout(binding = 3) uniform sampler2D uPoolDepth;
 // Main-view volumetric sky clouds (rgb + transmittance a, last frame's
 // display buffer) — reprojected into the mirror, see below.
 layout(binding = 4) uniform sampler2D uSkyClouds;
-// Camera-local water-info map (WaterInfoMap, CPU-baked): A = surface Y
-// (-1e6 dry), B = depth / flow XZ / spare. Junctions and ribbon
-// overlaps resolve per PIXEL against this — the Unreal Water model.
-layout(binding = 5) uniform sampler2D uWaterInfoA;
-layout(binding = 6) uniform sampler2D uWaterInfoB;
+// Bindings 5/6: retired with the WaterInfoMap (E5) — frozen slots.
 // Live sim window (WaterSystem::updateSim): A = display level (wet
 // surface, or ground minus a tuck where dry), B = depth / current XZ /
 // spare. uWaterSimMapInfo maps world -> window uv.
@@ -282,25 +278,7 @@ void main() {
     // Rivers: the wave field is ADVECTED downstream (current, not wind)
     // and its ripples shrink with the channel — a 4 m creek carries
     // wavelets, not ocean swell. Lakes keep the still-water field.
-    // Where the water-info map is valid and agrees this fragment IS the
-    // local surface, its composited flow replaces the per-ribbon flow:
-    // two crossing ribbons then shade identically and their overlap
-    // becomes invisible.
     vec2 flowVec = vFlow;
-    vec2 infoUv =
-        (vWorldPos.xz - uWaterInfoMapInfo.xy) * uWaterInfoMapInfo.z + 0.5;
-    bool infoValid = uWaterInfoMapInfo.w > 0.5 &&
-                     all(greaterThan(infoUv, vec2(0.002))) &&
-                     all(lessThan(infoUv, vec2(0.998)));
-    if (infoValid) {
-        float infoSurface = texture(uWaterInfoA, infoUv).r;
-        if (abs(infoSurface - vWorldPos.y) < 0.35) {
-            vec2 infoFlow = texture(uWaterInfoB, infoUv).yz;
-            if (dot(infoFlow, infoFlow) > 1.0e-6) {
-                flowVec = infoFlow;
-            }
-        }
-    }
     float flowSpeed = length(flowVec);
     float riverness = step(0.001, vInfo.x);
     WaterMaterial mtl = uWaterMaterials[int(vMaterial + 0.5)];
@@ -644,8 +622,7 @@ void main() {
     color = min(color, vec3(6.0));
 #endif
 
-    // Debug views (render panel > Water > Debug view). Modes 4-6 show
-    // the water-info texture channels once that map is bound.
+    // Debug views (render panel > Water > Debug view).
     int waterDebug = int(uWaterDebugInfo.x + 0.5);
     if (waterDebug != 0) {
         vec3 dbg = vec3(0.05);
@@ -671,25 +648,6 @@ void main() {
             dbg = mix(vec3(0.3),
                       vec3(checker, 1.0 - abs(vInfo.y), 1.0 - checker),
                       riverness);
-        } else if (waterDebug >= 4) {
-            if (!infoValid) {
-                dbg = vec3(0.4, 0.0, 0.4); // magenta: no valid map here
-            } else if (waterDebug == 4) {
-                float s = texture(uWaterInfoA, infoUv).r;
-                dbg = s <= -1.0e5
-                          ? vec3(0.08, 0.0, 0.12) // dry texel
-                          : vec3(fract(s * 0.05), 0.6, 0.25);
-            } else if (waterDebug == 5) {
-                dbg = mix(vec3(0.02, 0.05, 0.2), vec3(0.2, 0.9, 1.0),
-                          clamp(texture(uWaterInfoB, infoUv).x / 8.0,
-                                0.0, 1.0));
-            } else {
-                vec2 f = texture(uWaterInfoB, infoUv).yz;
-                float mag = length(f);
-                vec2 dir = mag > 1e-4 ? f / mag : vec2(0.0);
-                dbg = vec3(0.5 + 0.5 * dir, 0.15) *
-                      clamp(mag * 0.5 + 0.15, 0.0, 1.0);
-            }
         }
         fragColor = vec4(dbg, 1.0);
         return;

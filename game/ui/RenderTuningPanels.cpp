@@ -722,8 +722,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::SliderFloat("Reflection scale", &r.tuning.reflectionScale, 0.25f,
                            0.5f, "%.2f");
         ImGui::Combo("Debug view", &r.tuning.waterDebug,
-                     "Off\0Flow\0Torrent\0River UV\0Info: surface\0"
-                     "Info: depth\0Info: flow\0");
+                     "Off\0Flow\0Torrent\0River UV\0");
         ImGui::SeparatorText("Sim window");
         // The live windowed shallow-water sim (option C). Span/texel
         // apply on the next window re-init (toggle off/on to force).

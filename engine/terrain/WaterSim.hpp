@@ -1,8 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
-#include "engine/terrain/WaterBodies.hpp"  // LakeSurface (pins)
-#include "engine/terrain/WaterInfoMap.hpp" // HeightFn, kWaterInfoDry
+#include "engine/terrain/WaterBodies.hpp" // LakeSurface, HeightFn
 #include "engine/terrain/generation/WaterSolve.hpp"
 
 // Real-time windowed shallow-water simulation (docs/WATER-RESEARCH.md,
