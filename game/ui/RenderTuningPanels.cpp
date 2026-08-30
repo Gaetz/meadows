@@ -741,6 +741,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                     r.waterSystem().simWetCellCount(),
                     r.waterSystem().simCostMs());
         ImGui::Checkbox("Settle-gated reveal", &sim.settleGated);
+        ImGui::SameLine();
+        ImGui::Checkbox("Rain puddles", &sim.rainPuddles);
         ImGui::SliderFloat("Sim span (m)", &sim.span, 256.0f, 1024.0f,
                            "%.0f");
         ImGui::SliderFloat("Sim texel (m)", &sim.texel, 1.0f, 4.0f,

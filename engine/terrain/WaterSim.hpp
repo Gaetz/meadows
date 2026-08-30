@@ -160,9 +160,13 @@ void scrollWindow(
 
 // Build the immutable snapshot AND its render mesh (dry threshold,
 // hysteresis, velocity derivation and geometry all live here, not in
-// the kernel). Mutates only state.wetMask.
+// the kernel). Mutates only state.wetMask. `puddleMode` is the E6
+// rain-puddle relief: 0 off, 1 hold-only (published still films keep
+// a 1.5 mm hold — puddles linger after the rain), 2 storm (still
+// films also TURN ON at 4 mm). A runtime input like the time scale —
+// never serialized in dumps.
 void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
-                     WaterSimSnapshot& out);
+                     WaterSimSnapshot& out, u32 puddleMode = 0);
 
 // Async spin-up for init/teleport: the offline multigrid solver runs
 // to (approximate) equilibrium and seeds the state — the window opens

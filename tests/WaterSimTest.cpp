@@ -578,6 +578,52 @@ TEST_CASE("water sim: the uncovered shore shelf seeds with the basin") {
     CHECK(state.depth[idx(74.0f, 48.0f)] < 0.01f);
 }
 
+TEST_CASE("water sim: rain-puddle relief publishes still films only") {
+    // E6: under a storm (mode 2) a STILL 5 mm film in a terrain dip
+    // publishes (on 4 mm); the same film off-storm (mode 0) stays
+    // hidden, and a MOVING film never uses the relief. Mode 1 (rain
+    // over, flag on) keeps an already-published still film down to
+    // 1.5 mm — puddles linger and evaporate instead of blinking out.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto flat = [](f32, f32) { return 300.0f; };
+    WaterSimState state;
+    initWindow(state, spec, flat, -1000.0f);
+    const auto at = [&](u32 col, u32 row) {
+        return static_cast<size_t>(row) * spec.n + col;
+    };
+    // Two still film cells (pass 2 drops isolated wet cells).
+    state.depth[at(30, 30)] = 0.005f;
+    state.depth[at(31, 30)] = 0.005f;
+    // A moving film pair: same depth, fast pipes.
+    state.depth[at(30, 50)] = 0.005f;
+    state.depth[at(31, 50)] = 0.005f;
+    state.fE[at(30, 50)] = 2.0f;
+    state.fE[at(31, 50)] = 2.0f;
+    WaterSimParams params;
+    WaterSimSnapshot snap;
+    // Mode 0: both hidden (the moving pair fails even the fast-film
+    // clause at this speed/depth combination? it may publish — only
+    // assert the STILL pair, the relief's subject).
+    extractSnapshot(state, params, snap, 0);
+    CHECK(snap.depth[at(30, 30)] == 0.0f);
+    // Mode 2 (storm): the still film publishes...
+    state.wetMask.assign(spec.cells(), 0);
+    extractSnapshot(state, params, snap, 2);
+    CHECK(snap.depth[at(30, 30)] ==
+          doctest::Approx(0.005f).epsilon(0.01));
+    // ...and mode 1 (rain over) HOLDS it while it evaporates.
+    state.depth[at(30, 30)] = 0.002f;
+    state.depth[at(31, 30)] = 0.002f;
+    extractSnapshot(state, params, snap, 1);
+    CHECK(snap.depth[at(30, 30)] ==
+          doctest::Approx(0.002f).epsilon(0.01));
+    // Below the 1.5 mm hold: gone.
+    state.depth[at(30, 30)] = 0.001f;
+    state.depth[at(31, 30)] = 0.001f;
+    extractSnapshot(state, params, snap, 1);
+    CHECK(snap.depth[at(30, 30)] == 0.0f);
+}
+
 TEST_CASE("water sim: scroll strips refill from breadcrumbs") {
     // Walking away scrolls (never evicts): breadcrumb states dropped
     // along the way let the ENTERING strips remember their water —

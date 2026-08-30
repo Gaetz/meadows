@@ -288,6 +288,7 @@ struct LandscapeTuningForm : Form {
     bool waterSimSettleGated { true };
     f32 waterSimPinRiverHalfWidth { 4.0f };
     f32 waterSimReservoirOutflow { 2.0f };
+    bool waterSimRainPuddles { true };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -446,6 +447,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(waterSimSettleGated)
         REFLECT_FIELD(waterSimPinRiverHalfWidth)
         REFLECT_FIELD(waterSimReservoirOutflow)
+        REFLECT_FIELD(waterSimRainPuddles)
     REFLECT_END()
 };
 

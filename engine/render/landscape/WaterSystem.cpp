@@ -1591,6 +1591,8 @@ void WaterSystem::updateSim(rhi::Device& device,
                    substeps, refreshGround,
                    crumbs = std::move(crumbs),
                    pinHw = simCfg.pinRiverHalfWidth,
+                   rain = simRainIntensity,
+                   puddles = simCfg.rainPuddles,
                    jobsRef = jobs]() mutable {
         if (jobsRef->isStopping()) {
             return; // abandonable at shutdown
@@ -1634,9 +1636,15 @@ void WaterSystem::updateSim(rhi::Device& device,
             terrain::pinRivers(*state, *bodiesRef, pinHw);
             substeps = glm::max(substeps, 1u);
         }
-        terrain::stepWindow(*state, simParams, sources, substeps);
+        // E6: the storm multiplies the KERNEL rain only (up to 10x at
+        // full intensity) — the source-law rainRate stays the
+        // calibrated baseline, so river supply ignores the sky.
+        terrain::WaterSimParams stepParams = simParams;
+        stepParams.rainRate *= 1.0f + 9.0f * rain;
+        terrain::stepWindow(*state, stepParams, sources, substeps);
         auto snap = std::make_shared<terrain::WaterSimSnapshot>();
-        terrain::extractSnapshot(*state, simParams, *snap);
+        const u32 puddleMode = puddles ? (rain >= 0.2f ? 2u : 1u) : 0u;
+        terrain::extractSnapshot(*state, simParams, *snap, puddleMode);
         f64 volume = 0.0;
         for (const f32 d : snap->depth) {
             volume += d;

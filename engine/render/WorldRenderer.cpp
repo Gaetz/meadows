@@ -1815,6 +1815,8 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
         }
         if (cfg.water && frame.device.caps().copyTexture) {
             core::FrameProbe::Scope probe { *view.probe, "water" };
+            water.setRainIntensity(
+                view.interiorMode ? 0.0f : view.atmos.rainIntensity);
             water.update(frame.device, terrain.params,
                          view.camera.position);
             water.updateSim(frame.device, terrain.params,

@@ -866,7 +866,7 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
 }
 
 void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
-                     WaterSimSnapshot& out) {
+                     WaterSimSnapshot& out, u32 puddleMode) {
     const GridSpec& spec = state.spec;
     const size_t cells = spec.cells();
     const u32 n = spec.n;
@@ -897,8 +897,25 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         // hiding it with the anti-flicker thresholds.
         const bool brook = i < state.brookMask.size() &&
                            state.brookMask[i] != 0;
-        bool wet = d > (brook ? (wasWet ? 0.003f : 0.008f)
-                              : (wasWet ? 0.012f : 0.03f));
+        f32 onThr = brook ? 0.008f : 0.03f;
+        f32 holdThr = brook ? 0.003f : 0.012f;
+        // Rain-puddle relief (E6): a STILL film publishes at 4 mm
+        // under an active storm; a published still film keeps a low
+        // hold either way, so puddles linger and evaporate away after
+        // the rain instead of blinking out. Moving water never uses
+        // the relief — rivers keep the anti-flicker thresholds.
+        if (puddleMode != 0 && d > 0.0015f && d < onThr) {
+            const f32 fx = state.fE[i] - state.fW[i];
+            const f32 fz = state.fS[i] - state.fN[i];
+            const f32 div = glm::max(d, 0.05f) * texel;
+            if ((fx * fx + fz * fz) / (div * div) < 0.15f * 0.15f) {
+                if (puddleMode >= 2) {
+                    onThr = glm::min(onThr, 0.004f);
+                }
+                holdThr = glm::min(holdThr, 0.0015f);
+            }
+        }
+        bool wet = d > (wasWet ? holdThr : onThr);
         if (!wet && d > (wasWet ? 0.0025f : 0.005f)) {
             const f32 fx = state.fE[i] - state.fW[i];
             const f32 fz = state.fS[i] - state.fN[i];

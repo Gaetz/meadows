@@ -139,10 +139,17 @@ public:
         // must be reservoir-fed (dev: 10 m left established rivers
         // nearly dry).
         f32 pinRiverHalfWidth { 4.0f };
+        // E6: rain puddles — under an active storm the still films in
+        // terrain dips publish at reduced thresholds (and the kernel
+        // rain is storm-boosted). Off = the anti-flicker fallback.
+        bool rainPuddles { true };
         terrain::WaterSimParams params;
     };
     SimConfig& simConfig() { return simCfg; }
     const SimConfig& simConfig() const { return simCfg; }
+    // Live storm intensity 0..1 (weather-driven, 0 indoors): scales
+    // the kernel rain and arms the E6 puddle publication.
+    void setRainIntensity(f32 v) { simRainIntensity = v; }
     // Boundary-inflow provider (rect -> sources), called ON THE WORKER
     // (pure; the master-network query costs ms). Null = rain only.
     using SimSourcesFn =
@@ -304,6 +311,7 @@ private:
     bool simInFlight { false };
     bool simGroundDirty { false };
     bool simValid { false }; // snapshot uploaded and fresh
+    f32 simRainIntensity { 0.0f }; // live storm 0..1 (E6 puddles)
     u32 simEpoch { 0 };      // bumped on invalidation (fly mode, off)
     f32 simAccum { 0.0f };
     Vec2 simLastCam { 0.0f, 0.0f };

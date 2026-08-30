@@ -309,6 +309,7 @@ void RenderTuningIo::applyTuning(
         glm::clamp(tuning.waterSimPinRiverHalfWidth, 0.0f, 40.0f);
     sim.params.reservoirOutflow =
         glm::clamp(tuning.waterSimReservoirOutflow, 0.2f, 20.0f);
+    sim.rainPuddles = tuning.waterSimRainPuddles;
 }
 
 void RenderTuningIo::applyTreeTuning(
@@ -407,6 +408,7 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.waterSimSettleGated = sim.settleGated;
     out.waterSimPinRiverHalfWidth = sim.pinRiverHalfWidth;
     out.waterSimReservoirOutflow = sim.params.reservoirOutflow;
+    out.waterSimRainPuddles = sim.rainPuddles;
 }
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
