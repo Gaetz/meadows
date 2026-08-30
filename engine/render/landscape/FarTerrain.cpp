@@ -204,8 +204,10 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // over the last band below the treeline.
                 forest *=
                     1.0f - glm::smoothstep(0.82f * line, line, trueH);
-                if (trueH < params.seaLevel + 3.0f || slope > 0.3f) {
-                    forest = 0.0f;
+                if (trueH < params.seaLevel + 3.0f || slope > 0.3f ||
+                    terrain::underLocalWater(params, x, z, trueH,
+                                             1.0f)) {
+                    forest = 0.0f; // no canopy raise/tint on water
                 }
                 // The REAL weight rule paints the far vertex with the
                 // splat layers' mean albedos — biome snow line, scree
@@ -263,7 +265,11 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 const f32 lineFade =
                     1.0f - glm::smoothstep(0.82f * line, line, h);
                 if (h < params.seaLevel + 3.0f ||
-                    rng.next() >= lineFade || (1.0f - n.y) > 0.3f) {
+                    rng.next() >= lineFade || (1.0f - n.y) > 0.3f ||
+                    terrain::underLocalWater(params, x, z, h, 1.0f)) {
+                    // Same rule as the near scatter: no impostor on
+                    // lakes/rivers (the far-water sheets made the
+                    // stragglers visible).
                     continue;
                 }
                 // Sized from the MEASURED real trees: the mesh
