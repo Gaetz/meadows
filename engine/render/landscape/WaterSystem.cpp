@@ -669,8 +669,46 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
         // wider than the carved bed so banks clip it. Tight bends are
         // subdivided by curvature (RiverGeometry) — the water-info
         // raster samples the same conditioned curve.
-        const vector<RiverNode> nodes =
+        vector<RiverNode> nodes =
             terrain::subdivideRiverNodes(river.nodes);
+        // Steep reaches: the curvature subdivision alone leaves long
+        // straight CHORDS between baked nodes, and the convex bed
+        // between them pokes through — the lower half of a torrent
+        // ran inside its channel walls (measured dev, (9622, 4131)).
+        // Resample every ~4 m and GROUND each node on the RENDER
+        // terrain; max() only lifts, so pools and backwaters keep
+        // their chord while chutes hug their bed.
+        {
+            vector<RiverNode> dense;
+            dense.reserve(nodes.size() * 2);
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                if (i > 0) {
+                    const RiverNode& a = nodes[i - 1];
+                    const RiverNode& b = nodes[i];
+                    const f32 segLen =
+                        std::hypot(b.x - a.x, b.z - a.z);
+                    const i32 cuts = static_cast<i32>(segLen / 4.0f);
+                    for (i32 k = 1; k <= cuts; ++k) {
+                        const f32 t = static_cast<f32>(k) /
+                                      static_cast<f32>(cuts + 1);
+                        RiverNode m;
+                        m.x = glm::mix(a.x, b.x, t);
+                        m.z = glm::mix(a.z, b.z, t);
+                        m.surface = glm::mix(a.surface, b.surface, t);
+                        m.halfWidth =
+                            glm::mix(a.halfWidth, b.halfWidth, t);
+                        dense.push_back(m);
+                    }
+                }
+                dense.push_back(nodes[i]);
+            }
+            for (RiverNode& nd : dense) {
+                nd.surface = glm::max(
+                    nd.surface,
+                    terrain::height(params, nd.x, nd.z) + 0.15f);
+            }
+            nodes = std::move(dense);
+        }
         u32 prevL = 0;
         u32 prevR = 0;
         f32 totalArc = 0.0f;
