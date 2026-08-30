@@ -187,6 +187,18 @@ private:
         vector<f32> surface; // R32F payload
         vector<f32> extras;  // RGBA16F payload: depth, flowXZ, spare
     };
+    // Local (lakes + ribbons) geometry, built on a WORKER: the build
+    // grew heavy (per-texel lake quads with perimeter probes, ribbons
+    // densified to 4 m with a terrain::height per node) and it runs
+    // on EVERY streamed tile — synchronous on main it stuttered the
+    // frame through every bake storm (measured dev). Main only
+    // uploads the buffers (Phase-5).
+    struct LocalMesh {
+        u64 generation { 0 };
+        u64 stamp { 0 }; // bodiesStamp the build saw
+        vector<f32> verts;
+        vector<u32> indices;
+    };
     struct SimResult {
         u64 generation { 0 };
         u32 epoch { 0 };
@@ -201,11 +213,17 @@ private:
         core::ConcurrentQueue<BakedMap> baked;
         core::ConcurrentQueue<BakedInfo> bakedInfo;
         core::ConcurrentQueue<SimResult> simDone;
+        core::ConcurrentQueue<LocalMesh> localMesh;
     };
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
-    void rebuildLocalGeometry(rhi::Device& device,
-                              const TerrainParams& params);
+    void kickLocalGeometry(const TerrainParams& params);
+    // Worker-side geometry build (see LocalMesh): pure function of
+    // the published bodies + params, static so the job needs no this.
+    static void buildLocalGeometry(const WaterBodies& bodies,
+                                   const TerrainParams& params,
+                                   vector<f32>& verts,
+                                   vector<u32>& indices);
     void rebuildMapGroup(rhi::Device& device);
     void rebuildMaterials(rhi::Device& device);
     void uploadSimTextures(rhi::Device& device,
@@ -246,6 +264,7 @@ private:
     u64 bodiesStamp { 0 };
     u64 bakedBodiesStamp { ~0ull };
     bool bodiesDirty { false };
+    bool localBuildInFlight { false };
     rhi::BufferHandle localVertexBuffer {};
     rhi::BufferHandle localIndexBuffer {};
     rhi::PipelineHandle localPipeline {};

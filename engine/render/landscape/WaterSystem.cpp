@@ -390,24 +390,21 @@ void WaterSystem::setBodies(sptr<const WaterBodies> next) {
     // The sculpt hook (a real ground change) keeps the full clear.
 }
 
-void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
-                                       const TerrainParams& params) {
-    device.destroyBuffer(localIndexBuffer);
-    device.destroyBuffer(localVertexBuffer);
-    localIndexBuffer = {};
-    localVertexBuffer = {};
-    localIndexCount = 0;
-    if (!bodies || (bodies->lakes.empty() && bodies->rivers.empty())) {
-        return;
-    }
+// Worker-side geometry build (see LocalMesh in the header): a pure
+// function of the published bodies + terrain params — terrain::height
+// is worker-proven (the sim jobs sample it against the same immutable
+// snapshots).
+void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
+                                     const render::TerrainParams& params,
+                                     vector<f32>& verts,
+                                     vector<u32>& indices) {
+    const render::WaterBodies* bodies = &bodiesIn;
     // Layout: pos (3) + flow dir*speed (2) + {halfWidth, lateral (lake
     // quads: shore-foam gate), arcLength, endDist} (4) — the RIVER UV
     // SPACE the shared shading uses for flow mapping and the
     // end-of-course dissolve (the ribbon fades out INTO the pond/river
     // it merges with).
     constexpr u32 kFloatsPerVertex = 10;
-    vector<f32> verts;
-    vector<u32> indices;
     const auto vertex = [&](f32 x, f32 y, f32 z, f32 flowX, f32 flowZ,
                             f32 halfWidth, f32 lateral, f32 arc,
                             f32 endDist, f32 material) {
@@ -801,18 +798,23 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
             prevR = right;
         }
     }
-    if (verts.empty() || indices.empty()) {
-        return;
-    }
-    localVertexBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = verts.size() * sizeof(f32) },
-        verts.data());
-    localIndexBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = indices.size() * sizeof(u32) },
-        indices.data());
-    localIndexCount = static_cast<u32>(indices.size());
+}
+
+void WaterSystem::kickLocalGeometry(const TerrainParams& params) {
+    localBuildInFlight = true;
+    jobs->enqueue([sharedRef = shared, bodiesRef = bodies, params,
+                   gen = generation, stamp = bodiesStamp,
+                   jobsRef = jobs] {
+        LocalMesh out;
+        out.generation = gen;
+        out.stamp = stamp;
+        if (!jobsRef->isStopping() && bodiesRef &&
+            !(bodiesRef->lakes.empty() && bodiesRef->rivers.empty())) {
+            buildLocalGeometry(*bodiesRef, params, out.verts,
+                               out.indices);
+        }
+        sharedRef->localMesh.push(std::move(out));
+    });
 }
 
 void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
@@ -868,9 +870,40 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         infoBakeInFlight = false;
     }
 
-    if (bodiesDirty) {
-        rebuildLocalGeometry(device, params);
+    // Local geometry: WORKER-built (the synchronous build stuttered
+    // the frame on every streamed tile — see LocalMesh); main uploads
+    // the finished buffers and re-kicks if the bodies moved on.
+    {
+        LocalMesh lm;
+        while (shared->localMesh.tryPop(lm)) {
+            localBuildInFlight = false;
+            if (lm.generation != generation) {
+                continue;
+            }
+            device.destroyBuffer(localIndexBuffer);
+            device.destroyBuffer(localVertexBuffer);
+            localIndexBuffer = {};
+            localVertexBuffer = {};
+            localIndexCount = 0;
+            if (!lm.verts.empty() && !lm.indices.empty()) {
+                localVertexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Vertex,
+                      .size = lm.verts.size() * sizeof(f32) },
+                    lm.verts.data());
+                localIndexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Index,
+                      .size = lm.indices.size() * sizeof(u32) },
+                    lm.indices.data());
+                localIndexCount = static_cast<u32>(lm.indices.size());
+            }
+            if (lm.stamp != bodiesStamp) {
+                bodiesDirty = true; // superseded mid-build: go again
+            }
+        }
+    }
+    if (bodiesDirty && !localBuildInFlight) {
         rebuildMaterials(device);
+        kickLocalGeometry(params);
         bodiesDirty = false;
     }
 
