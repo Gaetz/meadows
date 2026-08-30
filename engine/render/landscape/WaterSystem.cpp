@@ -98,8 +98,37 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         return x >= spec.originX && x <= maxX && z >= spec.originZ &&
                z <= maxZ;
     };
+    const auto lawQ = [&](f32 halfWidth) {
+        const f32 hw = glm::max(halfWidth, 0.0f);
+        const f32 area = (hw / 0.008f) * (hw / 0.008f);
+        return render::terraingen::runoffDischarge(area, runoff);
+    };
     vector<WaterSource> out;
     for (const render::RiverSurface& river : bodies.rivers) {
+        // DISTRIBUTED runoff along in-window reaches: the baked
+        // half-width GROWS along a course as its local basin feeds it
+        // — inject that growth (the width-law discharge delta between
+        // consecutive nodes, accumulated to a threshold). Without it,
+        // a course whose HEAD lies inside the window had no supply at
+        // all (no boundary crossing, sub-threshold for pins): its
+        // pre-roll water drained and the channel stayed dry (measured
+        // dev, the tier-0 stream at (9534, 2819)). Pinned-wide
+        // reaches skip it (the reservoir supplies).
+        f32 accum = 0.0f;
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            const render::RiverNode& na = river.nodes[k - 1];
+            const render::RiverNode& nb = river.nodes[k];
+            if (inside(na.x, na.z) && inside(nb.x, nb.z) &&
+                nb.halfWidth < pinnedHalfWidth) {
+                accum += glm::max(
+                    0.0f, lawQ(nb.halfWidth) - lawQ(na.halfWidth));
+                if (accum >= 0.05f) {
+                    out.push_back(
+                        { nb.x, nb.z, glm::min(accum, 30.0f) });
+                    accum = 0.0f;
+                }
+            }
+        }
         for (size_t k = 1; k < river.nodes.size(); ++k) {
             const render::RiverNode& a = river.nodes[k - 1];
             const render::RiverNode& b = river.nodes[k];
