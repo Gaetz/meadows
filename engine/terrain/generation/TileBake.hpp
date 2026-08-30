@@ -225,7 +225,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 46;
-constexpr u32 kTileBakeVersion = 65;
+constexpr u32 kTileBakeVersion = 66;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

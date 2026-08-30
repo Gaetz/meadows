@@ -381,6 +381,21 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
             const f32 abx = b.x - a.x;
             const f32 abz = b.z - a.z;
             const f32 abLen2 = abx * abx + abz * abz;
+            // Flat-reach deepening (dev request): on a near-level
+            // bief the reconciled backwater profile rides the
+            // highest bed bump, and small ribbons stood PROUD of the
+            // plain beside their channel. Digging the flat reaches a
+            // bit deeper settles the waterline below the banks;
+            // sloped reaches are untouched, and the ruisseau keeps a
+            // smaller boost so it stays wadeable.
+            const f32 segLen = std::sqrt(abLen2);
+            const f32 segSlope =
+                segLen > 1.0f ? (a.surface - b.surface) / segLen
+                              : 1.0f;
+            const f32 flatBoost =
+                (river.tier == 0 ? 0.3f : 0.5f) *
+                (1.0f -
+                 noise::smoothstep01(0.002f, 0.01f, segSlope));
             for (i32 row = glm::max(r0, 0);
                  row <= glm::min(r1, static_cast<i32>(out.fineSpec.n) - 1);
                  ++row) {
@@ -409,8 +424,9 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                         glm::mix(a.halfWidth, b.halfWidth, t), 1.6f);
                     const f32 surface = glm::mix(a.surface, b.surface, t);
                     f32 depth = glm::clamp(
-                        params.riverDepthCoef * 2.0f * half,
-                        tierDepthMin, tierDepthMax);
+                                    params.riverDepthCoef * 2.0f * half,
+                                    tierDepthMin, tierDepthMax) +
+                                flatBoost;
                     if (fordHere) {
                         // The ford: the bed rises to wading depth over
                         // the spot, blending back to the channel.
