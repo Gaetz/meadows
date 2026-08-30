@@ -16,6 +16,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
+#include "engine/terrain/WaterQuery.hpp"
 #include "engine/render/Projection.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
@@ -902,14 +903,20 @@ f32 WorldRenderer::effectiveWaterSurfaceY(
     f32 surface = view.interiorMode ? -1.0e6f : terrain.params.seaLevel;
     const Vec3 eye = view.camera.position;
     // Local lakes/rivers count too: without this, diving under an
-    // altitude lake showed no submersion tint at all.
+    // altitude lake showed no submersion tint at all. R3: the unified
+    // query — the sim's dryness is authoritative inside its rect, so a
+    // gallery under a baked water claim no longer tints the screen.
     if (!view.interiorMode) {
-        if (const render::WaterBodies* bodies = water.currentBodies()) {
-            const auto local = render::terrain::waterSurfaceAt(
-                *bodies, eye.x, eye.z, eye.y);
-            if (local) {
-                surface = glm::max(surface, *local);
-            }
+        const bool simLive = water.simIsValid() && !water.simIsSettling();
+        const render::terrain::WaterQuery query {
+            simLive ? water.simSnapshot().get() : nullptr,
+            water.currentBodies(),
+            terrain.params.seaLevel,
+        };
+        const auto local = render::terrain::waterSurfaceQuery(
+            query, eye.x, eye.z, eye.y);
+        if (local) {
+            surface = glm::max(surface, *local);
         }
     }
     for (const render::WaterVolumeInstance& volume : snapshot.waterVolumes) {

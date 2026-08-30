@@ -16,6 +16,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/physics/Physics.hpp"
+#include "engine/terrain/WaterQuery.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/TerrainBakeStreamer.hpp"
 #include "engine/render/MeshCache.hpp"
@@ -565,6 +566,11 @@ private:
     // focus/context sites read playerController.body().
     PlayerController playerController;
     PlayerContext makePlayerContext();
+    // R3 (engine/terrain/WaterQuery.hpp): the frame's gameplay water
+    // query — the sim snapshot is authoritative inside its trusted rect
+    // only while it is what the eye SEES (valid, not settling); baked
+    // bodies + sea everywhere else. Build at call time, use same-frame.
+    render::terrain::WaterQuery makeWaterQuery();
     // Riding v1 (tech proof): while mounted the capsule is
     // destroyed and RideController runs INSTEAD of PlayerController —
     // one if/else at the update call site, PlayerController untouched.

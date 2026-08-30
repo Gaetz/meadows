@@ -1474,18 +1474,19 @@ void LandscapeScene::update(f32 dt) {
                             statsTuning,
                             sweepPlayer ? ecs::Entity {} : playerEntity);
         // Floating props ride the same water the swimmer feels
-        // (world/scene/Floaters — kinematic v1).
+        // (world/scene/Floaters — kinematic v1). R3: the unified query,
+        // so a floater bobs on a sim spread and dries with it.
         if (!interiorMode && waterBodies) {
+            const render::terrain::WaterQuery waterQuery = makeWaterQuery();
             world::updateFloaters(
                 world, dt, timeSeconds,
-                [this](const Vec3& at) {
-                    return render::terrain::waterSurfaceAt(
-                        *waterBodies, at.x, at.z, at.y);
+                [&waterQuery](const Vec3& at) {
+                    return render::terrain::waterSurfaceQuery(
+                        waterQuery, at.x, at.z, at.y);
                 },
-                [this](const Vec3& at) {
-                    return render::terrain::waterFlowAt(*waterBodies,
-                                                        at.x, at.z,
-                                                        at.y);
+                [&waterQuery](const Vec3& at) {
+                    return render::terrain::waterFlowQuery(
+                        waterQuery, at.x, at.z, at.y);
                 });
         }
     }
@@ -4084,15 +4085,10 @@ PlayerContext LandscapeScene::makePlayerContext() {
         [this](const Vec3& at) -> std::optional<f32> {
             std::optional<f32> best;
             if (!interiorMode) {
-                if (waterBodies) {
-                    best = render::terrain::waterSurfaceAt(
-                        *waterBodies, at.x, at.z, at.y);
-                } else {
-                    const f32 sea = renderer.terrainParams().seaLevel;
-                    if (at.y < sea + 2.0f) {
-                        best = sea;
-                    }
-                }
+                // R3: sim water counts, sim dryness counts, sea belt
+                // built in (covers the pre-bodies early frames too).
+                best = render::terrain::waterSurfaceQuery(
+                    makeWaterQuery(), at.x, at.z, at.y);
             }
             for (const auto& volume : snapshot.waterVolumes) {
                 if (std::abs(at.x - volume.position.x) <=
@@ -4114,15 +4110,28 @@ PlayerContext LandscapeScene::makePlayerContext() {
         bowDrawCostEffect,   // The drawn-bow drain
         &actionMap, // Intentions, not raw keys
         &settings,  // Look feel (sens/invert/stick)
-        // The river current for the swim drift (still indoors / without
-        // bodies) — same headless WaterBodies the surface query reads.
+        // The current for the swim drift (still indoors) — the same
+        // unified query the surface reads: the sim's live current
+        // inside the rect, the baked river blend outside.
         [this](const Vec3& at) -> Vec2 {
-            if (interiorMode || !waterBodies) {
+            if (interiorMode) {
                 return Vec2 { 0.0f };
             }
-            return render::terrain::waterFlowAt(*waterBodies, at.x, at.z,
-                                                at.y);
+            return render::terrain::waterFlowQuery(makeWaterQuery(),
+                                                   at.x, at.z, at.y);
         },
+    };
+}
+
+render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {
+    const render::WaterSystem& water = renderer.waterSystem();
+    const bool simLive = water.simIsValid() && !water.simIsSettling();
+    // The raw pointer stays valid for the frame: WaterSystem owns the
+    // snapshot sptr and only swaps it in updateSim, on the main thread.
+    return render::terrain::WaterQuery {
+        simLive ? water.simSnapshot().get() : nullptr,
+        waterBodies.get(),
+        renderer.terrainParams().seaLevel,
     };
 }
 

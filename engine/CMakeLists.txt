@@ -35,6 +35,7 @@ add_library(meadows STATIC
     terrain/RiverGeometry.cpp
     terrain/WaterBodies.cpp
     terrain/WaterInfoMap.cpp
+    terrain/WaterQuery.cpp
     terrain/WaterSim.cpp
     terrain/generation/Authoring.cpp
     terrain/generation/Finalize.cpp
