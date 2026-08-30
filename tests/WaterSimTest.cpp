@@ -749,6 +749,47 @@ TEST_CASE("water sim: pinRivers pins the carved bed, never the banks") {
     CHECK(state.pinned[smallBed] <
           render::terrain::kWaterInfoDry + 1.0f);
     CHECK(state.depth[smallBed] == 0.0f);
+    // E4b: the small ribbon leaves its FOOTPRINT — a publish-threshold
+    // relief, no water placed.
+    CHECK(state.brookMask[smallBed] == 1);
+    CHECK(state.brookMask[bed] == 0); // pinned tier: no relief needed
+}
+
+TEST_CASE("water sim: brook footprints publish the thin film") {
+    // E4b: a tier-0 course runs a 1 cm film in its carved bed — the
+    // anti-flicker thresholds (3 cm on) hid it, so brooks were
+    // invisible. Under a brook footprint the cell publishes at
+    // reduced thresholds; the same film elsewhere stays hidden.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto flat = [](f32, f32) { return 300.0f; };
+    WaterSimState state;
+    initWindow(state, spec, flat, -1000.0f);
+    render::WaterBodies bodies;
+    render::RiverSurface brook;
+    brook.nodes.push_back({ 10.0f, 64.0f, 300.2f, 2.0f });
+    brook.nodes.push_back({ 120.0f, 64.0f, 300.1f, 2.0f });
+    brook.minX = 0.0f;
+    brook.minZ = 60.0f;
+    brook.maxX = 128.0f;
+    brook.maxZ = 68.0f;
+    bodies.rivers.push_back(brook);
+    pinRivers(state, bodies, 4.0f);
+    const auto at = [&](f32 x, f32 z) {
+        return static_cast<size_t>(z / 2.0f) * spec.n +
+               static_cast<size_t>(x / 2.0f);
+    };
+    // A 1 cm film along the brook (two neighbours: pass 2 drops
+    // isolated wet cells as spray) and the same film off-course.
+    state.depth[at(60.0f, 64.0f)] = 0.01f;
+    state.depth[at(62.0f, 64.0f)] = 0.01f;
+    state.depth[at(60.0f, 20.0f)] = 0.01f;
+    state.depth[at(62.0f, 20.0f)] = 0.01f;
+    WaterSimParams params;
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+    CHECK(snap.depth[at(60.0f, 64.0f)] ==
+          doctest::Approx(0.01f).epsilon(0.01));
+    CHECK(snap.depth[at(60.0f, 20.0f)] == 0.0f);
 }
 
 TEST_CASE("water sim: a mask hole mid-lake never craters the seed") {

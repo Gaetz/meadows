@@ -74,6 +74,11 @@ struct WaterSimState {
     // per tick, blinking whole surfaces out and popping orphan walls
     // at their neighbours (docs/WATER-RENDER.md §1.3).
     vector<u8> wetMask;
+    // Brook footprints (E4b): cells under a baked ribbon too narrow
+    // to pin. Extraction publishes them at reduced thresholds so a
+    // tier-0 film shows in its carved bed. Rebuilt by pinRivers on
+    // every init/scroll (never crumb-copied).
+    vector<u8> brookMask;
 
     bool valid() const {
         return spec.n >= 8 && terrain.size() == spec.cells() &&

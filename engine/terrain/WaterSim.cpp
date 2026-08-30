@@ -334,6 +334,9 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
     if (state.wetMask.size() != state.spec.cells()) {
         state.wetMask.assign(state.spec.cells(), 0);
     }
+    if (state.brookMask.size() != state.spec.cells()) {
+        state.brookMask.assign(state.spec.cells(), 0);
+    }
     // The pinned plane shifts with the rest; the caller rebuilds it
     // via pinLakes after every scroll (whole-plane, cheap), so the
     // entered strips never keep stale pins for long. The wetMask MUST
@@ -414,8 +417,8 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 }
             }
         }
-        {
-            u8* mask = state.wetMask.data();
+        for (u8* mask : { state.wetMask.data(),
+                          state.brookMask.data() }) {
             for (i32 row = 0; row < n; ++row) {
                 u8* r = mask + at(0, row);
                 if (dCol > 0) {
@@ -444,6 +447,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
+                state.brookMask[i] = 0;
                 refillFromCrumbs(i, col, row);
             }
         }
@@ -465,8 +469,8 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                                  sizeof(f32));
             }
         }
-        {
-            u8* mask = state.wetMask.data();
+        for (u8* mask : { state.wetMask.data(),
+                          state.brookMask.data() }) {
             if (dRow > 0) {
                 std::memmove(mask, mask + at(0, dRow),
                              static_cast<size_t>(keep) * rowFloats);
@@ -492,6 +496,7 @@ void scrollWindow(WaterSimState& state, i32 dCol, i32 dRow,
                 state.fN[i] = 0.0f;
                 state.pinned[i] = kWaterInfoDry;
                 state.wetMask[i] = 0;
+                state.brookMask[i] = 0;
                 refillFromCrumbs(i, col, row);
             }
         }
@@ -762,6 +767,11 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
     const GridSpec& spec = state.spec;
     const f32 texel = spec.texelSize;
     const i32 n = static_cast<i32>(spec.n);
+    // Brook footprints (E4b): cells under a ribbon too narrow to pin
+    // get a publish-threshold RELIEF at extraction — a tier-0 film of
+    // a centimetre or two runs in a carved bed the normal thresholds
+    // hide. Rebuilt whole-plane with the pins on every init/scroll.
+    state.brookMask.assign(spec.cells(), 0);
     const f32 winMaxX =
         spec.originX + static_cast<f32>(spec.n - 1) * texel;
     const f32 winMaxZ =
@@ -775,9 +785,6 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
             const RiverNode& a = river.nodes[s];
             const RiverNode& b = river.nodes[s + 1];
             const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);
-            if (hwMax < minHalfWidth) {
-                continue;
-            }
             const f32 reach = hwMax + texel;
             const i32 c0 = glm::max(
                 static_cast<i32>((glm::min(a.x, b.x) - reach -
@@ -820,12 +827,19 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                         std::sqrt(dx * dx + dz * dz);
                     const f32 hw =
                         glm::mix(a.halfWidth, b.halfWidth, t);
-                    if (hw < minHalfWidth || dist > hw) {
+                    if (dist > hw) {
                         continue;
                     }
                     const size_t i =
                         static_cast<size_t>(row) * spec.n +
                         static_cast<size_t>(col);
+                    if (hw < minHalfWidth) {
+                        // Too narrow to pin: brook relief only — the
+                        // sim still derives the water, extraction just
+                        // stops hiding its thin film.
+                        state.brookMask[i] = 1;
+                        continue;
+                    }
                     const f32 surf =
                         glm::mix(a.surface, b.surface, t);
                     const f32 ground = state.terrain[i];
@@ -878,7 +892,13 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
         const bool wasWet = state.wetMask[i] != 0;
-        bool wet = d > (wasWet ? 0.012f : 0.03f);
+        // Brook relief (E4b): under a baked tier-0 ribbon the carved
+        // bed guides a legitimate thin film — publish it instead of
+        // hiding it with the anti-flicker thresholds.
+        const bool brook = i < state.brookMask.size() &&
+                           state.brookMask[i] != 0;
+        bool wet = d > (brook ? (wasWet ? 0.003f : 0.008f)
+                              : (wasWet ? 0.012f : 0.03f));
         if (!wet && d > (wasWet ? 0.0025f : 0.005f)) {
             const f32 fx = state.fE[i] - state.fW[i];
             const f32 fz = state.fS[i] - state.fN[i];
@@ -1342,6 +1362,17 @@ bool dumpSimState(const WaterSimState& state,
     if (hasPins) {
         writePlane(state.pinned);
     }
+    // Appended LAST (E4b): older readers stop before it, the loader
+    // tolerates its absence in older dumps.
+    const bool hasBrooks =
+        state.brookMask.size() == state.spec.cells();
+    const u8 brooks = hasBrooks ? 1 : 0;
+    write(brooks);
+    if (hasBrooks) {
+        file.write(
+            reinterpret_cast<const char*>(state.brookMask.data()),
+            static_cast<std::streamsize>(state.brookMask.size()));
+    }
     return static_cast<bool>(file);
 }
 
@@ -1405,6 +1436,16 @@ bool loadSimState(const char* path, WaterSimState& state,
     } else {
         state.pinned.assign(cells, kWaterInfoDry);
     }
+    // Brook footprints: appended after the pins (E4b) — absent in
+    // older dumps, which end here.
+    state.brookMask.assign(cells, 0);
+    u8 brooks = 0;
+    read(brooks);
+    if (file && brooks != 0) {
+        file.read(reinterpret_cast<char*>(state.brookMask.data()),
+                  static_cast<std::streamsize>(cells));
+    }
+    file.clear(); // absence of the appended block is not an error
     state.headBuf.assign(cells, 0.0f);
     state.scratch.assign(cells, 0.0f);
     return static_cast<bool>(file);
