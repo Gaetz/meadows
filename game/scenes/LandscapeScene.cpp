@@ -1948,20 +1948,16 @@ void LandscapeScene::reconcileWaterWithTerrain(
                   [](const render::terraingen::Lake& lake) {
                       return !lake.mask.empty() && lake.cells < 6;
                   });
-    for (render::terraingen::River& river : sandboxRivers) {
-        f32 level = 1.0e30f;
-        for (render::terraingen::RiverPoint& pt : river.points) {
-            if (pt.x >= minX && pt.x <= maxX && pt.z >= minZ &&
-                pt.z <= maxZ) {
-                pt.surface =
-                    glm::min(pt.surface,
-                             render::terrain::height(tp, pt.x, pt.z) +
-                                 4.0f);
-            }
-            level = glm::min(level, pt.surface);
-            pt.surface = level;
-        }
-    }
+    // Rivers: NOTHING here any more. The bake rebuilds their profile
+    // against the FINAL ground upstream-from-the-mouth
+    // (reconcileRiversWithTerrain, v65) and the ribbon builder
+    // re-grounds its densified nodes on the FULL runtime height
+    // (detail included). The legacy clamp that lived here —
+    // min(surface, height + 4) plus a downstream running-min, re-run
+    // on every resident river at EVERY tile publish — ratcheted the
+    // surfaces down under each bed rise as the streaming went on
+    // (dev: torrents flowing between the two ground representations,
+    // (9622, 4131) and (9568, 2837)).
 }
 
 void LandscapeScene::publishWaterBodies() {
