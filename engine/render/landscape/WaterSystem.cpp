@@ -703,9 +703,18 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                 dense.push_back(nodes[i]);
             }
             for (RiverNode& nd : dense) {
+                // The S5d pass CARVED the bed by ~0.18 x width — the
+                // water fills that channel (a 15 cm film left every
+                // chute looking nearly dry between the fully-deep
+                // baked nodes, dev feedback). The tier caps are not
+                // published runtime-side; the generic clamp only
+                // under-lifts fleuves, whose chord already carries
+                // the reconciled depth (max() keeps it).
+                const f32 bed = glm::clamp(
+                    0.18f * 2.0f * nd.halfWidth, 0.5f, 4.0f);
                 nd.surface = glm::max(
                     nd.surface,
-                    terrain::height(params, nd.x, nd.z) + 0.15f);
+                    terrain::height(params, nd.x, nd.z) + bed);
             }
             nodes = std::move(dense);
         }
