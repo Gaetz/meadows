@@ -735,7 +735,8 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                 }
                 dense.push_back(nodes[i]);
             }
-            for (RiverNode& nd : dense) {
+            for (size_t di = 0; di < dense.size(); ++di) {
+                RiverNode& nd = dense[di];
                 // The S5d pass CARVED the bed by ~0.18 x width — the
                 // water fills that channel (a 15 cm film left every
                 // chute looking nearly dry between the fully-deep
@@ -745,9 +746,35 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device,
                 // the reconciled depth (max() keeps it).
                 const f32 bed = glm::clamp(
                     0.18f * 2.0f * nd.halfWidth, 0.5f, 4.0f);
-                nd.surface = glm::max(
-                    nd.surface,
-                    terrain::height(params, nd.x, nd.z) + bed);
+                const f32 gC = terrain::height(params, nd.x, nd.z);
+                f32 s = glm::max(nd.surface, gC + bed);
+                // BANK bound: on a long FLAT reach the backwater
+                // profile rides the highest bump of the bief — the
+                // ribbon stood PROUD of the plain beside its channel
+                // (measured dev, (9364, 1609)). The water never
+                // exceeds the LOWER bank minus a freeboard; slopes
+                // and gorges have high banks, so only flats change.
+                const RiverNode& ah =
+                    dense[glm::min(di + 1, dense.size() - 1)];
+                const RiverNode& bh = dense[di > 0 ? di - 1 : 0];
+                f32 dx = ah.x - bh.x;
+                f32 dz = ah.z - bh.z;
+                const f32 len = std::sqrt(dx * dx + dz * dz);
+                if (len > 1.0e-3f) {
+                    dx /= len;
+                    dz /= len;
+                } else {
+                    dx = 1.0f;
+                    dz = 0.0f;
+                }
+                const f32 lat = nd.halfWidth * 1.2f + 0.5f;
+                const f32 bank = glm::min(
+                    terrain::height(params, nd.x - dz * lat,
+                                    nd.z + dx * lat),
+                    terrain::height(params, nd.x + dz * lat,
+                                    nd.z - dx * lat));
+                s = glm::max(glm::min(s, bank - 0.05f), gC + 0.15f);
+                nd.surface = s;
             }
             nodes = std::move(dense);
         }
