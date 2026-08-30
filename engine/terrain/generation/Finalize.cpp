@@ -327,6 +327,9 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
 
     // S5c — river carving on the fine grid: parabolic bed under the
     // water surface, bank shoulder blending back into the hillside.
+    // Pre-carve snapshot: the carve REFERENCE ground must not read
+    // cells this very loop already dug (order-dependence).
+    const vector<f32> preCarve = out.height;
     for (const River& river : hydro.rivers) {
         // Tier character: cap band + shoulder (the ruisseau's shallow
         // cap is what keeps it wadeable whatever its width says).
@@ -395,7 +398,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
             const f32 flatBoost =
                 (river.tier == 0 ? 0.3f : 0.5f) *
                 (1.0f -
-                 noise::smoothstep01(0.002f, 0.01f, segSlope));
+                 noise::smoothstep01(0.01f, 0.03f, segSlope));
             for (i32 row = glm::max(r0, 0);
                  row <= glm::min(r1, static_cast<i32>(out.fineSpec.n) - 1);
                  ++row) {
@@ -422,7 +425,31 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                     // ribbon under the relief noise.
                     const f32 half = glm::max(
                         glm::mix(a.halfWidth, b.halfWidth, t), 1.6f);
-                    const f32 surface = glm::mix(a.surface, b.surface, t);
+                    // Carve WATERLINE = the lower of the baked
+                    // surface and the local PRE-CARVE ground: where
+                    // the pre-finalize hydrology surface HANGS above
+                    // the eroded terrain, a surface-referenced dig
+                    // never reached the ground — no channel at all,
+                    // and the reconciled water then stood meters
+                    // PROUD on flat ground (measured dev,
+                    // (9364, 1608): 2.6 m wall of water, zero carve).
+                    const i32 pc = glm::clamp(
+                        static_cast<i32>(std::lround(
+                            (px - out.fineSpec.originX) /
+                            out.fineSpec.texelSize)),
+                        0, static_cast<i32>(out.fineSpec.n) - 1);
+                    const i32 pr = glm::clamp(
+                        static_cast<i32>(std::lround(
+                            (pz - out.fineSpec.originZ) /
+                            out.fineSpec.texelSize)),
+                        0, static_cast<i32>(out.fineSpec.n) - 1);
+                    const f32 centerGround =
+                        preCarve[static_cast<size_t>(pr) *
+                                     out.fineSpec.n +
+                                 static_cast<size_t>(pc)];
+                    const f32 surface = glm::min(
+                        glm::mix(a.surface, b.surface, t),
+                        centerGround + 0.3f);
                     f32 depth = glm::clamp(
                                     params.riverDepthCoef * 2.0f * half,
                                     tierDepthMin, tierDepthMax) +
