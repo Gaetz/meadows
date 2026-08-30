@@ -521,6 +521,63 @@ TEST_CASE("water sim: mask overhang past an eroded crest never seeds") {
           doctest::Approx(1.5f).epsilon(0.01));
 }
 
+TEST_CASE("water sim: the uncovered shore shelf seeds with the basin") {
+    // A small deep lake whose 4 m mask covers only the core; around
+    // it a shallow submerged shelf (1.4 m under the level) the mask
+    // cannot represent. Left dry, the shelf filled at pin-outflow
+    // speed — minutes of a waterline hanging short of the banks. The
+    // seeding BFS now crosses the fringe, bounded: 12 cells of reach
+    // from the covered mask, and never into ground more than 6 m
+    // under the level (past a real crest the ground plunges deeper).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto basin = [](f32 x, f32 z) {
+        if (x >= 40.0f && x <= 56.0f && z >= 40.0f && z <= 56.0f) {
+            return 288.0f; // deep core (12 m column)
+        }
+        if (x >= 72.0f && x <= 76.0f && z >= 44.0f && z <= 52.0f) {
+            return 292.0f; // deep pocket in the shelf (8 m dip)
+        }
+        if (x >= 8.0f && x <= 84.0f && z >= 24.0f && z <= 84.0f) {
+            return 298.6f; // shelf, 1.4 m under the level
+        }
+        return 312.0f; // rim
+    };
+    WaterSimState state;
+    initWindow(state, spec, basin, -1000.0f);
+    render::WaterBodies bodies;
+    render::LakeSurface lake;
+    lake.level = 300.0f;
+    lake.minX = 40.0f;
+    lake.minZ = 40.0f;
+    lake.maxX = 56.0f;
+    lake.maxZ = 56.0f;
+    lake.maskTexel = 4.0f;
+    lake.maskWidth = 4;
+    lake.maskHeight = 4;
+    lake.mask.assign(16, 1);
+    bodies.lakes.push_back(lake);
+    pinLakes(state, bodies);
+    const auto idx = [&](f32 x, f32 z) {
+        return static_cast<size_t>(z / 2.0f) * spec.n +
+               static_cast<size_t>(x / 2.0f);
+    };
+    // The covered core pins as before (a pinned root's depth is
+    // enforced by the tick, not by the seeding pass).
+    CHECK(state.pinned[idx(48.0f, 48.0f)] ==
+          doctest::Approx(300.0f).epsilon(0.001));
+    // The shelf seeds to the level (never pinned): the lake meets its
+    // banks immediately instead of at pin-outflow speed.
+    CHECK(state.depth[idx(30.0f, 48.0f)] ==
+          doctest::Approx(1.4f).epsilon(0.01));
+    CHECK(state.pinned[idx(30.0f, 48.0f)] <
+          render::terrain::kWaterInfoDry + 1.0f);
+    // Beyond the 12-cell reach: dry (dynamics may still get there).
+    CHECK(state.depth[idx(10.0f, 48.0f)] < 0.01f);
+    // The deep pocket (8 m dip) is within reach but past the dip
+    // guard: dry — a breach toward a fall never seeds a tower.
+    CHECK(state.depth[idx(74.0f, 48.0f)] < 0.01f);
+}
+
 TEST_CASE("water sim: scroll strips refill from breadcrumbs") {
     // Walking away scrolls (never evicts): breadcrumb states dropped
     // along the way let the ENTERING strips remember their water —

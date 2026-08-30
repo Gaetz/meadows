@@ -520,14 +520,23 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                     // COL the near sample lands on the rising saddle
                     // while the ground plunges right behind — the
                     // grown sheet jutted square over the drop
-                    // (measured dev). The extension is granted only
-                    // if the ground HOLDS the level along the whole
-                    // probe (a true bank, cut by the depth test); one
-                    // deep, sibling-uncovered point = the void past a
-                    // crest — flush, the water stops at its fall. A
-                    // deep point covered by a SIBLING piece of the
-                    // same lake is a tile seam: the grown overlap
-                    // bridges the raster misalignment as before.
+                    // (measured dev). The extension is granted if the
+                    // ground HOLDS the level along the whole probe (a
+                    // true bank, cut by the depth test). A deep,
+                    // sibling-uncovered point is the void past a crest
+                    // — flush, the water stops at its fall — UNLESS
+                    // the dip is moderate (≤ 6 m under the level) and
+                    // the ground RISES BACK within reach: a submerged
+                    // SHELF, a shore band too shallow and narrow for
+                    // the 16 m mask. Cutting there hung the stepped
+                    // edge + skirt over a still-underwater bank
+                    // (measured dev, small deep lakes); the sheet must
+                    // instead run to the rising bank so the depth test
+                    // cuts the true shoreline. A deep point covered by
+                    // a SIBLING piece of the same lake is a tile seam:
+                    // the grown overlap bridges the raster
+                    // misalignment as before.
+                    bool dipped = false;
                     for (i32 s = 0; s < 3; ++s) {
                         const f32 px =
                             ex + static_cast<f32>(dc) *
@@ -535,8 +544,14 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                         const f32 pz =
                             ez + static_cast<f32>(dr) *
                                      (0.5f + static_cast<f32>(s)) * mt;
-                        if (terrain::height(params, px, pz) >=
-                            lake.level - 2.0f) {
+                        const f32 g = terrain::height(params, px, pz);
+                        if (g >= lake.level - 2.0f) {
+                            if (dipped) {
+                                // Shelf: extend to the rising bank.
+                                se.grow =
+                                    (0.5f + static_cast<f32>(s)) * mt;
+                                return se;
+                            }
                             continue;
                         }
                         bool seam = false;
@@ -551,10 +566,21 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                                 break;
                             }
                         }
-                        if (!seam) {
-                            se.crest = true;
-                            return se;
+                        if (seam) {
+                            continue;
                         }
+                        if (g >= lake.level - 6.0f) {
+                            dipped = true; // shelf candidate
+                            continue;
+                        }
+                        se.crest = true; // the true void
+                        return se;
+                    }
+                    if (dipped) {
+                        // The dip never rose back within reach:
+                        // conservative crest (flush + skirt).
+                        se.crest = true;
+                        return se;
                     }
                     se.grow = grow;
                     return se;

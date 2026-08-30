@@ -204,6 +204,25 @@ Intégration :
   dépendance au détail du terrain) — c'est le critère : tout lissage
   de rivage doit rester interne à la grille de sim.
 
+- **Étagère de rive vs vraie chute — les DEUX couches** (2026-08-30,
+  lac (9038, 1187)). Le masque 16 m ne peut pas représenter une bande
+  de rive immergée de 1-3 m de fond sur 8-16 m de large ; les deux
+  couches la traitaient en « vide après crête » et suspendaient leur
+  bord en escalier au-dessus d'une berge encore sous l'eau (capture
+  dev). Règle commune ajoutée : une plongée MODÉRÉE (≤ 6 m sous le
+  niveau) dont le sol REMONTE au niveau dans la portée sondée est une
+  étagère — la nappe continue jusqu'à la berge (depth test = ligne de
+  rive) ; sinon crête, flush + jupe, cascades intactes. Côté baké :
+  sondes `SideExt` (WaterSystem). Côté sim : l'ensemencement de
+  `pinLakes` traverse la frange NON couverte (≤ 6 m, portée 12
+  cellules, jamais depuis un film de crête — un film n'exporte pas son
+  niveau, sinon tours d'eau sur la pente de chute). RELIQUAT ACCEPTÉ
+  (verdict dev) : sur un lac minuscule dont l'anneau couvert est
+  entièrement filmé par la garde de crête, le chemin centre→étagère
+  est bloqué et la frange se remplit DYNAMIQUEMENT au débit des pins
+  (~2-3 min) — acceptable car la fenêtre sim couvre le lac ~250 m
+  avant qu'on l'atteigne : il est plein à l'arrivée.
+
 ## 4. Restes connus / prochaines briques
 
 - C4 : nage/courants/submersion lisant le snapshot dans le rect.

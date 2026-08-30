@@ -678,12 +678,29 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
     // basin cells (terrain below the level) — the lake occupies its
     // whole baked footprint immediately (the "flan" fix), and a mask
     // overhang disconnected from the core never receives a drop.
+    // The BFS also crosses into the UNCOVERED shore fringe: the 16 m
+    // mask cannot represent a shallow submerged shelf around a small
+    // deep lake, and left dry it filled at pin-outflow speed — minutes
+    // of a stepped waterline hanging short of the banks (measured dev,
+    // replay-confirmed convergence to the full basin). Fringe traversal
+    // carries the arriving level and is triple-guarded so a breach
+    // never re-invents the flood: shallow only (ground within 6 m of
+    // the level — past a real crest the ground plunges deeper within a
+    // texel), short reach (12 cells from the covered mask), and never
+    // through film cells (a pastCrest film seeds ~0 depth, so the
+    // fringe beyond a guarded crest stays dry and the pour still
+    // carves its own profile). Mirrors the render-side shelf rule.
+    constexpr f32 kFringeMaxDip = 6.0f;
+    constexpr u8 kFringeReach = 12;
     vector<u32> queue;
     vector<u8> visited(cells, 0);
+    vector<f32> fillLevel(cells, kWaterInfoDry);
+    vector<u8> fringeSteps(cells, 0);
     queue.reserve(1024);
     for (size_t i = 0; i < cells; ++i) {
         if (state.pinned[i] > kWaterInfoDry + 1.0f) {
             visited[i] = 1;
+            fillLevel[i] = seedLevel[i];
             queue.push_back(static_cast<u32>(i));
         }
     }
@@ -706,12 +723,32 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
             if (visited[j]) {
                 continue;
             }
-            const f32 level = seedLevel[j];
+            f32 level = seedLevel[j];
+            u8 steps = 0;
+            if (level <= kWaterInfoDry + 1.0f) {
+                // Uncovered fringe: inherit the arriving level, walk a
+                // bounded number of steps, shallow ground only.
+                level = fillLevel[i];
+                steps = static_cast<u8>(fringeSteps[i] + 1);
+                if (steps > kFringeReach ||
+                    state.terrain[j] < level - kFringeMaxDip) {
+                    continue;
+                }
+            }
             if (level <= kWaterInfoDry + 1.0f ||
                 state.terrain[j] >= level - 0.02f) {
                 continue;
             }
             visited[j] = 1;
+            // A film cell (pastCrest seed, hairline over its ground)
+            // has NO fringe authority: past its crest the ground drops
+            // within the dip guard, and inheriting its level would
+            // seed water towers on the fall slope. Only a genuinely
+            // submerged cell exports the level to the fringe.
+            fillLevel[j] = (level - state.terrain[j] >= 0.5f)
+                               ? level
+                               : kWaterInfoDry;
+            fringeSteps[j] = steps;
             queue.push_back(static_cast<u32>(j));
             if (state.depth[j] < 0.01f) {
                 state.depth[j] = level - state.terrain[j];
