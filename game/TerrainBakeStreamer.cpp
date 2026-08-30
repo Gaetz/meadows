@@ -671,8 +671,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
                 continue;
             }
             const f32 hw = glm::clamp(
-                0.008f * std::sqrt(glm::max(node.area, 0.0f)), 4.0f,
-                60.0f);
+                render::terraingen::riverHalfWidthFromArea(node.area),
+                4.0f, 60.0f);
             run.nodes.push_back({ node.x, node.z, node.surface, hw });
         }
         if (run.nodes.size() >= 2) {

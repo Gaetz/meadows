@@ -8,6 +8,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/terrain/RiverGeometry.hpp"
+#include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -78,7 +79,7 @@ vector<f32> bakePoolDepth(const TerrainParams& params,
 
 // Boundary inflow from the BAKED ribbons: any river polyline entering
 // the window injects a discharge derived from its width (the inverse
-// of the classifyRivers width law, default coef 0.008/exponent 0.5 —
+// of the classifyRivers width law (Hydrology.hpp, kRiverWidthCoef) —
 // the ribbon's width says how much catchment feeds it). Master-network
 // entries already inject the true areas; skip anything near one.
 vector<render::terraingen::WaterSource> bakedEntrySources(
@@ -98,8 +99,8 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                z <= maxZ;
     };
     const auto lawQ = [&](f32 halfWidth) {
-        const f32 hw = glm::max(halfWidth, 0.0f);
-        const f32 area = (hw / 0.008f) * (hw / 0.008f);
+        const f32 area =
+            render::terraingen::riverAreaFromHalfWidth(halfWidth);
         return render::terraingen::runoffDischarge(area, runoff);
     };
     vector<WaterSource> out;
@@ -157,7 +158,8 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 continue;
             }
             const f32 hw = glm::max(b.halfWidth, 0.5f);
-            const f32 area = (hw / 0.008f) * (hw / 0.008f);
+            const f32 area =
+                render::terraingen::riverAreaFromHalfWidth(hw);
             out.push_back(
                 { b.x, b.z,
                   glm::min(render::terraingen::runoffDischarge(area,

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cmath>
+
+#include <glm/glm.hpp>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -14,6 +18,19 @@
 // geometry handles badly.
 
 namespace render::terraingen {
+
+// The default width law, halfWidth = kRiverWidthCoef * sqrt(area) —
+// ONE home for the coefficient (it was duplicated as a literal in
+// every runtime consumer; retuning it must retune them all). The
+// helpers assume the default sqrt exponent.
+constexpr f32 kRiverWidthCoef = 0.008f;
+inline f32 riverHalfWidthFromArea(f32 area) {
+    return kRiverWidthCoef * std::sqrt(glm::max(area, 0.0f));
+}
+inline f32 riverAreaFromHalfWidth(f32 halfWidth) {
+    const f32 r = glm::max(halfWidth, 0.0f) / kRiverWidthCoef;
+    return r * r;
+}
 
 struct Lake {
     f32 level { 0.0f }; // water surface (spill elevation)
@@ -102,8 +119,9 @@ struct HydrologyParams {
     // halfWidth = coef * area^exponent, then narrowed by slope (see
     // pointAt) and charactered per river (smoothRiver): sqrt growth for
     // real small/large contrast, small coef to keep mountains torrent-
-    // sized.
-    f32 widthCoef { 0.008f };
+    // sized. The default coef is shared with every runtime consumer
+    // (kRiverWidthCoef above).
+    f32 widthCoef { kRiverWidthCoef };
     f32 widthExponent { 0.5f };
     u32 minRiverPoints { 6 };
     // Ponds smooth over the two spots ribbon geometry handles badly:
