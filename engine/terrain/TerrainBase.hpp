@@ -53,15 +53,9 @@ struct TerrainRegion {
     // debug bakes): sample with a 0 fallback.
     vector<u8> rockExposure;
 
-    // Solved steady-state water fields (docs/WATER-RESEARCH.md, option
-    // D), on their OWN grid over the same rect (waterTexel per cell —
-    // coarser than heights). depth == 0 marks dry; surface is the
-    // ABSOLUTE water level in meters (not ground + depth: the solve ran
-    // on its own coarser sampling of the ground, and the level must not
-    // inherit 2 m bed detail). Sea-pinned cells are stored dry — the
-    // ocean sheet owns them. flux is the through-discharge trace signal
-    // (kept even where the film dried): 255 * log10(1 + Q[m3/s]) / 4.
-    // Empty = no solve (older bakes, story terrain).
+    // Legacy solved-water fields (the purged option-D per-tile solve):
+    // no writer, no reader — kept only so the TRG3 format and older
+    // cache files stay readable. New bakes ship dims 0.
     u32 waterWidth { 0 };
     u32 waterHeight { 0 };
     f32 waterTexel { 8.0f };
@@ -182,68 +176,6 @@ inline f32 maskSample(const TerrainRegion& r, const vector<u8>& channel,
     return a + (b - a) * tv;
 }
 
-// One water-field query: depth/surface/current at a world position,
-// bilinear over the solve grid. Surface interpolation is WET-WEIGHTED
-// (a dry corner stores surface 0 — mixing it in would sink the level
-// near every bank), so the level stays flat right up to the shore.
-struct WaterSample {
-    f32 depth { 0.0f };   // m of water over the solved ground
-    f32 surface { 0.0f }; // absolute level, valid only when depth > 0
-    f32 velocityX { 0.0f };
-    f32 velocityZ { 0.0f };
-    f32 flux { 0.0f }; // m3/s through-discharge (the course trace)
-};
-
-inline WaterSample waterSample(const TerrainRegion& r, f32 x, f32 z) {
-    WaterSample out;
-    if (r.waterWidth < 2 || r.waterHeight < 2 ||
-        r.waterDepth.size() !=
-            static_cast<size_t>(r.waterWidth) * r.waterHeight) {
-        return out;
-    }
-    const f32 u = glm::clamp((x - r.originX) / r.waterTexel, 0.0f,
-                             static_cast<f32>(r.waterWidth - 1));
-    const f32 v = glm::clamp((z - r.originZ) / r.waterTexel, 0.0f,
-                             static_cast<f32>(r.waterHeight - 1));
-    const u32 u0 = glm::min(static_cast<u32>(u), r.waterWidth - 2);
-    const u32 v0 = glm::min(static_cast<u32>(v), r.waterHeight - 2);
-    const f32 tu = u - static_cast<f32>(u0);
-    const f32 tv = v - static_cast<f32>(v0);
-    const f32 w[4] = { (1.0f - tu) * (1.0f - tv), tu * (1.0f - tv),
-                       (1.0f - tu) * tv, tu * tv };
-    const size_t at[4] = {
-        static_cast<size_t>(v0) * r.waterWidth + u0,
-        static_cast<size_t>(v0) * r.waterWidth + u0 + 1,
-        static_cast<size_t>(v0 + 1) * r.waterWidth + u0,
-        static_cast<size_t>(v0 + 1) * r.waterWidth + u0 + 1
-    };
-    f32 wetWeight = 0.0f;
-    for (i32 k = 0; k < 4; ++k) {
-        const size_t i = at[k];
-        const f32 depth =
-            static_cast<f32>(r.waterDepth[i]) * (1.0f / 32.0f);
-        out.depth += w[k] * depth;
-        if (!r.waterFlux.empty()) {
-            out.flux +=
-                w[k] * (std::pow(10.0f, static_cast<f32>(r.waterFlux[i]) *
-                                            (4.0f / 255.0f)) -
-                        1.0f);
-        }
-        if (depth > 0.0f) {
-            wetWeight += w[k];
-            out.surface += w[k] * r.waterSurface[i];
-            out.velocityX += w[k] * static_cast<f32>(r.waterVelX[i]) * 0.1f;
-            out.velocityZ += w[k] * static_cast<f32>(r.waterVelZ[i]) * 0.1f;
-        }
-    }
-    if (wetWeight > 0.0f) {
-        const f32 inv = 1.0f / wetWeight;
-        out.surface *= inv;
-        out.velocityX *= inv;
-        out.velocityZ *= inv;
-    }
-    return out;
-}
 
 } // namespace terrain
 

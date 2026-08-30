@@ -75,20 +75,10 @@ struct TileBakeParams {
     // the macro before erosion — channel, alluvial plain, monotone bed.
     MasterImprintParams imprint;
     FinalizeParams finalize;
-    // Steady-state water solve over the published rect (option D,
-    // docs/WATER-RESEARCH.md) — fills the region's water* fields.
-    // OFF by default since the option-C pivot (the real-time windowed
-    // sim owns runtime water; docs/TERRAIN-GEN.md journal 2026-08-27);
-    // the path stays for diagnostics and as the sim's offline oracle.
-    bool solveWater { false };
-    f32 waterSolveTexel { 8.0f };
+    // Solver parameters shared with the sim's boundary sources and the
+    // offline oracle (the per-tile option-D solve itself is purged —
+    // the real-time windowed sim owns runtime water).
     WaterSolveParams waterSolve { .rainRate = 4.0e-6f };
-    // Course continuity: cells whose through-flux says "a course runs
-    // here" are re-wetted to a minimum depth even where the film dried
-    // below the solver threshold — without it a stream on a steep
-    // stretch renders (and queries) as disconnected pools.
-    f32 courseFluxThreshold { 0.04f }; // m3/s worth existing
-    f32 courseMinDepth { 0.15f };      // m of guaranteed water on a course
     // Measured fine-erosion reintroduction (B6) — the carved-rock
     // character coming back on the slopes without re-hatching the
     // socles. All defaults are the LEGACY behavior (bit-exact); the
