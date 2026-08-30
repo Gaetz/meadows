@@ -114,14 +114,18 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         // pre-roll water drained and the channel stayed dry (measured
         // dev, the tier-0 stream at (9534, 2819)). Pinned-wide
         // reaches skip it (the reservoir supplies).
+        // hand-tuned: the raw law read a touch thin on young reaches
+        // (visible depth responds ~Q^0.6, so x2 here reads ~x1.5).
+        constexpr f32 kRunoffBoost = 2.0f;
         f32 accum = 0.0f;
         for (size_t k = 1; k < river.nodes.size(); ++k) {
             const render::RiverNode& na = river.nodes[k - 1];
             const render::RiverNode& nb = river.nodes[k];
             if (inside(na.x, na.z) && inside(nb.x, nb.z) &&
                 nb.halfWidth < pinnedHalfWidth) {
-                accum += glm::max(
-                    0.0f, lawQ(nb.halfWidth) - lawQ(na.halfWidth));
+                accum += kRunoffBoost *
+                         glm::max(0.0f, lawQ(nb.halfWidth) -
+                                            lawQ(na.halfWidth));
                 if (accum >= 0.05f) {
                     out.push_back(
                         { nb.x, nb.z, glm::min(accum, 30.0f) });
