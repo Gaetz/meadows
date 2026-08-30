@@ -1,5 +1,6 @@
 #include "game/ui/ConsolePanel.hpp"
 
+#include <cstring>
 #include <sstream>
 
 #include <imgui.h>
@@ -157,6 +158,25 @@ void ConsolePanel::draw(int windowFlags) {
             scrollToBottom = true;
         }
         ImGui::SetKeyboardFocusHere(-1); // keep typing
+    }
+    // Ctrl+V with the console open but the FIELD unfocused (Play mode
+    // captures the mouse, so clicking it back is impossible): append
+    // the clipboard to the input and refocus. When the field is
+    // active, ImGui's native Ctrl+V already pastes (SDL3 clipboard) —
+    // this path stays out of its way.
+    if (!ImGui::IsItemActive() && ImGui::GetIO().KeyCtrl &&
+        ImGui::IsKeyPressed(ImGuiKey_V, false)) {
+        if (const char* clip = ImGui::GetClipboardText()) {
+            size_t len = std::strlen(input);
+            for (const char* c = clip; *c != '\0' && len + 1 < sizeof(input);
+                 ++c) {
+                // Coordinates copied from elsewhere often drag line
+                // breaks along — flatten them to spaces.
+                input[len++] = (*c == '\n' || *c == '\r') ? ' ' : *c;
+            }
+            input[len] = '\0';
+            focusRequested = true;
+        }
     }
     ImGui::End();
 }
