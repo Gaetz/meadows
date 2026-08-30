@@ -200,6 +200,7 @@ public:
     render::TerrainSystem& terrainSystem() { return terrain; }
     render::VegetationSystem& vegetationSystem() { return vegetation; }
     render::WaterSystem& waterSystem() { return water; }
+    const render::WaterSystem& waterSystem() const { return water; }
     void requestRegenerate() { regenerateRequested = true; }
     // Variant meshes only (scatter/instances stay) — the tree builder's
     // regen trigger, applied at render()'s safe point.

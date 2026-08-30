@@ -275,6 +275,19 @@ struct LandscapeTuningForm : Form {
     f32 terrainRecurveLow { 0.25f };
     f32 terrainRecurveMid { 0.5f };
     f32 terrainRecurveHigh { 0.75f };
+    // Windowed water sim (render panel "Water" / Sim window): the
+    // panel edits WaterSystem::SimConfig live, these are the startup
+    // values. Defaults mirror SimConfig — keep them in sync.
+    bool waterSimEnabled { true };
+    f32 waterSimSpan { 512.0f };
+    f32 waterSimTexel { 2.0f };
+    i32 waterSimMaxSubsteps { 4 };
+    f32 waterSimTimeScale { 2.0f };
+    f32 waterSimRainRate { 4.0e-6f }; // m/s (panel shows mm/h)
+    f32 waterSimFadeBand { 32.0f };
+    bool waterSimSettleGated { true };
+    f32 waterSimPinRiverHalfWidth { 4.0f };
+    f32 waterSimReservoirOutflow { 2.0f };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -423,6 +436,16 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(terrainRecurveLow)
         REFLECT_FIELD(terrainRecurveMid)
         REFLECT_FIELD(terrainRecurveHigh)
+        REFLECT_FIELD(waterSimEnabled)
+        REFLECT_FIELD(waterSimSpan)
+        REFLECT_FIELD(waterSimTexel)
+        REFLECT_FIELD(waterSimMaxSubsteps)
+        REFLECT_FIELD(waterSimTimeScale)
+        REFLECT_FIELD(waterSimRainRate)
+        REFLECT_FIELD(waterSimFadeBand)
+        REFLECT_FIELD(waterSimSettleGated)
+        REFLECT_FIELD(waterSimPinRiverHalfWidth)
+        REFLECT_FIELD(waterSimReservoirOutflow)
     REFLECT_END()
 };
 

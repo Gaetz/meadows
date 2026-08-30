@@ -124,6 +124,7 @@ public:
         terrain::WaterSimParams params;
     };
     SimConfig& simConfig() { return simCfg; }
+    const SimConfig& simConfig() const { return simCfg; }
     // Boundary-inflow provider (rect -> sources), called ON THE WORKER
     // (pure; the master-network query costs ms). Null = rain only.
     using SimSourcesFn =

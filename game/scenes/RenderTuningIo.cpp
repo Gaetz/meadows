@@ -290,6 +290,25 @@ void RenderTuningIo::applyTuning(
         glm::clamp(tuning.vegHighDetailRadius, 0, 8);
     r.vegetation.lowDetailRadius =
         glm::clamp(tuning.vegLowDetailRadius, 2, 12);
+
+    // Water sim window — startup values for the render panel's "Sim
+    // window" knobs (clamps = the panel's slider ranges). Span/texel
+    // land before the first window init, so no re-init dance here.
+    render::WaterSystem::SimConfig& sim = r.waterSystem().simConfig();
+    sim.enabled = tuning.waterSimEnabled;
+    sim.span = glm::clamp(tuning.waterSimSpan, 256.0f, 1024.0f);
+    sim.texel = glm::clamp(tuning.waterSimTexel, 1.0f, 4.0f);
+    sim.maxSubsteps =
+        static_cast<u32>(glm::clamp(tuning.waterSimMaxSubsteps, 1, 8));
+    sim.timeScale = glm::clamp(tuning.waterSimTimeScale, 0.25f, 8.0f);
+    sim.params.rainRate =
+        glm::clamp(tuning.waterSimRainRate, 0.0f, 60.0f / 3.6e6f);
+    sim.fadeBand = glm::clamp(tuning.waterSimFadeBand, 8.0f, 64.0f);
+    sim.settleGated = tuning.waterSimSettleGated;
+    sim.pinRiverHalfWidth =
+        glm::clamp(tuning.waterSimPinRiverHalfWidth, 0.0f, 40.0f);
+    sim.params.reservoirOutflow =
+        glm::clamp(tuning.waterSimReservoirOutflow, 0.2f, 20.0f);
 }
 
 void RenderTuningIo::applyTreeTuning(
@@ -375,6 +394,19 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.vegViewRadius = r.vegetation.viewRadius;
     out.vegHighDetailRadius = r.vegetation.highDetailRadius;
     out.vegLowDetailRadius = r.vegetation.lowDetailRadius;
+
+    const render::WaterSystem::SimConfig& sim =
+        r.waterSystem().simConfig();
+    out.waterSimEnabled = sim.enabled;
+    out.waterSimSpan = sim.span;
+    out.waterSimTexel = sim.texel;
+    out.waterSimMaxSubsteps = static_cast<i32>(sim.maxSubsteps);
+    out.waterSimTimeScale = sim.timeScale;
+    out.waterSimRainRate = sim.params.rainRate;
+    out.waterSimFadeBand = sim.fadeBand;
+    out.waterSimSettleGated = sim.settleGated;
+    out.waterSimPinRiverHalfWidth = sim.pinRiverHalfWidth;
+    out.waterSimReservoirOutflow = sim.params.reservoirOutflow;
 }
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
