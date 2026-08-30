@@ -11,9 +11,22 @@
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/core/Jobs.hpp"
+#include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 
 namespace game {
+
+// E4a: the far-water provider's data pass — the lakes/rivers of every
+// cached .twb inside the square (visited tiles keep their REAL water
+// even far away), plus the master-network fleuves wherever no tile
+// was ever baked. Pure and worker-callable: file reads + the memoized
+// master network. Lakes are downsampled to ~64 m coarse masks.
+render::WaterSystem::FarWaterSet collectFarWater(
+    const std::filesystem::path& cacheDir, f32 tileSize,
+    const render::terraingen::ProceduralControlParams& controls,
+    const render::terraingen::MacroParams& macro,
+    const render::terraingen::MasterNetworkParams& net, f32 seaLevel,
+    f32 cx, f32 cz, f32 halfSpan);
 
 // Sandbox terrain streamer: bakes 4 km tiles around the focus on
 // workers, through the two-stage TileBake pipeline — stage 1 (terrain

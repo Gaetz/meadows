@@ -1,6 +1,7 @@
 #include "game/TerrainBakeStreamer.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 #include <fstream>
@@ -524,6 +525,161 @@ void TerrainBakeStreamer::update(
         publish(std::move(tile));
         tile = PublishedTile {};
     }
+}
+
+render::WaterSystem::FarWaterSet collectFarWater(
+    const std::filesystem::path& cacheDir, f32 tileSize,
+    const render::terraingen::ProceduralControlParams& controls,
+    const render::terraingen::MacroParams& macro,
+    const render::terraingen::MasterNetworkParams& net, f32 seaLevel,
+    f32 cx, f32 cz, f32 halfSpan) {
+    render::WaterSystem::FarWaterSet set;
+    const f32 minX = cx - halfSpan;
+    const f32 maxX = cx + halfSpan;
+    const f32 minZ = cz - halfSpan;
+    const f32 maxZ = cz + halfSpan;
+    struct Rect {
+        f32 x0, z0, x1, z1;
+    };
+    vector<Rect> covered;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it { cacheDir, ec }, end;
+         !ec && it != end; it.increment(ec)) {
+        const std::filesystem::path& path = it->path();
+        if (path.extension() != ".twb") {
+            continue;
+        }
+        i32 tx = 0;
+        i32 tz = 0;
+        u32 ver = 0;
+        if (std::sscanf(path.filename().string().c_str(),
+                        "tile_%d_%d_v%u", &tx, &tz, &ver) != 3 ||
+            ver != render::terraingen::kTileBakeVersion) {
+            continue;
+        }
+        const Rect rect { static_cast<f32>(tx) * tileSize,
+                          static_cast<f32>(tz) * tileSize,
+                          static_cast<f32>(tx + 1) * tileSize,
+                          static_cast<f32>(tz + 1) * tileSize };
+        if (rect.x1 < minX || rect.x0 > maxX || rect.z1 < minZ ||
+            rect.z0 > maxZ) {
+            continue;
+        }
+        vector<Lake> lakes;
+        vector<River> rivers;
+        if (!readWaterFile(path, lakes, rivers)) {
+            continue;
+        }
+        // Baked tiles own their footprint even when read failed lakes
+        // only after this point — the master fallback must never
+        // duplicate a course a real bake already carved.
+        covered.push_back(rect);
+        for (const Lake& lake : lakes) {
+            if (lake.level <= seaLevel + 0.25f || lake.mask.empty() ||
+                lake.maskWidth == 0) {
+                continue;
+            }
+            const u32 k = glm::max(
+                1u, static_cast<u32>(
+                        std::lround(64.0f / lake.maskTexel)));
+            render::WaterSystem::FarWaterSet::Lake far;
+            far.level = lake.level;
+            far.minX = lake.minX;
+            far.minZ = lake.minZ;
+            far.cell = lake.maskTexel * static_cast<f32>(k);
+            far.w = (lake.maskWidth + k - 1) / k;
+            far.h = (lake.maskHeight + k - 1) / k;
+            far.mask.assign(static_cast<size_t>(far.w) * far.h, 0);
+            for (u32 r = 0; r < far.h; ++r) {
+                for (u32 c = 0; c < far.w; ++c) {
+                    u32 hits = 0;
+                    u32 total = 0;
+                    for (u32 sr = r * k;
+                         sr < glm::min((r + 1) * k, lake.maskHeight);
+                         ++sr) {
+                        for (u32 sc = c * k;
+                             sc <
+                             glm::min((c + 1) * k, lake.maskWidth);
+                             ++sc) {
+                            ++total;
+                            hits += lake.mask[static_cast<size_t>(sr) *
+                                                  lake.maskWidth +
+                                              sc]
+                                        ? 1u
+                                        : 0u;
+                        }
+                    }
+                    far.mask[static_cast<size_t>(r) * far.w + c] =
+                        (total != 0 && hits * 2 >= total) ? 1 : 0;
+                }
+            }
+            set.lakes.push_back(std::move(far));
+        }
+        for (const River& river : rivers) {
+            render::WaterSystem::FarWaterSet::Ribbon run;
+            const auto flush = [&] {
+                if (run.nodes.size() >= 2) {
+                    set.ribbons.push_back(std::move(run));
+                }
+                run = {};
+            };
+            for (const RiverPoint& pt : river.points) {
+                // Only courses wide enough to read at kilometres
+                // (the pinned tier); the sea sheet covers estuaries.
+                if (pt.halfWidth < 4.0f ||
+                    pt.surface <= seaLevel + 0.25f) {
+                    flush();
+                    continue;
+                }
+                if (!run.nodes.empty()) {
+                    const auto& last = run.nodes.back();
+                    const f32 dx = pt.x - last.x;
+                    const f32 dz = pt.z - last.z;
+                    if (dx * dx + dz * dz < 48.0f * 48.0f) {
+                        continue; // ~48 m spacing is plenty far away
+                    }
+                }
+                run.nodes.push_back(
+                    { pt.x, pt.z, pt.surface, pt.halfWidth });
+            }
+            flush();
+        }
+    }
+    // Master fleuves wherever nothing was ever baked: the imprint (S1)
+    // carved their valleys into the analytic ground the FarTerrain
+    // shows, so the routed surfaces sit plausibly in them.
+    const auto inCovered = [&](f32 x, f32 z) {
+        for (const Rect& r : covered) {
+            if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto masters = render::terraingen::masterRiversNear(
+        render::terraingen::ProceduralControls { controls }, macro, net,
+        minX, minZ, maxX, maxZ);
+    for (const render::terraingen::MasterRiver& river : masters) {
+        render::WaterSystem::FarWaterSet::Ribbon run;
+        for (const render::terraingen::MasterNode& node : river.nodes) {
+            if (node.surface <= seaLevel + 0.5f ||
+                inCovered(node.x, node.z)) {
+                if (run.nodes.size() >= 2) {
+                    set.ribbons.push_back(std::move(run));
+                }
+                run = {};
+                continue;
+            }
+            const f32 hw = glm::clamp(
+                0.008f * std::sqrt(glm::max(node.area, 0.0f)), 4.0f,
+                60.0f);
+            run.nodes.push_back({ node.x, node.z, node.surface, hw });
+        }
+        if (run.nodes.size() >= 2) {
+            set.ribbons.push_back(std::move(run));
+        }
+    }
+    return set;
 }
 
 } // namespace game

@@ -61,6 +61,41 @@ public:
     void update(rhi::Device& device, const TerrainParams& params,
                 const Vec3& cameraPos);
 
+    // Far water (E4a): flat lake sheets + river ribbons for the world
+    // BEYOND the streamed tiles, drawn with the local pipeline (opaque,
+    // depth-written — wherever near water exists it wins the depth
+    // test, so no cut bookkeeping). The provider runs ON A WORKER
+    // (pure: cached .twb reads + the memoized master network) and
+    // returns everything in the requested square.
+    struct FarWaterSet {
+        struct Lake {
+            f32 level { 0.0f };
+            f32 minX { 0.0f };
+            f32 minZ { 0.0f };
+            f32 cell { 64.0f }; // coarse mask texel (m)
+            u32 w { 0 };
+            u32 h { 0 };
+            vector<u8> mask;
+        };
+        struct Ribbon {
+            struct Node {
+                f32 x { 0.0f };
+                f32 z { 0.0f };
+                f32 surface { 0.0f };
+                f32 halfWidth { 0.0f };
+            };
+            vector<Node> nodes;
+        };
+        vector<Lake> lakes;
+        vector<Ribbon> ribbons;
+    };
+    using FarWaterFn =
+        std::function<FarWaterSet(f32 cx, f32 cz, f32 halfSpan)>;
+    void setFarWater(FarWaterFn fn) {
+        farFn = std::move(fn);
+        farDirty = true;
+    }
+
     // Local water bodies (altitude lakes + river ribbons): the scene
     // publishes an immutable set; geometry rebuilds and the pool map
     // rebakes (foam then works on lakes/rivers too). Null = sea only.
@@ -210,11 +245,21 @@ private:
         f32 millis { 0.0f };
         f64 volume { 0.0 }; // published m³ (settle-gate calm metric)
     };
+    // Far-water geometry, built like LocalMesh on a worker; carries
+    // the request center + content stamp for the staleness check.
+    struct FarMesh {
+        u64 generation { 0 };
+        u64 stamp { 0 }; // contentStamp the build saw
+        Vec2 center { 0.0f };
+        vector<f32> verts;
+        vector<u32> indices;
+    };
     struct Shared {
         core::ConcurrentQueue<BakedMap> baked;
         core::ConcurrentQueue<BakedInfo> bakedInfo;
         core::ConcurrentQueue<SimResult> simDone;
         core::ConcurrentQueue<LocalMesh> localMesh;
+        core::ConcurrentQueue<FarMesh> farMesh;
     };
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
@@ -225,6 +270,11 @@ private:
                                    const TerrainParams& params,
                                    vector<f32>& verts,
                                    vector<u32>& indices);
+    // Far sheets/ribbons in the LOCAL vertex format (still-water
+    // lanes): drawn with localPipeline, shaded like any baked water.
+    static void buildFarGeometry(const FarWaterSet& set,
+                                 vector<f32>& verts,
+                                 vector<u32>& indices);
     void rebuildMapGroup(rhi::Device& device);
     void rebuildMaterials(rhi::Device& device);
     void uploadSimTextures(rhi::Device& device,
@@ -268,6 +318,14 @@ private:
     bool localBuildInFlight { false };
     rhi::BufferHandle localVertexBuffer {};
     rhi::BufferHandle localIndexBuffer {};
+    FarWaterFn farFn;
+    bool farDirty { false };
+    bool farBuildInFlight { false };
+    Vec2 farCenter { 1.0e9f, 1.0e9f };
+    u64 farStamp { ~0ull };
+    rhi::BufferHandle farVertexBuffer {};
+    rhi::BufferHandle farIndexBuffer {};
+    u32 farIndexCount { 0 };
     rhi::PipelineHandle localPipeline {};
     u32 localIndexCount { 0 };
 

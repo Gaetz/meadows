@@ -1839,6 +1839,18 @@ void LandscapeScene::setSandboxMode(bool enable) {
                 });
             renderer.waterSystem().simConfig().params.seaLevel =
                 tuning.seaLevel;
+            // Far water (E4a): distant lakes/rivers for the FarTerrain
+            // — cached .twb + master fleuves, gathered on the worker.
+            renderer.waterSystem().setFarWater(
+                [cp, macro, net, sea = tuning.seaLevel,
+                 tileSize = bakeParams.tileSize,
+                 cacheDir = platform::executableDir() / "terrain-cache" /
+                            std::to_string(tuning.terrainSeed)](
+                    f32 cx, f32 cz, f32 halfSpan) {
+                    return collectFarWater(cacheDir, tileSize, cp,
+                                           macro, net, sea, cx, cz,
+                                           halfSpan);
+                });
         }
         // Park the terrain/grass/vegetation rings until the first tile
         // publishes: chunks meshed against the empty base are ALL remeshed

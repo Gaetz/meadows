@@ -314,6 +314,16 @@ void WaterSystem::destroy(rhi::Device& device) {
     device.destroyPipeline(localPipeline);
     device.destroyBuffer(localIndexBuffer);
     device.destroyBuffer(localVertexBuffer);
+    device.destroyBuffer(farIndexBuffer);
+    device.destroyBuffer(farVertexBuffer);
+    farIndexBuffer = {};
+    farVertexBuffer = {};
+    farIndexCount = 0;
+    farFn = nullptr;
+    farDirty = false;
+    farBuildInFlight = false;
+    farCenter = { 1.0e9f, 1.0e9f };
+    farStamp = ~0ull;
     poolMapGroup = {};
     poolMap = {};
     poolMapSampler = {};
@@ -826,6 +836,92 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
     }
 }
 
+// Far water (E4a): flat sheets in the LOCAL vertex format, still-water
+// lanes everywhere (flow shimmer is invisible at these distances). No
+// shore probes, no densify — the coarse cells match the FarTerrain
+// ground resolution and the depth test against it cuts the banks.
+void WaterSystem::buildFarGeometry(const FarWaterSet& set,
+                                   vector<f32>& verts,
+                                   vector<u32>& indices) {
+    constexpr u32 kFloatsPerVertex = 10;
+    const auto vertex = [&](f32 x, f32 y, f32 z) {
+        verts.insert(verts.end(), { x, y, z, 0.0f, 0.0f, 0.0f, 0.0f,
+                                    0.0f, 1.0e6f, 0.0f });
+        return static_cast<u32>(verts.size() / kFloatsPerVertex - 1);
+    };
+    for (const FarWaterSet::Lake& lake : set.lakes) {
+        // One quad per row RUN of covered coarse cells.
+        for (u32 r = 0; r < lake.h; ++r) {
+            u32 c = 0;
+            while (c < lake.w) {
+                if (lake.mask[static_cast<size_t>(r) * lake.w + c] ==
+                    0) {
+                    ++c;
+                    continue;
+                }
+                const u32 c0 = c;
+                while (c < lake.w &&
+                       lake.mask[static_cast<size_t>(r) * lake.w + c] !=
+                           0) {
+                    ++c;
+                }
+                const f32 x0 =
+                    lake.minX + static_cast<f32>(c0) * lake.cell;
+                const f32 x1 =
+                    lake.minX + static_cast<f32>(c) * lake.cell;
+                const f32 z0 =
+                    lake.minZ + static_cast<f32>(r) * lake.cell;
+                const f32 z1 = z0 + lake.cell;
+                const u32 v0 = vertex(x0, lake.level, z0);
+                const u32 v1 = vertex(x1, lake.level, z0);
+                const u32 v2 = vertex(x1, lake.level, z1);
+                const u32 v3 = vertex(x0, lake.level, z1);
+                for (const u32 i : { v0, v2, v1, v0, v3, v2 }) {
+                    indices.push_back(i);
+                }
+            }
+        }
+    }
+    for (const FarWaterSet::Ribbon& ribbon : set.ribbons) {
+        if (ribbon.nodes.size() < 2) {
+            continue;
+        }
+        u32 prevL = 0;
+        u32 prevR = 0;
+        bool chained = false;
+        for (size_t i = 0; i < ribbon.nodes.size(); ++i) {
+            const FarWaterSet::Ribbon::Node& node = ribbon.nodes[i];
+            const FarWaterSet::Ribbon::Node& behind =
+                ribbon.nodes[i > 0 ? i - 1 : 0];
+            const FarWaterSet::Ribbon::Node& ahead =
+                ribbon.nodes[i + 1 < ribbon.nodes.size() ? i + 1 : i];
+            f32 dx = ahead.x - behind.x;
+            f32 dz = ahead.z - behind.z;
+            const f32 len = std::sqrt(dx * dx + dz * dz);
+            if (len < 1.0e-3f) {
+                continue;
+            }
+            dx /= len;
+            dz /= len;
+            const u32 left = vertex(node.x - dz * node.halfWidth,
+                                    node.surface,
+                                    node.z + dx * node.halfWidth);
+            const u32 right = vertex(node.x + dz * node.halfWidth,
+                                     node.surface,
+                                     node.z - dx * node.halfWidth);
+            if (chained) {
+                for (const u32 v :
+                     { prevL, prevR, left, prevR, right, left }) {
+                    indices.push_back(v);
+                }
+            }
+            prevL = left;
+            prevR = right;
+            chained = true;
+        }
+    }
+}
+
 void WaterSystem::kickLocalGeometry(const TerrainParams& params) {
     localBuildInFlight = true;
     jobs->enqueue([sharedRef = shared, bodiesRef = bodies, params,
@@ -931,6 +1027,60 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         rebuildMaterials(device);
         kickLocalGeometry(params);
         bodiesDirty = false;
+    }
+
+    // Far water (E4a): worker-built like the local mesh. Stale when
+    // the camera strays ~2 km or a tile publish bumped contentStamp
+    // (a fresh .twb may have replaced a master-network course).
+    {
+        FarMesh fm;
+        while (shared->farMesh.tryPop(fm)) {
+            farBuildInFlight = false;
+            if (fm.generation != generation) {
+                continue;
+            }
+            device.destroyBuffer(farIndexBuffer);
+            device.destroyBuffer(farVertexBuffer);
+            farIndexBuffer = {};
+            farVertexBuffer = {};
+            farIndexCount = 0;
+            if (!fm.verts.empty() && !fm.indices.empty()) {
+                farVertexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Vertex,
+                      .size = fm.verts.size() * sizeof(f32) },
+                    fm.verts.data());
+                farIndexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Index,
+                      .size = fm.indices.size() * sizeof(u32) },
+                    fm.indices.data());
+                farIndexCount = static_cast<u32>(fm.indices.size());
+            }
+            farCenter = fm.center;
+            farStamp = fm.stamp;
+        }
+        const Vec2 farCam { cameraPos.x, cameraPos.z };
+        if (farFn && !farBuildInFlight &&
+            (farDirty || glm::distance(farCam, farCenter) > 2048.0f ||
+             farStamp != static_cast<u64>(params.contentStamp))) {
+            farDirty = false;
+            farBuildInFlight = true;
+            jobs->enqueue([sharedRef = shared, fn = farFn, farCam,
+                           gen = generation,
+                           stamp =
+                               static_cast<u64>(params.contentStamp),
+                           jobsRef = jobs] {
+                FarMesh out;
+                out.generation = gen;
+                out.stamp = stamp;
+                out.center = farCam;
+                if (!jobsRef->isStopping()) {
+                    const FarWaterSet set =
+                        fn(farCam.x, farCam.y, 9000.0f);
+                    buildFarGeometry(set, out.verts, out.indices);
+                }
+                sharedRef->farMesh.push(std::move(out));
+            });
+        }
     }
 
     const Vec2 camXz { cameraPos.x, cameraPos.z };
@@ -1815,6 +1965,18 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setVertexBuffer(0, localVertexBuffer);
         cmd.setIndexBuffer(localIndexBuffer, rhi::IndexFormat::U32);
         cmd.drawIndexed(localIndexCount);
+    }
+    if (farIndexCount > 0) {
+        // Far water (E4a): sheets beyond the streamed tiles — same
+        // pipeline; wherever near water exists at this spot, its
+        // depth-written surface wins and the far fragment is culled.
+        cmd.setPipeline(localPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, sceneBindGroup);
+        cmd.setBindGroup(2, poolMapGroup);
+        cmd.setVertexBuffer(0, farVertexBuffer);
+        cmd.setIndexBuffer(farIndexBuffer, rhi::IndexFormat::U32);
+        cmd.drawIndexed(farIndexCount);
     }
     if (simValid && !simSettling && simIndexCount > 0 &&
         simCfg.debugMode != 1) {
