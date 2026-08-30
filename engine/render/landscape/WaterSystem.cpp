@@ -114,10 +114,9 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         // pre-roll water drained and the channel stayed dry (measured
         // dev, the tier-0 stream at (9534, 2819)). Pinned-wide
         // reaches skip it (the reservoir supplies).
-        // hand-tuned: back to the raw law — the x2 boost predated the
-        // v67 carve fix (channels exist everywhere now) and flooded
-        // the plains once the water actually fit its beds (dev).
-        constexpr f32 kRunoffBoost = 1.0f;
+        // hand-tuned (dev): x2 flooded the plains once the v67 carve
+        // gave every course a real bed; x1 read thin — 1.6 sits right.
+        constexpr f32 kRunoffBoost = 1.6f;
         f32 accum = 0.0f;
         for (size_t k = 1; k < river.nodes.size(); ++k) {
             const render::RiverNode& na = river.nodes[k - 1];
