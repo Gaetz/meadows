@@ -1571,3 +1571,29 @@ implémentées le jour même — détail dans docs/WATER-RENDER.md §4 :
   chooseCachedWindow + scrollWindow, jamais sérialisé) + révélation
   settle-gated (le baké reste affiché jusqu'au calme, |Δvolume| < 2e-3
   × 8 ticks, plafond 3 s ; case au panneau Water).
+
+## 2026-08-29→31 — chantier EAU (plan E1-E7) : CLOS
+
+La replanification post-reconcile (docs/WATER-RENDER.md §4 pour le
+détail livré, §3 pour les leçons) — côté GÉNÉRATION, ce qui a changé :
+
+- **Réconciliation stage-2 (v62→v67)** : l'eau bakée précédait les
+  carves du finalize — `reconcileLakesWithTerrain` v2 (flood élargi au
+  bbox+16 texels, niveau au volume max des remplissages revendiqués,
+  redécoupe par composante d'enclosure, banc offline lac-5
+  OBLIGATOIRE avant chaque bump), profils de rivières rebâtis
+  aval→amont sur le sol final (lit S5d, niveaux de lacs traversés,
+  backwater), cours orphelins d'un lac réconcilié-disparu abandonnés
+  (sonde 1 texel), ligne d'eau du carve S5d référencée au sol
+  PRÉ-carve — un chenal est toujours creusé, plus d'eau fière sur les
+  plaines à 1-3 % de pente (creusement des biefs plats +0,5 m fondu
+  1→3 %).
+- **Purge option D** (E5) : le solve steady-water par tuile et ses
+  champs TRG3 sont retirés (dims 0, format inchangé, lecture
+  tolérante) ; `solveSteadyWater` ne garde que pre-roll + oracle.
+- **Loi de largeur** : `kRiverWidthCoef` (0.008) + helpers dans
+  Hydrology.hpp — plus de littéraux dupliqués chez les consommateurs.
+- **`cooker pre-bake <gameDir> <rect|centre+rayon>`** : le cache
+  terrain se remplit hors session (TerrainBakeStreamer + params
+  résolus du stack de plugins — mêmes clés de cache). C'est le
+  véhicule des prochains bumps (brique 3 : dédup/split de lacs, v68).

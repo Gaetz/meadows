@@ -223,13 +223,60 @@ Intégration :
   (~2-3 min) — acceptable car la fenêtre sim couvre le lac ~250 m
   avant qu'on l'atteigne : il est plein à l'arrivée.
 
-## 4. Restes connus / prochaines briques
+## 4. Le chantier EAU (plan E1-E7) — CLOS le 2026-08-31
 
-- C4 : nage/courants/submersion lisant le snapshot dans le rect.
-- C5 : écume de cascade dédiée, foam de rive des grands lacs, retraite
-  de la WaterInfoMap (les rubans ne se rendent plus qu'au loin), purge
-  éventuelle des champs TRG3 de l'option D (le solveur reste : pre-roll
-  + oracle).
+Chaque étape validée dev en jeu ; l'état ci-dessous est l'état RÉEL.
+
+- **E1 — rivières cohérentes (bake v62→v67)** : la chaîne de
+  réconciliation stage-2 re-valide toute l'eau bakée contre le sol
+  FINAL (les lacs/rivières précédaient les carves) —
+  `reconcileLakesWithTerrain` v2 (fenêtre de flood élargie, niveau au
+  volume max, redécoupe par enclosure), profils de rivières REBÂTIS
+  aval→amont (lit S5d + niveau de lac + backwater), cours orphelins
+  d'un lac disparu abandonnés, ligne d'eau du carve référencée au sol
+  pré-carve (un chenal est TOUJOURS creusé). Runtime : `pinRivers`
+  (rubans ≥ 4 m de demi-largeur épinglés au lit, seuil au panneau),
+  sources d'entrée aux bords, et RUNOFF DISTRIBUÉ (delta de la loi de
+  largeur entre nœuds consécutifs, boost ×1.6 calibré dev) — chaque
+  cours est alimenté par exactement un des trois. Rubans runtime
+  densifiés à 4 m et posés sur le sol COMPLET.
+- **E2 — WaterQuery (R3)** : `engine/terrain/WaterQuery.{hpp,cpp}`,
+  LA sonde gameplay (nage, flotteurs, submersion caméra) — la sim est
+  autoritaire dans son rect (son eau ET sa sécheresse : fin des
+  écrans bleus en galerie), le baké + la mer répondent partout
+  ailleurs, jamais absente. Spawn/scatter/carte restent bakés par
+  doctrine.
+- **E3 — SimConfig persisté** : onze champs `waterSim*` sur
+  LandscapeTuningForm (réfléchis, layerés §5, Save du panneau).
+- **E4 — eau lointaine** : (a) far-water — nappes plates rebâties sur
+  worker (~2 km de dérive ou publish de tuile) depuis les `.twb`
+  cachés de toutes les tuiles VISITÉES + les fleuves du réseau maître
+  ailleurs (leurs vallées existent par l'empreinte S1) ; pipeline
+  local réutilisé, l'eau proche opaque + depth-write coupe le far
+  toute seule. Un lac jamais baké n'apparaît qu'au premier bake
+  (accepté : brume + outil pre-bake). (b) ruisseaux visibles —
+  `brookMask` rasterisé par pinRivers sous les rubans trop étroits
+  pour l'épinglage, publication à seuils réduits (8/3 mm) : le film
+  tier 0 se voit, physique intacte.
+- **E5 — retraites** : WaterInfoMap SUPPRIMÉE (bindings 5/6 et lane
+  FrameUbo gelés, jamais renumérotés ; kWaterInfoDry/HeightFn relogés
+  dans WaterBodies.hpp) ; solve option D par tuile PURGÉ (champs TRG3
+  à dims 0, format inchangé, lecture tolérante) ; loi de largeur
+  0.008 dédupliquée (`kRiverWidthCoef`, Hydrology.hpp). Reste la
+  brique 3 (dédup/split de lacs par composante d'enclosure) — voir
+  backlog.
+- **E6 — flaques de pluie** : la pluie du kernel suit l'intensité
+  météo (×10 à fond ; la loi des sources garde le rainRate de base —
+  l'approvisionnement des rivières ignore le ciel), et un film
+  IMMOBILE publie à 4 mm sous l'orage puis garde un maintien à
+  1,5 mm — les flaques s'attardent et s'évaporent.
+  `SimConfig::rainPuddles` (panneau, persisté), repli off.
+- **Outil `cooker pre-bake <gameDir> <rect|centre+rayon>`** : remplit
+  le cache hors session via le VRAI TerrainBakeStreamer et les params
+  résolus du stack de plugins du jeu — zéro bake en session sur un
+  parcours pré-baké, far-water complet, et le véhicule des futurs
+  bumps de version.
+
 - Régénération de l'eau COURANTE au retour : **TRAITÉE (2026-08-28)**
   par les deux leviers prévus. (a) Cache LRU de session des états de
   fenêtre (WaterSystem::simCache, cap 4 × ~2-3 Mo, jamais sérialisé —
@@ -271,12 +318,35 @@ Intégration :
   pendant 8 résultats consécutifs, plafonné à 3 s. Statut
   « settling... » sur la ligne d'état.
 
+## 5. Restes connus / backlog (post-chantier)
+
+- **Brique 3 (E5) — dédup/split de lacs** : un lac par composante
+  d'enclosure au reconcile + dédup entre tuiles par bbox+niveau.
+  Bake → banc offline obligatoire puis bump v68, à faire passer par
+  `cooker pre-bake` (re-bake hors session). Le filet anti-doublon
+  runtime de la scène couvre en attendant.
+- **Polish FX** (retour calibré post-base) : voile/écume de cascade
+  projetée par-dessus la goulotte, foam de rive des grands lacs,
+  lait/whitewater/stries/ménisque/glints.
+- **Watervolumes intérieurs (R6)** : les volumes posés restent la
+  mécanique des intérieurs — unification éventuelle avec WaterQuery
+  côté requête seulement.
+- **updateTexture RHI** (destroy+create par tick = provisoire éprouvé).
+- **Plages/berges lacustres** (données de masques existantes, ira avec
+  un bump).
+- **Longueur de traînée gelée** : kSimCacheCap = 4 si un jour la
+  traînée visible doit s'allonger.
+- Seams FX/audio à venir : les cues de cascade/pluie brancheront sur
+  les mêmes données (bodies + snapshot) — aucun canal dédié à créer.
+
 ### Décisions du 2026-08-28 — le modèle D ne revient pas
 
 - **Re-bake de l'eau D écarté** (question dev, inventaire complet à
   l'appui) : le solveur `solveSteadyWater` garde ses DEUX rôles
   sanctuarisés — pre-roll de la fenêtre (~2 s worker) et oracle des
-  tests — et `TileBakeParams::solveWater` reste OFF. Le re-baker par
+  tests. (`TileBakeParams::solveWater`, resté OFF depuis, a été purgé
+  en E5 avec le solve par tuile — les deux rôles vivants demeurent.)
+  Le re-baker par
   tuile coûtait +13 s/tuile (mesuré à l'époque du branchement) pour un
   gain nul : l'échec RENDU de D était structurel (grille de solve 8 m
   incapable de suivre le terrain 2 m — 3 validations échouées), et le
@@ -289,8 +359,5 @@ Intégration :
   de lacs carvés par distance à la rive, érosion fine pilotée par le
   champ de débit partagé entre tuiles. Carver depuis une lame 8 m
   graverait la classe de bugs 8 m/2 m dans le terrain lui-même.
-  Backlog retenu (sans solveur, données de masques existantes, bump
-  kTileBakeVersion à prévoir) : plages/berges lacustres, visibilité
-  des petits ruisseaux.
-- updateTexture RHI (destroy+create par tick = provisoire éprouvé).
-- Cascade FX (voile + écume projetée) par-dessus la goulotte.
+  Backlog retenu à l'époque : plages/berges lacustres (toujours au
+  backlog §5) ; visibilité des petits ruisseaux (LIVRÉE en E4b).
