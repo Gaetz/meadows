@@ -29,6 +29,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
+#include "PreBakeTool.hpp"
 #include "WaterReplayTool.hpp"
 #include "WaterSolveTool.hpp"
 #include "data/plugins/Validate.hpp"
@@ -65,6 +66,13 @@ int usage() {
         "     top-down PNG of the analytic sandbox macro (hypsometric\n"
         "     tints, hillshade, master rivers, center cross); carrier*\n"
         "     overrides the continental-carrier experiment knobs\n"
+        "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
+        "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
+        "     bakes the sandbox tiles overlapping the rect (or the\n"
+        "     centered square) into <gameDir>/terrain-cache/<seed>,\n"
+        "     with the bake params resolved from <gameDir>/data — the\n"
+        "     game then streams the area with zero in-session bakes\n"
+        "     and the far-water sees every lake in it\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
         "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
@@ -388,6 +396,9 @@ int main(int argc, char** argv) {
     }
     if (command == "water-replay" && (argc == 4 || argc == 5)) {
         return cooker::waterReplay(argv, argc);
+    }
+    if (command == "pre-bake" && (argc == 6 || argc == 7)) {
+        return cooker::preBake(argv, argc);
     }
     return usage();
 }

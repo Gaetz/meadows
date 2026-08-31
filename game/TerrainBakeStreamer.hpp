@@ -81,6 +81,14 @@ public:
     };
     RingStatus ringStatus(const Vec3& focus) const;
     f32 tileSize() const { return params.tileSize; }
+    // Pre-bake service (cooker pre-bake): request every tile whose
+    // rect overlaps [minX,maxX]x[minZ,maxZ], then pump drain() until
+    // pendingCount() reaches zero. Cached tiles publish via the fast
+    // cache-read path — re-running over a warm cache is cheap.
+    void requestRect(f32 minX, f32 minZ, f32 maxX, f32 maxZ);
+    // Drain finished bakes only — update() without the focus-driven
+    // desired-set policy.
+    void drain(const std::function<void(PublishedTile&&)>& publish);
     // The scene evicted this tile's region: re-request it on return.
     void forgetTile(i32 tx, i32 tz) { published.erase(keyOf(tx, tz)); }
 

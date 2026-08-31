@@ -517,6 +517,29 @@ void TerrainBakeStreamer::update(
         request(want.tx, want.tz);
     }
     // Drain the mailbox on the frame thread.
+    drain(publish);
+}
+
+void TerrainBakeStreamer::requestRect(f32 minX, f32 minZ, f32 maxX,
+                                      f32 maxZ) {
+    const f32 t = params.tileSize;
+    const i32 tx0 = static_cast<i32>(std::floor(minX / t));
+    const i32 tx1 = static_cast<i32>(std::floor(maxX / t));
+    const i32 tz0 = static_cast<i32>(std::floor(minZ / t));
+    const i32 tz1 = static_cast<i32>(std::floor(maxZ / t));
+    for (i32 tz = tz0; tz <= tz1; ++tz) {
+        for (i32 tx = tx0; tx <= tx1; ++tx) {
+            const u64 key = keyOf(tx, tz);
+            if (published.count(key) || pending.count(key)) {
+                continue;
+            }
+            request(tx, tz);
+        }
+    }
+}
+
+void TerrainBakeStreamer::drain(
+    const std::function<void(PublishedTile&&)>& publish) {
     PublishedTile tile;
     while (built->tryPop(tile)) {
         const u64 key = keyOf(tile.tx, tile.tz);

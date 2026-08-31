@@ -12,12 +12,15 @@ add_executable(cooker cooker/Main.cpp cooker/TextureCook.cpp
                cooker/TerrainMap.cpp cooker/ErosionBench.cpp
                cooker/WaterReplayTool.cpp
     cooker/WaterSolveTool.cpp
-               ${PROJECT_SOURCE_DIR}/game/AllForms.cpp
-               ${PROJECT_SOURCE_DIR}/game/WeaponMeshes.cpp)
+               cooker/PreBakeTool.cpp
+               ${PROJECT_SOURCE_DIR}/game/AllForms.cpp)
 # stb/bc7enc/toml++: the cook-terrain-materials subcommand decodes, resizes
 # and BC-encodes textures offline — the runtime never links the encoders.
+# meadows-runtime: the pre-bake subcommand drives TerrainBakeStreamer —
+# the SAME pipeline and cache keys as the game (it also provides
+# WeaponMeshes for the validate whitelist).
 target_link_libraries(cooker PRIVATE meadows-data meadows-world
-                      meadows-narrative meadows-render
+                      meadows-narrative meadows-render meadows-runtime
                       stb bc7enc tomlplusplus::tomlplusplus)
 target_compile_definitions(cooker PRIVATE TOML_EXCEPTIONS=0)
 meadows_set_warnings(cooker)
