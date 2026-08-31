@@ -320,11 +320,16 @@ Chaque étape validée dev en jeu ; l'état ci-dessous est l'état RÉEL.
 
 ## 5. Restes connus / backlog (post-chantier)
 
-- **Brique 3 (E5) — dédup/split de lacs** : un lac par composante
-  d'enclosure au reconcile + dédup entre tuiles par bbox+niveau.
-  Bake → banc offline obligatoire puis bump v68, à faire passer par
-  `cooker pre-bake` (re-bake hors session). Le filet anti-doublon
-  runtime de la scène couvre en attendant.
+- **Brique 3 — LIVRÉE (2026-08-31, bump v68)** : le reconcile émet un
+  lac par composante d'enclosure (boucle sur les cellules non
+  réclamées, niveau volume-max par composante, revendication fenêtre
+  anti-recouvrement, bbox resserrée, filtre B8 < 4 cellules sur les
+  composantes secondaires — la première reste bit-identique à v67,
+  vérifié au banc réel : 31/31 lacs de la tuile spawn inchangés + 9
+  bassins récupérés ≥ 0,15 ha, rivières intactes). Le dedup
+  inter-tuiles reste le filet runtime de la scène (chevauchement →
+  garde la plus basse, déterministe — les composantes d'un même
+  masque sont disjointes par construction).
 - **Polish FX** (retour calibré post-base) : voile/écume de cascade
   projetée par-dessus la goulotte, foam de rive des grands lacs,
   lait/whitewater/stries/ménisque/glints.

@@ -143,6 +143,100 @@ TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
                                        // a flat sheet on a hillside
 }
 
+TEST_CASE("reconcileLakesWithTerrain splits a two-basin mask") {
+    // Brick 3: the carves can cut one hydrology mask into several real
+    // sub-basins — the single re-cut kept only the deepest and lost
+    // the others' water. Fixture: basin C (deep, fully enclosed) and
+    // basin D (shallower, drained to the border through its own 296 m
+    // corridor) under ONE mask. Expected: two lakes at their own
+    // levels, disjoint, the corridor never a sheet.
+    render::TerrainRegion region;
+    region.width = 180;
+    region.height = 180;
+    region.originX = 0.0f;
+    region.originZ = 0.0f;
+    region.texelSize = 2.0f;
+    region.heights.assign(static_cast<size_t>(region.width) *
+                              region.height,
+                          302.0f);
+    const auto paint = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 hgt) {
+        for (u32 r = 0; r < region.height; ++r) {
+            for (u32 c = 0; c < region.width; ++c) {
+                const f32 x = static_cast<f32>(c) * 2.0f;
+                const f32 z = static_cast<f32>(r) * 2.0f;
+                if (x >= x0 && x <= x1 && z >= z0 && z <= z1) {
+                    region.heights[static_cast<size_t>(r) *
+                                       region.width +
+                                   c] = hgt;
+                }
+            }
+        }
+    };
+    // The 302 wall between C and D's world is 24 m wide: the flood
+    // samples at the 8 m mask texel and a sub-texel wall is invisible
+    // to it (block-mean lesson).
+    paint(40.0f, 40.0f, 120.0f, 120.0f, 288.0f);  // basin C
+    paint(144.0f, 32.0f, 232.0f, 128.0f, 296.0f); // D's rim plateau
+    paint(144.0f, 72.0f, 358.0f, 88.0f, 296.0f);  // escape corridor
+    paint(152.0f, 48.0f, 216.0f, 112.0f, 292.0f); // basin D
+
+    vector<Lake> lakes(1);
+    Lake& lake = lakes[0];
+    lake.level = 300.0f; // pre-carve flood over both basins
+    lake.minX = 32.0f;
+    lake.minZ = 32.0f;
+    lake.maxX = 232.0f;
+    lake.maxZ = 128.0f;
+    lake.maskTexel = 8.0f;
+    lake.maskWidth =
+        static_cast<u32>((lake.maxX - lake.minX) / lake.maskTexel);
+    lake.maskHeight =
+        static_cast<u32>((lake.maxZ - lake.minZ) / lake.maskTexel);
+    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
+                         lake.maskHeight,
+                     0);
+    for (u32 r = 0; r < lake.maskHeight; ++r) {
+        for (u32 c = 0; c < lake.maskWidth; ++c) {
+            const f32 x = lake.minX + static_cast<f32>(c) * 8.0f;
+            const f32 z = lake.minZ + static_cast<f32>(r) * 8.0f;
+            const u32 rc = static_cast<u32>(x / 2.0f);
+            const u32 rr = static_cast<u32>(z / 2.0f);
+            if (region.heights[static_cast<size_t>(rr) * region.width +
+                               rc] < 300.0f) {
+                lake.mask[static_cast<size_t>(r) * lake.maskWidth + c] =
+                    1;
+                ++lake.cells;
+            }
+        }
+    }
+    REQUIRE(lake.cells > 0);
+
+    reconcileLakesWithTerrain(lakes, region);
+    REQUIRE(lakes.size() == 2);
+    // Component 1 (largest volume) = basin C at the old level.
+    CHECK(lakes[0].level == doctest::Approx(300.0f).epsilon(0.001));
+    // Component 2 = basin D at ITS spill (the 296 corridor), tight
+    // bbox around D only.
+    CHECK(lakes[1].level == doctest::Approx(296.0f).epsilon(0.001));
+    CHECK(lakes[1].minX >= 144.0f);
+    CHECK(lakes[1].maxX <= 232.0f);
+    CHECK(lakes[1].cells > 0);
+    // The corridor never becomes a sheet: probe a corridor point
+    // against both masks.
+    for (const Lake& out : lakes) {
+        if (250.0f < out.minX || 250.0f > out.maxX || 80.0f < out.minZ ||
+            80.0f > out.maxZ) {
+            continue;
+        }
+        const u32 c =
+            static_cast<u32>((250.0f - out.minX) / out.maskTexel);
+        const u32 r =
+            static_cast<u32>((80.0f - out.minZ) / out.maskTexel);
+        CHECK(out.mask[static_cast<size_t>(r) * out.maskWidth + c] ==
+              0);
+    }
+}
+
 TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
     // Un lac dont le reconcile a retiré la moitié nord : une tête de
     // cours près de la moitié couverte est encore nourrie ; près de
