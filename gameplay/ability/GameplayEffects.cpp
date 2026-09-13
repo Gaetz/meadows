@@ -141,7 +141,10 @@ void clampVitalsCurrent(AbilitySystem& system) {
         const auto value = system.current.find(valueId);
         const auto max = system.current.find(maxId);
         if (value != system.current.end() && max != system.current.end()) {
-            value->second = std::clamp(value->second, 0.0f, max->second);
+            // A stacked malus can drive the max itself below zero; the
+            // vital then floors at zero (std::clamp requires lo <= hi).
+            value->second = std::clamp(value->second, 0.0f,
+                                       std::max(max->second, 0.0f));
         }
     };
     clampCurrent(attr("health"), attr("maxHealth"));

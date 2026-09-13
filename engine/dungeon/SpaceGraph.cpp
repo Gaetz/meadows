@@ -285,8 +285,8 @@ bool tryEmbed(const MissionGraph& mission, const SpaceParams& params,
             // (two cycle arcs + the service exit). The outside door is a
             // marker teleport, so nothing needs the grid edge itself.
             slot = { 2, (params.gridZ / 2) & ~1, 0 };
-            if (grid.at(slot) != kFree) {
-                return false;
+            if (!grid.inside(slot) || grid.at(slot) != kFree) {
+                return false; // grid too small to hold even the entrance
             }
             // The border-side channel stays corridor-free: the exit door
             // to the overworld stands against that wall.

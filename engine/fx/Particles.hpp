@@ -84,7 +84,7 @@ public:
     u32 emitterCount() const { return static_cast<u32>(emitters.size()); }
 
     // The global budget: spawns beyond it are dropped (default 4096).
-    void setBudget(u32 particles) { budget = particles; }
+    void setBudget(u32 maxParticles) { budget = maxParticles; }
     u32 budgetLeft() const {
         return budget > count() ? budget - count() : 0;
     }
