@@ -528,7 +528,8 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
     job->aoCacheDir =
         platform::executableDir() / "data" / "cache" / "ao";
     reseedJob = job;
-    jobs.enqueue([job] {
+    jobs.enqueue([job, jobsRef = &jobs] {
+        core::JobProbe::Scope probe { &jobsRef->probe(), "vegReseed" };
         // Pure CPU (mesh generation + content-keyed AO bake) — the
         // MeshCache decode-worker pattern; only the sptr is captured.
         const auto baked = [&](MeshData mesh) {
@@ -540,6 +541,9 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
             const u32 variantSeed = hashU32(job->seed) + i * 977u;
             const u32 lodCount = species.colonized ? 4u : 3u;
             for (u32 lod = 0; lod < lodCount; ++lod) {
+                if (jobsRef->isStopping()) {
+                    return; // abandonable at shutdown: never marks done
+                }
                 job->lods[i][lod] = baked(
                     species.colonized
                         ? generateColonizedTree(variantSeed, lod,

@@ -37,13 +37,24 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
     // any neighbor's (error grows with the sample step).
     const f32 skirtDepth = 3.0f * step;
 
+    // One flow probe per chunk: flow-free chunks (the vast majority)
+    // skip meshHeight's per-vertex region/mask lookups entirely —
+    // bit-identical, the gate could never fire (flowMaskTouches).
+    const bool flowNearby =
+        step > 2.5f &&
+        terrain::flowMaskTouches(params, originX, originZ,
+                                 originX + TerrainSystem::kChunkSize,
+                                 originZ + TerrainSystem::kChunkSize);
+
     vector<MeshVertex> vertices;
     vertices.reserve(vertsPerSide * vertsPerSide + 4 * vertsPerSide);
     for (u32 gz = 0; gz < vertsPerSide; ++gz) {
         for (u32 gx = 0; gx < vertsPerSide; ++gx) {
             const f32 x = originX + static_cast<f32>(gx) * step;
             const f32 z = originZ + static_cast<f32>(gz) * step;
-            const f32 y = terrain::meshHeight(params, x, z, step);
+            const f32 y = flowNearby
+                              ? terrain::meshHeight(params, x, z, step)
+                              : terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             vertices.push_back({
                 .position = { x, y, z },
@@ -119,7 +130,7 @@ vector<u32> buildChunkIndices(u32 lod) {
 void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                            core::JobSystem& jobSystem,
                            const CookedSplatPaths& cooked) {
-    streamer.create(jobSystem);
+    streamer.create(jobSystem, "terrainMesh");
 
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         const vector<u32> indices = buildChunkIndices(lod);

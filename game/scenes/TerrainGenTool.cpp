@@ -46,15 +46,24 @@ void TerrainGenTool::drawPanel(const GenContext& ctx) {
         seed = ctx.defaultSeed;
         seedInit = true;
     }
-    // Land finished bakes (worker mailbox, same pattern as the streamer).
-    TileBakeResult baked;
-    while (done->tryPop(baked)) {
-        baking = false;
-        result = std::move(baked);
-        if (ctx.publishPreview) {
-            TileBakeResult copy = *result;
-            ctx.publishPreview(std::move(copy), tileX, tileZ);
-        }
+    // Land finished bakes (the streamer's worker mailbox, drained on
+    // the frame thread).
+    if (streamer) {
+        streamer->drain(
+            [&](TerrainBakeStreamer::PublishedTile&& tile) {
+                baking = false;
+                tileX = tile.tx;
+                tileZ = tile.tz;
+                TileBakeResult landed;
+                landed.region = std::move(tile.region);
+                landed.lakes = std::move(tile.lakes);
+                landed.rivers = std::move(tile.rivers);
+                result = std::move(landed);
+                if (ctx.publishPreview) {
+                    TileBakeResult copy = *result;
+                    ctx.publishPreview(std::move(copy), tileX, tileZ);
+                }
+            });
     }
 
     int seedInt = static_cast<int>(seed);
@@ -77,18 +86,29 @@ void TerrainGenTool::drawPanel(const GenContext& ctx) {
         result.reset();
         tileX = static_cast<i32>(std::floor(ctx.cameraPos.x / regionSize));
         tileZ = static_cast<i32>(std::floor(ctx.cameraPos.z / regionSize));
-        TileBakeParams params;
-        params.worldSeed = seed;
-        params.tileSize = regionSize;
-        const auto work = [params, tx = tileX, tz = tileZ,
-                           queue = done] {
-            queue->push(render::terraingen::bakeTile(params, tx, tz));
-        };
-        if (ctx.jobs) {
-            ctx.jobs->enqueue(work);
-        } else {
-            work();
+        // The streamer's cache directory keys what its filenames do not
+        // (seed + tile size); a seed/size change gets a fresh streamer,
+        // in-flight bakes of the old one land in the void harmlessly
+        // (shared-queue teardown contract).
+        if (!streamer || streamerSeed != seed ||
+            streamerSize != regionSize) {
+            TileBakeParams params;
+            params.worldSeed = seed;
+            params.tileSize = regionSize;
+            char dir[48];
+            std::snprintf(dir, sizeof(dir), "gen_%u_%d", seed,
+                          static_cast<i32>(regionSize));
+            streamer = std::make_unique<TerrainBakeStreamer>(
+                params, platform::executableDir() / "terrain-cache" / dir,
+                ctx.jobs);
+            streamerSeed = seed;
+            streamerSize = regionSize;
         }
+        // Re-baking a visited tile must re-run the request (a cache
+        // read), not be skipped as already published.
+        streamer->forgetTile(tileX, tileZ);
+        streamer->requestRect(ctx.cameraPos.x, ctx.cameraPos.z,
+                              ctx.cameraPos.x, ctx.cameraPos.z);
     }
     if (result) {
         ImGui::Text("Region (%d, %d): %u lakes, %u rivers", tileX, tileZ,

@@ -47,6 +47,7 @@
     FollowersTest.cpp
     FormsTest.cpp
     FormIndexTest.cpp
+    HeightFieldTest.cpp
     FinalizeTest.cpp
     FineErosionTest.cpp
     FluvialErosionTest.cpp

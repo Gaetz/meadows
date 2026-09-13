@@ -63,6 +63,18 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
     VegetationSystem::VariantBuckets buckets;
 
+    // Chunk-scoped water subset: every candidate below queries only the
+    // bodies whose bounds reach this chunk (±8 m slack over the jittered
+    // grids) instead of all resident lakes/rivers — bit-identical
+    // (WaterBodies.hpp).
+    const terrain::WaterBodiesSubset chunkWater =
+        params.water
+            ? terrain::waterBodiesInRect(
+                  *params.water, originX - 8.0f, originZ - 8.0f,
+                  originX + TerrainSystem::kChunkSize + 8.0f,
+                  originZ + TerrainSystem::kChunkSize + 8.0f)
+            : terrain::WaterBodiesSubset {};
+
     // `texturedRigid`: photogrammetry props with a bound albedo — the
     // NEGATIVE fade lane flags "uv = texture coords" to tree.vert, the
     // negative sway-phase lane on top says "never waves" (rocks, stumps).
@@ -127,7 +139,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
             if (h < params.seaLevel + 3.0f || slope > 0.3f ||
-                terrain::underLocalWater(params, x, z, h, 1.0f)) {
+                terrain::underLocalWater(params, chunkWater, x, z, h, 1.0f)) {
                 continue;
             }
             // ALTITUDE BANDS, fractions of the tree line: broadleaf
@@ -223,7 +235,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
             if (h < params.seaLevel + 0.5f || slope > 0.6f ||
-                terrain::underLocalWater(params, x, z, h, 0.05f)) {
+                terrain::underLocalWater(params, chunkWater, x, z, h, 0.05f)) {
                 continue;
             }
             const auto weights =
@@ -277,7 +289,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const Vec3 n = terrain::normal(params, x, z);
             if (h < params.seaLevel + 3.0f || (1.0f - n.y) > 0.35f ||
                 h >= terrain::treeLine(params) ||
-                terrain::underLocalWater(params, x, z, h, 0.5f)) {
+                terrain::underLocalWater(params, chunkWater, x, z, h, 0.5f)) {
                 continue;
             }
             // Not through place(): the fallen trunk needs its yaw and
@@ -401,7 +413,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const Vec3 n = terrain::normal(params, x, z);
             if (h < params.seaLevel + 0.5f || (1.0f - n.y) > 0.4f ||
                 h >= terrain::treeLine(params) ||
-                terrain::underLocalWater(params, x, z, h, 0.1f)) {
+                terrain::underLocalWater(params, chunkWater, x, z, h, 0.1f)) {
                 continue;
             }
             if (terrain::materialWeightsAt(params, x, z, h, n).grass <
@@ -463,7 +475,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             // (grassPresence 0.6); arid scrub stays excluded.
             if (terrain::materialWeightsAt(params, x, z, h, n).grass <
                     0.5f ||
-                terrain::underLocalWater(params, x, z, h, 0.3f)) {
+                terrain::underLocalWater(params, chunkWater, x, z, h, 0.3f)) {
                 continue;
             }
             // Clumps gate everything (bushes come in family groups); the

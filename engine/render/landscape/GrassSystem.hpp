@@ -83,6 +83,12 @@ struct GrassScatterTuning {
                                     Vec3 { 0.62f, 0.55f, 0.32f },
                                     Vec3 { 0.42f, 0.29f, 0.15f },
                                     Vec3 { 0.43f, 0.36f, 0.27f } };
+    // Macro tint sampled on a coarse ~8 m sub-lattice and bilerped to
+    // the corners instead of one regionShadingAt (whose fbm its own
+    // header bans from hot paths) per 0.6 m corner — the tint drifts
+    // over ~700 m, the lattice cannot show. OFF = exact per-corner
+    // reference path (A/B).
+    bool coarseTint { true };
 };
 
 // Animated grass (blade model = the

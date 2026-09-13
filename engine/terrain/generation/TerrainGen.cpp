@@ -565,7 +565,14 @@ f32 ProceduralControls::continentalness(f32 x, f32 z) const {
 }
 
 ControlSample ProceduralControls::at(f32 x, f32 z) const {
+    f32 unusedContinentalness = 0.0f;
+    return at(x, z, unusedContinentalness);
+}
+
+ControlSample ProceduralControls::at(f32 x, f32 z,
+                                     f32& outContinentalness) const {
     const f32 c = continentalness(x, z);
+    outContinentalness = c;
     ControlSample sample;
     sample.sea = c < p.seaThreshold;
     sample.tier = glm::clamp((c - p.seaThreshold) / p.tierSpread, 0.0f,
@@ -945,14 +952,16 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
-    const ControlSample s = controls.at(x, z);
+    // The sample's own continentalness serves the shore distance below:
+    // one evaluation instead of two (it is ~a quarter of this call).
+    f32 c = 0.0f;
+    const ControlSample s = controls.at(x, z, c);
     const f32 land = recurveLand(
         params, landHeight(params, controls.params().seed, s,
                            controls.params().hillChainWavelength, x, z));
     // Shore distance approximated from continentalness: the ramp of the
     // tier mapping doubles as a distance proxy (good enough for
     // silhouettes and boundary conditions).
-    const f32 c = controls.continentalness(x, z);
     const f32 d = (c - controls.params().seaThreshold) *
                   controls.params().continentWavelength * 0.35f;
     const f32 h = coastProfile(params, land, s.tier, d, s.hardness);

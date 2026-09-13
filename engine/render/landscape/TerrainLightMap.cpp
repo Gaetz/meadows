@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "engine/core/Jobs.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/rhi/Device.hpp"
 
 namespace render {
@@ -11,10 +12,19 @@ namespace {
 
 // One texel of the bake: sun visibility + sky openness at (x, z).
 // Pure CPU over the deterministic height function (patches included) —
-// worker-safe by construction.
-void bakeTexel(const TerrainParams& params, f32 x, f32 z, const Vec3& sun,
-               u8& outSun, u8& outSky) {
-    const f32 h0 = terrain::height(params, x, z) + 1.2f; // eye-ish height
+// worker-safe by construction. `field` (nullable): the shared height
+// pyramid — the ~89 samples per texel then read grids (footprint
+// growing with the march distance) instead of the pointwise function;
+// this is what turned the bake from minutes into ~a second
+// (docs/CPU-PERF.md). Null = the exact path, bit-identical to before.
+void bakeTexel(const TerrainParams& params,
+               const HeightField::Snapshot* field, f32 x, f32 z,
+               const Vec3& sun, u8& outSun, u8& outSky) {
+    const auto ground = [&](f32 sx, f32 sz, f32 minTexel) {
+        return field ? field->heightCoarse(sx, sz, minTexel)
+                     : terrain::height(params, sx, sz);
+    };
+    const f32 h0 = ground(x, z, 4.0f) + 1.2f; // eye-ish height
 
     // R — sun visibility: march toward the sun; blocked when the terrain
     // rises above the ray. Soft edge: accumulate how far above.
@@ -25,8 +35,9 @@ void bakeTexel(const TerrainParams& params, f32 x, f32 z, const Vec3& sun,
         const f32 slopeUp = sun.y / horiz; // rise per horizontal meter
         f32 t = 10.0f;
         for (u32 i = 0; i < 24; ++i) {
-            const f32 rise = terrain::height(params, x + sun.x / horiz * t,
-                                             z + sun.z / horiz * t) -
+            const f32 rise = ground(x + sun.x / horiz * t,
+                                    z + sun.z / horiz * t,
+                                    glm::max(4.0f, 0.03f * t)) -
                              (h0 + slopeUp * t);
             if (rise > 0.0f) {
                 sunVis = 0.0f;
@@ -45,8 +56,7 @@ void bakeTexel(const TerrainParams& params, f32 x, f32 z, const Vec3& sun,
         f32 maxSlope = 0.0f;
         f32 t = 8.0f;
         for (u32 i = 0; i < 8; ++i) {
-            const f32 rise =
-                terrain::height(params, x + dx * t, z + dz * t) - h0;
+            const f32 rise = ground(x + dx * t, z + dz * t, 4.0f) - h0;
             maxSlope = glm::max(maxSlope, rise / t);
             t *= 1.8f;
         }
@@ -63,7 +73,7 @@ void bakeTexel(const TerrainParams& params, f32 x, f32 z, const Vec3& sun,
 } // namespace
 
 void TerrainLightMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    mailbox.create(jobSystem);
+    mailbox.create(jobSystem, "terrainLightMap");
     sampler = device.createSampler({});
     // The texture is (re)created per landed bake — the RHI has no
     // texture update, and a rebuild every ~8 s costs nothing.
@@ -81,7 +91,8 @@ void TerrainLightMap::destroy(rhi::Device& device) {
 }
 
 void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
-                             const Vec3& focus, const Vec3& sunDirection) {
+                             const Vec3& focus, const Vec3& sunDirection,
+                             sptr<const HeightField::Snapshot> field) {
     // 1. Land a finished bake (fresh texture + group — no RHI texture
     // update; a rebuild every sun step is negligible).
     mailbox.drain([&](Baked& done) {
@@ -102,6 +113,8 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
                              .sampler = sampler } } });
         center = done.center;
         bakedSun = done.sun;
+        LOG_INFO("terrain light map baked: center ({:.0f}, {:.0f})",
+                 center.x, center.y);
     });
     if (mailbox.busy()) {
         return;
@@ -116,7 +129,9 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
     if (!sunMoved && !strayed) {
         return;
     }
-    mailbox.kick([params, want, sun = sunDirection](Baked& baked) {
+    mailbox.kick([params, want, sun = sunDirection,
+                  field = std::move(field)](
+                     Baked& baked, const std::atomic<bool>& stop) {
         baked.center = want;
         baked.sun = sun;
         baked.pixels.resize(static_cast<size_t>(kSize) * kSize * 4, 255);
@@ -124,11 +139,14 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
         const f32 originX = want.x - kSpan * 0.5f;
         const f32 originZ = want.y - kSpan * 0.5f;
         for (u32 row = 0; row < kSize; ++row) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
             for (u32 col = 0; col < kSize; ++col) {
                 u8* px = &baked.pixels[(static_cast<size_t>(row) * kSize +
                                         col) *
                                        4];
-                bakeTexel(params,
+                bakeTexel(params, field.get(),
                           originX + (static_cast<f32>(col) + 0.5f) * texel,
                           originZ + (static_cast<f32>(row) + 0.5f) * texel,
                           sun, px[0], px[1]);

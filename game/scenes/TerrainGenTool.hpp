@@ -4,10 +4,10 @@
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 #include "game/LevelEditor.hpp"
+#include "game/TerrainBakeStreamer.hpp"
 
 namespace game {
 
@@ -44,10 +44,13 @@ private:
     bool baking { false };
     i32 tileX { 0 };
     i32 tileZ { 0 };
-    sptr<core::ConcurrentQueue<render::terraingen::TileBakeResult>> done {
-        std::make_shared<
-            core::ConcurrentQueue<render::terraingen::TileBakeResult>>()
-    };
+    // The bake runs through a dedicated TerrainBakeStreamer (stage-1
+    // registry + disk cache, directory keyed by seed/size): a re-bake
+    // of a visited region is a cache read, and neighbouring bakes share
+    // their overlapping stage-1s instead of recomputing 9 each.
+    uptr<TerrainBakeStreamer> streamer;
+    u32 streamerSeed { 0 };
+    f32 streamerSize { 0.0f };
     std::optional<render::terraingen::TileBakeResult> result;
 };
 

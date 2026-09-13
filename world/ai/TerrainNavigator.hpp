@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <unordered_map>
 
 #include "engine/nav/Nav.hpp"
 
@@ -30,10 +31,10 @@ public:
     explicit TerrainNavigator(HeightFn height) : height { std::move(height) } {}
 
     // Replaces the obstacle set (the scene refreshes it when cells
-    // change). Boxes should already include the agent radius.
-    void setBlockingBoxes(vector<BlockingBox> boxes) {
-        blocking = std::move(boxes);
-    }
+    // change). Boxes should already include the agent radius. Builds
+    // the cell index blocked() queries — a box registers in every cell
+    // its XZ rect touches, so any point inside it finds it.
+    void setBlockingBoxes(vector<BlockingBox> boxes);
 
     // A* on the lazy 1 m grid; waypoints ride the terrain height.
     nav::PathResult findPath(const nav::PathQuery& query) const override;
@@ -46,6 +47,10 @@ private:
 
     HeightFn height;
     vector<BlockingBox> blocking;
+    // XZ cell -> indices of the boxes touching it: blocked() tests a
+    // handful of candidates instead of every box per A* neighbor.
+    static constexpr f32 kBlockCell = 16.0f;
+    std::unordered_map<u64, vector<u32>> blockIndex;
 };
 
 } // namespace world

@@ -1,5 +1,7 @@
 #include "engine/render/landscape/FarTerrain.hpp"
 
+#include <cmath>
+
 #include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
@@ -19,7 +21,7 @@ constexpr Vec3 kForestTint { 0.14f, 0.23f, 0.11f };
 
 void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
                         core::JobSystem& jobSystem) {
-    mailbox.create(jobSystem);
+    mailbox.create(jobSystem, "farTerrain");
     shaders.load(kFarTerrainShader, { { "FrameUbo", 0 } },
                  { { "uCloudMap", 2 } });
     shaders.load(kFarTreeShader, { { "FrameUbo", 0 } },
@@ -92,7 +94,8 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
 void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                         const Vec3& focus,
                         const VegetationSystem::TreeSilhouette& trees,
-                        const array<Vec3, 5>& layerAlbedos) {
+                        const array<Vec3, 5>& layerAlbedos,
+                        sptr<const HeightField::Snapshot> field) {
     mailbox.drain([&](Baked& done) {
         vertexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
@@ -115,12 +118,20 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         return;
     }
     const Vec2 camXz { focus.x, focus.z };
+    if (params.contentStamp != lastSeenContentStamp) {
+        lastSeenContentStamp = params.contentStamp;
+        contentQuietSince = core::clockNow();
+    }
+    const bool contentSettled =
+        core::secondsSince(contentQuietSince) > 1.0;
     const bool stale = !mailbox.ready() ||
                        glm::distance(camXz, center) > kSpan * 0.08f ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel ||
-                       bakedContentStamp != params.contentStamp ||
-                       std::abs(bakedTreeHeight - trees.height) > 0.5f;
+                       (bakedContentStamp != params.contentStamp &&
+                        contentSettled) ||
+                       std::abs(bakedTreeHeight - trees.height) > 0.5f ||
+                       bakedFromGrid != impostorsFromGrid;
     if (!stale) {
         return;
     }
@@ -128,7 +139,11 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
     const Vec2 want = glm::floor(camXz / kCell) * kCell;
     center = want; // draw follows the request; the bake lands async
     bakedTreeHeight = trees.height;
-    mailbox.kick([params, want, trees, layerAlbedos](Baked& baked) {
+    bakedFromGrid = impostorsFromGrid;
+    mailbox.kick([params, want, trees, layerAlbedos,
+                  fromGrid = impostorsFromGrid,
+                  field = std::move(field)](
+                     Baked& baked, const std::atomic<bool>& stop) {
         constexpr u32 kVertsN = kGridN + 1;
         constexpr f32 cell = kSpan / static_cast<f32>(kGridN);
         const f32 originX = want.x - kSpan * 0.5f;
@@ -148,12 +163,21 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         constexpr u32 kHalfN = kGridN * 2 + 1;
         vector<f32> halfHeights(static_cast<size_t>(kHalfN) * kHalfN);
         for (u32 row = 0; row < kHalfN; ++row) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
             for (u32 col = 0; col < kHalfN; ++col) {
+                const f32 x =
+                    originX + static_cast<f32>(col) * cell * 0.5f;
+                const f32 z =
+                    originZ + static_cast<f32>(row) * cell * 0.5f;
+                // Shared grid at a >= 16 m footprint (L1 where it
+                // covers, L2 across the 18 km); exact function without
+                // a snapshot. The impostor pass reads this half-grid
+                // either way.
                 halfHeights[static_cast<size_t>(row) * kHalfN + col] =
-                    terrain::height(
-                        params,
-                        originX + static_cast<f32>(col) * cell * 0.5f,
-                        originZ + static_cast<f32>(row) * cell * 0.5f);
+                    field ? field->heightCoarse(x, z, 16.0f)
+                          : terrain::height(params, x, z);
             }
         }
         const auto halfAt = [&](i32 row, i32 col) {
@@ -184,6 +208,9 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         };
         baked.vertices.resize(heights.size());
         for (u32 row = 0; row < kVertsN; ++row) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
             for (u32 col = 0; col < kVertsN; ++col) {
                 const f32 x = originX + static_cast<f32>(col) * cell;
                 const f32 z = originZ + static_cast<f32>(row) * cell;
@@ -244,6 +271,41 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
             static_cast<i32>(2.0f * kTreeFar / kTreeSpacing);
         baked.trees.reserve(4096);
         for (i32 tz = 0; tz < treeCells; ++tz) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
+            // Grid grounding (A/B `fromGrid`): bilinear height and a
+            // central-difference slope from the bake's own half-grid
+            // (35 m) — the whole impostor band sits inside its span.
+            // Sub-texel placement shifts vs the analytic path; the
+            // 0.3-slope gate at billboard range does not care.
+            const f32 halfStep = cell * 0.5f;
+            const auto gridHeight = [&](f32 wx, f32 wz) {
+                const f32 u = (wx - originX) / halfStep;
+                const f32 v = (wz - originZ) / halfStep;
+                const i32 c0 = static_cast<i32>(std::floor(u));
+                const i32 r0 = static_cast<i32>(std::floor(v));
+                const f32 tu = u - std::floor(u);
+                const f32 tv = v - std::floor(v);
+                const f32 a = glm::mix(halfAt(r0, c0), halfAt(r0, c0 + 1),
+                                       tu);
+                const f32 b = glm::mix(halfAt(r0 + 1, c0),
+                                       halfAt(r0 + 1, c0 + 1), tu);
+                return glm::mix(a, b, tv);
+            };
+            const auto gridSlope = [&](f32 wx, f32 wz) {
+                const f32 hl = gridHeight(wx - halfStep, wz);
+                const f32 hr = gridHeight(wx + halfStep, wz);
+                const f32 hd = gridHeight(wx, wz - halfStep);
+                const f32 hu = gridHeight(wx, wz + halfStep);
+                const f32 ny =
+                    2.0f * halfStep /
+                    std::sqrt((hl - hr) * (hl - hr) +
+                              4.0f * halfStep * halfStep +
+                              (hd - hu) * (hd - hu));
+                return 1.0f - ny;
+            };
+            const f32 line = terrain::treeLine(params);
             for (i32 tx = 0; tx < treeCells; ++tx) {
                 core::HashRng rng { core::hashU32(
                     params.seed ^ 0x51e57a7bu ^
@@ -259,13 +321,15 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 if (forest < 0.05f || rng.next() >= forest * 0.6f) {
                     continue;
                 }
-                const f32 h = terrain::height(params, x, z);
-                const Vec3 n = terrain::normal(params, x, z);
-                const f32 line = terrain::treeLine(params);
+                const f32 h = fromGrid ? gridHeight(x, z)
+                                       : terrain::height(params, x, z);
+                const f32 slope =
+                    fromGrid ? gridSlope(x, z)
+                             : 1.0f - terrain::normal(params, x, z).y;
                 const f32 lineFade =
                     1.0f - glm::smoothstep(0.82f * line, line, h);
                 if (h < params.seaLevel + 3.0f ||
-                    rng.next() >= lineFade || (1.0f - n.y) > 0.3f ||
+                    rng.next() >= lineFade || slope > 0.3f ||
                     terrain::underLocalWater(params, x, z, h, 1.0f)) {
                     // Same rule as the near scatter: no impostor on
                     // lakes/rivers (the far-water sheets made the

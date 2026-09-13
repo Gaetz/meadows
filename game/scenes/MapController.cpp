@@ -113,9 +113,17 @@ void MapController::open(const MapContext& ctx) {
         job->worldspace = space->id;
         pending_ = job;
         const str spaceName = space->editorId;
-        ctx.jobs.enqueue([job, spaceName] {
+        ctx.jobs.enqueue([job, spaceName, jobsRef = &ctx.jobs] {
+            if (jobsRef->isStopping()) {
+                return; // abandonable at shutdown: never marks done
+            }
+            core::JobProbe::Scope probe { &jobsRef->probe(), "worldMap" };
             const core::TimePoint start = core::clockNow();
-            job->pixels = generateMapRaster(job->desc);
+            job->pixels =
+                generateMapRaster(job->desc, &jobsRef->stopFlag());
+            if (jobsRef->isStopping()) {
+                return; // partial raster: never lands
+            }
             LOG_INFO("map raster {}x{} of '{}' ({} x {} m) "
                      "generated in {:.1f} ms",
                      job->desc.size, job->desc.size, spaceName,

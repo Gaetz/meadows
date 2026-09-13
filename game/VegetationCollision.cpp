@@ -35,8 +35,10 @@ constexpr Vec3 kLogHalf { 1.1f, 0.3f, 0.3f };
 } // namespace
 
 VegetationCollision::VegetationCollision(phys::PhysicsWorld& physics,
-                                         const render::TerrainParams& params)
-    : physics { physics }, params { params } {}
+                                         const render::TerrainParams& params,
+                                         core::JobSystem* jobs)
+    : physics { physics }, params { params }, jobs { jobs },
+      built { std::make_shared<core::ConcurrentQueue<CookedChunk>>() } {}
 
 VegetationCollision::~VegetationCollision() {
     for (const auto& [key, chunkBodies] : chunks) {
@@ -46,24 +48,22 @@ VegetationCollision::~VegetationCollision() {
     }
 }
 
-void VegetationCollision::cookChunk(i32 cx, i32 cz) {
+VegetationCollision::CookedChunk VegetationCollision::cookColliders(
+    const render::TerrainParams& params, i32 cx, i32 cz) {
     // The SAME deterministic scatter the renderer draws — collision and
     // visuals can never disagree.
     const render::VegetationSystem::VariantBuckets buckets =
         render::scatterProps(params, cx, cz);
-    vector<phys::BodyId>& out = chunks[packChunk(cx, cz)];
+    CookedChunk cooked;
+    cooked.key = packChunk(cx, cz);
     const auto add = [&](const render::VegetationSystem::Instance& prop,
                          f32 halfXZ, f32 halfY) {
         const f32 s = prop.positionScale.w;
         const Vec3 base { prop.positionScale.x, prop.positionScale.y,
                           prop.positionScale.z };
-        const phys::BodyId body = physics.addStaticBox(
-            { halfXZ * s, halfY * s, halfXZ * s },
-            base + Vec3 { 0.0f, halfY * s, 0.0f });
-        if (body != 0) {
-            out.push_back(body);
-            ++bodies;
-        }
+        cooked.colliders.push_back(
+            { { halfXZ * s, halfY * s, halfXZ * s },
+              base + Vec3 { 0.0f, halfY * s, 0.0f } });
     };
     for (u32 v = 0; v < render::VegetationSystem::kTreeVariants; ++v) {
         for (const auto& prop : buckets[v]) {
@@ -97,17 +97,34 @@ void VegetationCollision::cookChunk(i32 cx, i32 cz) {
                 log ? kLogHalf * s
                     : Vec3 { kStumpHalfXZ * s, kStumpHalfY * s,
                              kStumpHalfXZ * s };
-            const phys::BodyId body = physics.addStaticBox(
-                half, base + Vec3 { 0.0f, half.y, 0.0f },
-                glm::angleAxis(-prop.params.x, Vec3 { 0.0f, 1.0f, 0.0f }));
-            if (body != 0) {
-                out.push_back(body);
-                ++bodies;
-            }
+            cooked.colliders.push_back(
+                { half, base + Vec3 { 0.0f, half.y, 0.0f },
+                  prop.params.x, true });
         }
     }
     // Bushes (kFirstBush..kFirstDebris) and plants (kFirstPlant..) are
     // deliberately walk-through.
+    return cooked;
+}
+
+void VegetationCollision::landChunk(CookedChunk&& cooked) {
+    if (!pending.erase(cooked.key) || chunks.contains(cooked.key)) {
+        return; // evicted while in flight, or a duplicate — benign
+    }
+    vector<phys::BodyId>& out = chunks[cooked.key];
+    out.reserve(cooked.colliders.size());
+    for (const Collider& c : cooked.colliders) {
+        const phys::BodyId body =
+            c.oriented
+                ? physics.addStaticBox(
+                      c.half, c.center,
+                      glm::angleAxis(-c.yaw, Vec3 { 0.0f, 1.0f, 0.0f }))
+                : physics.addStaticBox(c.half, c.center);
+        if (body != 0) {
+            out.push_back(body);
+            ++bodies;
+        }
+    }
 }
 
 void VegetationCollision::update(const Vec3& focus) {
@@ -115,15 +132,22 @@ void VegetationCollision::update(const Vec3& focus) {
     const i32 centerX = static_cast<i32>(std::floor(focus.x / chunkSize));
     const i32 centerZ = static_cast<i32>(std::floor(focus.z / chunkSize));
 
-    // One scatter re-run per update, nearest missing chunk first (the
-    // TerrainCollision anti-stutter contract): the chunk underfoot lands
-    // immediately, the ring converges over the next frames.
+    // Land finished worker scatters (a Jolt body add is cheap).
+    CookedChunk done;
+    while (built->tryPop(done)) {
+        landChunk(std::move(done));
+    }
+
+    // Request the nearest missing chunk (the TerrainCollision
+    // anti-stutter contract: the chunk underfoot converges first, the
+    // ring over the next frames).
     i32 bestX = 0;
     i32 bestZ = 0;
     i32 bestDist = INT32_MAX;
     for (i32 tz = centerZ - 1; tz <= centerZ + 1; ++tz) {
         for (i32 tx = centerX - 1; tx <= centerX + 1; ++tx) {
-            if (chunks.contains(packChunk(tx, tz))) {
+            const u64 key = packChunk(tx, tz);
+            if (chunks.contains(key) || pending.contains(key)) {
                 continue;
             }
             const i32 dist = (tx - centerX) * (tx - centerX) +
@@ -136,7 +160,22 @@ void VegetationCollision::update(const Vec3& focus) {
         }
     }
     if (bestDist != INT32_MAX) {
-        cookChunk(bestX, bestZ);
+        const u64 key = packChunk(bestX, bestZ);
+        pending.insert(key);
+        if (jobs) {
+            jobs->enqueue([queue = built, scatterParams = params,
+                           cx = bestX, cz = bestZ, jobsRef = jobs] {
+                if (jobsRef->isStopping()) {
+                    return; // abandonable at shutdown
+                }
+                core::JobProbe::Scope probe { &jobsRef->probe(),
+                                              "vegCollision" };
+                queue->push(cookColliders(scatterParams, cx, cz));
+            });
+        } else {
+            // Headless fallback: one synchronous cook per update.
+            landChunk(cookColliders(params, bestX, bestZ));
+        }
     }
 
     // Evict beyond ring 2 (hysteresis).
@@ -149,6 +188,17 @@ void VegetationCollision::update(const Vec3& focus) {
             }
             bodies -= static_cast<u32>(it->second.size());
             it = chunks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // A pending chunk that left the ring is dropped on arrival
+    // (landChunk's pending/chunks guards).
+    for (auto it = pending.begin(); it != pending.end();) {
+        const i32 dx = unpackX(*it) - centerX;
+        const i32 dz = unpackZ(*it) - centerZ;
+        if (dx < -2 || dx > 2 || dz < -2 || dz > 2) {
+            it = pending.erase(it);
         } else {
             ++it;
         }

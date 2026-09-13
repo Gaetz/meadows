@@ -41,6 +41,50 @@ WaterBodies testBodies() {
 
 } // namespace
 
+TEST_CASE("rect water subset is bit-identical to the full scan inside") {
+    // Several bodies scattered so a chunk rect keeps some and prunes
+    // others; dense probes at several heights must agree EXACTLY with
+    // the full scan for every point inside the rect.
+    WaterBodies bodies = testBodies();
+    LakeSurface far;
+    far.level = 90.0f;
+    far.minX = 5000.0f;
+    far.maxX = 5200.0f;
+    far.minZ = 5000.0f;
+    far.maxZ = 5200.0f;
+    bodies.lakes.push_back(far);
+    RiverSurface farRiver;
+    farRiver.nodes = { { 7000.0f, 0.0f, 50.0f, 5.0f },
+                       { 7000.0f, 200.0f, 40.0f, 5.0f } };
+    farRiver.minX = 6990.0f;
+    farRiver.maxX = 7010.0f;
+    farRiver.minZ = -10.0f;
+    farRiver.maxZ = 210.0f;
+    bodies.rivers.push_back(farRiver);
+
+    // A rect overlapping the near lake and the near river's band.
+    const f32 minX = 120.0f, minZ = -20.0f, maxX = 520.0f, maxZ = 120.0f;
+    const auto subset =
+        render::terrain::waterBodiesInRect(bodies, minX, minZ, maxX, maxZ);
+    CHECK(subset.lakes.size() == 1);  // the far lake is pruned
+    CHECK(subset.rivers.size() == 1); // the far river is pruned
+    for (f32 z = minZ; z <= maxZ; z += 7.3f) {
+        for (f32 x = minX; x <= maxX; x += 9.1f) {
+            for (const f32 probeY : { 20.0f, 75.0f, 129.0f, 170.0f }) {
+                const auto full = waterSurfaceAt(bodies, x, z, probeY);
+                const auto fast =
+                    waterSurfaceAt(bodies, subset, x, z, probeY);
+                REQUIRE(full.has_value() == fast.has_value());
+                if (full) {
+                    REQUIRE(*full == *fast); // EXACT
+                }
+                REQUIRE(waterDepthAt(bodies, x, z, probeY) ==
+                        waterDepthAt(bodies, subset, x, z, probeY));
+            }
+        }
+    }
+}
+
 TEST_CASE("water queries: sea fallback, lakes gated by plausibility") {
     const WaterBodies bodies = testBodies();
     // Open sea: probe near the surface swims, a mountain top does not.

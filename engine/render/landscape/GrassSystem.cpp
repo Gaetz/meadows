@@ -84,6 +84,16 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     const u32 perSide =
         static_cast<u32>(TerrainSystem::kChunkSize / spacing);
 
+    // Chunk-scoped water subset (±8 m slack covers the corner-lattice
+    // overshoot) — bit-identical to the full scan (WaterBodies.hpp).
+    const terrain::WaterBodiesSubset chunkWater =
+        params.water
+            ? terrain::waterBodiesInRect(
+                  *params.water, originX - 8.0f, originZ - 8.0f,
+                  originX + TerrainSystem::kChunkSize + 8.0f,
+                  originZ + TerrainSystem::kChunkSize + 8.0f)
+            : terrain::WaterBodiesSubset {};
+
     // CELL-MAJOR scatter (per-candidate noise evals on the fine blade
     // grid would saturate every worker for seconds at boot).
     // The masks vary over METERS, not centimeters — patch,
@@ -103,6 +113,49 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     // wraps its own uv — the tile is seamless, so interpolating the
     // COLORS across a tile boundary stays continuous.
     vector<Vec3> cornerAlbedo((cells + 1) * (cells + 1));
+    // Coarse tint sub-lattice (~8 m): regionShadingAt drifts over
+    // ~700 m — one eval per coarse point, bilerped to the corners,
+    // instead of one per 0.6 m corner (GrassScatterTuning::coarseTint;
+    // OFF = the exact per-corner reference).
+    const f32 cornerSpan = static_cast<f32>(cells) * cellSize;
+    const u32 coarseN =
+        glm::max(2u, static_cast<u32>(cornerSpan / 8.0f) + 2u);
+    const f32 coarseStep = cornerSpan / static_cast<f32>(coarseN - 1);
+    vector<Vec3> coarseTint;
+    if (tuning.coarseTint) {
+        coarseTint.resize(static_cast<size_t>(coarseN) * coarseN);
+        for (u32 gz = 0; gz < coarseN; ++gz) {
+            for (u32 gx = 0; gx < coarseN; ++gx) {
+                coarseTint[static_cast<size_t>(gz) * coarseN + gx] =
+                    terrain::regionShadingAt(
+                        params,
+                        originX + static_cast<f32>(gx) * coarseStep,
+                        originZ + static_cast<f32>(gz) * coarseStep)
+                        .tint;
+            }
+        }
+    }
+    const auto tintAt = [&](f32 wx, f32 wz) {
+        if (!tuning.coarseTint) {
+            return terrain::regionShadingAt(params, wx, wz).tint;
+        }
+        const f32 u =
+            glm::clamp((wx - originX) / coarseStep, 0.0f,
+                       static_cast<f32>(coarseN - 1));
+        const f32 v =
+            glm::clamp((wz - originZ) / coarseStep, 0.0f,
+                       static_cast<f32>(coarseN - 1));
+        const u32 u0 = glm::min(static_cast<u32>(u), coarseN - 2);
+        const u32 v0 = glm::min(static_cast<u32>(v), coarseN - 2);
+        const f32 tu = u - static_cast<f32>(u0);
+        const f32 tv = v - static_cast<f32>(v0);
+        const auto at = [&](u32 col, u32 row) {
+            return coarseTint[static_cast<size_t>(row) * coarseN + col];
+        };
+        const Vec3 a = glm::mix(at(u0, v0), at(u0 + 1, v0), tu);
+        const Vec3 b = glm::mix(at(u0, v0 + 1), at(u0 + 1, v0 + 1), tu);
+        return glm::mix(a, b, tv);
+    };
     for (u32 gz = 0; gz <= cells; ++gz) {
         for (u32 gx = 0; gx <= cells; ++gx) {
             const f32 wx = originX + static_cast<f32>(gx) * cellSize;
@@ -117,10 +170,8 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             // The base color is the ACTIVE set's mean for the corner's
             // ground variant (grass zones), so the raccord holds on the
             // cooked set and across zone borders alike.
-            const Vec3 tint =
-                glm::mix(Vec3 { 1.0f },
-                         terrain::regionShadingAt(params, wx, wz).tint,
-                         tuning.tintStrength);
+            const Vec3 tint = glm::mix(Vec3 { 1.0f }, tintAt(wx, wz),
+                                       tuning.tintStrength);
             const Vec3 base =
                 tuning.rootAlbedoBase[terrain::grassZoneAt(wx, wz)
                                           .variantA];
@@ -298,10 +349,16 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                 originX + (static_cast<f32>(cgx) + 0.5f) * cellSize;
             const f32 cellZ =
                 originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize;
+            // One region-fields sample serves the weights AND the
+            // species scores below (5 biomeBlended per eval — the
+            // expensive half of a cell).
+            const terrain::RegionFields cellFields =
+                terrain::regionFieldsAt(params, cellX, cellZ);
             const terrain::MaterialWeights cellWeights =
-                terrain::materialWeightsAt(params, cellX, cellZ, hMid, n);
-            if (terrain::underLocalWater(params, cellX, cellZ, hMid,
-                                         0.1f)) {
+                terrain::materialWeightsAt(params, cellX, cellZ, hMid, n,
+                                           cellFields);
+            if (terrain::underLocalWater(params, chunkWater, cellX, cellZ,
+                                         hMid, 0.1f)) {
                 continue;
             }
             const f32 matRamp =
@@ -322,10 +379,6 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             if (acceptP < 0.01f) {
                 continue;
             }
-            // Climate fields for the species scores (varies over ~16 m —
-            // one eval per cell is plenty).
-            const terrain::RegionFields cellFields =
-                terrain::regionFieldsAt(params, cellX, cellZ);
             for (u32 sz = 0; sz < kCell; ++sz) {
                 for (u32 sx = 0; sx < kCell; ++sx) {
                     const u32 gx = cgx * kCell + sx;
@@ -419,7 +472,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
 
 void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                          core::JobSystem& jobSystem) {
-    streamer.create(jobSystem);
+    streamer.create(jobSystem, "grassScatter");
 
     bladeVertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kBladeVertices) },

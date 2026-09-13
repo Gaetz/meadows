@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/BakeMailbox.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -12,7 +13,7 @@ class Device;
 namespace render {
 
 // Long-range terrain sun shadows + skylighting, ONE
-// worker-baked map (the cloud-map pattern): a 512² texture over ~1.5 km
+// worker-baked map (the cloud-map pattern): a kSize² texture over kSpan
 // around the focus, R = sun visibility (the height function marched
 // toward the sun — mountains cast on valleys far beyond the CSM),
 // G = sky openness (8 azimuth horizons — valley floors get less sky
@@ -32,8 +33,12 @@ public:
     void destroy(rhi::Device& device);
 
     // Pump finished bakes (upload) + kick a new one when sun/focus moved.
+    // `field` (nullable): the shared height pyramid — the ~89 samples
+    // per texel read it instead of the pointwise function (minutes ->
+    // ~a second per bake); null = exact path.
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& focus, const Vec3& sunDirection);
+                const Vec3& focus, const Vec3& sunDirection,
+                sptr<const HeightField::Snapshot> field = nullptr);
 
     // {centerX, centerZ, 1/span, 0} — the scene owns .w (the strength).
     Vec4 info() const {

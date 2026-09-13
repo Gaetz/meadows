@@ -1,7 +1,9 @@
 #pragma once
 
+#include "engine/core/Clock.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/assets/MeshData.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
@@ -53,15 +55,27 @@ public:
     // (TerrainSystem::layerAlbedoBase) — the far vertices are painted
     // through the REAL weight rule with them, so the horizon matches
     // the streamed ground materials.
+    // `field` (nullable): the shared height pyramid — the half-cell
+    // grid samples it (L1 where it covers, L2 beyond) instead of the
+    // pointwise function; the tree impostors read the half-grid either
+    // way. Null = exact path.
     void update(rhi::Device& device, const TerrainParams& params,
                 const Vec3& focus,
                 const VegetationSystem::TreeSilhouette& trees,
-                const array<Vec3, 5>& layerAlbedos);
+                const array<Vec3, 5>& layerAlbedos,
+                sptr<const HeightField::Snapshot> field = nullptr);
 
     // Draw in the main opaque pass, BEFORE the near terrain (depth does
     // the layering). `cloudMapGroup` at its own slot (the Vulkan rule).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle cloudMapGroup);
+
+    // Impostor grounding: true = bilinear height/slope from the bake's
+    // own half-grid (35 m — sub-texel shifts at >1 km); false = the
+    // exact analytic function (5 height() per surviving candidate).
+    // Synced from RenderTuning before update(); a change re-bakes via
+    // the tree-height digest on the next content/stray trigger.
+    bool impostorsFromGrid { true };
 
     bool ready() const { return mailbox.ready(); }
     // The horizon-closure distance this mesh supports (conservative:
@@ -97,6 +111,12 @@ private:
     u64 bakedContentStamp { 0 };
     f32 bakedTreeHeight { 0.0f };
     f32 bakedSeaLevel { 0.0f };
+    bool bakedFromGrid { true };
+    // Content-stamp coalescing: a publish burst bumps the stamp once
+    // per tile — this 18 km bake waits for a second of stamp quiet and
+    // fires ONCE per burst (stray/seed/sea stay immediate).
+    u64 lastSeenContentStamp { 0 };
+    core::TimePoint contentQuietSince {};
 };
 
 } // namespace render

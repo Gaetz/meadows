@@ -87,6 +87,13 @@ bool underLocalWater(const TerrainParams& params, f32 x, f32 z, f32 h,
            waterDepthAt(*params.water, x, z, h - margin) > 0.0f;
 }
 
+bool underLocalWater(const TerrainParams& params,
+                     const WaterBodiesSubset& subset, f32 x, f32 z, f32 h,
+                     f32 margin) {
+    return params.water &&
+           waterDepthAt(*params.water, subset, x, z, h - margin) > 0.0f;
+}
+
 f32 rockExposureAt(const TerrainParams& params, f32 x, f32 z) {
     const TerrainRegion* region =
         params.base ? params.base->regionAt(x, z) : nullptr;
@@ -474,7 +481,13 @@ RegionShading regionShadingAt(const TerrainParams& params, f32 x, f32 z) {
 
 MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
                                   f32 z, f32 height, const Vec3& normal) {
-    const RegionFields fields = regionFieldsAt(params, x, z);
+    return materialWeightsAt(params, x, z, height, normal,
+                             regionFieldsAt(params, x, z));
+}
+
+MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
+                                  f32 z, f32 height, const Vec3& normal,
+                                  const RegionFields& fields) {
     return materialWeightsCore(
         { .slope = 1.0f - normal.y,
           .height = height,
@@ -549,17 +562,30 @@ f32 height(const TerrainParams& params, f32 x, f32 z) {
     f32 wSum = 0.0f;
     f32 hSum = 0.0f;
     if (params.base) {
-        for (const TerrainRegion& region : params.base->regions) {
+        const auto blend = [&](const TerrainRegion& region) {
             if (!region.contains(x, z)) {
-                continue;
+                return;
             }
             const f32 w = edgeWeight(region, x, z);
             if (w <= 0.0f) {
-                continue;
+                return;
             }
             hSum += w * (baseHeight(region, x, z) +
                          detailNoise(params, region, x, z));
             wSum += w;
+        };
+        // Indexed path visits the SAME regions in the SAME ascending
+        // order as the scan (TerrainBase::cellIndex contract) — the
+        // accumulation is bit-identical.
+        if (const vector<u32>* bucket = params.base->bucketAt(x, z)) {
+            for (const u32 i : *bucket) {
+                blend(*params.base->regions[i]);
+            }
+        } else {
+            for (const sptr<const TerrainRegion>& region :
+                 params.base->regions) {
+                blend(*region);
+            }
         }
     }
     f32 base;
@@ -620,6 +646,67 @@ f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing) {
         }
     }
     return h;
+}
+
+bool contentTouchedSince(const TerrainParams& params, u64 seenStamp,
+                         f32 minX, f32 minZ, f32 maxX, f32 maxZ) {
+    if (params.contentStamp <= seenStamp) {
+        return false;
+    }
+    if (seenStamp + 1 < params.contentEvents.completeFrom) {
+        return true; // ring overflowed past what the consumer saw
+    }
+    for (const TerrainParams::ContentEvents::Event& e :
+         params.contentEvents.ring) {
+        if (e.stamp > seenStamp && e.maxX >= minX && e.minX <= maxX &&
+            e.maxZ >= minZ && e.minZ <= maxZ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool flowMaskTouches(const TerrainParams& params, f32 minX, f32 minZ,
+                     f32 maxX, f32 maxZ) {
+    if (!params.base) {
+        return false;
+    }
+    for (const sptr<const TerrainRegion>& rp : params.base->regions) {
+        const TerrainRegion& r = *rp;
+        if (r.flow.empty() || r.maskWidth < 2 || r.maskHeight < 2 ||
+            r.width < 2 || r.height < 2) {
+            continue; // maskSample falls back to 0 — never >= 0.5
+        }
+        if (r.originX + r.spanX() < minX || r.originX > maxX ||
+            r.originZ + r.spanZ() < minZ || r.originZ > maxZ) {
+            continue;
+        }
+        // The mask texels a bilinear read inside the rect can touch:
+        // maskSample's own u/v mapping, floors extended by +1, clamped.
+        const f32 texelX = r.spanX() / static_cast<f32>(r.maskWidth - 1);
+        const f32 texelZ = r.spanZ() / static_cast<f32>(r.maskHeight - 1);
+        const auto lo = [](f32 v, u32 n) {
+            return static_cast<u32>(glm::clamp(
+                std::floor(v), 0.0f, static_cast<f32>(n - 1)));
+        };
+        const u32 u0 = lo((minX - r.originX) / texelX, r.maskWidth);
+        const u32 u1 = glm::min(
+            lo((maxX - r.originX) / texelX, r.maskWidth) + 1,
+            r.maskWidth - 1);
+        const u32 v0 = lo((minZ - r.originZ) / texelZ, r.maskHeight);
+        const u32 v1 = glm::min(
+            lo((maxZ - r.originZ) / texelZ, r.maskHeight) + 1,
+            r.maskHeight - 1);
+        for (u32 mz = v0; mz <= v1; ++mz) {
+            for (u32 mx = u0; mx <= u1; ++mx) {
+                if (r.flow[static_cast<size_t>(mz) * r.maskWidth + mx] >=
+                    128) { // byte 128/255 >= 0.5; 127/255 < 0.5
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step) {

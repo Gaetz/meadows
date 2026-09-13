@@ -362,8 +362,10 @@ TEST_CASE("adjacent tiles blend smoothly across their shared border") {
     const TileBakeResult b = bakeTile(params, 1, 0);
 
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(a.region);
-    base->regions.push_back(b.region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(a.region));
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(b.region));
     render::TerrainParams tp;
     tp.base = base;
     auto sandbox = std::make_shared<render::SandboxTerrain>();
@@ -512,6 +514,18 @@ TEST_CASE("full tile bake benchmark" * doctest::skip()) {
     MESSAGE("full 4 km tile bake: ", seconds, " s, region ",
             r.region.width, "^2 texels, ", r.lakes.size(), " lakes, ",
             r.rivers.size(), " rivers");
+    // Content hash over the raw height bytes: the bit-exactness proof
+    // reused by every chantier-économie brick (docs/CPU-PERF.md) — an
+    // optimization that moves this hash changed the terrain.
+    u64 h = 1469598103934665603ull; // FNV-1a
+    const auto* bytes =
+        reinterpret_cast<const unsigned char*>(r.region.heights.data());
+    const size_t size = r.region.heights.size() * sizeof(f32);
+    for (size_t i = 0; i < size; ++i) {
+        h ^= bytes[i];
+        h *= 1099511628211ull;
+    }
+    MESSAGE("region.heights hash: ", h);
     CHECK(r.region.width > 2000);
 }
 
@@ -519,7 +533,8 @@ TEST_CASE("the sandbox fallback agrees with tiles at their rim") {
     const TileBakeParams params = testParams();
     const TileBakeResult a = bakeTile(params, 0, 0);
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(a.region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(a.region));
     render::TerrainParams tp;
     tp.base = base;
     auto sandbox = std::make_shared<render::SandboxTerrain>();

@@ -44,7 +44,8 @@ int waterSolve(char** argv, int argc) {
     // SAME query path every diagnostic uses (terrain::height on a
     // TerrainBase — the proven decode of the region layout).
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(region));
     render::TerrainParams tp;
     tp.base = base;
     GridSpec spec;

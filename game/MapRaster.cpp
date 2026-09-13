@@ -52,7 +52,9 @@ Vec2 mapUv(const MapRasterDesc& desc, f32 worldX, f32 worldZ) {
     return { glm::clamp(u, 0.0f, 1.0f), glm::clamp(v, 0.0f, 1.0f) };
 }
 
-vector<u8> generateMapRaster(const MapRasterDesc& desc) {
+vector<u8> generateMapRaster(
+    const MapRasterDesc& desc, const std::atomic<bool>* cancel,
+    sptr<const render::HeightField::Snapshot> field) {
     const u32 size = desc.size;
     vector<u8> pixels(static_cast<size_t>(size) * size * 4, 0);
     if (!desc.terrain || size == 0) {
@@ -69,11 +71,15 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
     const u32 grid = size + 2;
     vector<f32> heights(static_cast<size_t>(grid) * grid);
     for (u32 gz = 0; gz < grid; ++gz) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            return pixels; // partial: shutdown, caller drops it
+        }
         const f32 z = desc.minZ + (static_cast<f32>(gz) - 0.5f) * stepZ;
         for (u32 gx = 0; gx < grid; ++gx) {
             const f32 x = desc.minX + (static_cast<f32>(gx) - 0.5f) * stepX;
             heights[static_cast<size_t>(gz) * grid + gx] =
-                render::terrain::height(params, x, z);
+                field ? field->height(x, z)
+                      : render::terrain::height(params, x, z);
         }
     }
 
@@ -81,6 +87,9 @@ vector<u8> generateMapRaster(const MapRasterDesc& desc) {
         return heights[static_cast<size_t>(gz) * grid + gx];
     };
     for (u32 pz = 0; pz < size; ++pz) {
+        if (cancel && cancel->load(std::memory_order_relaxed)) {
+            return pixels; // partial: shutdown, caller drops it
+        }
         for (u32 px = 0; px < size; ++px) {
             const u32 gx = px + 1; // pixel center in the apron grid
             const u32 gz = pz + 1;

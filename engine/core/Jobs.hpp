@@ -9,6 +9,7 @@
 
 #include "engine/core/Assert.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/core/JobProbe.hpp"
 
 namespace core {
 
@@ -86,6 +87,10 @@ public:
     // atomic in their hot loops (terrain erosion, sim bursts).
     const std::atomic<bool>& stopFlag() const { return stopRequested; }
 
+    // Worker-job cost telemetry (F6 "Worker jobs" table). Job bodies
+    // opt in with a JobProbe::Scope; the frame thread drains and reads.
+    JobProbe& probe() { return jobProbe; }
+
 private:
     void workerLoop();
 
@@ -95,6 +100,7 @@ private:
     std::condition_variable cv;
     bool stopping { false };
     std::atomic<bool> stopRequested { false };
+    JobProbe jobProbe;
 };
 
 } // namespace core

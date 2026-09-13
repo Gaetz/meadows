@@ -202,7 +202,50 @@ void RadianceCascades::makePlaceholderTile(rhi::Device& device) {
     tileCenter = Vec2 { 0.0f };
     tileUploaded = true;
     tileIsPlaceholder = true;
-    appliedResolution = 0; // bind groups reference the NEW tile textures
+    rebuildTileGroups(device); // no-op before createVolumes builds levels
+}
+
+void RadianceCascades::rebuildTileGroups(rhi::Device& device) {
+    // The ONLY bind groups referencing the tile textures (height/
+    // normal/albedo): per-level build (binding 8, buried-probe
+    // relocation) and inject (8/9/12). A landed tile rebinds JUST these
+    // — the cascade textures and their accumulated radiance survive.
+    // (The former appliedResolution=0 hammer recreated every volume and
+    // re-converged the whole GI at each 40 m tile step.) No-op until
+    // createVolumes has built the levels; it then calls this itself.
+    if (levels.empty()) {
+        return;
+    }
+    for (CascadeLevel& level : levels) {
+        level.buildGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                           { .binding = 0, .texture = level.texture.get(),
+                             .storageImage = true },
+                           { .binding = 5, .texture = clipFine.get(),
+                             .sampler = volumeSampler.get() },
+                           { .binding = 6, .texture = clipCoarse.get(),
+                             .sampler = volumeSampler.get() },
+                           { .binding = 8, .texture = heightTex.get(),
+                             .sampler = tileSampler.get() } } }) };
+    }
+    // uRcPrev (binding 10) is LAST frame's merged cascade 0, the
+    // multi-bounce feedback (G7a).
+    injectGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 3, .buffer = boxBuffer.get(),
+                         .storage = true },
+                       { .binding = 0, .texture = clipFine.get(),
+                         .storageImage = true },
+                       { .binding = 1, .texture = clipCoarse.get(),
+                         .storageImage = true },
+                       { .binding = 8, .texture = heightTex.get(),
+                         .sampler = tileSampler.get() },
+                       { .binding = 9, .texture = albedoTex.get(),
+                         .sampler = tileSampler.get() },
+                       { .binding = 10, .texture = levels[0].texture.get(),
+                         .sampler = volumeSampler.get() },
+                       { .binding = 12, .texture = normalTex.get(),
+                         .sampler = tileSampler.get() } } }) };
 }
 
 void RadianceCascades::createVolumes(rhi::Device& device) {
@@ -244,17 +287,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
               .depth = level.depth,
               .format = rhi::TextureFormat::RGBA16F,
               .filter = rhi::FilterMode::Linear }, nullptr) };
-        level.buildGroup = { device, device.createBindGroup(
-            { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                           { .binding = 0, .texture = level.texture.get(),
-                             .storageImage = true },
-                           { .binding = 5, .texture = clipFine.get(),
-                             .sampler = volumeSampler.get() },
-                           { .binding = 6, .texture = clipCoarse.get(),
-                             .sampler = volumeSampler.get() },
-                           // Buried-probe relocation reads the surface.
-                           { .binding = 8, .texture = heightTex.get(),
-                             .sampler = tileSampler.get() } } }) };
     }
     for (i32 i = 0; i < count; ++i) {
         CascadeLevel& level = levels[static_cast<size_t>(i)];
@@ -301,24 +333,9 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
     appliedExtension = tuning.intervalExtension;
     appliedCascadeCount = tuning.cascadeCount;
 
-    // The injection — after the levels: uRcPrev (binding 10) is LAST
-    // frame's merged cascade 0, the multi-bounce feedback (G7a).
-    injectGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                       { .binding = 3, .buffer = boxBuffer.get(),
-                         .storage = true },
-                       { .binding = 0, .texture = clipFine.get(),
-                         .storageImage = true },
-                       { .binding = 1, .texture = clipCoarse.get(),
-                         .storageImage = true },
-                       { .binding = 8, .texture = heightTex.get(),
-                         .sampler = tileSampler.get() },
-                       { .binding = 9, .texture = albedoTex.get(),
-                         .sampler = tileSampler.get() },
-                       { .binding = 10, .texture = levels[0].texture.get(),
-                         .sampler = volumeSampler.get() },
-                       { .binding = 12, .texture = normalTex.get(),
-                         .sampler = tileSampler.get() } } }) };
+    // Build + inject groups reference the tile textures — one builder
+    // shared with the tile-landing rebind (rebuildTileGroups).
+    rebuildTileGroups(device);
     havePrev = false; // fresh cascade textures hold garbage until merged
 
     debugGroup = { device, device.createBindGroup(
@@ -359,9 +376,9 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
                                     const Vec3& cameraPos) {
     // Upload a finished bake. R16F initial data is packed f32 per texel —
     // both backends convert (GL via GL_FLOAT upload, Vulkan explicitly);
-    // textures are recreated with initial pixels (no updateTexture in the
-    // RHI), and the bind group is rebuilt below through the
-    // appliedResolution reset.
+    // textures are recreated with initial pixels (no updateTexture in
+    // the RHI), then rebuildTileGroups rebinds the groups that reference
+    // them.
     BakedTile tile;
     while (baked->tryPop(tile)) {
         if (tile.gen != tileGeneration) {
@@ -379,8 +396,9 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
             { .width = kTileSize, .height = kTileSize,
               .format = rhi::TextureFormat::RGBA8 },
             tile.albedo.data()) };
-        // The bind group references the OLD textures — rebuild it.
-        appliedResolution = 0; // forces createVolumes' group rebuild below
+        // Only the groups referencing the OLD tile textures rebind; the
+        // cascade radiance survives the landing.
+        rebuildTileGroups(device);
         tileCenter = tile.center;
         tileInFlight = false;
         tileUploaded = true;
@@ -395,15 +413,24 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
     if (!tileInFlight &&
         (spanChanged ||
          glm::abs(terrainTintStrength - bakedTintStrength) > 0.001f ||
-         glm::distance(focus, tileCenter) > span * 0.10f)) {
+         bakedGridNormals != tuning.gridNormals ||
+         glm::distance(focus, tileCenter) >
+             span * glm::clamp(tuning.tileRebakeDrift, 0.05f, 0.5f))) {
         tileSpan = span;
         tileInFlight = true;
         bakedTintStrength = terrainTintStrength;
+        bakedGridNormals = tuning.gridNormals;
         const u64 gen = ++tileGeneration;
         auto queue = baked;
         const TerrainParams paramsCopy = params;
         jobs->enqueue([queue, paramsCopy, focus, span, gen,
-                       tintStrength = terrainTintStrength] {
+                       tintStrength = terrainTintStrength,
+                       gridNormals = tuning.gridNormals,
+                       jobsRef = jobs] {
+            if (jobsRef->isStopping()) {
+                return; // abandonable at shutdown
+            }
+            core::JobProbe::Scope probe { &jobsRef->probe(), "rcTile" };
             BakedTile out;
             out.center = focus;
             out.gen = gen;
@@ -411,19 +438,53 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
             out.normal.resize(kTileSize * kTileSize * 4);
             out.albedo.resize(kTileSize * kTileSize * 4);
             const f32 texel = span / static_cast<f32>(kTileSize);
-            for (u32 ty = 0; ty < kTileSize; ++ty) {
-                for (u32 tx = 0; tx < kTileSize; ++tx) {
-                    const f32 wx = focus.x +
-                                   (static_cast<f32>(tx) + 0.5f -
-                                    kTileSize * 0.5f) * texel;
-                    const f32 wz = focus.y +
-                                   (static_cast<f32>(ty) + 0.5f -
-                                    kTileSize * 0.5f) * texel;
-                    out.height[ty * kTileSize + tx] =
-                        terrain::height(paramsCopy, wx, wz);
+            // Grid-normals experiment: heights on a +-2-texel APRON so
+            // the wide stencil below never clamps at the tile edge.
+            constexpr i32 kApron = 2;
+            constexpr u32 kApronSize = kTileSize + 2 * kApron;
+            vector<f32> apron;
+            if (gridNormals) {
+                apron.resize(static_cast<size_t>(kApronSize) *
+                             kApronSize);
+            }
+            const auto worldX = [&](i32 tx) {
+                return focus.x + (static_cast<f32>(tx) + 0.5f -
+                                  kTileSize * 0.5f) * texel;
+            };
+            const auto worldZ = [&](i32 ty) {
+                return focus.y + (static_cast<f32>(ty) + 0.5f -
+                                  kTileSize * 0.5f) * texel;
+            };
+            for (i32 ty = -kApron;
+                 ty < static_cast<i32>(kTileSize) + kApron; ++ty) {
+                if (jobsRef->isStopping()) {
+                    return; // partial tile: never lands
+                }
+                for (i32 tx = -kApron;
+                     tx < static_cast<i32>(kTileSize) + kApron; ++tx) {
+                    const bool interior =
+                        tx >= 0 && tx < static_cast<i32>(kTileSize) &&
+                        ty >= 0 && ty < static_cast<i32>(kTileSize);
+                    if (!gridNormals && !interior) {
+                        continue;
+                    }
+                    const f32 h = terrain::height(paramsCopy, worldX(tx),
+                                                  worldZ(ty));
+                    if (interior) {
+                        out.height[static_cast<u32>(ty) * kTileSize +
+                                   static_cast<u32>(tx)] = h;
+                    }
+                    if (gridNormals) {
+                        apron[static_cast<size_t>(ty + kApron) *
+                                  kApronSize +
+                              static_cast<size_t>(tx + kApron)] = h;
+                    }
                 }
             }
             for (u32 ty = 0; ty < kTileSize; ++ty) {
+                if (jobsRef->isStopping()) {
+                    return; // partial tile: never lands
+                }
                 for (u32 tx = 0; tx < kTileSize; ++tx) {
                     const u32 i = ty * kTileSize + tx;
                     const f32 h = out.height[i];
@@ -433,10 +494,30 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
                     const f32 wz = focus.y +
                                    (static_cast<f32>(ty) + 0.5f -
                                     kTileSize * 0.5f) * texel;
-                    // ANALYTIC normal (smooth) — texel differences of
-                    // the baked height facet per texel, which banded
-                    // the grazing-sun bounce along slopes.
-                    const Vec3 n = terrain::normal(paramsCopy, wx, wz);
+                    // ANALYTIC normal (smooth) by default — per-facet
+                    // texel differences banded the grazing-sun bounce
+                    // along slopes. The experiment: a WIDE +-2-texel
+                    // stencil over the apron grid (smooth across
+                    // facets), 4 array reads instead of 4 height().
+                    Vec3 n;
+                    if (gridNormals) {
+                        const auto at = [&](i32 col, i32 row) {
+                            return apron[static_cast<size_t>(row +
+                                                             kApron) *
+                                             kApronSize +
+                                         static_cast<size_t>(col +
+                                                             kApron)];
+                        };
+                        const i32 cx = static_cast<i32>(tx);
+                        const i32 cy = static_cast<i32>(ty);
+                        const f32 step = 2.0f * texel;
+                        n = glm::normalize(Vec3 {
+                            at(cx - 2, cy) - at(cx + 2, cy),
+                            2.0f * step,
+                            at(cx, cy - 2) - at(cx, cy + 2) });
+                    } else {
+                        n = terrain::normal(paramsCopy, wx, wz);
+                    }
                     out.normal[i * 4 + 0] = static_cast<u8>(
                         glm::clamp(n.x * 0.5f + 0.5f, 0.0f, 1.0f) *
                         255.0f);

@@ -253,8 +253,11 @@ sptr<const render::TerrainBase> buildTerrainBase(
             region->detailAmplitude = form.detailAmplitude;
             region->detailWavelength = form.detailWavelength;
             region->detailOctaves = form.detailOctaves;
-            base->regions.push_back(std::move(*region));
+            base->regions.push_back(
+                std::make_shared<render::TerrainRegion>(
+                    std::move(*region)));
         });
+    base->buildIndex();
     return base;
 }
 

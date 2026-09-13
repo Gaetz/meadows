@@ -118,6 +118,8 @@ constexpr FieldLane<render::RcTuning, data::RcTuningForm, f32> kRcLanesF32[] = {
       &data::RcTuningForm::lightSplatBounce },
     { &render::RcTuning::bounceFeedback,
       &data::RcTuningForm::bounceFeedback },
+    { &render::RcTuning::tileRebakeDrift,
+      &data::RcTuningForm::tileRebakeDrift },
     { &render::RcTuning::interval0, &data::RcTuningForm::interval0 },
     { &render::RcTuning::edgeFade, &data::RcTuningForm::edgeFade },
     { &render::RcTuning::bandCount, &data::RcTuningForm::bandCount },
@@ -131,6 +133,7 @@ constexpr FieldLane<render::RcTuning, data::RcTuningForm, i32> kRcLanesI32[] = {
       &data::RcTuningForm::updateInterval },
 };
 constexpr FieldLane<render::RcTuning, data::RcTuningForm, bool> kRcLanesBool[] = {
+    { &render::RcTuning::gridNormals, &data::RcTuningForm::gridNormals },
     { &render::RcTuning::pipelined, &data::RcTuningForm::pipelined },
     { &render::RcTuning::asyncCompute, &data::RcTuningForm::asyncCompute },
     { &render::RcTuning::rcOnlyLights, &data::RcTuningForm::rcOnlyLights },
@@ -168,10 +171,18 @@ constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, f32> kWorldLanesF32
 };
 constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, bool> kWorldLanesBool[] = {
     { &RenderTuning::farTerrain, &data::LandscapeTuningForm::farTerrain },
+    { &RenderTuning::farImpostorsFromGrid,
+      &data::LandscapeTuningForm::farImpostorsFromGrid },
+    { &RenderTuning::sharedHeightField,
+      &data::LandscapeTuningForm::sharedHeightField },
     { &RenderTuning::clusteredLights, &data::LandscapeTuningForm::clusteredLights },
     { &RenderTuning::mist, &data::LandscapeTuningForm::mistEnabled },
     { &RenderTuning::mistNoiseTex, &data::LandscapeTuningForm::mistNoiseTexture },
     { &RenderTuning::skyClouds, &data::LandscapeTuningForm::skyCloudsVolumetric },
+};
+constexpr FieldLane<render::ChunkOcclusion, data::LandscapeTuningForm, f32> kOcclusionLanesF32[] = {
+    { &render::ChunkOcclusion::rebuildDistance,
+      &data::LandscapeTuningForm::occlusionRebuildDistance },
 };
 constexpr FieldLane<render::PostFx, data::LandscapeTuningForm, f32> kPostFxLanesF32[] = {
     { &render::PostFx::froxelTemporalBlend, &data::LandscapeTuningForm::froxelTemporalBlend },
@@ -214,6 +225,10 @@ constexpr FieldLane<render::GrassScatterTuning, data::LandscapeTuningForm, f32> 
     { &render::GrassScatterTuning::presenceHi, &data::LandscapeTuningForm::grassPresenceHi },
     { &render::GrassScatterTuning::materialCutoff, &data::LandscapeTuningForm::grassMaterialCutoff },
 };
+constexpr FieldLane<render::GrassScatterTuning, data::LandscapeTuningForm, bool> kGrassScatterLanesBool[] = {
+    { &render::GrassScatterTuning::coarseTint,
+      &data::LandscapeTuningForm::grassCoarseTint },
+};
 
 } // namespace
 
@@ -248,6 +263,7 @@ void RenderTuningIo::applyTuning(
     // tables back). (tuning.ssaoStrength is unused — screen AO removed.)
     applyLanes(r.tuning, tuning, kWorldLanesF32);
     applyLanes(r.tuning, tuning, kWorldLanesBool);
+    applyLanes(r.occlusion, tuning, kOcclusionLanesF32);
     applyLanes(r.postFx, tuning, kPostFxLanesF32);
     applyLanes(r.postFx, tuning, kPostFxLanesBool);
     applyLanes(r.grass.renderTuning, tuning, kGrassRenderLanesF32);
@@ -255,6 +271,7 @@ void RenderTuningIo::applyTuning(
     // Startup-only mapping: the scatter bake reads these on first
     // request, no regenerate needed (nothing is resident yet).
     applyLanes(r.grass.scatterTuning, tuning, kGrassScatterLanesF32);
+    applyLanes(r.grass.scatterTuning, tuning, kGrassScatterLanesBool);
 
     // Vec4 packing (the Form spells the lanes as scalars) and clamps.
     r.tuning.stylizedDiffuse = { tuning.stylizedDiffuseEdge0Start,
@@ -353,11 +370,13 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
                                    data::LandscapeTuningForm& out) {
     captureLanes(r.tuning, out, kWorldLanesF32);
     captureLanes(r.tuning, out, kWorldLanesBool);
+    captureLanes(r.occlusion, out, kOcclusionLanesF32);
     captureLanes(r.postFx, out, kPostFxLanesF32);
     captureLanes(r.postFx, out, kPostFxLanesBool);
     captureLanes(r.grass.renderTuning, out, kGrassRenderLanesF32);
     captureLanes(r.grass.renderTuning, out, kGrassRenderLanesVec3);
     captureLanes(r.grass.scatterTuning, out, kGrassScatterLanesF32);
+    captureLanes(r.grass.scatterTuning, out, kGrassScatterLanesBool);
 
     // Vec4 unpacking + the clamped/subsystem scalars (mirror of
     // applyTuning's hand-written half; terrain SHAPE stays apply-only).

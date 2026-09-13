@@ -8,7 +8,7 @@
 namespace render {
 
 void TerrainShadeMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    mailbox.create(jobSystem);
+    mailbox.create(jobSystem, "terrainShadeMap");
     sampler = device.createSampler({});
     // Textures are (re)created per landed bake (no RHI texture update).
     (void)device;
@@ -59,11 +59,17 @@ void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
     const bool strayed = !mailbox.ready() ||
                          glm::distance(want, center) > kSpan * 0.25f;
     const bool contentChanged =
-        mailbox.ready() && bakedStamp != params.contentStamp;
+        mailbox.ready() &&
+        terrain::contentTouchedSince(params, bakedStamp,
+                                     center.x - kSpan * 0.5f,
+                                     center.y - kSpan * 0.5f,
+                                     center.x + kSpan * 0.5f,
+                                     center.y + kSpan * 0.5f);
     if (!strayed && !contentChanged) {
         return;
     }
-    mailbox.kick([params, want](Baked& baked) {
+    mailbox.kick([params, want](Baked& baked,
+                                const std::atomic<bool>& stop) {
         baked.center = want;
         baked.stamp = params.contentStamp;
         baked.t0.resize(static_cast<size_t>(kSize) * kSize * 4);
@@ -76,6 +82,9 @@ void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
                                    0.5f);
         };
         for (u32 row = 0; row < kSize; ++row) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
             for (u32 col = 0; col < kSize; ++col) {
                 const f32 x =
                     originX + (static_cast<f32>(col) + 0.5f) * texel;

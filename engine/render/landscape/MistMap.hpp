@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/BakeMailbox.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -36,8 +37,11 @@ public:
 
     // Pump finished bakes (upload) + kick a new one when the camera
     // strays past a quarter span or the terrain inputs change.
+    // `field` (nullable): the shared height pyramid — the bake samples
+    // it instead of pointwise terrain::height (exact path when null).
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& focus);
+                const Vec3& focus,
+                sptr<const HeightField::Snapshot> field = nullptr);
 
     // {centerX, centerZ, 1/span, max mist-top Y} — .w bounds the
     // raymarch's horizontal slab clip.

@@ -121,6 +121,26 @@ namespace terrain {
 std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
                                   f32 probeY);
 
+// Rect-scoped subset: ASCENDING indices of the bodies whose bounds
+// intersect the rect. The subset overloads below visit only those, in
+// the same relative order — bit-identical to the full scan for any
+// point INSIDE the rect, because an excluded body's own bounds test
+// rejects every such point anyway. Built once per chunk by the
+// scatter/grass bakes, which otherwise pay every resident body's bounds
+// test (and river segment walk) per candidate (docs/CPU-PERF.md).
+struct WaterBodiesSubset {
+    vector<u32> lakes;
+    vector<u32> rivers;
+};
+WaterBodiesSubset waterBodiesInRect(const WaterBodies& bodies, f32 minX,
+                                    f32 minZ, f32 maxX, f32 maxZ);
+std::optional<f32> waterSurfaceAt(const WaterBodies& bodies,
+                                  const WaterBodiesSubset& subset, f32 x,
+                                  f32 z, f32 probeY);
+f32 waterDepthAt(const WaterBodies& bodies,
+                 const WaterBodiesSubset& subset, f32 x, f32 z,
+                 f32 terrainY);
+
 // One river's contribution to the current at (x, z): flow in m/s (XZ),
 // a bank-distance weight in [0,1] (0 at the bank, 1 mid-channel) and
 // the local surface level. weight == 0 = the point is off this river.

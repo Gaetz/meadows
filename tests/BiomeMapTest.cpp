@@ -57,7 +57,8 @@ TEST_CASE("the rockExposure mask drives the cliff weight") {
     region.beach.assign(maskCells, 0);
     region.biome.assign(maskCells, 0);
     region.rockExposure.assign(maskCells, 255); // fully exposed
-    base->regions.push_back(region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(region));
     params.base = base;
 
     const Vec3 steep = glm::normalize(Vec3 { 1.0f, 0.55f, 0.0f });
@@ -111,7 +112,8 @@ TEST_CASE("biome attributes ramp across a baked border, never step") {
             region.biome[static_cast<size_t>(rz) * 17 + cx] = 2;
         }
     }
-    base->regions.push_back(region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(region));
     params.base = base;
     auto biomes = std::make_shared<render::BiomeSet>();
     biomes->table.resize(3);

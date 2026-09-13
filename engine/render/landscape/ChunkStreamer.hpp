@@ -49,8 +49,11 @@ public:
         Payload payload {};
     };
 
-    void create(core::JobSystem& jobSystem) {
+    // `probeName` labels this ring's builds on the F6 worker-jobs
+    // table — a static string literal (JobProbe contract).
+    void create(core::JobSystem& jobSystem, const char* probeName) {
         jobs = &jobSystem;
+        name = probeName;
         shared = std::make_shared<Shared>();
     }
 
@@ -72,7 +75,9 @@ public:
     template <typename BuildFn>
     void enqueueBuild(i32 cx, i32 cz, BuildFn&& build) {
         jobs->enqueue([sharedRef = shared, cx, cz, gen = generation_,
+                       jobsRef = jobs, probeName = name,
                        fn = std::forward<BuildFn>(build)] {
+            core::JobProbe::Scope probe { &jobsRef->probe(), probeName };
             sharedRef->built.push({ cx, cz, gen, fn() });
         });
     }
@@ -166,6 +171,7 @@ private:
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
+    const char* name { "chunkBuild" };
     u64 generation_ { 0 };
 };
 

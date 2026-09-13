@@ -95,6 +95,19 @@ struct RcTuning {
     // their shadows/penumbras come from the cascades, voxel-resolution.
     bool rcOnlyLights { false };
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
+    // Camera drift (fraction of the tile span) before the CPU terrain
+    // tile rebakes. The tile bake is the dominant CPU worker cost while
+    // moving (55% of a walk, docs/CPU-PERF.md); the old tile keeps
+    // applying while the fresh one bakes, so a larger drift only lets
+    // the GI ground sample lag the camera by that many meters.
+    f32 tileRebakeDrift { 0.25f };
+    // Tile normals from a wide ±2-texel stencil over the bake's own
+    // height grid instead of 4 analytic height() per texel (4/5 of the
+    // tile's sampling, ~÷4 on the bake). Per-facet texel differences
+    // BANDED the grazing-sun bounce once; the wide smooth stencil was
+    // A/B-validated indistinguishable from the analytic normals
+    // (docs/CPU-PERF.md) — OFF remains the exact reference path.
+    bool gridNormals { true };
     i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
                               // 3 merged cascade-0 irradiance
 };
@@ -197,6 +210,9 @@ public:
 
 private:
     void createVolumes(rhi::Device& device);
+    // Rebinds ONLY the groups referencing the tile textures (per-level
+    // build + inject) — a tile landing keeps the cascade radiance.
+    void rebuildTileGroups(rhi::Device& device);
     void makePlaceholderTile(rhi::Device& device); // "no terrain" (interiors)
     void pumpTileBake(rhi::Device& device, const TerrainParams& params,
                       const Vec3& cameraPos);
@@ -225,6 +241,7 @@ private:
     // tinted ground (an ocher canyon bounces ocher). WorldRenderer syncs
     // the live value below; a change re-bakes the tile.
     f32 bakedTintStrength { -1.0f };
+    bool bakedGridNormals { false };
     bool tileInFlight { false };
     bool tileUploaded { false };
     bool tileIsPlaceholder { true }; // "no terrain" tile (interiors/boot)

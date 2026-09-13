@@ -34,11 +34,135 @@ render::TerrainRegion flatRegion(f32 originX, f32 originZ, f32 size,
 
 sptr<const render::TerrainBase> baseOf(render::TerrainRegion region) {
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(std::move(region));
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(std::move(region)));
     return base;
 }
 
 } // namespace
+
+TEST_CASE("contentTouchedSince scopes by rect and stays conservative") {
+    render::TerrainParams params;
+    // No bump yet: nothing touched.
+    CHECK(!render::terrain::contentTouchedSince(params, 0, -1e9f, -1e9f,
+                                                1e9f, 1e9f));
+    // One publish at [0..4096]²: a window there sees it, a window at
+    // 10 km does not.
+    params.contentEvents.push(1, 0.0f, 0.0f, 4096.0f, 4096.0f);
+    params.contentStamp = 1;
+    CHECK(render::terrain::contentTouchedSince(params, 0, 1000.0f,
+                                               1000.0f, 2000.0f,
+                                               2000.0f));
+    CHECK(!render::terrain::contentTouchedSince(params, 0, 10000.0f,
+                                                10000.0f, 11000.0f,
+                                                11000.0f));
+    // Already seen: quiet.
+    CHECK(!render::terrain::contentTouchedSince(params, 1, 1000.0f,
+                                                1000.0f, 2000.0f,
+                                                2000.0f));
+    // Ring overflow: enough far-away events to evict stamp 1's entry —
+    // a consumer that saw 0 must go conservative even though no kept
+    // event intersects its window.
+    for (u64 s = 2; s < 2 + render::TerrainParams::ContentEvents::kRing;
+         ++s) {
+        params.contentEvents.push(s, 50000.0f, 50000.0f, 51000.0f,
+                                  51000.0f);
+        params.contentStamp = s;
+    }
+    CHECK(render::terrain::contentTouchedSince(params, 0, 1000.0f,
+                                               1000.0f, 2000.0f,
+                                               2000.0f));
+    // A consumer up to date past the eviction stays scoped: the kept
+    // far events do not touch its window.
+    CHECK(!render::terrain::contentTouchedSince(params, 2, 1000.0f,
+                                                1000.0f, 2000.0f,
+                                                2000.0f));
+}
+
+TEST_CASE("flow-free chunks may skip meshHeight: gate identity holds") {
+    // A region whose flow mask is hot in one corner only. Where
+    // flowMaskTouches says false, meshHeight at coarse spacing must be
+    // bit-identical to height() — that identity is what lets the chunk
+    // mesher probe once per chunk and call height() directly.
+    render::TerrainRegion region =
+        flatRegion(0.0f, 0.0f, 256.0f, 2.0f, 30.0f);
+    // Sloped heights: if the 9-tap min DID fire, it would differ from
+    // height() — a flat grid would hide a broken gate.
+    for (u32 row = 0; row < region.height; ++row) {
+        for (u32 col = 0; col < region.width; ++col) {
+            region.heights[static_cast<size_t>(row) * region.width +
+                           col] =
+                30.0f + 0.5f * static_cast<f32>(col) +
+                0.25f * static_cast<f32>(row);
+        }
+    }
+    region.maskWidth = 17; // 16 m mask texels over 256 m
+    region.maskHeight = 17;
+    region.flow.assign(static_cast<size_t>(17) * 17, 0);
+    region.flow[0] = 255; // hot texel at the (0, 0) corner only
+    render::TerrainParams params;
+    params.base = baseOf(std::move(region));
+
+    // The hot corner is touched; the far quarter is not.
+    CHECK(render::terrain::flowMaskTouches(params, 0.0f, 0.0f, 64.0f,
+                                           64.0f));
+    CHECK(!render::terrain::flowMaskTouches(params, 128.0f, 128.0f,
+                                            192.0f, 192.0f));
+    for (f32 z = 128.0f; z <= 192.0f; z += 5.3f) {
+        for (f32 x = 128.0f; x <= 192.0f; x += 4.7f) {
+            REQUIRE(render::terrain::meshHeight(params, x, z, 4.0f) ==
+                    render::terrain::height(params, x, z)); // EXACT
+        }
+    }
+    // Positive control: on the hot texel the gate DOES fire — the
+    // min-tap digs below height() on this slope, so the equality above
+    // is the gate staying silent, not a degenerate meshHeight.
+    CHECK(render::terrain::meshHeight(params, 2.0f, 2.0f, 4.0f) <
+          render::terrain::height(params, 2.0f, 2.0f));
+}
+
+TEST_CASE("region cell index is bit-identical to the linear scan") {
+    // A 5x5 lattice of overlapping soft-edged regions (varied levels so
+    // the blend accumulation order matters), sampled densely with and
+    // without buildIndex(): heights and regionAt hits must match
+    // BITWISE — the index only prunes provably non-covering regions and
+    // keeps the ascending visit order.
+    auto indexed = std::make_shared<render::TerrainBase>();
+    for (i32 gz = 0; gz < 5; ++gz) {
+        for (i32 gx = 0; gx < 5; ++gx) {
+            render::TerrainRegion r = flatRegion(
+                static_cast<f32>(gx) * 96.0f - 32.0f,
+                static_cast<f32>(gz) * 96.0f - 32.0f, 128.0f, 2.0f,
+                10.0f + static_cast<f32>(gz * 5 + gx) * 3.0f);
+            r.edgeBlend = 48.0f; // soft rims: overlap bands everywhere
+            indexed->regions.push_back(
+                std::make_shared<render::TerrainRegion>(std::move(r)));
+        }
+    }
+    auto linear = std::make_shared<render::TerrainBase>();
+    linear->regions = indexed->regions;
+    indexed->buildIndex();
+    REQUIRE(!indexed->cellIndex.empty());
+    render::TerrainParams a;
+    a.base = indexed;
+    render::TerrainParams b;
+    b.base = linear;
+    for (f32 z = -64.0f; z <= 512.0f; z += 13.7f) {
+        for (f32 x = -64.0f; x <= 512.0f; x += 11.3f) {
+            REQUIRE(render::terrain::height(a, x, z) ==
+                    render::terrain::height(b, x, z)); // EXACT
+            const render::TerrainRegion* ra = indexed->regionAt(x, z);
+            const render::TerrainRegion* rb = linear->regionAt(x, z);
+            REQUIRE((ra == nullptr) == (rb == nullptr));
+            if (ra && rb) {
+                // Same region by CONTENT identity (different vectors).
+                REQUIRE(ra->originX == rb->originX);
+                REQUIRE(ra->originZ == rb->originZ);
+                REQUIRE(ra->heights[0] == rb->heights[0]);
+            }
+        }
+    }
+}
 
 TEST_CASE("no baked base (or one elsewhere) is bit-identical to the noise") {
     render::TerrainParams pure;
@@ -252,8 +376,8 @@ detailOctaves = 2
 
     const auto base = world::buildTerrainBase(db, assetDb);
     REQUIRE(base->regions.size() == 1);
-    CHECK(base->regions[0].detailAmplitude == doctest::Approx(2.5f));
-    CHECK(base->regions[0].detailOctaves == 2);
+    CHECK(base->regions[0]->detailAmplitude == doctest::Approx(2.5f));
+    CHECK(base->regions[0]->detailOctaves == 2);
 
     render::TerrainParams params;
     params.base = base;

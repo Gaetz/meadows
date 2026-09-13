@@ -330,6 +330,27 @@ Chaque étape validée dev en jeu ; l'état ci-dessous est l'état RÉEL.
   inter-tuiles reste le filet runtime de la scène (chevauchement →
   garde la plus basse, déterministe — les composantes d'un même
   masque sont disjointes par construction).
+- **Lac interrompu à une frontière de tuile** (observé dev 2026-09-12,
+  x≈8192 près du spawn, capture `lac-interrompu.png`) : une nappe de
+  lac coupée net sur la ligne du lattice 4096 alors que la tuile
+  voisine est publiée (terrain/arbres présents, moitié de lac absente).
+  Hypothèse n°1 : le dedup inter-tuiles du publish (« deux vues d'un
+  bassin → garde la plus basse ») élit une vue dont le masque est
+  rogné à la fenêtre de résolution de SA tuile — la moitié couverte
+  seulement par la vue écartée disparaît. Hypothèse n°2 : rognage du
+  bassin au rim de la fenêtre élargie du stage-2 (kBasinResolveMargin).
+  Diagnostic proposé : LOG au drop du dedup (bbox+niveau des deux
+  vues + fraction de recouvrement) et comparer les bboxes à la
+  frontière ; fix candidat = fusionner les masques des deux vues au
+  lieu d'en écarter une, ou n'écarter que si la gagnante COUVRE la
+  perdante. À traiter en brique EAU (relire §3 avant).
+- **Révélation settle-gate : « petit creux » baké→sim** (observé dev
+  2026-09-12) : bascule atomique vérifiée (mêmes gates + même drain) ;
+  hypothèse = volume calme ≠ étendue convergée (masque humide à
+  hystérésis en retard sur les rives), pire au plafond 3 s. Logs de
+  diagnostic posés (`revealed CALM/CAP`) — au spawn, CALM prend déjà
+  2,4 s. Fix candidat : étendre le critère de calme avec la stabilité
+  de l'étendue humide.
 - **Polish FX** (retour calibré post-base) : voile/écume de cascade
   projetée par-dessus la goulotte, foam de rive des grands lacs,
   lait/whitewater/stries/ménisque/glints.

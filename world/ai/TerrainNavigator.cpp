@@ -15,8 +15,36 @@ u64 keyOf(i32 x, i32 z) {
 
 } // namespace
 
+void TerrainNavigator::setBlockingBoxes(vector<BlockingBox> boxes) {
+    blocking = std::move(boxes);
+    blockIndex.clear();
+    for (u32 i = 0; i < static_cast<u32>(blocking.size()); ++i) {
+        const BlockingBox& box = blocking[i];
+        const i32 cx0 =
+            static_cast<i32>(std::floor(box.min.x / kBlockCell));
+        const i32 cx1 =
+            static_cast<i32>(std::floor(box.max.x / kBlockCell));
+        const i32 cz0 =
+            static_cast<i32>(std::floor(box.min.z / kBlockCell));
+        const i32 cz1 =
+            static_cast<i32>(std::floor(box.max.z / kBlockCell));
+        for (i32 cz = cz0; cz <= cz1; ++cz) {
+            for (i32 cx = cx0; cx <= cx1; ++cx) {
+                blockIndex[keyOf(cx, cz)].push_back(i);
+            }
+        }
+    }
+}
+
 bool TerrainNavigator::blocked(f32 x, f32 z, f32 y) const {
-    for (const BlockingBox& box : blocking) {
+    const auto it = blockIndex.find(
+        keyOf(static_cast<i32>(std::floor(x / kBlockCell)),
+              static_cast<i32>(std::floor(z / kBlockCell))));
+    if (it == blockIndex.end()) {
+        return false;
+    }
+    for (const u32 i : it->second) {
+        const BlockingBox& box = blocking[i];
         if (x >= box.min.x && x <= box.max.x && z >= box.min.z &&
             z <= box.max.z && y >= box.min.y - 0.5f && y <= box.max.y) {
             return true;
@@ -49,6 +77,22 @@ nav::PathResult TerrainNavigator::findPath(
     std::priority_queue<Node, vector<Node>, std::greater<Node>> open;
     std::unordered_map<u64, f32> gScore;
     std::unordered_map<u64, u64> cameFrom;
+    // Per-query memo of the lazy grid: a cell is queried as a node once
+    // and as a NEIGHBOR of up to 8 others — the height callback (the
+    // full terrain stack, on the MAIN thread) ran ~9x per cell.
+    // Identical values by purity; ~9x fewer evaluations.
+    std::unordered_map<u64, f32> heightMemo;
+    const auto groundAt = [&](i32 x, i32 z) {
+        const u64 key = keyOf(x, z);
+        const auto it = heightMemo.find(key);
+        if (it != heightMemo.end()) {
+            return it->second;
+        }
+        const f32 h =
+            height(static_cast<f32>(x), static_cast<f32>(z));
+        heightMemo.emplace(key, h);
+        return h;
+    };
     open.push({ heuristic(startX, startZ), startX, startZ });
     gScore[keyOf(startX, startZ)] = 0.0f;
 
@@ -64,8 +108,7 @@ nav::PathResult TerrainNavigator::findPath(
             found = true;
             break;
         }
-        const f32 nodeY = height(static_cast<f32>(node.x),
-                                 static_cast<f32>(node.z));
+        const f32 nodeY = groundAt(node.x, node.z);
         const f32 nodeG = gScore[keyOf(node.x, node.z)];
         constexpr i32 kSteps[8][2] = { { 1, 0 },  { -1, 0 }, { 0, 1 },
                                        { 0, -1 }, { 1, 1 },  { 1, -1 },
@@ -75,8 +118,7 @@ nav::PathResult TerrainNavigator::findPath(
             const i32 nz = node.z + step[1];
             const f32 stepLength =
                 (step[0] != 0 && step[1] != 0) ? 1.41421f : 1.0f;
-            const f32 ny =
-                height(static_cast<f32>(nx), static_cast<f32>(nz));
+            const f32 ny = groundAt(nx, nz);
             if (std::abs(ny - nodeY) > maxSlope * stepLength ||
                 blocked(static_cast<f32>(nx), static_cast<f32>(nz), ny)) {
                 continue;
@@ -103,10 +145,8 @@ nav::PathResult TerrainNavigator::findPath(
     while (true) {
         const i32 x = static_cast<i32>(cursor >> 32);
         const i32 z = static_cast<i32>(cursor & 0xffffffffu);
-        reversed.push_back({ static_cast<f32>(x),
-                             height(static_cast<f32>(x),
-                                    static_cast<f32>(z)),
-                             static_cast<f32>(z) });
+        reversed.push_back(
+            { static_cast<f32>(x), groundAt(x, z), static_cast<f32>(z) });
         if (cursor == startKey) {
             break;
         }

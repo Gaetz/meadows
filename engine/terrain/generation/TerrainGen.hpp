@@ -224,6 +224,11 @@ public:
     explicit ProceduralControls(const ProceduralControlParams& params)
         : p { params } {}
     ControlSample at(f32 x, f32 z) const override;
+    // Same sample, but hands back the continentalness it computed —
+    // it is the heaviest part of a sample (warp+layout kernels), and
+    // macroHeightAnalytic needs the SAME value again for its shore
+    // distance. One evaluation, bit-identical to calling both.
+    ControlSample at(f32 x, f32 z, f32& outContinentalness) const;
     u8 biomeIdAt(f32 x, f32 z, f32 tier) const override; // climate only
     f32 continentalness(f32 x, f32 z) const; // [0,1], warped
 

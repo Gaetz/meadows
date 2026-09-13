@@ -13,6 +13,7 @@
 #include "engine/FrameContext.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshData.hpp" // render::MeshVertex / SkinnedVertex
+#include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
@@ -104,6 +105,7 @@ static f32 aboveBuried(f32 y, f32 threshold) {
 void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                                const RendererConfig& config) {
     cfg = config;
+    jobSystem = &jobs;
     if (!cfg.postFx) {
         cfg.froxels = false; // froxel fog lives in the postFx chain
     }
@@ -152,6 +154,7 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                          .normal = cfg.terrainNormalPath,
                          .orm = cfg.terrainOrmPath,
                          .height = cfg.terrainHeightPath });
+        heightField.create(jobs);
         terrainLightMap.create(device, jobs);
         terrainShadeMap.create(device, jobs);
         farTerrain.create(device, *shaders, jobs);
@@ -1725,6 +1728,11 @@ void WorldRenderer::recordKeyShadowTiles(engine::FrameContext& frame,
 
 void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView& view) {
     if (!view.interiorMode) { // interiors: no terrain/scatter/water to stream
+        if (cfg.terrain && tuning.sharedHeightField) {
+            // The shared height pyramid publishes FIRST so this frame's
+            // consumer bakes capture the freshest snapshot.
+            heightField.update(terrain.params, view.camera.position);
+        }
         if (cfg.terrain) {
             core::FrameProbe::Scope probe { *view.probe, "terrain" };
             terrain.update(frame.device, view.camera.position,
@@ -1736,9 +1744,16 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             core::FrameProbe::Scope probe { *view.probe, "lightmap" };
             // Pump/kick the light-map bake (worker; re-bakes on
             // the quantized sun step or when the focus strays).
-            terrainLightMap.update(frame.device, terrain.params,
-                                   view.camera.position,
-                                   shadowSunDirection);
+            // With the pyramid enabled, hold the FIRST kick until a
+            // snapshot exists (~2 s of boot): a bake racing ahead of it
+            // runs the exact path — the very 2-minute bake the grid
+            // exists to remove.
+            const auto hf = heightFieldSnapshot();
+            if (!tuning.sharedHeightField || hf) {
+                terrainLightMap.update(frame.device, terrain.params,
+                                       view.camera.position,
+                                       shadowSunDirection, hf);
+            }
             // Region shading maps (biome/wetness fields for the splat
             // rules; sun-independent, re-bakes on stray or terrain
             // republish).
@@ -1750,11 +1765,12 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             // only when the camera strays half a kilometer).
             core::FrameProbe::Scope probe { *view.probe, "mistmap" };
             mistMap.update(frame.device, terrain.params,
-                           view.camera.position);
+                           view.camera.position, heightFieldSnapshot());
         }
         if (cfg.terrain && tuning.farTerrain) {
             // Distant silhouettes: coarse 12 km mesh, worker-baked.
             core::FrameProbe::Scope probe { *view.probe, "farterrain" };
+            farTerrain.impostorsFromGrid = tuning.farImpostorsFromGrid;
             farTerrain.update(frame.device, terrain.params,
                               view.camera.position,
                               cfg.vegetation
@@ -1765,7 +1781,8 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                                 terrain.layerAlbedoBase(1),
                                 terrain.layerAlbedoBase(2),
                                 terrain.layerAlbedoBase(3),
-                                terrain.layerAlbedoBase(4) });
+                                terrain.layerAlbedoBase(4) },
+                              heightFieldSnapshot());
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
@@ -1776,33 +1793,54 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                                 render::TerrainSystem::kChunkSize);
             if (occlusion.wantsRebuild(view.camera.position)) {
                 occlusion.rebuild(terrain.params, view.camera.position,
-                                  terrain.chunkTops());
+                                  terrain.chunkTops(),
+                                  tuning.sharedHeightField
+                                      ? heightField.snapshot()
+                                      : nullptr);
             }
         }
         if (cfg.gi) {
-            // The GI's albedo tile bounces the same tinted ground.
-            radianceCascades.terrainTintStrength = view.terrainTintStrength;
+            // The GI's albedo tile bounces the same tinted ground. The
+            // strength settles first: a panel drag used to re-kick the
+            // 65k-texel tile bake on every tick past 0.001 of delta.
+            radianceCascades.terrainTintStrength =
+                giTintSettle.settled(view.terrainTintStrength, frame.dt);
         }
         if (cfg.grass) {
             core::FrameProbe::Scope probe { *view.probe, "grass" };
             // Root-albedo bake follows the terrain's splat scale,
             // macro-tint strength and the ACTIVE material set's variant
-            // means (one ground-color source, cooked A/B included).
-            bool rootChanged = false;
+            // means (one ground-color source, cooked A/B included). The
+            // knobs settle first: a slider drag re-scattered the whole
+            // 49-chunk grass ring on every tick — now once, at its end.
+            std::array<f32, 14> liveKnobs {};
+            liveKnobs[0] = view.splatUvScale;
+            liveKnobs[1] = view.terrainTintStrength;
             for (u32 v = 0; v < 4; ++v) {
-                if (grass.scatterTuning.rootAlbedoBase[v] !=
-                    terrain.grassAlbedoBase(v)) {
-                    grass.scatterTuning.rootAlbedoBase[v] =
-                        terrain.grassAlbedoBase(v);
-                    rootChanged = true;
-                }
+                const Vec3 base = terrain.grassAlbedoBase(v);
+                liveKnobs[2 + v * 3 + 0] = base.x;
+                liveKnobs[2 + v * 3 + 1] = base.y;
+                liveKnobs[2 + v * 3 + 2] = base.z;
             }
-            if (grass.scatterTuning.splatUvScale != view.splatUvScale ||
-                grass.scatterTuning.tintStrength !=
-                    view.terrainTintStrength ||
-                rootChanged) {
-                grass.scatterTuning.splatUvScale = view.splatUvScale;
-                grass.scatterTuning.tintStrength = view.terrainTintStrength;
+            const std::array<f32, 14>& s =
+                grassKnobSettle.settled(liveKnobs, frame.dt);
+            bool changed =
+                grass.scatterTuning.splatUvScale != s[0] ||
+                grass.scatterTuning.tintStrength != s[1];
+            for (u32 v = 0; v < 4; ++v) {
+                changed = changed ||
+                          grass.scatterTuning.rootAlbedoBase[v] !=
+                              Vec3 { s[2 + v * 3 + 0], s[2 + v * 3 + 1],
+                                     s[2 + v * 3 + 2] };
+            }
+            if (changed) {
+                grass.scatterTuning.splatUvScale = s[0];
+                grass.scatterTuning.tintStrength = s[1];
+                for (u32 v = 0; v < 4; ++v) {
+                    grass.scatterTuning.rootAlbedoBase[v] =
+                        Vec3 { s[2 + v * 3 + 0], s[2 + v * 3 + 1],
+                               s[2 + v * 3 + 2] };
+                }
                 grass.regenerate(frame.device);
             }
             grass.update(frame.device, terrain.params,
@@ -1818,7 +1856,7 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             water.setRainIntensity(
                 view.interiorMode ? 0.0f : view.atmos.rainIntensity);
             water.update(frame.device, terrain.params,
-                         view.camera.position);
+                         view.camera.position, heightFieldSnapshot());
             water.updateSim(frame.device, terrain.params,
                             view.camera.position, frame.dt);
         }
@@ -1934,6 +1972,23 @@ void WorldRenderer::render(engine::FrameContext& frame,
         }
         LOG_INFO("gpu budget (avg/max ms, 120f): frame {:.2f}/{:.2f}{}",
                  gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs(), line);
+    }
+    // Worker-job telemetry: fold landed costs every frame; mirror the
+    // one-shot budget line for headless/scripted sessions.
+    if (jobSystem) {
+        core::JobProbe& probe = jobSystem->probe();
+        probe.drain();
+        if (perfFrames == 2000 && !probe.rows().empty()) {
+            str line;
+            char cell[96];
+            for (const core::JobProbe::Row& row : probe.rows()) {
+                std::snprintf(cell, sizeof(cell), " | %s %ux avg %.0fms",
+                              row.name, row.runs, row.averageMs());
+                line += cell;
+            }
+            LOG_INFO("cpu bakes (window): {:.1f} s total{}",
+                     probe.windowTotalMs() / 1000.0, line);
+        }
     }
     pumpPipelinesAndRequests(frame);
     pumpStreaming(frame, view);

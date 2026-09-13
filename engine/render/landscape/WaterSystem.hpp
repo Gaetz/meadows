@@ -6,8 +6,10 @@
 #include <functional>
 #include <string>
 
+#include "engine/core/Clock.hpp"
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/terrain/WaterBodies.hpp"
@@ -50,8 +52,11 @@ public:
 
     // Pumps finished pool-map bakes and triggers a rebake when the camera
     // strays or sea level / seed changed. Main thread, once per frame.
+    // `field` (nullable): the shared height pyramid — the pool bake
+    // samples it instead of pointwise terrain::height (exact when null).
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& cameraPos);
+                const Vec3& cameraPos,
+                sptr<const HeightField::Snapshot> field = nullptr);
 
     // Far water (E4a): flat lake sheets + river ribbons for the world
     // BEYOND the streamed tiles, drawn with the local pipeline (opaque,
@@ -164,6 +169,21 @@ public:
         simCache.clear();
         simFrozenClearPending = true; // frozen meshes hold old ground
     }
+    // True when the LIVE sim window overlaps the rect — the tile-publish
+    // path only forces the ground refresh (66k height() re-samples +
+    // cache drop) when a changed region actually reaches the window.
+    // No window yet = false (the pre-roll samples fresh ground anyway).
+    bool simWindowIntersects(f32 minX, f32 minZ, f32 maxX,
+                             f32 maxZ) const {
+        if (!simState) {
+            return false;
+        }
+        const auto& spec = simState->spec;
+        const f32 span =
+            static_cast<f32>(spec.n - 1) * spec.texelSize;
+        return spec.originX + span >= minX && spec.originX <= maxX &&
+               spec.originZ + span >= minZ && spec.originZ <= maxZ;
+    }
     // Once per frame, after update(). dt = real frame seconds.
     void updateSim(rhi::Device& device, const TerrainParams& params,
                    const Vec3& cameraPos, f32 dt);
@@ -203,6 +223,7 @@ private:
         u32 seed { 0 };
         f32 seaLevel { 0.0f };
         u64 bodiesStamp { 0 };
+        u64 contentStamp { 0 }; // rect-scoped via contentTouchedSince
         vector<f32> texels;
     };
     // Local (lakes + ribbons) geometry, built on a WORKER: the build
@@ -287,6 +308,7 @@ private:
     sptr<const WaterBodies> bodies;
     u64 bodiesStamp { 0 };
     u64 bakedBodiesStamp { ~0ull };
+    u64 bakedContentStamp { 0 }; // pool map, rect-scoped (touchedSince)
     bool bodiesDirty { false };
     bool localBuildInFlight { false };
     rhi::BufferHandle localVertexBuffer {};
@@ -296,6 +318,9 @@ private:
     bool farBuildInFlight { false };
     Vec2 farCenter { 1.0e9f, 1.0e9f };
     u64 farStamp { ~0ull };
+    // Content-stamp coalescing for the far collect (FarTerrain pattern).
+    u64 farLastSeenStamp { 0 };
+    core::TimePoint farQuietSince {};
     rhi::BufferHandle farVertexBuffer {};
     rhi::BufferHandle farIndexBuffer {};
     u32 farIndexCount { 0 };

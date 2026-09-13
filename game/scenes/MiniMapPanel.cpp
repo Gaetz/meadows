@@ -37,7 +37,8 @@ struct MiniMapPanel::Job {
 void MiniMapPanel::draw(rhi::Device& device, core::JobSystem& jobs,
                         const render::TerrainParams& terrain,
                         const Vec3& cameraPos, u64 contentStamp,
-                        bool* open) {
+                        bool* open,
+                        sptr<const render::HeightField::Snapshot> field) {
     // Publish a finished bake (main thread owns the GPU).
     if (pending && pending->done.load(std::memory_order_acquire)) {
         if (hasTexture) {
@@ -80,9 +81,13 @@ void MiniMapPanel::draw(rhi::Device& device, core::JobSystem& jobs,
         const f32 moved =
             glm::max(std::abs(cameraPos.x - bakedCenterX),
                      std::abs(cameraPos.z - bakedCenterZ));
+        const f32 half = bakedSpan * 0.5f; // bakedSpan = full extent
         stale = moved > bakedSpan * 0.12f ||
-                (contentStamp != bakedStamp &&
-                 kRadii[radiusIndex] <= kStampRefreshMaxRadius);
+                (kRadii[radiusIndex] <= kStampRefreshMaxRadius &&
+                 render::terrain::contentTouchedSince(
+                     terrain, bakedStamp, bakedCenterX - half,
+                     bakedCenterZ - half, bakedCenterX + half,
+                     bakedCenterZ + half));
     }
     if (stale && !pending) {
         auto job = std::make_shared<Job>();
@@ -99,8 +104,17 @@ void MiniMapPanel::draw(rhi::Device& device, core::JobSystem& jobs,
                       .maxZ = cameraPos.z + r,
                       .size = kSize };
         pending = job;
-        jobs.enqueue([job] {
-            job->pixels = generateMapRaster(job->desc);
+        jobs.enqueue([job, fieldRef = std::move(field), jobsRef = &jobs] {
+            if (jobsRef->isStopping()) {
+                return; // abandonable at shutdown: never marks done
+            }
+            core::JobProbe::Scope probe { &jobsRef->probe(), "miniMap" };
+            job->pixels = generateMapRaster(job->desc,
+                                            &jobsRef->stopFlag(),
+                                            fieldRef);
+            if (jobsRef->isStopping()) {
+                return; // partial raster: never lands
+            }
             job->done.store(true, std::memory_order_release);
         });
     }

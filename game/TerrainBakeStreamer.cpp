@@ -234,7 +234,7 @@ std::optional<render::terraingen::TileStage1> readStage1File(
 render::terraingen::TileStage1 ensureStage1(
     const std::filesystem::path& cacheDir,
     const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
-    const std::atomic<bool>* cancel) {
+    const std::atomic<bool>* cancel, core::JobProbe* probeSink) {
     const std::string stem =
         "s1_" + std::to_string(tx) + "_" + std::to_string(tz) + "_v" +
         std::to_string(render::terraingen::kStage1Version) + ".bin";
@@ -247,6 +247,7 @@ render::terraingen::TileStage1 ensureStage1(
         LOG_WARN("Terrain cache: rejected {} (corrupt), rebaking",
                  path.string());
     }
+    core::JobProbe::Scope probeScope { probeSink, "tileBake.stage1" };
     render::terraingen::TileStage1 s1 =
         render::terraingen::bakeTileStage1(params, tx, tz, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
@@ -264,7 +265,7 @@ sptr<const render::terraingen::TileStage1> acquireStage1(
     TerrainBakeStreamer::Stage1Registry& registry,
     const std::filesystem::path& cacheDir,
     const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
-    const std::atomic<bool>* cancel) {
+    const std::atomic<bool>* cancel, core::JobProbe* probeSink) {
     const u64 key = (static_cast<u64>(static_cast<u32>(tx)) << 32) |
                     static_cast<u64>(static_cast<u32>(tz));
     {
@@ -282,7 +283,7 @@ sptr<const render::terraingen::TileStage1> acquireStage1(
         registry.inflight.insert(key);
     }
     auto s1 = std::make_shared<render::terraingen::TileStage1>(
-        ensureStage1(cacheDir, params, tx, tz, cancel));
+        ensureStage1(cacheDir, params, tx, tz, cancel, probeSink));
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         // Shutdown mid-bake: the stage-1 is PARTIAL. Release the
         // inflight key and WAKE the waiters regardless — a worker
@@ -398,14 +399,18 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
                     if (jobsRef && jobsRef->isStopping()) {
                         return; // mid-bake quit checkpoint
                     }
-                    stage1s[dz + 1][dx + 1] =
-                        acquireStage1(*registry, cacheDir, params,
-                                      tx + dx, tz + dz, cancel);
+                    stage1s[dz + 1][dx + 1] = acquireStage1(
+                        *registry, cacheDir, params, tx + dx, tz + dz,
+                        cancel, jobsRef ? &jobsRef->probe() : nullptr);
                 }
             }
             if (jobsRef && jobsRef->isStopping()) {
                 return;
             }
+            core::JobProbe::Scope probeScope {
+                jobsRef ? &jobsRef->probe() : nullptr,
+                "tileBake.finalize"
+            };
             render::terraingen::TileBakeResult baked =
                 render::terraingen::bakeTileStage2(
                     params, tx, tz,

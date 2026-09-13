@@ -55,7 +55,8 @@ TEST_CASE("spawn diagnostic" * doctest::skip()) {
     // Baked ground at the spawn.
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(baked.region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(baked.region));
     tp.base = base;
     auto sandbox = std::make_shared<render::SandboxTerrain>();
     sandbox->controls = controlParams;
@@ -151,8 +152,10 @@ TEST_CASE("spawn diagnostic 2" * doctest::skip()) {
     const TileBakeResult b = bakeTile(params, 0, 0);
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(a.region);
-    base->regions.push_back(b.region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(a.region));
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(b.region));
     tp.base = base;
     auto sandbox = std::make_shared<render::SandboxTerrain>();
     sandbox->controls = params.controls;
@@ -606,7 +609,8 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
     const TileBakeResult b = bakeTile(params, 2, 0);
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(b.region);
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(b.region));
     tp.base = base;
     auto sandbox = std::make_shared<render::SandboxTerrain>();
     sandbox->controls = params.controls;
@@ -792,7 +796,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         MESSAGE("tile (", key.first, ", ", key.second, "): ",
                 baked.lakes.size(), " lakes, ", baked.rivers.size(),
                 " rivers");
-        base->regions.push_back(baked.region);
+        base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(baked.region));
         for (const Lake& lake : baked.lakes) {
             render::LakeSurface surface;
             surface.level = lake.level;
@@ -1320,7 +1325,8 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
     auto base = std::make_shared<render::TerrainBase>();
     for (const i32 tz : { -1, 0, 1 }) {
         MESSAGE("baking tile (2, ", tz, ")");
-        base->regions.push_back(bakeTile(params, 2, tz).region);
+        base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(bakeTile(params, 2, tz).region));
     }
     render::TerrainParams tp;
     tp.base = base;
@@ -1383,7 +1389,9 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
         u32 touched = 0;
         u32 bandLand[5] = {};
         u32 bandFull[5] = {};
-        for (const render::TerrainRegion& region : base->regions) {
+        for (const sptr<const render::TerrainRegion>& regionPtr :
+             base->regions) {
+            const render::TerrainRegion& region = *regionPtr;
             for (f32 z = region.originZ + 200.0f;
                  z < region.originZ + region.spanZ() - 200.0f;
                  z += 32.0f) {
@@ -1599,7 +1607,8 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
             }
         }
         auto base = std::make_shared<render::TerrainBase>();
-        base->regions.push_back(baked.region);
+        base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(baked.region));
         render::TerrainParams tp;
         tp.base = base;
         for (const Lake& lake : baked.lakes) {
@@ -1665,7 +1674,8 @@ TEST_CASE("river wetness diagnostic" * doctest::skip()) {
         MESSAGE("baking tile (", tx, ", ", tz, ")");
         const TileBakeResult baked = bakeTile(params, tx, tz);
         auto base = std::make_shared<render::TerrainBase>();
-        base->regions.push_back(baked.region);
+        base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(baked.region));
         render::TerrainParams tp;
         tp.base = base;
         u32 samples = 0;
@@ -1886,8 +1896,9 @@ TEST_CASE("analytic sea mismatch diagnostic" * doctest::skip()) {
     const f32 seaLevel = params.macro.seaLevel;
     MESSAGE("baking tile (3, 0)");
     auto base = std::make_shared<render::TerrainBase>();
-    base->regions.push_back(bakeTile(params, 3, 0).region);
-    const render::TerrainRegion& region = base->regions.front();
+    base->regions.push_back(
+        std::make_shared<render::TerrainRegion>(bakeTile(params, 3, 0).region));
+    const render::TerrainRegion& region = *base->regions.front();
     render::TerrainParams tp;
     tp.base = base;
     u32 seaTexels = 0;

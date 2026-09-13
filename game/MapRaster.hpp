@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
+
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 
 // The in-game map raster: a stylized top-down RGBA image
@@ -35,7 +38,15 @@ Vec2 mapUv(const MapRasterDesc& desc, f32 worldX, f32 worldZ);
 // blues), land tinted by the material weights (grass/rock/snow/sand) and
 // shaded by the terrain normal + a quantized hypsometric lift. Returns
 // size * size * 4 tightly packed RGBA bytes (alpha 255). Deterministic:
-// the same desc gives bit-identical bytes.
-vector<u8> generateMapRaster(const MapRasterDesc& desc);
+// the same desc gives bit-identical bytes. `cancel` is the JobSystem
+// stop flag: polled per row, a raised flag returns a PARTIAL raster the
+// caller must drop (shutdown path — never display or cache it).
+// `field` (nullable): the shared height pyramid — the height grid then
+// reads it (its own fallback covers what it does not) instead of the
+// pointwise function. The minimap passes it; the full-map painter and
+// tests stay exact.
+vector<u8> generateMapRaster(
+    const MapRasterDesc& desc, const std::atomic<bool>* cancel = nullptr,
+    sptr<const render::HeightField::Snapshot> field = nullptr);
 
 } // namespace game

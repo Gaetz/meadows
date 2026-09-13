@@ -32,6 +32,13 @@ struct LandscapeTuningForm : Form {
     i32 terrainViewRadius { 30 };
     // Distant silhouettes past the ring (FarTerrain, ~12 km coarse mesh).
     bool farTerrain { true };
+    // Impostor grounding on the far bake's own half-grid (A/B vs the
+    // analytic function — docs/CPU-PERF.md).
+    bool farImpostorsFromGrid { true };
+    // Camera drift (m) before the horizon-occlusion table rebakes.
+    f32 occlusionRebuildDistance { 24.0f };
+    // Shared height pyramid (E3) master switch.
+    bool sharedHeightField { true };
     // Tree-bark source textures (diffuse guid; the _nor_gl_/_disp_
     // siblings are derived by filename). Moddable like the terrain
     // arrays — defaults = the shipped oak/pine scans.
@@ -195,6 +202,9 @@ struct LandscapeTuningForm : Form {
     f32 grassPresenceLo { 0.08f };
     f32 grassPresenceHi { 0.40f };
     f32 grassMaterialCutoff { 0.72f };
+    // Root tint from a coarse ~8 m lattice instead of one macro-shading
+    // eval per corner (A/B — docs/CPU-PERF.md).
+    bool grassCoarseTint { true };
     // Ground mist structure (mist.frag; density/coverage are per-weather
     // — WeatherForm). Scales in 1/m, lift/reach in meters.
     bool mistEnabled { true };
@@ -299,6 +309,9 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(terrainViewRadius)
         REFLECT_FIELD(farTerrain)
+        REFLECT_FIELD(farImpostorsFromGrid)
+        REFLECT_FIELD(occlusionRebuildDistance)
+        REFLECT_FIELD(sharedHeightField)
         REFLECT_FIELD(barkOakDiffuse)
         REFLECT_FIELD(barkPineDiffuse)
         REFLECT_FIELD(snowLine)
@@ -388,6 +401,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(grassPresenceLo)
         REFLECT_FIELD(grassPresenceHi)
         REFLECT_FIELD(grassMaterialCutoff)
+        REFLECT_FIELD(grassCoarseTint)
         REFLECT_FIELD(mistEnabled)
         REFLECT_FIELD(mistReach)
         REFLECT_FIELD(mistLift)
@@ -615,6 +629,8 @@ struct RcTuningForm : Form {
     f32 coarseVoxel { 2.0f };
     i32 cascadeCount { 5 };
     i32 updateInterval { 1 };
+    f32 tileRebakeDrift { 0.25f };
+    bool gridNormals { true };
     i32 technique { 1 };
     f32 intensity { 0.7f };
     f32 skyFactor { 0.6f };
@@ -637,6 +653,8 @@ struct RcTuningForm : Form {
         REFLECT_FIELD(coarseVoxel)
         REFLECT_FIELD(cascadeCount)
         REFLECT_FIELD(updateInterval)
+        REFLECT_FIELD(tileRebakeDrift)
+        REFLECT_FIELD(gridNormals)
         REFLECT_FIELD(technique)
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(skyFactor)

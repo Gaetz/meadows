@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 
@@ -82,12 +83,79 @@ struct TerrainRegion {
 };
 
 struct TerrainBase {
-    vector<TerrainRegion> regions; // few; linear scan, first hit wins
+    // Ascending order is the blend order. Regions are SHARED-IMMUTABLE:
+    // a published region's buffers are never mutated in place (sculpt
+    // rides HeightPatches; a re-bake replaces the handle), so copying a
+    // TerrainBase on publish copies handles, not the ~18 MB of buffers
+    // per region (docs/CPU-PERF.md).
+    vector<sptr<const TerrainRegion>> regions;
+
+    // Optional accelerator over the per-sample region scan: world-lattice
+    // cell -> ASCENDING indices of the regions whose rect intersects it.
+    // Ascending is load-bearing — the overlap-band float accumulation in
+    // terrain::height() must visit regions in the same order as the
+    // linear scan to stay bit-identical. Empty map = linear scan (tests
+    // and tools that assemble a bare TerrainBase stay correct unchanged);
+    // producers call buildIndex() after regions are final — a published
+    // TerrainBase is immutable, so the index never goes stale.
+    std::unordered_map<u64, vector<u32>> cellIndex;
+    static constexpr f32 kIndexCell = 4096.0f;
+
+    static u64 cellKey(i32 cx, i32 cz) {
+        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
+               static_cast<u64>(static_cast<u32>(cz));
+    }
+
+    void buildIndex() {
+        cellIndex.clear();
+        for (u32 i = 0; i < static_cast<u32>(regions.size()); ++i) {
+            const TerrainRegion& r = *regions[i];
+            if (r.width < 2 || r.height < 2) {
+                continue; // contains() is always false for these
+            }
+            const i32 cx0 =
+                static_cast<i32>(std::floor(r.originX / kIndexCell));
+            const i32 cx1 = static_cast<i32>(
+                std::floor((r.originX + r.spanX()) / kIndexCell));
+            const i32 cz0 =
+                static_cast<i32>(std::floor(r.originZ / kIndexCell));
+            const i32 cz1 = static_cast<i32>(
+                std::floor((r.originZ + r.spanZ()) / kIndexCell));
+            for (i32 cz = cz0; cz <= cz1; ++cz) {
+                for (i32 cx = cx0; cx <= cx1; ++cx) {
+                    // push_back over ascending i keeps buckets sorted.
+                    cellIndex[cellKey(cx, cz)].push_back(i);
+                }
+            }
+        }
+    }
+
+    // The candidate regions for (x, z) when the index is built, else
+    // null (caller falls back to the linear scan). A missing bucket
+    // returns a static empty list — no region covers that cell.
+    const vector<u32>* bucketAt(f32 x, f32 z) const {
+        if (cellIndex.empty()) {
+            return nullptr;
+        }
+        static const vector<u32> kEmpty;
+        const auto it = cellIndex.find(
+            cellKey(static_cast<i32>(std::floor(x / kIndexCell)),
+                    static_cast<i32>(std::floor(z / kIndexCell))));
+        return it != cellIndex.end() ? &it->second : &kEmpty;
+    }
 
     const TerrainRegion* regionAt(f32 x, f32 z) const {
-        for (const TerrainRegion& region : regions) {
-            if (region.contains(x, z)) {
-                return &region;
+        if (const vector<u32>* bucket = bucketAt(x, z)) {
+            for (const u32 i : *bucket) {
+                if (regions[i]->contains(x, z)) {
+                    return regions[i].get();
+                }
+            }
+            return nullptr;
+        }
+        for (const sptr<const TerrainRegion>& region : regions) {
+            if (region->contains(x, z)) {
+                return region.get();
             }
         }
         return nullptr;

@@ -5,6 +5,7 @@
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 
 namespace core {
@@ -35,7 +36,6 @@ public:
     static constexpr f32 kRingStep = 32.0f;    // meters between samples
     static constexpr u32 kRingCount = 30;      // default reach: 960 m
     static constexpr f32 kPropHeadroom = 86.0f; // tallest scaled tree
-    static constexpr f32 kRebuildDistance = 8.0f; // camera delta triggering
 
     // The reach and fan density follow the LIVE view radius (configure):
     // rings cover the whole ring, and past ~1 km the 2° fan doubles so a
@@ -51,6 +51,12 @@ public:
         u64 generation { 0 };
         u32 rings { kRingCount };
         u32 rays { kRayCount };
+        // Shared height pyramid (E3): rays read it at a 16 m footprint
+        // instead of the exact function. Null = exact path (headless
+        // tests, master toggle off). Grids smooth peaks DOWN, so the
+        // horizon can only drop — and a lower horizon culls LESS: the
+        // class's conservative direction is preserved.
+        sptr<const HeightField::Snapshot> field;
     };
     struct Result {
         u64 generation { 0 };
@@ -58,6 +64,12 @@ public:
     };
 
     void create(core::JobSystem& jobSystem);
+
+    // Camera drift (m, 3D — climbing counts) before the horizon rebakes.
+    // The verdicts err toward "keep drawing" PER POSITION; the drift only
+    // ages them — a crest walked past the hysteresis can pop late, which
+    // is what the panel knob A/B validates (docs/CPU-PERF.md).
+    f32 rebuildDistance { 24.0f };
 
     // Main thread, once per frame: drains finished worker results.
     void pump();
@@ -67,7 +79,8 @@ public:
     // table (a copy is only made in that case) and calls rebuild().
     bool wantsRebuild(const Vec3& cameraPos) const;
     void rebuild(const TerrainParams& params, const Vec3& cameraPos,
-                 std::unordered_map<u64, f32> chunkTops);
+                 std::unordered_map<u64, f32> chunkTops,
+                 sptr<const HeightField::Snapshot> field = nullptr);
 
     // Terrain seed changed / teleport: drop the set, invalidate in-flight.
     void invalidate();

@@ -488,8 +488,8 @@ MoltenVK exposes no RT anyway).
   `LandscapeTuningForm::terrainViewRadius`, 8-30 chunks = 512-1920 m;
   chunk count grows (2r+1)² — watch F6).
 - **Far terrain** (`FarTerrain`, 2026-07-30 — the "see the landscape"
-  chantier): ONE coarse worker-baked grid (193², ~12 km span, 62 m
-  cells, ~220k tris) of the same height function, drawn under the near
+  chantier): ONE coarse worker-baked grid (257², 18 km span, ~70 m
+  cells, ~131k tris) of the same height function, drawn under the near
   terrain in the main pass — ridgeline silhouettes to ~5 km, painted
   with the SHARED `terrainColor` palette and raised+darkened by the
   SHARED `forestMask` (both made public for it), so the distant forest
@@ -504,10 +504,13 @@ MoltenVK exposes no RT anyway).
   sub-half-cell relief, and what the min gave up (true-height delta +
   canopy raise) rides uv.x, restored by the vertex shader beyond the
   streaming ring where the crests must keep their real silhouettes.
-  The horizon closure moves out to `FarTerrain::reach()` (~5 km) when
+  The horizon closure moves out to `FarTerrain::reach()` (~7.5 km) when
   it stands in. Flat shading (color × (ambient + sun·N·L × cloud
   shadow)) + `applyFog` — the veil does the silhouette work. Rebake on
-  1 km stray; toggle "Far terrain" (persisted `farTerrain`).
+  1440 m stray; a tile-publish burst coalesces (1 s of content-stamp
+  quiet, one rebake per burst) and the bake samples the shared height
+  pyramid when available (docs/CPU-PERF.md); toggle "Far terrain"
+  (persisted `farTerrain`).
   **Tree impostors** ride the same bake: cylindrical billboards
   scattered with the REAL forestMask + tree gates at 3.5x the real
   spacing (700 m → 5.2 km, IGN-dither dissolve at both ends, so they
@@ -737,6 +740,14 @@ live knob) + temporal EMA.
   blocking), CPU column (FrameProbe), geometry counters (Mtri per system
   — the honest dissection on Metal, where mid-pass timestamps are
   structurally meaningless: `caps().midPassTimestamps`).
+- **JobProbe / "Worker jobs" F6 table + `cpu bakes` log line**: named
+  worker-bake costs (the CPU side the GPU table never saw). The CPU
+  economy work — the shared `render::HeightField` pyramid the coarse
+  maps (light/shade/mist/pool, occlusion, far terrain, minimap) sample
+  instead of pointwise `terrain::height()`, the rect-scoped
+  `contentTouchedSince` invalidation, the trigger hysteresis knobs —
+  is journaled in **`docs/CPU-PERF.md`** (baseline, per-brick numbers,
+  invariants). Master A/B: "Shared height field" (Terrain panel).
 - **`gpu budget` log line**: the F6 table auto-logged once at frame 2000
   (warmup passed, window full) — measurement for scripted/headless
   sessions.

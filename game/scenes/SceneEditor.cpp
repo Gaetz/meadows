@@ -337,8 +337,10 @@ void SceneEditor::draw(const EditorContext& ctx) {
         }
     }
 
-    // The editor window.
-    ImGui::Begin("Level editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    // The editor window. Sized/resizable with a scrollbar — auto-resize
+    // grew past the screen with the tool sections and hid the bottom.
+    ImGui::SetNextWindowSize(ImVec2(420.0f, 640.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Level editor");
     ImGui::TextUnformatted(
         "LMB: pick / place / sculpt | Ctrl+LMB: add to group | 1/2/3: gizmo "
         "op\nHold RMB (or Alt+LMB): look + WASD: fly | F3: back to Play");

@@ -50,6 +50,24 @@ std::optional<f32> riverSurface(const RiverSurface& river, f32 x, f32 z,
     return best;
 }
 
+// A MASKED lake's basin mask is the authority: any depth inside
+// it is genuinely underwater (the below-slack heuristic exists
+// for hand-authored bbox ponds over galleries — applied to
+// generated lakes it read the bottom of a deep basin as DRY,
+// and spawned players and trees 70 m under the surface).
+void lakeBest(const LakeSurface& lake, f32 x, f32 z, f32 probeY,
+              std::optional<f32>& best) {
+    if (!lake.covers(x, z)) {
+        return;
+    }
+    const bool inReach = lake.mask.empty()
+                             ? plausible(lake.level, probeY)
+                             : probeY < lake.level + kAboveSlack;
+    if (inReach && (!best || lake.level > *best)) {
+        best = lake.level;
+    }
+}
+
 } // namespace
 
 std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
@@ -59,21 +77,7 @@ std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
         best = bodies.seaLevel;
     }
     for (const LakeSurface& lake : bodies.lakes) {
-        if (!lake.covers(x, z)) {
-            continue;
-        }
-        // A MASKED lake's basin mask is the authority: any depth inside
-        // it is genuinely underwater (the below-slack heuristic exists
-        // for hand-authored bbox ponds over galleries — applied to
-        // generated lakes it read the bottom of a deep basin as DRY,
-        // and spawned players and trees 70 m under the surface).
-        const bool inReach =
-            lake.mask.empty()
-                ? plausible(lake.level, probeY)
-                : probeY < lake.level + kAboveSlack;
-        if (inReach && (!best || lake.level > *best)) {
-            best = lake.level;
-        }
+        lakeBest(lake, x, z, probeY, best);
     }
     for (const RiverSurface& river : bodies.rivers) {
         const auto level = riverSurface(river, x, z, probeY);
@@ -82,6 +86,52 @@ std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
         }
     }
     return best;
+}
+
+WaterBodiesSubset waterBodiesInRect(const WaterBodies& bodies, f32 minX,
+                                    f32 minZ, f32 maxX, f32 maxZ) {
+    WaterBodiesSubset subset;
+    for (u32 i = 0; i < static_cast<u32>(bodies.lakes.size()); ++i) {
+        const LakeSurface& lake = bodies.lakes[i];
+        if (lake.maxX >= minX && lake.minX <= maxX &&
+            lake.maxZ >= minZ && lake.minZ <= maxZ) {
+            subset.lakes.push_back(i);
+        }
+    }
+    for (u32 i = 0; i < static_cast<u32>(bodies.rivers.size()); ++i) {
+        const RiverSurface& river = bodies.rivers[i];
+        if (river.maxX >= minX && river.minX <= maxX &&
+            river.maxZ >= minZ && river.minZ <= maxZ) {
+            subset.rivers.push_back(i);
+        }
+    }
+    return subset;
+}
+
+std::optional<f32> waterSurfaceAt(const WaterBodies& bodies,
+                                  const WaterBodiesSubset& subset, f32 x,
+                                  f32 z, f32 probeY) {
+    std::optional<f32> best;
+    if (probeY < bodies.seaLevel + kAboveSlack) {
+        best = bodies.seaLevel;
+    }
+    for (const u32 i : subset.lakes) {
+        lakeBest(bodies.lakes[i], x, z, probeY, best);
+    }
+    for (const u32 i : subset.rivers) {
+        const auto level = riverSurface(bodies.rivers[i], x, z, probeY);
+        if (level && (!best || *level > *best)) {
+            best = level;
+        }
+    }
+    return best;
+}
+
+f32 waterDepthAt(const WaterBodies& bodies,
+                 const WaterBodiesSubset& subset, f32 x, f32 z,
+                 f32 terrainY) {
+    const auto surface = waterSurfaceAt(bodies, subset, x, z, terrainY);
+    return surface ? glm::max(*surface - terrainY, 0.0f) : 0.0f;
 }
 
 RiverFlowSample riverFlowSample(const RiverSurface& river, f32 x, f32 z) {

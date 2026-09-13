@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "engine/core/FrameProbe.hpp"
+#include "engine/core/SettleTimer.hpp"
 #include "engine/render/Camera3D.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/render/GpuProbe.hpp"
@@ -16,6 +17,7 @@
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/FarTerrain.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
@@ -143,6 +145,14 @@ public:
 
     const RendererConfig& config() const { return cfg; }
 
+    // The shared height pyramid's live snapshot — null when the master
+    // toggle is off (consumers then run their exact pointwise paths) or
+    // before the first level lands.
+    sptr<const render::HeightField::Snapshot> heightFieldSnapshot() const {
+        return tuning.sharedHeightField ? heightField.snapshot()
+                                        : nullptr;
+    }
+
     // True once when a panel's Save button was pressed (the scene owns
     // the plugin stack and performs the write).
     bool consumeSaveTuningRequest() {
@@ -261,6 +271,14 @@ public:
         bool clusteredLights { true };
         bool terrainLight { true }; // worker-baked terrain sun/sky map
         bool farTerrain { true };   // distant silhouettes (§3.6)
+        // Master switch of the shared height pyramid (E3): off = the
+        // pyramid stops filling and every converted consumer falls
+        // back to its exact pointwise path (same code, null snapshot).
+        bool sharedHeightField { true };
+        // A/B: far tree impostors ground on the bake's own 35 m
+        // half-grid instead of 5 analytic height() per candidate
+        // (sub-texel placement shifts at >1 km — validate visually).
+        bool farImpostorsFromGrid { true };
         bool mist { true };         // ground-mist raymarch (§3.5)
         // Live mist tuning (panel "Ground mist"); density/coverage are
         // weather-owned and ride AtmosphereParams instead.
@@ -450,6 +468,14 @@ private:
     render::LightClusters lightClusters;
     render::GpuProbe gpuProbe; // per-pass GPU budget (docs/RENDERING.md)
     u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
+    // The JobSystem the subsystems bake on; kept for the worker-job
+    // cost table (JobProbe drain + the one-shot "cpu bakes" log line).
+    core::JobSystem* jobSystem { nullptr };
+    // Knob-drag debouncers: expensive rebakes fire once per drag.
+    core::SettleTimer<f32> giTintSettle;
+    core::SettleTimer<array<f32, 14>> grassKnobSettle;
+    // The shared height pyramid the coarse maps sample (E3 axis).
+    render::HeightField heightField;
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;

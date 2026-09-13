@@ -36,8 +36,14 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
         f32 maxSlope = -1e9f;
         for (u32 ring = 0; ring < kRings; ++ring) {
             const f32 d = kStep * static_cast<f32>(ring + 1);
-            const f32 h = terrain::height(input.params, cam.x + dirX * d,
-                                          cam.z + dirZ * d);
+            const f32 wx = cam.x + dirX * d;
+            const f32 wz = cam.z + dirZ * d;
+            // 16 m footprint on the shared grid (L1 spans the whole
+            // reach); exact function without a snapshot — see Input.
+            const f32 h =
+                input.field
+                    ? input.field->heightCoarse(wx, wz, 16.0f)
+                    : terrain::height(input.params, wx, wz);
             maxSlope = glm::max(maxSlope, (h - cam.y) / d);
             horizon[ray * kRings + ring] = maxSlope;
         }
@@ -147,17 +153,21 @@ void ChunkOcclusion::pump() {
 
 bool ChunkOcclusion::wantsRebuild(const Vec3& cameraPos) const {
     return !inFlight &&
-           glm::distance(cameraPos, lastRebuildPos) > kRebuildDistance;
+           glm::distance(cameraPos, lastRebuildPos) > rebuildDistance;
 }
 
 void ChunkOcclusion::rebuild(const TerrainParams& params,
                              const Vec3& cameraPos,
-                             std::unordered_map<u64, f32> chunkTops) {
+                             std::unordered_map<u64, f32> chunkTops,
+                             sptr<const HeightField::Snapshot> field) {
     inFlight = true;
     lastRebuildPos = cameraPos;
-    Input input { params,     cameraPos, std::move(chunkTops),
-                  generation, rings,     rays };
-    jobs->enqueue([sharedRef = shared, in = std::move(input)] {
+    Input input { params, cameraPos,  std::move(chunkTops), generation,
+                  rings,  rays,       std::move(field) };
+    jobs->enqueue([sharedRef = shared, in = std::move(input),
+                   jobsRef = jobs] {
+        core::JobProbe::Scope probe { &jobsRef->probe(),
+                                      "occlusionHorizon" };
         sharedRef->results.push(computeOcclusion(in));
     });
 }

@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "engine/core/FrameProbe.hpp"
+#include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/render/AtmosphereParams.hpp"
@@ -66,6 +67,46 @@ void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
     ImGui::EndTable();
     if (r.gpuProbe.rows().empty()) {
         ImGui::TextDisabled("(warming up — first frames resolving)");
+    }
+
+    // Worker-job costs (JobProbe): what the bakes burn off-frame. Total
+    // accumulates since the last reset — the chantier-économie baseline
+    // number (docs/CPU-PERF.md).
+    if (r.jobSystem) {
+        core::JobProbe& jobProbe = r.jobSystem->probe();
+        ImGui::SeparatorText("Worker jobs (since reset)");
+        ImGui::Text("CPU bakes: %.1f s total", jobProbe.windowTotalMs() / 1000.0);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("reset##jobs")) {
+            jobProbe.resetWindow();
+        }
+        if (ImGui::BeginTable("jobperf", 5,
+                              ImGuiTableFlags_SizingStretchProp |
+                                  ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("job");
+            ImGui::TableSetupColumn("runs");
+            ImGui::TableSetupColumn("avg (ms)");
+            ImGui::TableSetupColumn("max");
+            ImGui::TableSetupColumn("total");
+            ImGui::TableHeadersRow();
+            for (const core::JobProbe::Row& row : jobProbe.rows()) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.name);
+                ImGui::TableNextColumn();
+                ImGui::Text("%u", row.runs);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f", row.averageMs());
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f", row.maxMs);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.0f", row.totalMs);
+            }
+            ImGui::EndTable();
+        }
+        if (jobProbe.rows().empty()) {
+            ImGui::TextDisabled("(no named worker jobs landed yet)");
+        }
     }
 
     // CPU-side geometry counters, ALL passes summed (casters,
@@ -330,6 +371,14 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         // Coarse 12 km silhouette mesh past the ring (terrain + forest
         // fringe dissolving into the sky).
         ImGui::Checkbox("Far terrain (silhouettes)", &r.tuning.farTerrain);
+        // A/B chantier économie: impostor grounding from the bake's own
+        // half-grid vs the analytic function (re-bakes on toggle).
+        ImGui::Checkbox("Far impostors from grid",
+                        &r.tuning.farImpostorsFromGrid);
+        // Master A/B of the shared height pyramid (E3) — consumers off
+        // it fall back to their exact pointwise paths.
+        ImGui::Checkbox("Shared height field",
+                        &r.tuning.sharedHeightField);
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
         ImGui::SliderFloat("Season: autumn", &r.tuning.seasonAutumn, 0.0f,
@@ -362,6 +411,11 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         ImGui::Checkbox("GPU Hi-Z", &r.tuning.gpuOcclusion);
         ImGui::SameLine();
         ImGui::Checkbox("Indirect draw", &r.tuning.gpuIndirect);
+        // Horizon rebake hysteresis (chantier économie): the verdicts
+        // stay conservative per position; the drift only ages them.
+        ImGui::SliderFloat("Occlusion rebake drift (m)",
+                           &r.occlusion.rebuildDistance, 8.0f, 64.0f,
+                           "%.0f");
         ImGui::Checkbox("Wireframe (LOD debug)", &r.tuning.wireframe);
     }
 }
@@ -437,6 +491,10 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::SliderFloat("Material cutoff", &st.materialCutoff, 0.0f,
                            1.0f, "%.2f");
         scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        // A/B: coarse ~8 m tint lattice vs one macro-shading eval per
+        // 0.6 m corner (docs/CPU-PERF.md).
+        scatterEdited |=
+            ImGui::Checkbox("Coarse tint lattice", &st.coarseTint);
         if (scatterEdited || ImGui::Button("Rescatter now")) {
             r.grassRescatterRequested = true;
         }
@@ -462,6 +520,15 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::SliderFloat("Coarse voxel (m)", &rc.coarseVoxel, 1.0f, 4.0f,
                            "%.1f");
         ImGui::SliderInt("Update every N frames", &rc.updateInterval, 1, 4);
+        ImGui::SliderFloat("GI tile rebake drift", &rc.tileRebakeDrift,
+                           0.05f, 0.5f, "%.2f");
+        // Wide-stencil grid normals in the tile bake (~÷4 on its cost);
+        // OFF = the exact analytic reference path.
+        ImGui::Checkbox("GI tile grid normals", &rc.gridNormals);
+        ImGui::TextDisabled("rebake after %.0f m of camera travel",
+                            static_cast<f32>(rc.resolution) *
+                                rc.coarseVoxel * 1.25f *
+                                rc.tileRebakeDrift);
         ImGui::SeparatorText("Cascades");
         ImGui::SliderInt("Cascade count", &rc.cascadeCount, 2, 6);
         ImGui::SliderFloat("Interval 0 (m)", &rc.interval0, 0.25f, 4.0f,

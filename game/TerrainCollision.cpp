@@ -81,7 +81,10 @@ bool TerrainCollision::request(i32 tx, i32 tz, bool& budget) {
     pending.insert(key);
     const Vec3 origin { static_cast<f32>(tx) * kTileEdge, 0.0f,
                         static_cast<f32>(tz) * kTileEdge };
-    jobs->enqueue([queue = built, tileParams = params, key, origin] {
+    jobs->enqueue([queue = built, tileParams = params, key, origin,
+                   jobsRef = jobs] {
+        core::JobProbe::Scope probe { &jobsRef->probe(),
+                                      "collisionTile" };
         queue->push({ key, origin, sampleTile(tileParams, origin) });
     });
     return false;

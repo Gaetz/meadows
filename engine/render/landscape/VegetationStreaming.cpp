@@ -64,7 +64,7 @@ void VegetationSystem::InstancePool::tick() {
 
 void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem, u32 terrainSeed) {
-    streamer.create(jobSystem);
+    streamer.create(jobSystem, "vegScatter");
     meshSeed = terrainSeed;
     instancePool.buffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,

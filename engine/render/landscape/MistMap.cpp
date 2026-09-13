@@ -46,7 +46,7 @@ void boxBlurAxis(const vector<f32>& src, vector<f32>& dst, u32 size,
 } // namespace
 
 void MistMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    mailbox.create(jobSystem);
+    mailbox.create(jobSystem, "mistMap");
     sampler = device.createSampler({});
     // The texture is (re)created per landed bake — the RHI has no texture
     // update, and a rebuild every ~500 m of travel costs nothing.
@@ -64,7 +64,8 @@ void MistMap::destroy(rhi::Device& device) {
 }
 
 void MistMap::update(rhi::Device& device, const TerrainParams& params,
-                     const Vec3& focus) {
+                     const Vec3& focus,
+                     sptr<const HeightField::Snapshot> field) {
     // 1. Land a finished bake (fresh texture + group).
     mailbox.drain([&](Baked& done) {
         if (texture.id != 0) {
@@ -108,7 +109,8 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
     // the swap never pops (the no-crossfade invariant — see header).
     constexpr f32 kTexel = kSpan / static_cast<f32>(kSize);
     const Vec2 want = glm::floor(camXz / kTexel) * kTexel;
-    mailbox.kick([params, want](Baked& baked) {
+    mailbox.kick([params, want, field = std::move(field)](
+                     Baked& baked, const std::atomic<bool>& stop) {
         baked.center = want;
         baked.seed = params.seed;
         baked.seaLevel = params.seaLevel;
@@ -119,12 +121,19 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
         const f32 originZ = want.y - kSpan * 0.5f;
         vector<f32> heights(static_cast<size_t>(kSize) * kSize);
         for (u32 row = 0; row < kSize; ++row) {
+            if (stop.load(std::memory_order_relaxed)) {
+                return; // shutdown: the mailbox drops the partial bake
+            }
             for (u32 col = 0; col < kSize; ++col) {
+                const f32 x =
+                    originX + (static_cast<f32>(col) + 0.5f) * texel;
+                const f32 z =
+                    originZ + (static_cast<f32>(row) + 0.5f) * texel;
+                // Shared grid (8 m texels, blurred ~96 m after): the
+                // snapshot's own fallback covers the uncovered rim.
                 heights[static_cast<size_t>(row) * kSize + col] =
-                    terrain::height(
-                        params,
-                        originX + (static_cast<f32>(col) + 0.5f) * texel,
-                        originZ + (static_cast<f32>(row) + 0.5f) * texel);
+                    field ? field->height(x, z)
+                          : terrain::height(params, x, z);
             }
         }
         // Smoothed height = the surface the mist pools under (~96 m box).

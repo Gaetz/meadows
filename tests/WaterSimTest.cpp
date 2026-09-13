@@ -984,5 +984,11 @@ TEST_CASE("water sim: kernel perf gate") {
         seconds * 1.0e9 /
         (static_cast<f64>(spec.cells()) * static_cast<f64>(iters));
     MESSAGE("water sim kernel: ", nsPerCellIter, " ns/cell/substep");
+#ifdef NDEBUG
     CHECK(nsPerCellIter < 100.0);
+#else
+    // Debug-STL container checks blow the budget; the gate only binds
+    // optimized builds.
+    WARN(nsPerCellIter < 100.0);
+#endif
 }

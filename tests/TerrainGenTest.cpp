@@ -226,6 +226,40 @@ TEST_CASE("uplift is zero at sea and bounded on land") {
     CHECK(maxUplift > 0.2f);
 }
 
+TEST_CASE("control sample with out-continentalness is bit-identical") {
+    // The two-output overload must be THE same evaluation: same sample
+    // fields bitwise, and the handed-back continentalness equal to a
+    // direct call — the dedupe in macroHeightAnalytic rests on it.
+    ProceduralControlParams pc;
+    pc.seed = 777;
+    const ProceduralControls controls { pc };
+    for (i32 gz = -8; gz <= 8; ++gz) {
+        for (i32 gx = -8; gx <= 8; ++gx) {
+            const f32 x = static_cast<f32>(gx) * 3777.0f;
+            const f32 z = static_cast<f32>(gz) * 2913.0f;
+            const ControlSample a = controls.at(x, z);
+            f32 c = -1.0f;
+            const ControlSample b = controls.at(x, z, c);
+            REQUIRE(a.sea == b.sea);
+            REQUIRE(a.biome == b.biome);
+            REQUIRE(a.tier == b.tier);
+            REQUIRE(a.uplift == b.uplift);
+            REQUIRE(a.plateau == b.plateau);
+            REQUIRE(a.hillRelief == b.hillRelief);
+            REQUIRE(a.gentle == b.gentle);
+            REQUIRE(a.calm == b.calm);
+            REQUIRE(a.reliefScale == b.reliefScale);
+            REQUIRE(a.axisCos == b.axisCos);
+            REQUIRE(a.axisSin == b.axisSin);
+            REQUIRE(a.axisStrength == b.axisStrength);
+            REQUIRE(a.trunk == b.trunk);
+            REQUIRE(a.trunkDepth == b.trunkDepth);
+            REQUIRE(a.hardness == b.hardness);
+            REQUIRE(c == controls.continentalness(x, z));
+        }
+    }
+}
+
 TEST_CASE("procedural controls carve both sea and high ground") {
     ProceduralControlParams pc;
     pc.seed = 4242;

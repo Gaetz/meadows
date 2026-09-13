@@ -77,7 +77,10 @@ void DungeonGenTool::drawPanel(const DungeonGenContext& ctx) {
         params.space.floors = floors;
         params.space.gridX = gridXZ;
         params.space.gridZ = gridXZ;
-        const auto work = [params, queue = done] {
+        const auto work = [params, queue = done, jobsRef = ctx.jobs] {
+            if (jobsRef && jobsRef->isStopping()) {
+                return; // abandonable at shutdown
+            }
             queue->push(dungeon::bakeDungeon(params));
         };
         if (ctx.jobs) {

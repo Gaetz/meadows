@@ -58,6 +58,7 @@
 #include "engine/assets/MeshSimplify.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
+#include "engine/core/Clock.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Input.hpp"
 #include "engine/platform/Paths.hpp"
@@ -605,7 +606,8 @@ void LandscapeScene::setupGameplay() {
     terrainCollision = std::make_unique<TerrainCollision>(
         *physics, renderer.terrainParams(), &engine->getJobSystem());
     vegCollision =
-        std::make_unique<VegetationCollision>(*physics, renderer.terrainParams());
+        std::make_unique<VegetationCollision>(
+            *physics, renderer.terrainParams(), &engine->getJobSystem());
 
     // Navigation over the SAME height function as
     // everything else (patches included — the pointer rides in params).
@@ -1904,6 +1906,10 @@ void LandscapeScene::setSandboxMode(bool enable) {
         publishWaterBodies();
     }
     params.snowLine = activeSnowLine;
+    // Mode switch = the whole world changed: a world-sized event keeps
+    // the contentTouchedSince contract (every bump records its rects).
+    params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
+                              1.0e9f, 1.0e9f);
     ++params.contentStamp; // FarTerrain/pool-map rebake
     placeStartCamera();
     renderer.requestRegenerate();
@@ -1912,7 +1918,8 @@ void LandscapeScene::setSandboxMode(bool enable) {
         terrainCollision = std::make_unique<TerrainCollision>(
             *physics, params, &engine->getJobSystem());
         vegCollision =
-            std::make_unique<VegetationCollision>(*physics, params);
+            std::make_unique<VegetationCollision>(
+                *physics, params, &engine->getJobSystem());
     }
     streaming.snapCellEntities(makeStreamingContext());
 }
@@ -2034,17 +2041,36 @@ void LandscapeScene::publishWaterBodies() {
 void LandscapeScene::publishBakedTiles(
     vector<TerrainBakeStreamer::PublishedTile>&& tiles,
     const Vec3& focus) {
+    // Section marks for the publish-spike breakdown logged at the end —
+    // the numbers that order the incremental-invalidation work
+    // (docs/CPU-PERF.md).
+    const core::TimePoint publishStart = core::clockNow();
+    core::TimePoint mark = publishStart;
+    const auto sectionMs = [&mark] {
+        const f64 ms = core::millisecondsSince(mark);
+        mark = core::clockNow();
+        return ms;
+    };
     auto next = std::make_shared<render::TerrainBase>();
     if (terrainBase) {
         next->regions = terrainBase->regions;
     }
+    // Changed rects (published AND evicted) feed the content-event ring
+    // and the intersection gates below.
+    struct Rect {
+        f32 minX, minZ, maxX, maxZ;
+    };
+    vector<Rect> changedRects;
     // Bounded residency (sandbox streaming only): drop far-behind tiles;
     // the streamer re-requests them on the way back. Editor previews
     // (no streamer) keep every published region.
     if (bakeStreamer) {
         const f32 tileSize = bakeStreamer->tileSize();
         const f32 evict = tileSize * 2.5f;
-        std::erase_if(next->regions, [&](const render::TerrainRegion& r) {
+        std::erase_if(next->regions, [&](const sptr<
+                                         const render::TerrainRegion>&
+                                             rp) {
+            const render::TerrainRegion& r = *rp;
             const f32 cx = r.originX + r.spanX() * 0.5f;
             const f32 cz = r.originZ + r.spanZ() * 0.5f;
             const bool out = std::abs(cx - focus.x) > evict ||
@@ -2053,6 +2079,9 @@ void LandscapeScene::publishBakedTiles(
                 bakeStreamer->forgetTile(
                     static_cast<i32>(std::floor(cx / tileSize)),
                     static_cast<i32>(std::floor(cz / tileSize)));
+                changedRects.push_back({ r.originX, r.originZ,
+                                         r.originX + r.spanX(),
+                                         r.originZ + r.spanZ() });
             }
             return out;
         });
@@ -2085,18 +2114,38 @@ void LandscapeScene::publishBakedTiles(
                        std::abs((minZ + maxZ) * 0.5f - focus.z) > evict;
             });
     }
+    const f64 evictMs = sectionMs();
     const size_t firstNew = next->regions.size();
     for (TerrainBakeStreamer::PublishedTile& tile : tiles) {
-        next->regions.emplace_back(std::move(tile.region));
+        next->regions.emplace_back(
+            std::make_shared<render::TerrainRegion>(
+                std::move(tile.region)));
         sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
                             tile.lakes.end());
         sandboxRivers.insert(sandboxRivers.end(),
                              std::make_move_iterator(tile.rivers.begin()),
                              std::make_move_iterator(tile.rivers.end()));
     }
+    for (size_t r = firstNew; r < next->regions.size(); ++r) {
+        const render::TerrainRegion& region = *next->regions[r];
+        changedRects.push_back({ region.originX, region.originZ,
+                                 region.originX + region.spanX(),
+                                 region.originZ + region.spanZ() });
+    }
+    next->buildIndex(); // regions final: per-sample scans go O(bucket)
     terrainBase = next;
     renderer.terrainParams().base = next;
-    ++renderer.terrainParams().contentStamp; // FarTerrain/pool-map rebake
+    // The stamp bump + its scoped events (contentTouchedSince contract:
+    // every bump records its rects).
+    {
+        render::TerrainParams& params = renderer.terrainParams();
+        const u64 stamp = params.contentStamp + 1;
+        for (const Rect& rect : changedRects) {
+            params.contentEvents.push(stamp, rect.minX, rect.minZ,
+                                      rect.maxX, rect.maxZ);
+        }
+        ++params.contentStamp; // FarTerrain/far-water rebake (unscoped)
+    }
     renderer.setStreamingHold(false); // base regions exist: rings may stream
     // Remesh AND re-scatter the resident chunks the new regions cover
     // within the view ring (the deferred queues skip chunks that are
@@ -2106,7 +2155,7 @@ void LandscapeScene::publishBakedTiles(
     const f32 reach =
         static_cast<f32>(tuning.terrainViewRadius + 1) * 64.0f;
     for (size_t r = firstNew; r < next->regions.size(); ++r) {
-        const render::TerrainRegion& region = next->regions[r];
+        const render::TerrainRegion& region = *next->regions[r];
         const f32 minX = glm::max(region.originX, focus.x - reach);
         const f32 maxX =
             glm::min(region.originX + region.spanX(), focus.x + reach);
@@ -2127,14 +2176,31 @@ void LandscapeScene::publishBakedTiles(
             }
         }
     }
-    renderer.invalidateOcclusion();
+    // Horizon table: only when a changed region reaches the occlusion
+    // rays (camera square of the view reach).
+    const auto anyRectIntersects = [&](f32 minX, f32 minZ, f32 maxX,
+                                       f32 maxZ) {
+        for (const Rect& rect : changedRects) {
+            if (rect.maxX >= minX && rect.minX <= maxX &&
+                rect.maxZ >= minZ && rect.minZ <= maxZ) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (anyRectIntersects(focus.x - reach, focus.z - reach,
+                          focus.x + reach, focus.z + reach)) {
+        renderer.invalidateOcclusion();
+    }
+    const f64 regionsMs = sectionMs();
     if (physics && terrainCollision) {
         terrainCollision = std::make_unique<TerrainCollision>(
             *physics, renderer.terrainParams(), &engine->getJobSystem());
         vegCollision = std::make_unique<VegetationCollision>(
-            *physics, renderer.terrainParams());
+            *physics, renderer.terrainParams(), &engine->getJobSystem());
     }
     streaming.snapCellEntities(makeStreamingContext());
+    const f64 collisionMs = sectionMs();
     // Cross-tile duplicate suppression (the belt over the canonical
     // basin resolution): two materially overlapping lake masks are two
     // views of ONE basin — keep the LOWER surface, which never leaves
@@ -2218,19 +2284,39 @@ void LandscapeScene::publishBakedTiles(
                      dropped);
         }
     }
+    const f64 dedupeMs = sectionMs();
     // The new regions re-blend the overlap bands: re-validate every
     // stored water body they touch against the LIVE terrain, then
     // republish once.
     for (size_t r = firstNew; r < next->regions.size(); ++r) {
-        reconcileWaterWithTerrain(next->regions[r]);
+        reconcileWaterWithTerrain(*next->regions[r]);
     }
+    const f64 reconcileMs = sectionMs();
     publishWaterBodies();
     // Fresh regions changed the ground under the sim window — it
-    // re-samples on its next step job.
-    renderer.waterSystem().notifySimGroundChanged();
+    // re-samples on its next step job. Scoped: a publish that never
+    // reaches the 512 m window keeps the sim (and its breadcrumb cache)
+    // untouched.
+    bool simTouched = false;
+    for (const Rect& rect : changedRects) {
+        if (renderer.waterSystem().simWindowIntersects(
+                rect.minX, rect.minZ, rect.maxX, rect.maxZ)) {
+            simTouched = true;
+            break;
+        }
+    }
+    if (simTouched) {
+        renderer.waterSystem().notifySimGroundChanged();
+    }
+    const f64 republishMs = sectionMs();
     LOG_INFO("Sandbox terrain: {} tile(s) published ({} lakes, {} "
              "rivers resident)",
              tiles.size(), sandboxLakes.size(), sandboxRivers.size());
+    LOG_INFO("publish breakdown: {:.1f} ms total — evict {:.1f} | "
+             "regions {:.1f} | collision {:.1f} | dedupe {:.1f} | "
+             "reconcile {:.1f} | republish {:.1f}",
+             core::millisecondsSince(publishStart), evictMs, regionsMs,
+             collisionMs, dedupeMs, reconcileMs, republishMs);
 }
 
 // The single-shot spawn validation — the warmup machine calls this ONCE,
@@ -2509,7 +2595,8 @@ SculptContext LandscapeScene::makeSculptContext() {
             terrainCollision = std::make_unique<TerrainCollision>(
                 *physics, renderer.terrainParams(), &engine->getJobSystem());
             vegCollision = std::make_unique<VegetationCollision>(
-                *physics, renderer.terrainParams());
+                *physics, renderer.terrainParams(),
+                &engine->getJobSystem());
             streaming.snapCellEntities(makeStreamingContext());
         }
     };
@@ -2903,7 +2990,8 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     terrainCollision = std::make_unique<TerrainCollision>(
         *physics, renderer.terrainParams(), &engine->getJobSystem());
     vegCollision =
-        std::make_unique<VegetationCollision>(*physics, renderer.terrainParams());
+        std::make_unique<VegetationCollision>(
+            *physics, renderer.terrainParams(), &engine->getJobSystem());
 
     // Teleport the capsule to the marker, facing its authored yaw. The
     // fade-in (0.3 s) covers the async floor-collider cook — the player
@@ -4587,7 +4675,8 @@ void LandscapeScene::drawUi() {
     if (uiMapOpen) {
         miniMap.draw(engine->getDevice(), engine->getJobSystem(),
                      renderer.terrainParams(), flyCamera.camera.position,
-                     renderer.terrainParams().contentStamp, &uiMapOpen);
+                     renderer.terrainParams().contentStamp, &uiMapOpen,
+                     renderer.heightFieldSnapshot());
     }
     if (renderer.consumeSaveTuningRequest()) {
         saveRenderTuning();

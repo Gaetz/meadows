@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/HeightField.hpp"
 #include "engine/rhi/Rhi.hpp"
 
 namespace core {
@@ -27,9 +28,12 @@ public:
     // Call each frame the window should exist (mode gate is the
     // caller's). Publishes a finished bake (main-thread texture upload,
     // Phase-5 idiom), kicks the next when needed, draws the window.
+    // `field` (nullable): the shared height pyramid for the raster's
+    // height grid (exact function when null / outside its levels).
     void draw(rhi::Device& device, core::JobSystem& jobs,
               const render::TerrainParams& terrain, const Vec3& cameraPos,
-              u64 contentStamp, bool* open);
+              u64 contentStamp, bool* open,
+              sptr<const render::HeightField::Snapshot> field = nullptr);
 
     // Frees the GPU texture (scene teardown). A job still in flight
     // keeps its self-owned packet alive and is dropped unread.

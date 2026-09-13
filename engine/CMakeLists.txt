@@ -98,6 +98,7 @@ add_library(meadows-render STATIC
     render/landscape/FxRenderer.cpp
     render/landscape/GpuOcclusion.cpp
     render/landscape/GrassSystem.cpp
+    render/landscape/HeightField.cpp
     render/landscape/LightClusters.cpp
     render/landscape/MistMap.cpp
     render/landscape/NoiseVolume.cpp

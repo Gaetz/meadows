@@ -74,6 +74,37 @@ struct TerrainParams {
     // Never read by height() — purely a staleness signal.
     u64 contentStamp { 0 };
 
+    // Spatially-scoped companion to contentStamp: EVERY bump records the
+    // changed region rects under the new stamp value (a world-sized rect
+    // for global changes like a mode switch — that contract is what lets
+    // consumers trust a quiet ring). Bounded consumers then ask
+    // contentTouchedSince(seen, rect) instead of comparing the raw
+    // stamp, so a tile published outside their window no longer rebakes
+    // them. Bounded ring: history older than the ring is conservatively
+    // "touched".
+    struct ContentEvents {
+        struct Event {
+            u64 stamp { 0 };
+            f32 minX { 0.0f };
+            f32 minZ { 0.0f };
+            f32 maxX { 0.0f };
+            f32 maxZ { 0.0f };
+        };
+        static constexpr u32 kRing = 32;
+        array<Event, kRing> ring {};
+        u32 head { 0 };
+        u64 completeFrom { 1 }; // stamps >= this are fully in the ring
+        void push(u64 stamp, f32 minX, f32 minZ, f32 maxX, f32 maxZ) {
+            Event& slot = ring[head];
+            if (slot.stamp != 0 && slot.stamp + 1 > completeFrom) {
+                completeFrom = slot.stamp + 1;
+            }
+            slot = { stamp, minX, minZ, maxX, maxZ };
+            head = (head + 1) % kRing;
+        }
+    };
+    ContentEvents contentEvents;
+
     // Rolling hills: FBM value noise.
     f32 hillWavelength { 500.0f }; // meters per base octave
     f32 hillAmplitude { 75.0f };
@@ -115,6 +146,22 @@ Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step = 0.5f);
 // open at distance instead of being bridged shut by the decimation
 // (which drowned the water surface under the coarse triangles).
 f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing);
+
+// True when terrain content changed inside [minX..maxX]x[minZ..maxZ]
+// since the consumer last baked at `seenStamp` — the rect-scoped form of
+// `bakedStamp != params.contentStamp`. Conservative: lost ring history
+// reports touched.
+bool contentTouchedSince(const TerrainParams& params, u64 seenStamp,
+                         f32 minX, f32 minZ, f32 maxX, f32 maxZ);
+
+// True when any baked flow-mask texel that a meshHeight gate inside the
+// rect could bilinearly read is >= 0.5 — the chunk mesher probes this
+// ONCE and falls back to plain height() for flow-free chunks, skipping
+// the per-vertex region/mask lookups. All support texels < 0.5 means
+// every bilinear sample is < 0.5 (convex combination), so the gate
+// never fires: bit-identical by construction.
+bool flowMaskTouches(const TerrainParams& params, f32 minX, f32 minZ,
+                     f32 maxX, f32 maxZ);
 
 // Raw smooth value noise in [0,1] — the building block, exposed for scatter
 // masks (grass patches, forest belts) so they share the terrain's hash.
@@ -160,6 +207,12 @@ inline f32 treeLine(const TerrainParams& params) {
 // stays each rule's own seaLevel check.
 bool underLocalWater(const TerrainParams& params, f32 x, f32 z, f32 h,
                      f32 margin);
+// Rect-scoped variant for the chunk bakes: `subset` comes from
+// waterBodiesInRect over a rect bounding every query — bit-identical to
+// the full scan inside that rect (see WaterBodies.hpp).
+bool underLocalWater(const TerrainParams& params,
+                     const WaterBodiesSubset& subset, f32 x, f32 z, f32 h,
+                     f32 margin);
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
 
@@ -196,6 +249,14 @@ struct RegionFields {
     f32 biomeWetness { 0.0f };  // biome character (≠ baked water mask)
 };
 RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z);
+
+// materialWeightsAt with the region fields the CALLER already sampled at
+// the SAME (x, z) — the grass cell loop needs both the weights and the
+// fields, and regionFieldsAt (5 biomeBlended) is the expensive half.
+// Bit-identical to the two-call form by construction.
+MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
+                                  f32 z, f32 height, const Vec3& normal,
+                                  const RegionFields& fields);
 
 // Fields + the composed macro tint (fbm — DELIBERATELY not on the weight
 // mirrors' hot path). THE single source for the TerrainShadeMap bake, the

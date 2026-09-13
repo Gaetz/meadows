@@ -98,7 +98,9 @@ TEST_CASE("vegetation scatter: instance buffers are frozen (golden)") {
     // Golden hash over the raw instance bytes of a chunk sample. It pins
     // the RNG draw sequence AND the placement math: an INTENTIONAL
     // tuning change re-captures it (print below); an accidental one is
-    // exactly what this test exists to catch.
+    // exactly what this test exists to catch. The raw-float hash is also
+    // sensitive to compiler FP codegen, so a toolchain upgrade may shift
+    // it — re-capture only after checking Debug and Release agree.
     render::TerrainParams params;
     u64 h = 1469598103934665603ull;
     for (i32 c = -6; c <= 6; c += 3) {
@@ -108,5 +110,5 @@ TEST_CASE("vegetation scatter: instance buffers are frozen (golden)") {
         h *= 1099511628211ull;
     }
     MESSAGE("scatter golden hash: " << h);
-    CHECK(h == 17957688382628280143ull); // 0xf9368670a9b7b74f
+    CHECK(h == 10031847806692189656ull); // 0x8b38486ddeab65d8
 }

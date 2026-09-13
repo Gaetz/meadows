@@ -34,7 +34,7 @@ TEST_CASE("chunk streamer: key packing round-trips negative coords") {
 TEST_CASE("chunk streamer: requests go out nearest-first, budgeted") {
     Streamer streamer;
     core::JobSystem jobs { 1 };
-    streamer.create(jobs);
+    streamer.create(jobs, "test");
 
     vector<std::pair<i32, i32>> requested;
     streamer.requestMissing(
@@ -56,7 +56,7 @@ TEST_CASE("chunk streamer: pump respects the upload budget") {
     Streamer streamer;
     {
         core::JobSystem jobs { 1 };
-        streamer.create(jobs);
+        streamer.create(jobs, "test");
         for (i32 i = 0; i < 5; ++i) {
             streamer.enqueueBuild(i, 0, [i] { return i * 10; });
         }
@@ -78,7 +78,7 @@ TEST_CASE("chunk streamer: a rejected result frees its upload slot") {
     Streamer streamer;
     {
         core::JobSystem jobs { 1 };
-        streamer.create(jobs);
+        streamer.create(jobs, "test");
         for (i32 i = 0; i < 3; ++i) {
             streamer.enqueueBuild(i, 0, [] { return 0; });
         }
@@ -100,7 +100,7 @@ TEST_CASE("chunk streamer: stale generations are dropped on arrival") {
     Streamer streamer;
     {
         core::JobSystem jobs { 1 };
-        streamer.create(jobs);
+        streamer.create(jobs, "test");
         streamer.enqueueBuild(3, -2, [] { return 42; });
     } // result (generation 0) sits in the queue
 
@@ -117,7 +117,7 @@ TEST_CASE("chunk streamer: stale generations are dropped on arrival") {
 TEST_CASE("chunk streamer: eviction honors the hysteresis radius") {
     Streamer streamer;
     core::JobSystem jobs { 1 };
-    streamer.create(jobs);
+    streamer.create(jobs, "test");
 
     streamer.chunks.emplace(render::chunkKey(0, 0), TestChunk { true, 1 });
     streamer.chunks.emplace(render::chunkKey(2, 0), TestChunk { true, 2 });
@@ -141,7 +141,7 @@ TEST_CASE("chunk streamer: round trip request -> worker -> pump") {
     Streamer streamer;
     {
         core::JobSystem jobs { 1 };
-        streamer.create(jobs);
+        streamer.create(jobs, "test");
         streamer.requestMissing(
             0, 0, 1, 99,
             [&](i32 cx, i32 cz, i32, i32) {

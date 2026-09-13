@@ -28,7 +28,8 @@ constexpr const char* kWaterSimBoxShader = "water_simdbg";
 // POOL get nearby" — the small-pool foam criterion.
 vector<f32> bakePoolDepth(const TerrainParams& params,
                           const sptr<const WaterBodies>& bodies,
-                          Vec2 center) {
+                          Vec2 center,
+                          const sptr<const HeightField::Snapshot>& field) {
     constexpr u32 kSize = WaterSystem::kPoolMapSize;
     constexpr i32 kDilate = 3; // texels (~36 m radius)
 
@@ -41,7 +42,11 @@ vector<f32> bakePoolDepth(const TerrainParams& params,
             const f32 wz = center.y +
                            (static_cast<f32>(y) / kSize - 0.5f) *
                                WaterSystem::kPoolMapSpan;
-            const f32 ground = terrain::height(params, wx, wz);
+            // Shared grid at 12 m texels (dilated ~36 m after); exact
+            // function without a snapshot.
+            const f32 ground = field
+                                   ? field->height(wx, wz)
+                                   : terrain::height(params, wx, wz);
             depth[static_cast<size_t>(y) * kSize + x] =
                 bodies ? terrain::waterDepthAt(*bodies, wx, wz, ground)
                        : glm::max(params.seaLevel - ground, 0.0f);
@@ -312,6 +317,7 @@ void WaterSystem::destroy(rhi::Device& device) {
     bakedSeed = 0;
     bakedSeaLevel = -1e9f;
     bakedBodiesStamp = ~0ull;
+    bakedContentStamp = 0;
     bodies.reset();
     bodiesStamp = 0;
     bodiesDirty = false;
@@ -898,6 +904,8 @@ void WaterSystem::kickLocalGeometry(const TerrainParams& params) {
     jobs->enqueue([sharedRef = shared, bodiesRef = bodies, params,
                    gen = generation, stamp = bodiesStamp,
                    jobsRef = jobs] {
+        core::JobProbe::Scope probe { &jobsRef->probe(),
+                                      "waterLocalMesh" };
         LocalMesh out;
         out.generation = gen;
         out.stamp = stamp;
@@ -911,7 +919,8 @@ void WaterSystem::kickLocalGeometry(const TerrainParams& params) {
 }
 
 void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
-                         const Vec3& cameraPos) {
+                         const Vec3& cameraPos,
+                         sptr<const HeightField::Snapshot> field) {
     // Apply a finished bake: new texture + bind group (rebakes are rare —
     // every ~500 m of travel or on a settings change).
     BakedMap baked;
@@ -932,6 +941,7 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         bakedSeed = baked.seed;
         bakedSeaLevel = baked.seaLevel;
         bakedBodiesStamp = baked.bodiesStamp;
+        bakedContentStamp = baked.contentStamp;
         bakeInFlight = false;
     }
 
@@ -1002,9 +1012,19 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
             farStamp = fm.stamp;
         }
         const Vec2 farCam { cameraPos.x, cameraPos.z };
+        // Content-stamp coalescing (FarTerrain pattern): the 18 km
+        // collect rescans the tile cache on disk — once per publish
+        // BURST, after a second of stamp quiet, not once per tile.
+        if (params.contentStamp != farLastSeenStamp) {
+            farLastSeenStamp = params.contentStamp;
+            farQuietSince = core::clockNow();
+        }
+        const bool farContentSettled =
+            core::secondsSince(farQuietSince) > 1.0;
         if (farFn && !farBuildInFlight &&
             (farDirty || glm::distance(farCam, farCenter) > 2048.0f ||
-             farStamp != static_cast<u64>(params.contentStamp))) {
+             (farStamp != static_cast<u64>(params.contentStamp) &&
+              farContentSettled))) {
             farDirty = false;
             farBuildInFlight = true;
             jobs->enqueue([sharedRef = shared, fn = farFn, farCam,
@@ -1012,6 +1032,8 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
                            stamp =
                                static_cast<u64>(params.contentStamp),
                            jobsRef = jobs] {
+                core::JobProbe::Scope probe { &jobsRef->probe(),
+                                              "farWater" };
                 FarMesh out;
                 out.generation = gen;
                 out.stamp = stamp;
@@ -1027,22 +1049,36 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
     }
 
     const Vec2 camXz { cameraPos.x, cameraPos.z };
-    const bool stale = glm::distance(camXz, mapCenter) > kRebakeDistance ||
-                       bakedSeed != params.seed ||
-                       bakedSeaLevel != params.seaLevel ||
-                       bakedBodiesStamp !=
-                           bodiesStamp + params.contentStamp;
+    // Terrain changes are rect-scoped: a tile published outside the
+    // 3 km pool window no longer rebakes it. Bodies changes stay a
+    // global signal (the resident list itself moved).
+    const bool stale =
+        glm::distance(camXz, mapCenter) > kRebakeDistance ||
+        bakedSeed != params.seed || bakedSeaLevel != params.seaLevel ||
+        bakedBodiesStamp != bodiesStamp ||
+        terrain::contentTouchedSince(params, bakedContentStamp,
+                                     mapCenter.x - kPoolMapSpan * 0.5f,
+                                     mapCenter.y - kPoolMapSpan * 0.5f,
+                                     mapCenter.x + kPoolMapSpan * 0.5f,
+                                     mapCenter.y + kPoolMapSpan * 0.5f);
     if (stale && !bakeInFlight) {
         bakeInFlight = true;
         constexpr f32 kTexel = kPoolMapSpan / kPoolMapSize;
         const Vec2 center = glm::floor(camXz / kTexel) * kTexel;
         jobs->enqueue([sharedRef = shared, params, center,
                        gen = generation, bodiesRef = bodies,
-                       stamp = bodiesStamp + params.contentStamp] {
+                       stamp = bodiesStamp,
+                       content = params.contentStamp,
+                       fieldRef = field, jobsRef = jobs] {
+            if (jobsRef->isStopping()) {
+                return; // abandonable at shutdown
+            }
+            core::JobProbe::Scope probe { &jobsRef->probe(),
+                                          "waterPoolMap" };
             sharedRef->baked.push({ center, gen, params.seed,
-                                    params.seaLevel, stamp,
+                                    params.seaLevel, stamp, content,
                                     bakePoolDepth(params, bodiesRef,
-                                                  center) });
+                                                  center, fieldRef) });
         });
     }
 
@@ -1302,6 +1338,13 @@ void WaterSystem::updateSim(rhi::Device& device,
                 simLastVolume = res.volume;
                 if (simCalmTicks >= kSimCalmTicks) {
                     simSettling = false;
+                    u32 wet = 0;
+                    for (const f32 d : res.snap->depth) {
+                        wet += d > 0.0f ? 1u : 0u;
+                    }
+                    LOG_INFO("Water sim: revealed CALM after {:.1f} s "
+                             "(volume {:.0f} m3, {} wet cells)",
+                             simSettleTimer, res.volume, wet);
                 }
             }
         }
@@ -1313,6 +1356,15 @@ void WaterSystem::updateSim(rhi::Device& device,
         simSettleTimer += dt;
         if (!simCfg.settleGated || simSettleTimer > kSimSettleCap) {
             simSettling = false;
+            if (simCfg.settleGated) {
+                // A cap-path reveal shows a window still moving — the
+                // shore dip a hard swap can flash (diagnosis lane for
+                // the reveal-gap report, docs/CPU-PERF.md).
+                LOG_INFO("Water sim: revealed at CAP ({:.1f} s, window "
+                         "not calm — {} calm tick(s), last volume "
+                         "{:.0f} m3)",
+                         kSimSettleCap, simCalmTicks, simLastVolume);
+            }
         }
     }
     if (!simCfg.enabled || !params.base) {
@@ -1451,6 +1503,8 @@ void WaterSystem::updateSim(rhi::Device& device,
             if (jobsRef->isStopping()) {
                 return; // abandonable at shutdown (seconds of pre-roll)
             }
+            core::JobProbe::Scope probe { &jobsRef->probe(),
+                                          "waterSimPreRoll" };
             SimResult out;
             out.generation = gen;
             out.epoch = epoch;
@@ -1597,6 +1651,7 @@ void WaterSystem::updateSim(rhi::Device& device,
         if (jobsRef->isStopping()) {
             return; // abandonable at shutdown
         }
+        core::JobProbe::Scope probe { &jobsRef->probe(), "waterSim" };
         SimResult out;
         out.generation = gen;
         out.epoch = epoch;
