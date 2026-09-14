@@ -501,6 +501,15 @@ private:
     // also moves the fly camera to a pleasant generated start so the
     // play capsule spawns there.
     void setSandboxMode(bool enable);
+    // The ONE map-swap transaction (chantier CARTES M2.3): terrain
+    // identity, streamer, water closures, transient clears, collision
+    // rebuild, content invalidation — mode switch and map travel share
+    // it.
+    void applyMapWorld(i32 mapX, i32 mapZ);
+    // Console-driven map travel (M4.1); the pass/door path (M4.2)
+    // reuses it behind the fade.
+    void travelToMap(i32 mapX, i32 mapZ);
+    Vec3 probeSandboxSpawn() const;
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.
     void placeStartCamera();

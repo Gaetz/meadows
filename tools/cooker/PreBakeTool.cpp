@@ -111,11 +111,8 @@ int preBake(char** argv, int argc) {
     u32 baked = 0;
     for (i32 mz = mz0; mz <= mz1; ++mz) {
         for (i32 mx = mx0; mx <= mx1; ++mx) {
-            std::error_code probe;
-            if (std::filesystem::exists(
-                    game::mapCacheDir(cacheDir, mx, mz) /
-                        "manifest.txt",
-                    probe)) {
+            if (game::mapBakedAndValid(cacheDir, mx, mz,
+                                       game::kMapTilesPerSide)) {
                 LOG_INFO("pre-bake: map ({}, {}) already baked", mx,
                          mz);
                 continue;

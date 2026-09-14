@@ -65,6 +65,36 @@ std::optional<MapOverview> loadMapOverview(
     return out;
 }
 
+bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
+                      i32 mapZ, i32 tilesPerSide) {
+    std::ifstream manifest {
+        mapCacheDir(cacheDir, mapX, mapZ) / "manifest.txt"
+    };
+    if (!manifest) {
+        return false;
+    }
+    str key;
+    u32 headerVersion = 0;
+    if (!(manifest >> key >> headerVersion) || key != "meadows-map" ||
+        headerVersion != kMapBakeVersion) {
+        return false;
+    }
+    i32 mx = 0;
+    i32 mz = 0;
+    f32 mapSize = 0.0f;
+    f32 tileSize = 0.0f;
+    i32 tps = 0;
+    u32 seed = 0;
+    u32 bakeVersion = 0;
+    str k2, k3, k4, k5, k6, k7;
+    if (!(manifest >> k2 >> mx >> mz >> k3 >> mapSize >> k4 >>
+          tileSize >> k5 >> tps >> k6 >> seed >> k7 >> bakeVersion)) {
+        return false;
+    }
+    return mx == mapX && mz == mapZ && tps == tilesPerSide &&
+           bakeVersion == render::terraingen::kTileBakeVersion;
+}
+
 std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
                                   i32 mapX, i32 mapZ) {
     char dir[48];

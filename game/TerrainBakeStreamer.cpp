@@ -357,8 +357,8 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
             return; // already parked on the map bake — no fs churn
         }
         const auto mapDir = mapCacheDir(cacheDir, map.mapX, map.mapZ);
-        std::error_code probe;
-        if (!std::filesystem::exists(mapDir / "manifest.txt", probe)) {
+        if (!mapBakedAndValid(cacheDir, map.mapX, map.mapZ,
+                              map.tilesPerSide)) {
             deferredForMap.insert(keyOf(tx, tz));
             if (!mapBaking->exchange(true)) {
                 const auto work = [params = params, cacheDir = cacheDir,
@@ -628,11 +628,8 @@ void TerrainBakeStreamer::update(
             --manifestCheckCountdown;
         } else {
             manifestCheckCountdown = 30;
-            std::error_code probe;
-            if (std::filesystem::exists(
-                    mapCacheDir(cacheDir, map.mapX, map.mapZ) /
-                        "manifest.txt",
-                    probe)) {
+            if (mapBakedAndValid(cacheDir, map.mapX, map.mapZ,
+                                 map.tilesPerSide)) {
                 const auto deferred = std::move(deferredForMap);
                 deferredForMap.clear();
                 for (const u64 key : deferred) {

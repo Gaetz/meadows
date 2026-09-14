@@ -68,4 +68,11 @@ struct MapOverview {
 std::optional<MapOverview> loadMapOverview(
     const std::filesystem::path& mapDir);
 
+// A map is usable only when its manifest MATCHES (coords, slice
+// layout, bake version) — a stale dir from another configuration must
+// re-bake, not half-load (existence alone lied: a 2x2 test map
+// masqueraded as a 6x6 production one).
+bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
+                      i32 mapZ, i32 tilesPerSide);
+
 } // namespace game

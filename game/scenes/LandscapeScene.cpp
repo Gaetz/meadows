@@ -1798,6 +1798,186 @@ void LandscapeScene::placeStartCamera() {
     }
 }
 
+// A pleasant start on the ACTIVE map: probe for low, gentle TEMPERATE
+// land (the start is a green meadow by decree — temperate is the
+// default biome, always findable; mirrored by the hidden `biome
+// locator` diagnostic, keep the criteria in sync). The spiral anchors
+// on the map center and stays inside the rim band.
+Vec3 LandscapeScene::probeSandboxSpawn() const {
+    const render::TerrainParams& params = renderer.terrainParams();
+    const auto& sandbox = params.sandbox;
+    const render::terraingen::ProceduralControls controls {
+        sandbox->controls
+    };
+    const f32 mapMid =
+        sandbox->edge.minX + sandbox->edge.size * 0.5f;
+    const f32 mapMidZ =
+        sandbox->edge.minZ + sandbox->edge.size * 0.5f;
+    const f32 mapReach =
+        sandbox->edge.size * 0.5f - render::terraingen::kMapEdgeBand;
+    Vec3 start { mapMid, 0.0f, mapMidZ };
+    for (f32 radius = 2600.0f; radius <= glm::min(24000.0f, mapReach);
+         radius += 700.0f) {
+        for (u32 step = 0; step < 16; ++step) {
+            const f32 angle =
+                radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
+            const f32 x = mapMid + std::cos(angle) * radius;
+            const f32 z = mapMidZ + std::sin(angle) * radius;
+            const f32 h = render::terraingen::applyMapEdgeShape(
+                sandbox->edge, x, z,
+                render::terraingen::macroHeightAnalytic(
+                    controls, sandbox->macro, x, z));
+            if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
+                controls.at(x, z).biome == 0) {
+                return { x, h, z };
+            }
+        }
+    }
+    return start;
+}
+
+// Map-to-map travel core (chantier CARTES M4.1): the whole-world swap
+// plus a fresh spawn on the target map, behind the warmup veil (a cold
+// map bakes in the background with the real progress bar). The console
+// `map` command drives it today; the M4.2 pass/door wiring reuses it
+// behind the travel fade. Procedural maps share ONE worldspace record
+// for now (the implicit-cell grid separates their content by
+// coordinates); per-map worldspaces come with the authored path (M5).
+void LandscapeScene::travelToMap(i32 mapX, i32 mapZ) {
+    applyMapWorld(mapX, mapZ);
+    renderer.setStreamingHold(true);
+    sandboxSpawn = probeSandboxSpawn();
+    sandboxSpawnValid = true;
+    armWarmup(sandboxSpawn, true, false);
+}
+
+// The ONE map-swap transaction (chantier CARTES M2.3): everything that
+// must change when the active bounded map changes, in one place --
+// rehearsed by every sandbox mode switch, reused by map-to-map travel
+// (M4). Camera placement and cell snapping stay with the callers (a
+// travel puts the player at its marker, a mode switch at the start
+// camera).
+void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
+    render::TerrainParams& params = renderer.terrainParams();
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls.seed = tuning.terrainSeed;
+    sandbox->macro.seaLevel = tuning.seaLevel;
+    sandbox->macro.recurveLow = tuning.terrainRecurveLow;
+    sandbox->macro.recurveMid = tuning.terrainRecurveMid;
+    sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
+    // Bounded map (chantier CARTES M1.4): the sandbox world IS map
+    // (0, 0), an island (sea rim on every side) — the fallback
+    // beyond the rim reads as open ocean, matching the baked rim.
+    // M4 (map-to-map travel) will make the active map dynamic.
+    render::terraingen::TileBakeParams bakeParams;
+    bakeParams.worldSeed = tuning.terrainSeed;
+    bakeParams.controls = sandbox->controls;
+    bakeParams.macro = sandbox->macro;
+    TerrainBakeStreamer::MapStreamConfig mapCfg;
+    mapCfg.enabled = true;
+    mapCfg.tilesPerSide = kMapTilesPerSide;
+    mapCfg.mapX = mapX;
+    mapCfg.mapZ = mapZ;
+    mapCfg.edgeStyles.valid = true; // all sides Sea by default
+    sandbox->edge = mapCfg.edgeStyles;
+    sandbox->edge.size = bakeParams.tileSize *
+                         static_cast<f32>(mapCfg.tilesPerSide);
+    sandbox->edge.minX = static_cast<f32>(mapX) * sandbox->edge.size;
+    sandbox->edge.minZ = static_cast<f32>(mapZ) * sandbox->edge.size;
+    sandbox->edge.seaLevel = tuning.seaLevel;
+    // The baked map's overview (when the cache holds it): the
+    // fallback inside the map becomes the map's own coarse truth.
+    // A cold cache boots on the analytic + rim shape and picks the
+    // overview up on the NEXT session (the background bake writes
+    // it; hot-swapping it mid-session would move the fallback
+    // ground under unbaked chunks).
+    if (const auto overview = loadMapOverview(mapCacheDir(
+            platform::executableDir() / "terrain-cache" /
+                std::to_string(tuning.terrainSeed),
+            mapCfg.mapX, mapCfg.mapZ))) {
+        sandbox->overviewGrid = overview->grid;
+        sandbox->overview = std::move(overview->heights);
+        LOG_INFO("Sandbox terrain: map overview loaded ({}x{} at "
+                 "{:.0f} m)",
+                 overview->grid.n, overview->grid.n,
+                 overview->grid.texelSize);
+    }
+    params.sandbox = sandbox;
+    activeSnowLine = tuning.sandboxSnowLine;
+    bakeStreamer = std::make_unique<TerrainBakeStreamer>(
+        bakeParams,
+        platform::executableDir() / "terrain-cache" /
+            std::to_string(tuning.terrainSeed),
+        &engine->getJobSystem(), mapCfg);
+    LOG_INFO("Sandbox terrain: seed {}, map ({}, {}) = {:.0f} m "
+             "island, {} m slices",
+             tuning.terrainSeed, mapX, mapZ, sandbox->edge.size,
+             bakeParams.tileSize);
+    // Live water sim (option C): boundary inflow from the master
+    // network — worker-callable and pure (the memoized network
+    // makes repeat queries cheap after the first).
+    {
+        render::terraingen::ProceduralControlParams cp =
+            bakeParams.controls;
+        cp.seed = bakeParams.worldSeed;
+        render::terraingen::MasterNetworkParams net =
+            bakeParams.network;
+        net.seaLevel = bakeParams.macro.seaLevel;
+        render::terraingen::WaterSolveParams solveParams =
+            bakeParams.waterSolve;
+        solveParams.seaLevel = bakeParams.macro.seaLevel;
+        const render::terraingen::MacroParams macro =
+            bakeParams.macro;
+        renderer.waterSystem().setSimSources(
+            [cp, macro, net, solveParams](f32 minX, f32 minZ,
+                                          f32 maxX, f32 maxZ) {
+                return render::terraingen::masterBoundarySources(
+                    render::terraingen::ProceduralControls { cp },
+                    macro, net, solveParams, minX, minZ, maxX,
+                    maxZ);
+            });
+        renderer.waterSystem().simConfig().params.seaLevel =
+            tuning.seaLevel;
+        // Far water (E4a): distant lakes/rivers for the FarTerrain
+        // — cached .twb + master fleuves, gathered on the worker.
+        // The active map's slice dir (the .twb scan is flat, not
+        // recursive).
+        renderer.waterSystem().setFarWater(
+            [cp, macro, net, sea = tuning.seaLevel,
+             tileSize = bakeParams.tileSize,
+             cacheDir = mapCacheDir(
+                 platform::executableDir() / "terrain-cache" /
+                     std::to_string(tuning.terrainSeed),
+                 mapX, mapZ)](f32 cx, f32 cz, f32 halfSpan) {
+                return collectFarWater(cacheDir, tileSize, cp,
+                                       macro, net, sea, cx, cz,
+                                       halfSpan);
+            });
+    }
+    // Fresh base: authored regions only -- the previous map's slices
+    // drop; the streamer reloads this map's from its cache.
+    terrainBase = world::buildTerrainBase(forms, assetDb);
+    params.base = terrainBase;
+    sandboxLakes.clear();
+    sandboxRivers.clear();
+    publishWaterBodies();
+    interiorEscapes.clear();
+    params.snowLine = activeSnowLine;
+    // The whole world changed: a world-sized event keeps the
+    // contentTouchedSince contract (every bump records its rects).
+    params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
+                              1.0e9f, 1.0e9f);
+    ++params.contentStamp;
+    renderer.requestRegenerate();
+    renderer.invalidateOcclusion();
+    if (physics && terrainCollision) {
+        terrainCollision = std::make_unique<TerrainCollision>(
+            *physics, params, &engine->getJobSystem());
+        vegCollision = std::make_unique<VegetationCollision>(
+            *physics, params, &engine->getJobSystem());
+    }
+}
+
 void LandscapeScene::setSandboxMode(bool enable) {
     if (enable == sandboxActive) {
         return;
@@ -1809,144 +1989,13 @@ void LandscapeScene::setSandboxMode(bool enable) {
         // becomes the fallback (far silhouettes agree with future
         // tiles); the streamer bakes/caches super-tiles around the
         // player and publishes them through publishBakedTile.
-        auto sandbox = std::make_shared<render::SandboxTerrain>();
-        sandbox->controls.seed = tuning.terrainSeed;
-        sandbox->macro.seaLevel = tuning.seaLevel;
-        sandbox->macro.recurveLow = tuning.terrainRecurveLow;
-        sandbox->macro.recurveMid = tuning.terrainRecurveMid;
-        sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
-        // Bounded map (chantier CARTES M1.4): the sandbox world IS map
-        // (0, 0), an island (sea rim on every side) — the fallback
-        // beyond the rim reads as open ocean, matching the baked rim.
-        // M4 (map-to-map travel) will make the active map dynamic.
-        render::terraingen::TileBakeParams bakeParams;
-        bakeParams.worldSeed = tuning.terrainSeed;
-        bakeParams.controls = sandbox->controls;
-        bakeParams.macro = sandbox->macro;
-        TerrainBakeStreamer::MapStreamConfig mapCfg;
-        mapCfg.enabled = true;
-        mapCfg.tilesPerSide = kMapTilesPerSide;
-        mapCfg.mapX = 0;
-        mapCfg.mapZ = 0;
-        mapCfg.edgeStyles.valid = true; // all sides Sea by default
-        sandbox->edge = mapCfg.edgeStyles;
-        sandbox->edge.minX = 0.0f;
-        sandbox->edge.minZ = 0.0f;
-        sandbox->edge.size = bakeParams.tileSize *
-                             static_cast<f32>(mapCfg.tilesPerSide);
-        sandbox->edge.seaLevel = tuning.seaLevel;
-        // The baked map's overview (when the cache holds it): the
-        // fallback inside the map becomes the map's own coarse truth.
-        // A cold cache boots on the analytic + rim shape and picks the
-        // overview up on the NEXT session (the background bake writes
-        // it; hot-swapping it mid-session would move the fallback
-        // ground under unbaked chunks).
-        if (const auto overview = loadMapOverview(mapCacheDir(
-                platform::executableDir() / "terrain-cache" /
-                    std::to_string(tuning.terrainSeed),
-                mapCfg.mapX, mapCfg.mapZ))) {
-            sandbox->overviewGrid = overview->grid;
-            sandbox->overview = std::move(overview->heights);
-            LOG_INFO("Sandbox terrain: map overview loaded ({}x{} at "
-                     "{:.0f} m)",
-                     overview->grid.n, overview->grid.n,
-                     overview->grid.texelSize);
-        }
-        params.sandbox = sandbox;
-        activeSnowLine = tuning.sandboxSnowLine;
-        bakeStreamer = std::make_unique<TerrainBakeStreamer>(
-            bakeParams,
-            platform::executableDir() / "terrain-cache" /
-                std::to_string(tuning.terrainSeed),
-            &engine->getJobSystem(), mapCfg);
-        LOG_INFO("Sandbox terrain: seed {}, map (0, 0) = {:.0f} m "
-                 "island, {} m slices",
-                 tuning.terrainSeed, sandbox->edge.size,
-                 bakeParams.tileSize);
-        // Live water sim (option C): boundary inflow from the master
-        // network — worker-callable and pure (the memoized network
-        // makes repeat queries cheap after the first).
-        {
-            render::terraingen::ProceduralControlParams cp =
-                bakeParams.controls;
-            cp.seed = bakeParams.worldSeed;
-            render::terraingen::MasterNetworkParams net =
-                bakeParams.network;
-            net.seaLevel = bakeParams.macro.seaLevel;
-            render::terraingen::WaterSolveParams solveParams =
-                bakeParams.waterSolve;
-            solveParams.seaLevel = bakeParams.macro.seaLevel;
-            const render::terraingen::MacroParams macro =
-                bakeParams.macro;
-            renderer.waterSystem().setSimSources(
-                [cp, macro, net, solveParams](f32 minX, f32 minZ,
-                                              f32 maxX, f32 maxZ) {
-                    return render::terraingen::masterBoundarySources(
-                        render::terraingen::ProceduralControls { cp },
-                        macro, net, solveParams, minX, minZ, maxX,
-                        maxZ);
-                });
-            renderer.waterSystem().simConfig().params.seaLevel =
-                tuning.seaLevel;
-            // Far water (E4a): distant lakes/rivers for the FarTerrain
-            // — cached .twb + master fleuves, gathered on the worker.
-            // The active map's slice dir (the .twb scan is flat, not
-            // recursive).
-            renderer.waterSystem().setFarWater(
-                [cp, macro, net, sea = tuning.seaLevel,
-                 tileSize = bakeParams.tileSize,
-                 cacheDir = mapCacheDir(
-                     platform::executableDir() / "terrain-cache" /
-                         std::to_string(tuning.terrainSeed),
-                     0, 0)](f32 cx, f32 cz, f32 halfSpan) {
-                    return collectFarWater(cacheDir, tileSize, cp,
-                                           macro, net, sea, cx, cz,
-                                           halfSpan);
-                });
-        }
+        applyMapWorld(0, 0);
         // Park the terrain/grass/vegetation rings until the first tile
         // publishes: chunks meshed against the empty base are ALL remeshed
         // on publish — double work that competed with the bakes for
         // workers and stretched the loading gate.
         renderer.setStreamingHold(true);
-        // A pleasant start: probe the analytic macro for low, gentle
-        // TEMPERATE land away from the authored demo content near the
-        // origin — the start is a green meadow by decree, whatever the
-        // climate map rolls (guarantee by search: temperate is the
-        // default biome, always findable). Mirrored by the hidden
-        // `biome locator` diagnostic — keep the criteria in sync. The
-        // play capsule spawns under the fly camera (enterPlayMode).
-        const render::terraingen::ProceduralControls controls {
-            sandbox->controls
-        };
-        // The spiral is anchored on the MAP CENTER (the world origin is
-        // the island's sea corner) and clamped to the map interior.
-        const f32 mapMid = sandbox->edge.size * 0.5f;
-        const f32 mapReach =
-            sandbox->edge.size * 0.5f -
-            render::terraingen::kMapEdgeBand;
-        Vec3 start { mapMid, 0.0f, mapMid };
-        bool found = false;
-        for (f32 radius = 2600.0f;
-             radius <= glm::min(24000.0f, mapReach) && !found;
-             radius += 700.0f) {
-            for (u32 step = 0; step < 16 && !found; ++step) {
-                const f32 angle = radius * 0.0137f +
-                                  static_cast<f32>(step) * 0.3927f;
-                const f32 x = mapMid + std::cos(angle) * radius;
-                const f32 z = mapMid + std::sin(angle) * radius;
-                const f32 h = render::terraingen::applyMapEdgeShape(
-                    sandbox->edge, x, z,
-                    render::terraingen::macroHeightAnalytic(
-                        controls, sandbox->macro, x, z));
-                if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
-                    controls.at(x, z).biome == 0) {
-                    start = { x, h, z };
-                    found = true;
-                }
-            }
-        }
-        sandboxSpawn = start;
+        sandboxSpawn = probeSandboxSpawn();
         sandboxSpawnValid = true;
         // The warmup machine bakes the ring at the probed spawn, then
         // validates it ONCE on the final baked+water world.
@@ -1964,22 +2013,23 @@ void LandscapeScene::setSandboxMode(bool enable) {
         params.base = terrainBase;
         publishWaterBodies();
     }
-    params.snowLine = activeSnowLine;
-    // Mode switch = the whole world changed: a world-sized event keeps
-    // the contentTouchedSince contract (every bump records its rects).
-    params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
-                              1.0e9f, 1.0e9f);
-    ++params.contentStamp; // FarTerrain/pool-map rebake
-    placeStartCamera();
-    renderer.requestRegenerate();
-    renderer.invalidateOcclusion();
-    if (physics && terrainCollision) {
-        terrainCollision = std::make_unique<TerrainCollision>(
-            *physics, params, &engine->getJobSystem());
-        vegCollision =
-            std::make_unique<VegetationCollision>(
+    if (!enable) {
+        // The story-world half of the swap (the sandbox half lives in
+        // applyMapWorld).
+        params.snowLine = activeSnowLine;
+        params.contentEvents.push(params.contentStamp + 1, -1.0e9f,
+                                  -1.0e9f, 1.0e9f, 1.0e9f);
+        ++params.contentStamp;
+        renderer.requestRegenerate();
+        renderer.invalidateOcclusion();
+        if (physics && terrainCollision) {
+            terrainCollision = std::make_unique<TerrainCollision>(
                 *physics, params, &engine->getJobSystem());
+            vegCollision = std::make_unique<VegetationCollision>(
+                *physics, params, &engine->getJobSystem());
+        }
     }
+    placeStartCamera();
     streaming.snapCellEntities(makeStreamingContext());
 }
 
@@ -3914,6 +3964,24 @@ void LandscapeScene::createConsole() {
         }
         questDirector.syncQuestTags(makeQuestContext());
         return questName + " -> " + stateName;
+    });
+    panel.addCommand("map", [this](const str& args) -> str {
+        // Dev travel between bounded maps (chantier CARTES M4.1):
+        // map <mx> <mz> swaps the whole world through applyMapWorld,
+        // probes a spawn on the target map and re-arms the warmup (a
+        // cold map bakes in the background behind the veil).
+        std::istringstream in { args };
+        i32 mx = 0;
+        i32 mz = 0;
+        if (!(in >> mx >> mz)) {
+            return "usage: map <mapX> <mapZ>";
+        }
+        if (!sandboxActive) {
+            return "map travel needs the sandbox world";
+        }
+        travelToMap(mx, mz);
+        return "traveling to map (" + std::to_string(mx) + ", " +
+               std::to_string(mz) + ")";
     });
     panel.addCommand("queststate", [this](const str&) -> str {
         const auto& log = questDirector.questLog();
