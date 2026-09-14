@@ -24,6 +24,7 @@ add_library(meadows-world STATIC
     streaming/CellLoader.cpp
     streaming/CellStreamer.cpp
     terrain/BiomeMapBuilder.cpp
+    terrain/MapRecords.cpp
     terrain/TerrainPatches.cpp
     terrain/TerrainRegions.cpp
     terrain/WaterBodiesBuilder.cpp
