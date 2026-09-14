@@ -249,6 +249,9 @@ private:
     EditorContext makeEditorContext();
     SculptContext makeSculptContext();
     DungeonGenContext makeDungeonGenContext();
+    // The resolved map-scale bake params — ONE definition shared by
+    // applyMapWorld's streamer and the editor's map bake (M5.3).
+    render::terraingen::TileBakeParams makeMapBakeParams() const;
     // GENERIC interaction (E) + travel fade + talk toast,
     // extracted to InteractionController. performTravel STAYS
     // here (a worldspace swap is streaming/scene territory — cellStreamer,

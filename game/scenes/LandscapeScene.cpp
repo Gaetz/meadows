@@ -1970,14 +1970,11 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     sandbox->macro.recurveLow = tuning.terrainRecurveLow;
     sandbox->macro.recurveMid = tuning.terrainRecurveMid;
     sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
-    // Bounded map (chantier CARTES M1.4): the sandbox world IS map
-    // (0, 0), an island (sea rim on every side) — the fallback
-    // beyond the rim reads as open ocean, matching the baked rim.
-    // M4 (map-to-map travel) will make the active map dynamic.
-    render::terraingen::TileBakeParams bakeParams;
-    bakeParams.worldSeed = tuning.terrainSeed;
-    bakeParams.controls = sandbox->controls;
-    bakeParams.macro = sandbox->macro;
+    // Bounded map (chantier CARTES M1.4): the sandbox world IS a
+    // bounded map; the fallback beyond the borders shows the lattice
+    // neighbours' preview.
+    const render::terraingen::TileBakeParams bakeParams =
+        makeMapBakeParams();
     TerrainBakeStreamer::MapStreamConfig mapCfg;
     mapCfg.enabled = true;
     mapCfg.tilesPerSide = kMapTilesPerSide;
@@ -2704,9 +2701,31 @@ EditorContext LandscapeScene::makeEditorContext() {
                 publishBakedTiles(std::move(batch),
                                   flyCamera.camera.position);
             },
+            makeMapBakeParams(),
+            // The map section only makes sense over the sandbox map
+            // world (the streamer's cache is the shared ground truth).
+            renderer.terrainParams().sandbox
+                ? platform::executableDir() / "terrain-cache" /
+                      std::to_string(tuning.terrainSeed)
+                : std::filesystem::path {},
         },
         makeDungeonGenContext(),
     };
+}
+
+render::terraingen::TileBakeParams
+LandscapeScene::makeMapBakeParams() const {
+    render::terraingen::TileBakeParams params;
+    params.worldSeed = tuning.terrainSeed;
+    params.controls.seed = tuning.terrainSeed;
+    params.macro.seaLevel = tuning.seaLevel;
+    params.macro.recurveLow = tuning.terrainRecurveLow;
+    params.macro.recurveMid = tuning.terrainRecurveMid;
+    params.macro.recurveHigh = tuning.terrainRecurveHigh;
+    // Border transitions on (bakeMap fills the grid spec; the
+    // streamer overwrites it from its own map config either way).
+    params.mapGrid.valid = true;
+    return params;
 }
 
 DungeonGenContext LandscapeScene::makeDungeonGenContext() {

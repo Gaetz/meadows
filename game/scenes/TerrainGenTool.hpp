@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <filesystem>
 #include <functional>
 #include <optional>
 
@@ -25,6 +27,12 @@ struct GenContext {
     std::function<void(render::terraingen::TileBakeResult&&, i32 tx,
                        i32 tz)>
         publishPreview;
+    // Map-scale bake (chantier CARTES M5.3): the SAME resolved params
+    // and cache the runtime streamer uses, so the editor's map bake
+    // and the game share slices. Empty mapCacheRoot hides the section
+    // (non-map scenes).
+    render::terraingen::TileBakeParams mapBakeParams;
+    std::filesystem::path mapCacheRoot; // terrain-cache/<seed>
 };
 
 // Editor panel: bake a generated region (S1..S6 pipeline) around the
@@ -37,6 +45,22 @@ public:
 
 private:
     void accept(const GenContext& ctx);
+    void acceptMap(const GenContext& ctx);
+
+    // The map bake's self-owned packet (Phase-5 idiom): the worker
+    // writes the atomics, the panel polls them; the tool dropping the
+    // sptr never races the worker.
+    struct MapBake {
+        std::atomic<u32> landed { 0 };
+        u32 total { 0 };
+        std::atomic<bool> done { false };
+        std::atomic<bool> ok { false };
+        i32 mapX { 0 };
+        i32 mapZ { 0 };
+    };
+    sptr<MapBake> mapBake;
+    i32 mapX { 0 };
+    i32 mapZ { 0 };
 
     u32 seed { 0 };
     bool seedInit { false };
