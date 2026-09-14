@@ -27,7 +27,9 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "BorderReportTool.hpp"
 #include "ErosionBench.hpp"
+#include "MapProtoTool.hpp"
 #include "TerrainMap.hpp"
 #include "PreBakeTool.hpp"
 #include "WaterReplayTool.hpp"
@@ -66,6 +68,15 @@ int usage() {
         "     top-down PNG of the analytic sandbox macro (hypsometric\n"
         "     tints, hillshade, master rivers, center cross); carrier*\n"
         "     overrides the continental-carrier experiment knobs\n"
+        "  cooker border-report <gameDir> <tx> <tz> [x|z] [out.csv]\n"
+        "     bakes tile (tx,tz) and its +x (or +z) neighbour through\n"
+        "     the terrain cache and reports the border continuity:\n"
+        "     band height-divergence profile, lake-mask truncation at\n"
+        "     the owner rect, bed-carve asymmetry\n"
+        "  cooker map-proto <gameDir> <mapTx> <mapTz> [tilesPerSide]\n"
+        "     TERRAIN-RECUL prototype: one GLOBAL map-sized erosion,\n"
+        "     per-tile finalize against the shared surface, interior\n"
+        "     border divergence report (expected ~0)\n"
         "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
         "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
         "     bakes the sandbox tiles overlapping the rect (or the\n"
@@ -399,6 +410,12 @@ int main(int argc, char** argv) {
     }
     if (command == "pre-bake" && (argc == 6 || argc == 7)) {
         return cooker::preBake(argv, argc);
+    }
+    if (command == "border-report" && argc >= 5 && argc <= 7) {
+        return cooker::borderReport(argv, argc);
+    }
+    if (command == "map-proto" && (argc == 5 || argc == 6)) {
+        return cooker::mapProto(argv, argc);
     }
     return usage();
 }
