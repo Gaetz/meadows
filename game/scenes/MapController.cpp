@@ -48,38 +48,55 @@ void MapController::open(const MapContext& ctx) {
         return;
     }
 
-    // Extent = bbox of the worldspace's authored cells (the world has no
-    // stored bounds) + one cell of margin, padded to a square.
-    i32 minGX = 0, maxGX = 0, minGY = 0, maxGY = 0;
-    bool any = false;
-    data::forEach<world::CellForm>(
-        ctx.forms, [&](const world::CellForm& cell) {
-            if (cell.worldspace != space->id) {
-                return;
-            }
-            if (!any) {
-                minGX = maxGX = cell.gridX;
-                minGY = maxGY = cell.gridY;
-                any = true;
-                return;
-            }
-            minGX = std::min(minGX, cell.gridX);
-            maxGX = std::max(maxGX, cell.gridX);
-            minGY = std::min(minGY, cell.gridY);
-            maxGY = std::max(maxGY, cell.gridY);
-        });
-    if (!any) {
-        LOG_WARN("worldspace '{}' has no cells — no map",
-                 space->editorId);
-        return;
+    f32 minX = 0.0f;
+    f32 maxX = 0.0f;
+    f32 minZ = 0.0f;
+    f32 maxZ = 0.0f;
+    if (space->bounded) {
+        // A bounded map IS its own extent (procedural maps have only
+        // implicit cells — no authored bbox to scan); the margin shows
+        // the border transitions (range crests, sea arms) in full.
+        const f32 margin = 2048.0f;
+        minX = static_cast<f32>(space->mapX) * space->mapSize - margin;
+        maxX = static_cast<f32>(space->mapX + 1) * space->mapSize +
+               margin;
+        minZ = static_cast<f32>(space->mapZ) * space->mapSize - margin;
+        maxZ = static_cast<f32>(space->mapZ + 1) * space->mapSize +
+               margin;
+    } else {
+        // Extent = bbox of the worldspace's authored cells (the world
+        // has no stored bounds) + one cell of margin, padded square.
+        i32 minGX = 0, maxGX = 0, minGY = 0, maxGY = 0;
+        bool any = false;
+        data::forEach<world::CellForm>(
+            ctx.forms, [&](const world::CellForm& cell) {
+                if (cell.worldspace != space->id) {
+                    return;
+                }
+                if (!any) {
+                    minGX = maxGX = cell.gridX;
+                    minGY = maxGY = cell.gridY;
+                    any = true;
+                    return;
+                }
+                minGX = std::min(minGX, cell.gridX);
+                maxGX = std::max(maxGX, cell.gridX);
+                minGY = std::min(minGY, cell.gridY);
+                maxGY = std::max(maxGY, cell.gridY);
+            });
+        if (!any) {
+            LOG_WARN("worldspace '{}' has no cells — no map",
+                     space->editorId);
+            return;
+        }
+        const f32 cellSize = space->cellSize;
+        // Cell (gx, gy) spans [gx*cs, (gx+1)*cs) (CellStreamer
+        // convention); one margin cell on every side.
+        minX = static_cast<f32>(minGX - 1) * cellSize;
+        maxX = static_cast<f32>(maxGX + 2) * cellSize;
+        minZ = static_cast<f32>(minGY - 1) * cellSize;
+        maxZ = static_cast<f32>(maxGY + 2) * cellSize;
     }
-    const f32 cellSize = space->cellSize;
-    // Cell (gx, gy) spans [gx*cs, (gx+1)*cs) (CellStreamer convention);
-    // one margin cell on every side.
-    f32 minX = static_cast<f32>(minGX - 1) * cellSize;
-    f32 maxX = static_cast<f32>(maxGX + 2) * cellSize;
-    f32 minZ = static_cast<f32>(minGY - 1) * cellSize;
-    f32 maxZ = static_cast<f32>(maxGY + 2) * cellSize;
     const f32 spanX = maxX - minX;
     const f32 spanZ = maxZ - minZ;
     if (spanX > spanZ) {

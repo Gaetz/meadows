@@ -27,6 +27,8 @@ name = "true-adventurer-adventure"
 
 # --- World structure (chantier 2, B1) ---------------------------------------
 
+# The overworld IS bounded map (0, 0) (chantier CARTES): the rect
+# derives from mapX/mapZ x mapSize, the world-map extent follows it.
 [[records]]
 form = "3c6f8e20-0000-4000-8000-000000000001"
 type = "WorldspaceForm"
@@ -34,6 +36,10 @@ new = true
 [records.fields]
 editorId = "Overworld"
 cellSize = 64.0
+bounded = true
+mapX = 0
+mapZ = 0
+mapSize = 24576.0
 
 # The demo cell (x 0-64, z 320-384) holds the rocks, the NPC and its
 # patrol markers.
