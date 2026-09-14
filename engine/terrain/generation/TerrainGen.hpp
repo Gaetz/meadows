@@ -398,6 +398,10 @@ constexpr f32 kMapBorderWanderWavelength = 9000.0f; // long-range wave
 // into a shelf), and islets are drowned land — never mid-ocean chains.
 constexpr f32 kMapBorderLandFadeLow = -8.0f;  // vs seaLevel
 constexpr f32 kMapBorderLandFadeHigh = 24.0f; // full strength above
+// Styles are hashed per line SEGMENT; around a segment junction the
+// two styles cross-fade over this band along the line — a sea arm
+// closes into a bay while the range rises, never a dead-end channel.
+constexpr f32 kMapBorderStyleBlend = 1800.0f;
 
 f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h);
 

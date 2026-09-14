@@ -1003,40 +1003,64 @@ BorderSample sampleBorders(const MapGridSpec& g, f32 x, f32 z) {
             2.0f * kMapBorderWander;
         const f32 dist = std::abs(
             across - (static_cast<f32>(lineIndex) * g.mapSize + wander));
-        const i32 cellCross =
-            static_cast<i32>(std::floor(along / g.mapSize));
-        const MapEdgeStyle style =
-            mapBorderStyle(g.seed, lineIndex, cellCross, vertical);
-        if (style == MapEdgeStyle::Ridges) {
-            const f32 p = mountainProfile(dist);
-            if (p <= 0.0f) {
-                return;
+        // Style is hashed per SEGMENT (line x crossed cell); near a
+        // segment junction the two styles CROSS-FADE along the line —
+        // a sea arm closes into a bay while the range rises out of it,
+        // instead of a channel stopping dead at the corner.
+        const f32 cellF = along / g.mapSize;
+        const i32 cellCross = static_cast<i32>(std::floor(cellF));
+        const f32 local =
+            (cellF - static_cast<f32>(cellCross)) * g.mapSize;
+        const auto ridges = [&](i32 cell) {
+            return mapBorderStyle(g.seed, lineIndex, cell, vertical) ==
+                           MapEdgeStyle::Ridges
+                       ? 1.0f
+                       : 0.0f;
+        };
+        f32 r = ridges(cellCross);
+        if (local < kMapBorderStyleBlend) {
+            const f32 t = 0.5f + 0.5f * noise::smoothstep01(
+                                            0.0f, 1.0f,
+                                            local / kMapBorderStyleBlend);
+            r = glm::mix(ridges(cellCross - 1), r, t);
+        } else if (local > g.mapSize - kMapBorderStyleBlend) {
+            const f32 t =
+                0.5f + 0.5f * noise::smoothstep01(
+                                  0.0f, 1.0f,
+                                  (g.mapSize - local) /
+                                      kMapBorderStyleBlend);
+            r = glm::mix(ridges(cellCross + 1), r, t);
+        }
+        if (r > 0.0f) {
+            const f32 p = mountainProfile(dist) * r;
+            if (p > 0.0f) {
+                // Crest height varies ALONG the line: peaks and
+                // saddles — the natural cols. [0.45, 1] of the lift.
+                const f32 var = noise::fbm(
+                    lineSeed ^ kSaltBorderCrest, along, 0.0f,
+                    1.0f / kMapBorderCrestWavelength, 2, 2.0f, 0.5f);
+                out.mountain = glm::max(
+                    out.mountain, p * glm::mix(0.45f, 1.0f, var));
+                out.mountainRaw = glm::max(out.mountainRaw, p);
             }
-            // Crest height varies ALONG the line: peaks and saddles —
-            // the natural cols. [0.45, 1] of the full lift.
-            const f32 var = noise::fbm(
-                lineSeed ^ kSaltBorderCrest, along, 0.0f,
-                1.0f / kMapBorderCrestWavelength, 2, 2.0f, 0.5f);
-            out.mountain =
-                glm::max(out.mountain, p * glm::mix(0.45f, 1.0f, var));
-            out.mountainRaw = glm::max(out.mountainRaw, p);
-        } else {
-            const f32 p = seaProfile(dist);
-            if (p <= 0.0f) {
-                return;
+        }
+        if (r < 1.0f) {
+            const f32 p = seaProfile(dist) * (1.0f - r);
+            if (p > 0.0f) {
+                out.sea = glm::max(out.sea, p);
+                // Occasional islets mid-channel: land appearing
+                // progressively inside the sea arm.
+                const f32 isle =
+                    noise::fbm(lineSeed ^ kSaltBorderIsle, along, 0.0f,
+                               1.0f / 2200.0f, 2, 2.0f, 0.5f);
+                const f32 centered =
+                    1.0f - glm::clamp(dist / 700.0f, 0.0f, 1.0f);
+                out.island = glm::max(
+                    out.island,
+                    noise::smoothstep01(0.68f, 0.8f, isle) *
+                        (1.0f - r) * centered * centered *
+                        (3.0f - 2.0f * centered));
             }
-            out.sea = glm::max(out.sea, p);
-            // Occasional islets mid-channel: land appearing
-            // progressively inside the sea arm.
-            const f32 isle =
-                noise::fbm(lineSeed ^ kSaltBorderIsle, along, 0.0f,
-                           1.0f / 2200.0f, 2, 2.0f, 0.5f);
-            const f32 centered =
-                1.0f - glm::clamp(dist / 700.0f, 0.0f, 1.0f);
-            out.island = glm::max(
-                out.island, noise::smoothstep01(0.68f, 0.8f, isle) *
-                                centered * centered *
-                                (3.0f - 2.0f * centered));
         }
     };
     line(true);

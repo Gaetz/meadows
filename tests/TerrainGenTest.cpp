@@ -733,4 +733,22 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
         }
         CHECK(coastPeak < inlandPeak * 0.75f);
     }
+
+    // Corner continuity: styles are hashed per SEGMENT, so walking
+    // ALONG a line through a lattice corner crosses a style junction —
+    // the cross-fade must keep the ground continuous (a sea arm closes
+    // into a bay, never a channel stopping dead against a wall).
+    {
+        const f32 lineX = static_cast<f32>(ridgeLine) * spec.mapSize;
+        for (const f32 dx : { 0.0f, 600.0f }) {
+            f32 previous =
+                applyMapGridShape(spec, lineX + dx, -3000.0f, inland);
+            for (f32 zz = -2996.0f; zz <= 3000.0f; zz += 4.0f) {
+                const f32 h =
+                    applyMapGridShape(spec, lineX + dx, zz, inland);
+                CHECK(std::abs(h - previous) < 4.0f);
+                previous = h;
+            }
+        }
+    }
 }

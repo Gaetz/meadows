@@ -240,5 +240,14 @@ règle par-carte asymétrique. Le design dev, implémenté dans
    par le détroit sans col (donc sans swap de carte) est une question
    de design ouverte (auto-voyage au passage de ligne ?).
 
+7. **Cross-fade des styles aux coins** (retour dev : « des coins où on
+   voit des lignes de mer » sur la terre). Le style étant haché par
+   SEGMENT (ligne × cellule traversée), il changeait NET au coin — un
+   bras de mer s'arrêtait mort contre le segment montagne suivant (un
+   canal en cul-de-sac, lisible comme une ligne artificielle). Les deux
+   styles se fondent désormais le long de la ligne sur
+   `kMapBorderStyleBlend` (1,8 km) de part et d'autre du coin : le bras
+   de mer se referme en baie pendant que la chaîne monte hors de l'eau.
+
 Une seule fonction pure (seed, treillis, h) → le bake des deux cartes,
 le fallback analytique, l'overview et l'horizon sont d'accord partout.
