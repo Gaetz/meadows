@@ -94,7 +94,6 @@ int preBake(char** argv, int argc) {
     // Bounded maps (chantier CARTES): the pre-bake unit is a whole map
     // — every map overlapping the rect, island rim (the game default),
     // skipped when its manifest already stands.
-    params.mapEdge.valid = true; // all sides Sea
     const f32 mapSize =
         params.tileSize * static_cast<f32>(game::kMapTilesPerSide);
     const i32 mx0 = static_cast<i32>(std::floor(minX / mapSize));
@@ -117,6 +116,7 @@ int preBake(char** argv, int argc) {
                          mz);
                 continue;
             }
+            params.mapEdge = game::mapEdgeStylesFor(mx, mz);
             const game::MapBakeStats stats = game::bakeMap(
                 params, mx, mz, cacheDir, &jobs,
                 game::kMapTilesPerSide, [&](u32 landed, u32 total) {

@@ -59,9 +59,12 @@ int bakeMapCmd(char** argv, int argc) {
     }
     // Edge styles, one char per side N/E/S/W: s = sea, r = ridges,
     // - = no rim at all. Default: an island (sea everywhere).
-    const char* edges = argc >= 7 ? argv[6] : "ssss";
-    render::terraingen::MapEdgeSpec edge;
-    if (std::strlen(edges) == 4 && std::strcmp(edges, "----") != 0) {
+    const char* edges = argc >= 7 ? argv[6] : nullptr;
+    render::terraingen::MapEdgeSpec edge =
+        game::mapEdgeStylesFor(mapX, mapZ); // the shared rule
+    if (edges && std::strcmp(edges, "----") == 0) {
+        edge = render::terraingen::MapEdgeSpec {}; // no rim at all
+    } else if (edges && std::strlen(edges) == 4) {
         const auto style = [](char c) {
             return c == 'r' ? render::terraingen::MapEdgeStyle::Ridges
                             : render::terraingen::MapEdgeStyle::Sea;

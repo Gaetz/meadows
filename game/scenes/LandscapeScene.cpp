@@ -1459,10 +1459,10 @@ void LandscapeScene::update(f32 dt) {
         // A pass trigger asked for a map crossing: execute now, after
         // every ECS iteration of the frame section is done.
         if (pendingMapTravel) {
-            const i32 mx = static_cast<i32>(pendingMapTravel->x);
-            const i32 mz = static_cast<i32>(pendingMapTravel->y);
+            const PendingMapTravel travel = *pendingMapTravel;
             pendingMapTravel.reset();
-            travelToMap(mx, mz);
+            travelToMap(travel.mapX, travel.mapZ,
+                        travel.hasArrival ? &travel.arrival : nullptr);
         }
     }
     {
@@ -1923,10 +1923,21 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
 // behind the travel fade. Procedural maps share ONE worldspace record
 // for now (the implicit-cell grid separates their content by
 // coordinates); per-map worldspaces come with the authored path (M5).
-void LandscapeScene::travelToMap(i32 mapX, i32 mapZ) {
+void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
+                                 const Vec2* arrival) {
     applyMapWorld(mapX, mapZ);
     renderer.setStreamingHold(true);
-    sandboxSpawn = probeSandboxSpawn();
+    if (arrival) {
+        // Land at the pass's far side, grounded on the map fallback
+        // (overview when baked, shaped analytic otherwise); the warmup
+        // spawn validation refines it on the real baked ground.
+        const render::TerrainParams& params = renderer.terrainParams();
+        const f32 h =
+            render::terrain::height(params, arrival->x, arrival->y);
+        sandboxSpawn = { arrival->x, h, arrival->y };
+    } else {
+        sandboxSpawn = probeSandboxSpawn();
+    }
     sandboxSpawnValid = true;
     armWarmup(sandboxSpawn, true, false);
     // MOVE the traveler: the old position lies outside the new map's
@@ -1973,7 +1984,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     mapCfg.tilesPerSide = kMapTilesPerSide;
     mapCfg.mapX = mapX;
     mapCfg.mapZ = mapZ;
-    mapCfg.edgeStyles.valid = true; // all sides Sea by default
+    mapCfg.edgeStyles = mapEdgeStylesFor(mapX, mapZ);
     sandbox->edge = mapCfg.edgeStyles;
     sandbox->edge.size = bakeParams.tileSize *
                          static_cast<f32>(mapCfg.tilesPerSide);
@@ -3911,13 +3922,14 @@ void LandscapeScene::createConsole() {
     // to start a map crossing (chantier CARTES M4.2). Deferred to the
     // end of frame: the trigger fires mid-ECS-iteration and the swap
     // tears the world down (the flecs locked-storage rule).
-    sceneConsole.vm()->bindMapTravel([this](i32 mx, i32 mz) {
-        if (!sandboxActive) {
-            return;
-        }
-        pendingMapTravel = Vec2 { static_cast<f32>(mx),
-                                  static_cast<f32>(mz) };
-    });
+    sceneConsole.vm()->bindMapTravel(
+        [this](i32 mx, i32 mz, f32 x, f32 z, bool hasArrival) {
+            if (!sandboxActive) {
+                return;
+            }
+            pendingMapTravel =
+                PendingMapTravel { mx, mz, hasArrival, Vec2 { x, z } };
+        });
     panel.addCommand("spawn", [this](const str& args) -> str {
         if (args.empty()) {
             return "usage: spawn <EditorId>";

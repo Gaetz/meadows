@@ -1,0 +1,48 @@
+# Mountain passes between bounded maps (chantier CARTES M4.2): each pass
+# is a pair of PERSISTENT trigger volumes (no cell — they must exist
+# whatever the streaming does) whose Lua asks travelToMap with an
+# arrival point on the FAR side of the crossing, 400 m past the twin
+# trigger so the arrival never bounces back.
+#
+# Col de la Gorge — the master-river gorge piercing the east ridge of
+# map (0, 0) at z~15040 (the saddle sits at ~24 m: the fleuve carved
+# the rim down to water level — the natural river exit the edge design
+# promised).
+
+[plugin]
+id = "c01dea55-0000-4000-8000-0000000000ff"
+name = "true-adventurer-passes"
+
+[[records]]
+form = "c01dea55-0000-4000-8000-000000000001"
+type = "TriggerForm"
+new = true
+[records.fields]
+editorId = "ColGorgeEstAller"
+halfExtents = [80.0, 200.0, 140.0]
+script = "travelToMap(1, 0, 24976.0, 15040.0)"
+
+[[records]]
+form = "c01dea55-0000-4000-8000-000000000002"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "c01dea55-0000-4000-8000-000000000001"
+position = [24496.0, 24.0, 15040.0]
+
+[[records]]
+form = "c01dea55-0000-4000-8000-000000000003"
+type = "TriggerForm"
+new = true
+[records.fields]
+editorId = "ColGorgeEstRetour"
+halfExtents = [80.0, 200.0, 140.0]
+script = "travelToMap(0, 0, 24176.0, 15040.0)"
+
+[[records]]
+form = "c01dea55-0000-4000-8000-000000000004"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "c01dea55-0000-4000-8000-000000000003"
+position = [24656.0, 24.0, 15040.0]

@@ -45,6 +45,11 @@ file = "base/text-en.toml"
 [[plugins]]
 file = "base/text-fr.toml"
 
+# Bounded-map passes (chantier CARTES): persistent trigger volumes whose
+# Lua crosses to the neighbour map.
+[[plugins]]
+file = "base/passes.toml"
+
 # 2D test-scene data (WorldDemoScene / CombatArena load it directly);
 # disabled in the 3D game stack — enable to inspect it in the Game DB.
 [[plugins]]

@@ -51,6 +51,13 @@ MapBakeStats bakeMap(const render::terraingen::TileBakeParams& params,
                      i32 tilesPerSide = kMapTilesPerSide,
                      const std::function<void(u32, u32)>& progress = {});
 
+// The deterministic edge-style rule for procedural maps (chantier
+// CARTES): east/west borders are RIDGES, north/south are SEA — the
+// rule is symmetric by construction, so the two maps sharing a border
+// always agree on its style (map (0,0).east == map (1,0).west).
+// Authored maps override per WorldspaceForm (M5).
+render::terraingen::MapEdgeSpec mapEdgeStylesFor(i32 mapX, i32 mapZ);
+
 // The map's cache directory under the seed cache root.
 std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
                                   i32 mapX, i32 mapZ);

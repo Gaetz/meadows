@@ -507,15 +507,22 @@ private:
     // it.
     void applyMapWorld(i32 mapX, i32 mapZ);
     // Console-driven map travel (M4.1); the pass/door path (M4.2)
-    // reuses it behind the fade.
-    void travelToMap(i32 mapX, i32 mapZ);
+    // reuses it. `arrival` (nullable) lands the traveler THERE instead
+    // of the map's probed spawn — the far side of a pass.
+    void travelToMap(i32 mapX, i32 mapZ, const Vec2* arrival = nullptr);
     Vec3 probeSandboxSpawn() const;
     // The active bounded map (set by applyMapWorld; saved/restored).
     i32 activeMapX { 0 };
     i32 activeMapZ { 0 };
     // A map crossing asked mid-frame (pass trigger Lua): executed at a
     // safe point, never inside an ECS iteration.
-    std::optional<Vec2> pendingMapTravel;
+    struct PendingMapTravel {
+        i32 mapX { 0 };
+        i32 mapZ { 0 };
+        bool hasArrival { false };
+        Vec2 arrival { 0.0f, 0.0f };
+    };
+    std::optional<PendingMapTravel> pendingMapTravel;
     f32 mapPrefetchCooldown { 0.0f };
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.
