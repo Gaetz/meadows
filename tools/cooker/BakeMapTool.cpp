@@ -57,23 +57,10 @@ int bakeMapCmd(char** argv, int argc) {
         LOG_ERROR("bake-map: tilesPerSide must be 2-8");
         return 1;
     }
-    // Edge styles, one char per side N/E/S/W: s = sea, r = ridges,
-    // - = no rim at all. Default: an island (sea everywhere).
-    const char* edges = argc >= 7 ? argv[6] : nullptr;
-    render::terraingen::MapEdgeSpec edge; // filled by the rule below
-    if (edges && std::strcmp(edges, "----") == 0) {
-        edge = render::terraingen::MapEdgeSpec {}; // no rim at all
-    } else if (edges && std::strlen(edges) == 4) {
-        const auto style = [](char c) {
-            return c == 'r' ? render::terraingen::MapEdgeStyle::Ridges
-                            : render::terraingen::MapEdgeStyle::Sea;
-        };
-        edge.valid = true;
-        edge.north = style(edges[0]);
-        edge.east = style(edges[1]);
-        edge.south = style(edges[2]);
-        edge.west = style(edges[3]);
-    }
+    // Border transitions ride the world-seed hash rule; "--" disables
+    // them (calibration bakes).
+    const bool borders =
+        !(argc >= 7 && std::strcmp(argv[6], "--") == 0);
 
     // Game bake params (the pre-bake resolution path: the SAME plugin-
     // resolved tuning the game bakes with).
@@ -109,11 +96,7 @@ int bakeMapCmd(char** argv, int argc) {
     params.macro.recurveLow = tuning.terrainRecurveLow;
     params.macro.recurveMid = tuning.terrainRecurveMid;
     params.macro.recurveHigh = tuning.terrainRecurveHigh;
-    if (!edges) {
-        edge = render::terraingen::mapEdgeStylesFor(params.worldSeed,
-                                                    mapX, mapZ);
-    }
-    params.mapEdge = edge; // styles only; MapBaker fills the rect
+    params.mapGrid.valid = borders; // MapBaker fills the spec
 
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);
@@ -210,15 +193,12 @@ int bakeMapCmd(char** argv, int argc) {
                 return cp;
             }()
         };
-        render::terraingen::MapEdgeSpec edgeSpec = params.mapEdge;
-        if (edgeSpec.valid) {
-            edgeSpec.minX = static_cast<f32>(mapX) * tileSize *
-                            static_cast<f32>(tilesPerSide);
-            edgeSpec.minZ = static_cast<f32>(mapZ) * tileSize *
-                            static_cast<f32>(tilesPerSide);
-            edgeSpec.size =
+        render::terraingen::MapGridSpec gridSpec = params.mapGrid;
+        if (gridSpec.valid) {
+            gridSpec.seed = params.worldSeed;
+            gridSpec.mapSize =
                 tileSize * static_cast<f32>(tilesPerSide);
-            edgeSpec.seaLevel = params.macro.seaLevel;
+            gridSpec.seaLevel = params.macro.seaLevel;
         }
         const auto overview = game::loadMapOverview(mapDir);
         const auto fallbackAt = [&](f32 x, f32 z, f32 analytic) {
@@ -266,8 +246,8 @@ int bakeMapCmd(char** argv, int argc) {
                          x += 96.0f) {
                         const f32 fallback = fallbackAt(
                             x, z,
-                            render::terraingen::applyMapEdgeShape(
-                                edgeSpec, x, z,
+                            render::terraingen::applyMapGridShape(
+                                gridSpec, x, z,
                                 render::terraingen::
                                     macroHeightAnalytic(
                                         controls, params.macro, x,

@@ -950,96 +950,149 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     return out;
 }
 
-f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h) {
+namespace {
+
+constexpr u32 kSaltBorderStyle = 0xb02de125u;
+constexpr u32 kSaltBorderCrest = 0xc2e57000u;
+constexpr u32 kSaltBorderIsle = 0x151e7000u;
+constexpr u32 kSaltBorderWander = 0x3a2de300u;
+
+// One border line\'s contribution factors at |d| meters from it.
+f32 mountainProfile(f32 dist) {
+    const f32 t =
+        1.0f - glm::clamp(dist / kMapBorderMountainHalf, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t); // smooth rise, crest on the line
+}
+
+f32 seaProfile(f32 dist) {
+    // Flat channel near the line, coasts descending over the half.
+    const f32 t =
+        1.0f - glm::clamp((dist - 400.0f) / (kMapBorderSeaHalf - 400.0f),
+                          0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+struct BorderSample {
+    f32 mountain { 0.0f }; // lift factor (crest variation applied)
+    f32 mountainRaw { 0.0f }; // profile alone (erosion keep)
+    f32 sea { 0.0f };
+    f32 island { 0.0f };
+};
+
+// The two nearest border lines (one vertical, one horizontal) decide
+// everything: mapSize (24+ km) dwarfs every band, farther lines never
+// contribute.
+BorderSample sampleBorders(const MapGridSpec& g, f32 x, f32 z) {
+    BorderSample out;
+    const auto line = [&](bool vertical) {
+        const f32 along = vertical ? z : x;
+        const f32 across = vertical ? x : z;
+        const i32 lineIndex =
+            static_cast<i32>(std::floor(across / g.mapSize + 0.5f));
+        const u32 lineSeed = g.seed ^
+                             (vertical ? 0x9e3779b9u : 0x85ebca6bu) ^
+                             static_cast<u32>(lineIndex) * 0x27d4eb2fu;
+        // The line MEANDERS: a long-range wave along the line offsets
+        // its position — coasts and ranges wander naturally, and both
+        // sides share the same pure warp.
+        const f32 wander =
+            (noise::fbm(lineSeed ^ kSaltBorderWander, along, 0.0f,
+                        1.0f / kMapBorderWanderWavelength, 3, 2.0f,
+                        0.5f) -
+             0.5f) *
+            2.0f * kMapBorderWander;
+        const f32 dist = std::abs(
+            across - (static_cast<f32>(lineIndex) * g.mapSize + wander));
+        const i32 cellCross =
+            static_cast<i32>(std::floor(along / g.mapSize));
+        const MapEdgeStyle style =
+            mapBorderStyle(g.seed, lineIndex, cellCross, vertical);
+        if (style == MapEdgeStyle::Ridges) {
+            const f32 p = mountainProfile(dist);
+            if (p <= 0.0f) {
+                return;
+            }
+            // Crest height varies ALONG the line: peaks and saddles —
+            // the natural cols. [0.45, 1] of the full lift.
+            const f32 var = noise::fbm(
+                lineSeed ^ kSaltBorderCrest, along, 0.0f,
+                1.0f / kMapBorderCrestWavelength, 2, 2.0f, 0.5f);
+            out.mountain =
+                glm::max(out.mountain, p * glm::mix(0.45f, 1.0f, var));
+            out.mountainRaw = glm::max(out.mountainRaw, p);
+        } else {
+            const f32 p = seaProfile(dist);
+            if (p <= 0.0f) {
+                return;
+            }
+            out.sea = glm::max(out.sea, p);
+            // Occasional islets mid-channel: land appearing
+            // progressively inside the sea arm.
+            const f32 isle =
+                noise::fbm(lineSeed ^ kSaltBorderIsle, along, 0.0f,
+                           1.0f / 2200.0f, 2, 2.0f, 0.5f);
+            const f32 centered =
+                1.0f - glm::clamp(dist / 700.0f, 0.0f, 1.0f);
+            out.island = glm::max(
+                out.island, noise::smoothstep01(0.68f, 0.8f, isle) *
+                                centered * centered *
+                                (3.0f - 2.0f * centered));
+        }
+    };
+    line(true);
+    line(false);
+    return out;
+}
+
+} // namespace
+
+MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
+                            bool vertical) {
+    u64 h = 14695981039346656037ull;
+    const auto mix = [&h](u64 v) {
+        for (int byte = 0; byte < 8; ++byte) {
+            h ^= (v >> (byte * 8)) & 0xFF;
+            h *= 1099511628211ull;
+        }
+    };
+    mix(seed ^ kSaltBorderStyle);
+    mix(static_cast<u64>(static_cast<u32>(lineIndex)));
+    mix(static_cast<u64>(static_cast<u32>(cellCross)));
+    mix(vertical ? 0x76ull : 0x68ull);
+    return (h & 1ull) != 0ull ? MapEdgeStyle::Ridges
+                              : MapEdgeStyle::Sea;
+}
+
+f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
     if (!spec.valid) {
         return h;
     }
-    // Band factor per side: 0 deep inside, 1 at the map line. Sea stays
-    // 1 forever beyond (ocean); ridges decay back to the macro outside.
-    const auto seaP = [](f32 d) {
-        return d >= 0.0f
-                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
-                   : 1.0f;
-    };
-    const auto ridgeP = [](f32 d) {
-        return d >= 0.0f
-                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
-                   : 1.0f - glm::clamp(-d / kMapEdgeDecay, 0.0f, 1.0f);
-    };
-    f32 sea = 0.0f;
-    f32 ridge = 0.0f;
-    const auto side = [&](MapEdgeStyle style, f32 d) {
-        if (style == MapEdgeStyle::Sea) {
-            sea = glm::max(sea, seaP(d));
-        } else {
-            ridge = glm::max(ridge, ridgeP(d));
+    const BorderSample sample = sampleBorders(spec, x, z);
+    // The range rises progressively out of the EXISTING terrain (an
+    // additive lift, never a wall out of the ground)...
+    h += kMapBorderMountainLift * sample.mountain;
+    // ...and dives into a sea arm where one crosses (coastal cliffs);
+    // islets resist the drowning.
+    if (sample.sea > 0.0f) {
+        const f32 drown =
+            sample.sea * (1.0f - glm::clamp(sample.island, 0.0f, 1.0f));
+        h = glm::mix(h, spec.seaLevel - kMapBorderSeaDepth, drown);
+        // An islet stands clear of the water even where the base
+        // channel would be deep.
+        if (sample.island > 0.0f) {
+            h = glm::max(
+                h, glm::mix(spec.seaLevel - kMapBorderSeaDepth,
+                            spec.seaLevel + 26.0f, sample.island));
         }
-    };
-    side(spec.west, x - spec.minX);
-    side(spec.east, spec.minX + spec.size - x);
-    side(spec.south, z - spec.minZ);
-    side(spec.north, spec.minZ + spec.size - z);
-    // Ridge first (raise), sea second (drown): a sea corner floods the
-    // ridge end into a cliff coast.
-    if (ridge > 0.0f) {
-        const f32 t = glm::smoothstep(0.0f, 1.0f, ridge);
-        h = glm::max(
-            h, glm::mix(h, spec.seaLevel + kMapEdgeRidgeLift, t * t));
-    }
-    if (sea > 0.0f) {
-        h = glm::mix(h, spec.seaLevel - kMapEdgeSeaDepth,
-                     glm::smoothstep(0.0f, 1.0f, sea));
     }
     return h;
 }
 
-f32 mapEdgeRidgeFactor(const MapEdgeSpec& spec, f32 x, f32 z) {
+f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z) {
     if (!spec.valid) {
         return 0.0f;
     }
-    const auto ridgeP = [](f32 d) {
-        return d >= 0.0f
-                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
-                   : 1.0f - glm::clamp(-d / kMapEdgeDecay, 0.0f, 1.0f);
-    };
-    f32 ridge = 0.0f;
-    const auto side = [&](MapEdgeStyle style, f32 d) {
-        if (style == MapEdgeStyle::Ridges) {
-            ridge = glm::max(ridge, ridgeP(d));
-        }
-    };
-    side(spec.west, x - spec.minX);
-    side(spec.east, spec.minX + spec.size - x);
-    side(spec.south, z - spec.minZ);
-    side(spec.north, spec.minZ + spec.size - z);
-    return ridge;
-}
-
-MapEdgeSpec mapEdgeStylesFor(u32 seed, i32 mapX, i32 mapZ) {
-    const auto borderStyle = [seed](i32 a, i32 b, bool vertical) {
-        u64 h = 14695981039346656037ull;
-        const auto mix = [&h](u64 v) {
-            for (int byte = 0; byte < 8; ++byte) {
-                h ^= (v >> (byte * 8)) & 0xFF;
-                h *= 1099511628211ull;
-            }
-        };
-        mix(seed);
-        mix(static_cast<u64>(static_cast<u32>(a)));
-        mix(static_cast<u64>(static_cast<u32>(b)));
-        mix(vertical ? 0x76ull : 0x68ull);
-        return (h & 1ull) != 0ull ? MapEdgeStyle::Ridges
-                                  : MapEdgeStyle::Sea;
-    };
-    MapEdgeSpec styles;
-    styles.valid = true;
-    // A border's identity is its LINE, not the map side: both
-    // neighbours hash the same key and agree.
-    styles.west = borderStyle(mapX, mapZ, true);
-    styles.east = borderStyle(mapX + 1, mapZ, true);
-    styles.south = borderStyle(mapX, mapZ, false);
-    styles.north = borderStyle(mapX, mapZ + 1, false);
-    return styles;
+    return sampleBorders(spec, x, z).mountainRaw;
 }
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,

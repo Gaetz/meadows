@@ -1434,12 +1434,12 @@ void LandscapeScene::update(f32 dt) {
             mapPrefetchCooldown <= 0.0f) {
             mapPrefetchCooldown = 2.0f;
             const auto& sandbox = renderer.terrainParams().sandbox;
-            if (sandbox && sandbox->edge.valid) {
+            if (sandbox && sandbox->grid.valid) {
                 const Vec3 at = flyCamera.camera.position;
                 const f32 near = 1536.0f;
-                const f32 minX = sandbox->edge.minX;
-                const f32 minZ = sandbox->edge.minZ;
-                const f32 size = sandbox->edge.size;
+                const f32 size = sandbox->grid.mapSize;
+                const f32 minX = static_cast<f32>(activeMapX) * size;
+                const f32 minZ = static_cast<f32>(activeMapZ) * size;
                 if (at.x - minX < near) {
                     bakeStreamer->prefetchMap(activeMapX - 1,
                                               activeMapZ);
@@ -1862,12 +1862,11 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
     const render::terraingen::ProceduralControls controls {
         sandbox->controls
     };
-    const f32 mapMid =
-        sandbox->edge.minX + sandbox->edge.size * 0.5f;
-    const f32 mapMidZ =
-        sandbox->edge.minZ + sandbox->edge.size * 0.5f;
+    const f32 size = sandbox->grid.mapSize;
+    const f32 mapMid = (static_cast<f32>(activeMapX) + 0.5f) * size;
+    const f32 mapMidZ = (static_cast<f32>(activeMapZ) + 0.5f) * size;
     const f32 mapReach =
-        sandbox->edge.size * 0.5f - render::terraingen::kMapEdgeBand;
+        size * 0.5f - render::terraingen::kMapBorderMountainHalf;
     Vec3 start { mapMid, 0.0f, mapMidZ };
     for (f32 radius = 2600.0f; radius <= glm::min(24000.0f, mapReach);
          radius += 700.0f) {
@@ -1902,8 +1901,8 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
                     glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu),
                     tv);
             } else {
-                h = render::terraingen::applyMapEdgeShape(
-                    sandbox->edge, x, z,
+                h = render::terraingen::applyMapGridShape(
+                    sandbox->grid, x, z,
                     render::terraingen::macroHeightAnalytic(
                         controls, sandbox->macro, x, z));
             }
@@ -1984,16 +1983,11 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     mapCfg.tilesPerSide = kMapTilesPerSide;
     mapCfg.mapX = mapX;
     mapCfg.mapZ = mapZ;
-    mapCfg.edgeStyles = render::terraingen::mapEdgeStylesFor(
-        tuning.terrainSeed, mapX, mapZ);
-    sandbox->edge = mapCfg.edgeStyles;
-    sandbox->edge.size = bakeParams.tileSize *
-                         static_cast<f32>(mapCfg.tilesPerSide);
-    sandbox->edge.minX = static_cast<f32>(mapX) * sandbox->edge.size;
-    sandbox->edge.minZ = static_cast<f32>(mapZ) * sandbox->edge.size;
-    sandbox->edge.seaLevel = tuning.seaLevel;
-    sandbox->mapGrid = true;
-    sandbox->gridSeed = tuning.terrainSeed;
+    sandbox->grid.valid = true;
+    sandbox->grid.seed = tuning.terrainSeed;
+    sandbox->grid.mapSize = bakeParams.tileSize *
+                            static_cast<f32>(mapCfg.tilesPerSide);
+    sandbox->grid.seaLevel = tuning.seaLevel;
     // The baked map's overview (when the cache holds it): the
     // fallback inside the map becomes the map's own coarse truth.
     // A cold cache boots on the analytic + rim shape and picks the
@@ -2020,7 +2014,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
         &engine->getJobSystem(), mapCfg);
     LOG_INFO("Sandbox terrain: seed {}, map ({}, {}) = {:.0f} m "
              "island, {} m slices",
-             tuning.terrainSeed, mapX, mapZ, sandbox->edge.size,
+             tuning.terrainSeed, mapX, mapZ, sandbox->grid.mapSize,
              bakeParams.tileSize);
     // Live water sim (option C): boundary inflow from the master
     // network — worker-callable and pure (the memoized network
@@ -4335,10 +4329,12 @@ PlayerContext LandscapeScene::makePlayerContext() {
             // Bounded-map guard: past the rim the ocean turns the
             // swimmer back (world/scene/MapBounds).
             const auto& sandbox = renderer.terrainParams().sandbox;
-            if (sandbox && sandbox->edge.valid) {
+            if (sandbox && sandbox->grid.valid) {
+                const f32 size = sandbox->grid.mapSize;
                 flow += world::mapBoundsCurrent(
-                    at.x, at.z, sandbox->edge.minX, sandbox->edge.minZ,
-                    sandbox->edge.size, 512.0f, 6.0f);
+                    at.x, at.z, static_cast<f32>(activeMapX) * size,
+                    static_cast<f32>(activeMapZ) * size, size, 512.0f,
+                    6.0f);
             }
             return flow;
         },

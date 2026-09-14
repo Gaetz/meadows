@@ -348,52 +348,56 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
                             u32 seed);
 
-// Bounded-map edge shaping (chantier CARTES, docs/TERRAIN-MAPS.md): a
-// pure post-macro remap turning each map side into a natural barrier —
-// sea (the band ramps to open water, ocean beyond the rim forever) or
-// ridges (a rim crest at the map line, decaying back to the macro
-// outside). Applied by the map bake BEFORE erosion (sea sides become
-// perfect drainage outlets) and by the runtime analytic fallback
-// OUTSIDE baked slices — one function, so the baked rim and the
-// horizon beyond it agree at the map line by construction. The master
-// network stays world-continuous (unaware of edges): a fleuve imprint
-// crossing a ridge rim carves a gorge through it — a natural river
-// exit, not a bug.
+// Bounded-map BORDER transitions (chantier CARTES v2,
+// docs/TERRAIN-MAPS.md — design dev): a transition belongs to the
+// BORDER LINE, not to a map. Each border hashes (seed, line identity)
+// to Sea or Ridges — symmetric by construction, both neighbours agree.
+// The shape is a pure function of the distance to the line, applied
+// identically by both maps' bakes AND the runtime fallback:
+//   Ridges — a range rising PROGRESSIVELY on both sides
+//     (kMapBorderMountainHalf each side, crest ON the line), its
+//     height varying along the line (low-frequency noise -> natural
+//     peaks and SADDLES: the cols emerge from the system);
+//   Sea — a genuine sea arm (both coasts descend over
+//     kMapBorderSeaHalf), with occasional ISLETS mid-channel where the
+//     along-line noise says so (land appears progressively).
+// Corners compose by construction: two mountain lines join (max of
+// profiles); a mountain line dives into a sea line as coastal cliffs
+// (the sea cut applies after the lift); sea+sea is open ocean.
 enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1 };
 
-struct MapEdgeSpec {
+// The style of one border LINE: `lineIndex` is the grid index of the
+// line (x = lineIndex * mapSize for vertical), `cellCross` the map
+// coordinate along the crossing axis.
+MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
+                            bool vertical);
+
+struct MapGridSpec {
     bool valid { false };
-    f32 minX { 0.0f };
-    f32 minZ { 0.0f };
-    f32 size { 24576.0f };
+    u32 seed { 0 };
+    f32 mapSize { 24576.0f };
     f32 seaLevel { kDefaultSeaLevel };
-    MapEdgeStyle north { MapEdgeStyle::Sea }; // +z side
-    MapEdgeStyle east { MapEdgeStyle::Sea };  // +x side
-    MapEdgeStyle south { MapEdgeStyle::Sea }; // -z side
-    MapEdgeStyle west { MapEdgeStyle::Sea };  // -x side
 };
 
-constexpr f32 kMapEdgeBand = 1536.0f;     // shaping band inside the rim
-constexpr f32 kMapEdgeDecay = 3072.0f;    // ridge falloff outside
-constexpr f32 kMapEdgeSeaDepth = 40.0f;   // ocean floor below sea level
-constexpr f32 kMapEdgeRidgeLift = 650.0f; // crest above sea level
+constexpr f32 kMapBorderMountainHalf = 2560.0f; // rise, each side
+constexpr f32 kMapBorderMountainLift = 620.0f;  // max crest above base
+constexpr f32 kMapBorderSeaHalf = 2048.0f;      // coast, each side
+constexpr f32 kMapBorderSeaDepth = 40.0f;       // channel floor
+constexpr f32 kMapBorderCrestWavelength = 3000.0f; // peaks/saddles
+constexpr f32 kMapBorderRidgeKeep = 0.8f; // stage-1 erosion keep
+// The line itself MEANDERS: its position is warped by a long-range
+// wave along the line (the terrain's own domain-warp idea), so coasts
+// and ranges wander instead of ruling straight. Both maps and the
+// fallback share the same pure warp — symmetry survives.
+constexpr f32 kMapBorderWander = 900.0f;            // max offset
+constexpr f32 kMapBorderWanderWavelength = 9000.0f; // long-range wave
 
-f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h);
+f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h);
 
-// The ridge band factor alone (0 far inside, 1 at a ridge-side line,
-// decaying outside): the stage-1 erosion KEEP for the rim — without
-// protection the artificial wall has no plateau field and the
-// fastscape carves it back down (measured: median 313 m of a 670 m
-// crest survived).
-f32 mapEdgeRidgeFactor(const MapEdgeSpec& spec, f32 x, f32 z);
-constexpr f32 kMapEdgeRidgeKeep = 0.8f;
-
-// The deterministic per-BORDER style rule for procedural maps: each
-// border hashes (seed, border identity) to Sea or Ridges — symmetric
-// by construction (both maps of a border hash the same key), mixed by
-// value (~half ridges), so the world reads as a 2D patchwork, not a
-// strip. Authored maps override per WorldspaceForm.
-MapEdgeSpec mapEdgeStylesFor(u32 seed, i32 mapX, i32 mapZ);
+// The mountain factor alone (0 away, 1 on a ridge line): the stage-1
+// erosion KEEP for the ranges — without protection the artificial
+// crest has no plateau field and the fastscape carves it back down.
+f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z);
 
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes

@@ -69,8 +69,9 @@ public:
         i32 tilesPerSide { 6 };
         i32 mapX { 0 }; // the active map
         i32 mapZ { 0 };
-        // Styles only (.valid + sides); the bake fills the rect.
-        render::terraingen::MapEdgeSpec edgeStyles;
+        // Border transitions on (the grid spec derives from the
+        // world seed + lattice in the ctor).
+        bool borders { true };
     };
 
     TerrainBakeStreamer(const render::terraingen::TileBakeParams& params,

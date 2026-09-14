@@ -82,16 +82,17 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     macroParams.hillChainWavelength = controlParams.hillChainWavelength;
     MacroResult macro =
         synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
-    // Bounded-map rim: shaped BEFORE the imprint (a master course may
-    // carve its gorge through a ridge rim — the river exit) and BEFORE
-    // the erosion (a sea rim is a perfect drainage outlet).
-    if (params.mapEdge.valid) {
+    // Bounded-map border transitions: shaped BEFORE the imprint (a
+    // master course may carve its gorge through a range — the river
+    // exit) and BEFORE the erosion (a sea arm is a perfect drainage
+    // outlet).
+    if (params.mapGrid.valid) {
         for (u32 row = 0; row < out.sim.n; ++row) {
             for (u32 col = 0; col < out.sim.n; ++col) {
                 f32& h =
                     macro.height[static_cast<size_t>(row) * out.sim.n +
                                  col];
-                h = applyMapEdgeShape(params.mapEdge, out.sim.x(col),
+                h = applyMapGridShape(params.mapGrid, out.sim.x(col),
                                       out.sim.z(row), h);
             }
         }
@@ -225,16 +226,16 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             keep[i] *= glm::mix(1.0f - params.keepCrestFade, 1.0f,
                                 crest[i]);
         }
-        // The map-rim ridge resists too: the artificial wall has no
+        // The border ranges resist too: the artificial crest has no
         // plateau field — without this keep the fastscape carved a
         // 670 m crest down to a 313 m median.
-        if (params.mapEdge.valid) {
+        if (params.mapGrid.valid) {
             const u32 col = static_cast<u32>(i % out.sim.n);
             const u32 row = static_cast<u32>(i / out.sim.n);
             keep[i] = glm::max(
                 keep[i],
-                kMapEdgeRidgeKeep *
-                    mapEdgeRidgeFactor(params.mapEdge, out.sim.x(col),
+                kMapBorderRidgeKeep *
+                    mapGridRidgeFactor(params.mapGrid, out.sim.x(col),
                                        out.sim.z(row)));
         }
         // The imprinted fleuve channel/plain resists the fastscape: the

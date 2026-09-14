@@ -116,8 +116,7 @@ int preBake(char** argv, int argc) {
                          mz);
                 continue;
             }
-            params.mapEdge = render::terraingen::mapEdgeStylesFor(
-                params.worldSeed, mx, mz);
+            params.mapGrid.valid = true; // bakeMap fills the spec
             const game::MapBakeStats stats = game::bakeMap(
                 params, mx, mz, cacheDir, &jobs,
                 game::kMapTilesPerSide, [&](u32 landed, u32 total) {

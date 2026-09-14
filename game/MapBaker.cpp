@@ -128,15 +128,12 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     mapParams.tileSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
     mapParams.apron = kBasinResolveMargin;
-    // The caller picks the edge STYLES (params.mapEdge.valid + sides);
-    // the rect always derives from the map itself.
-    if (mapParams.mapEdge.valid) {
-        mapParams.mapEdge.minX =
-            static_cast<f32>(mapX) * mapParams.tileSize;
-        mapParams.mapEdge.minZ =
-            static_cast<f32>(mapZ) * mapParams.tileSize;
-        mapParams.mapEdge.size = mapParams.tileSize;
-        mapParams.mapEdge.seaLevel = params.macro.seaLevel;
+    // The border-transition grid: pure function of the world seed and
+    // the map lattice — nothing per-map to fill.
+    if (mapParams.mapGrid.valid) {
+        mapParams.mapGrid.seed = params.worldSeed;
+        mapParams.mapGrid.mapSize = mapParams.tileSize;
+        mapParams.mapGrid.seaLevel = params.macro.seaLevel;
     }
     const auto s1Start = std::chrono::steady_clock::now();
     const TileStage1 mapS1 = bakeTileStage1(mapParams, mapX, mapZ,

@@ -326,8 +326,12 @@ TerrainBakeStreamer::TerrainBakeStreamer(
       jobs { jobSystem }, map { mapConfig },
       built { std::make_shared<
           core::ConcurrentQueue<PublishedTile>>() } {
-    if (map.enabled) {
-        params.mapEdge = map.edgeStyles; // the bake fills the rect
+    if (map.enabled && map.borders) {
+        params.mapGrid.valid = true;
+        params.mapGrid.seed = params.worldSeed;
+        params.mapGrid.mapSize =
+            params.tileSize * static_cast<f32>(map.tilesPerSide);
+        params.mapGrid.seaLevel = params.macro.seaLevel;
     }
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);

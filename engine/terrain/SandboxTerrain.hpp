@@ -14,18 +14,11 @@ namespace render {
 struct SandboxTerrain {
     terraingen::ProceduralControlParams controls;
     terraingen::MacroParams macro;
-    // Bounded-map rim (chantier CARTES M3.1): when valid, the analytic
-    // fallback OUTSIDE baked slices applies the same edge shaping the
-    // map bake used — sea sides read as endless ocean, ridge sides as
-    // the rim crest decaying outward, matching the baked rim at the
-    // map line by construction.
-    terraingen::MapEdgeSpec edge;
-    // Procedural map GRID (fallback beyond the active map): each
-    // position applies the edge mask of the map CONTAINING it (the
-    // hashed per-border rule), so the far view shows the true
-    // patchwork of bounded maps instead of raw analytic land.
-    bool mapGrid { false };
-    u32 gridSeed { 0 };
+    // Bounded-map border transitions (chantier CARTES v2): the
+    // analytic fallback applies the same border-line shaping the bakes
+    // use — one pure function of (seed, lattice), so the horizon,
+    // every unbaked map and the baked rims agree by construction.
+    terraingen::MapGridSpec grid;
     // The baked map's 64 m OVERVIEW (decimated global stage-1, rim
     // included): the fallback INSIDE its coverage — a pointwise
     // analytic mirror cannot follow a globally carved valley network

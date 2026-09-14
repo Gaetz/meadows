@@ -185,3 +185,43 @@ en M1.5).
 3. **Transition : fondu type porte** — le mécanisme de voyage existant
    étendu au swap de terrain (M4 minimal) ; le couloir continu reste au
    backlog.
+
+## 8. Transitions de bordure v2 (design dev, 2026-09-14)
+
+La v1 (masque par CÔTÉ de carte, rim plaqué au bord du rect) est morte :
+rendu artificiel (mur sorti du sol côté intérieur, rien côté voisin) et
+règle par-carte asymétrique. Le design dev, implémenté dans
+`TerrainGen.{hpp,cpp}` (`MapGridSpec`, `applyMapGridShape`,
+`mapBorderStyle`, `mapGridRidgeFactor`) :
+
+1. **La transition appartient à la LIGNE de frontière, pas à la carte.**
+   Chaque segment de ligne du treillis (ligne × cellule traversée) hashe
+   (seed, identité de ligne) → **Mer** ou **Montagne**. Les deux cartes
+   voisines voient le même style par construction — la symétrie n'est
+   pas à maintenir, elle est structurelle.
+2. **Montagne = chaîne progressive des DEUX côtés** : lift additif sur
+   le terrain existant (jamais un mur), montée sur
+   `kMapBorderMountainHalf` (2560 m) de chaque côté, crête SUR la
+   ligne. La hauteur de crête varie LE LONG de la ligne (fbm
+   `kMapBorderCrestWavelength`) → pics et selles : **les cols émergent
+   du système**, ils ne sont pas autorés. Keep d'érosion stage-1
+   (`kMapBorderRidgeKeep` × `mapGridRidgeFactor`) sinon le fastscape
+   rabote la crête artificielle (mesuré : 670 m → 313 m sans keep).
+3. **Mer = vrai bras de mer** : les deux côtes descendent sur
+   `kMapBorderSeaHalf`, chenal sous `seaLevel`, îlots occasionnels
+   mi-chenal (fbm le long de la ligne) — la terre apparaît
+   progressivement.
+4. **Les coins se composent par construction** : deux lignes montagne se
+   rejoignent (max des profils), une montagne plonge dans un bras de mer
+   en falaises côtières (le drown s'applique après le lift), mer+mer =
+   océan ouvert. Aucune casuistique de coin.
+5. **Les lignes SERPENTENT** (demande dev : les vagues longue portée du
+   terrain) : la position de la ligne est warpée par un fbm longue
+   longueur d'onde le long d'elle (`kMapBorderWander` ±900 m,
+   `kMapBorderWanderWavelength` 9 km) — côtes et chaînes ondulent au
+   lieu de tirer droit. Le warp est une fonction pure partagée par les
+   deux bakes et le fallback : la symétrie survit. La frontière LOGIQUE
+   (voyage, rect de streaming) reste la ligne nominale.
+
+Une seule fonction pure (seed, treillis) → le bake des deux cartes, le
+fallback analytique, l'overview et l'horizon sont d'accord partout.

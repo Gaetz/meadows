@@ -594,61 +594,107 @@ TEST_CASE("valley axis and trunk valleys: continuous, bounded, inland") {
           controls.at(-3111.0f, 9222.0f).axisCos);
 }
 
-TEST_CASE("map edge shaping: barriers at the rim, identity elsewhere") {
-    // Chantier CARTES M1.3/M3.1: the pure remap both the map bake and
-    // the runtime fallback apply — sea sides ramp to open water and
-    // stay ocean beyond, ridge sides crest at the map line and decay
-    // back outside, and a default-invalid spec is a strict identity.
-    using render::terraingen::applyMapEdgeShape;
-    using render::terraingen::MapEdgeSpec;
+TEST_CASE("map border transitions: shared lines, progressive shapes") {
+    // Chantier CARTES v2 (dev design): a transition belongs to the
+    // BORDER LINE — hashed Sea/Ridges per line, one pure meandering
+    // shape both neighbour maps and the fallback share. Ranges rise
+    // progressively (never a wall), sea arms drown both coasts, an
+    // invalid spec is a strict identity.
+    using render::terraingen::applyMapGridShape;
+    using render::terraingen::mapBorderStyle;
+    using render::terraingen::mapGridRidgeFactor;
     using render::terraingen::MapEdgeStyle;
+    using render::terraingen::MapGridSpec;
 
-    MapEdgeSpec off;
-    CHECK(applyMapEdgeShape(off, 123.0f, 456.0f, 78.9f) ==
+    MapGridSpec off;
+    CHECK(applyMapGridShape(off, 123.0f, 456.0f, 78.9f) ==
           doctest::Approx(78.9f));
+    CHECK(mapGridRidgeFactor(off, 0.0f, 0.0f) == doctest::Approx(0.0f));
 
-    MapEdgeSpec spec;
+    MapGridSpec spec;
     spec.valid = true;
-    spec.minX = 0.0f;
-    spec.minZ = 0.0f;
-    spec.size = 8192.0f;
+    spec.seed = 1337;
+    spec.mapSize = 24576.0f;
     spec.seaLevel = 21.0f;
-    spec.north = MapEdgeStyle::Ridges; // +z
-    spec.east = MapEdgeStyle::Sea;     // +x
-    spec.south = MapEdgeStyle::Sea;
-    spec.west = MapEdgeStyle::Sea;
     const f32 inland = 150.0f;
+    // Sample ALONG mid-cell so the perpendicular lines contribute 0.
+    const f32 along = spec.mapSize * 0.5f;
 
-    // Deep inside: untouched.
-    CHECK(applyMapEdgeShape(spec, 4096.0f, 4096.0f, inland) ==
-          doctest::Approx(inland));
-    // Sea side, at and beyond the line: open water.
-    CHECK(applyMapEdgeShape(spec, 8192.0f, 4096.0f, inland) ==
-          doctest::Approx(21.0f - 40.0f));
-    CHECK(applyMapEdgeShape(spec, 9500.0f, 4096.0f, inland) ==
-          doctest::Approx(21.0f - 40.0f));
-    // Ridge side: a crest at the line...
-    CHECK(applyMapEdgeShape(spec, 4096.0f, 8192.0f, inland) >=
-          21.0f + 600.0f);
-    // ...decaying back to the input far outside.
-    CHECK(applyMapEdgeShape(spec, 4096.0f, 8192.0f + 5000.0f, inland) ==
-          doctest::Approx(inland));
-
-    // Continuity across the lines (1 m steps, both styles).
-    for (const f32 zLine : { 8192.0f }) {
-        f32 previous =
-            applyMapEdgeShape(spec, 4096.0f, zLine - 200.0f, inland);
-        for (f32 z = zLine - 199.0f; z <= zLine + 200.0f; z += 1.0f) {
-            const f32 h = applyMapEdgeShape(spec, 4096.0f, z, inland);
-            CHECK(std::abs(h - previous) < 3.0f);
-            previous = h;
+    // The hash yields both styles among the first vertical lines, and
+    // both neighbours of a line see the SAME style by construction.
+    i32 ridgeLine = -1;
+    i32 seaLine = -1;
+    for (i32 i = 0; i < 32 && (ridgeLine < 0 || seaLine < 0); ++i) {
+        const MapEdgeStyle s = mapBorderStyle(spec.seed, i, 0, true);
+        if (s == MapEdgeStyle::Ridges && ridgeLine < 0) {
+            ridgeLine = i;
+        }
+        if (s == MapEdgeStyle::Sea && seaLine < 0) {
+            seaLine = i;
         }
     }
-    f32 previous =
-        applyMapEdgeShape(spec, 8192.0f - 200.0f, 4096.0f, inland);
-    for (f32 x = 8192.0f - 199.0f; x <= 8392.0f; x += 1.0f) {
-        const f32 h = applyMapEdgeShape(spec, x, 4096.0f, inland);
-        CHECK(std::abs(h - previous) < 3.0f);
-        previous = h;
+    REQUIRE(ridgeLine >= 0);
+    REQUIRE(seaLine >= 0);
+
+    // Deep inside a map: untouched.
+    CHECK(applyMapGridShape(spec, spec.mapSize * 0.5f, along, inland) ==
+          doctest::Approx(inland));
+
+    // Ridge line: the range stands somewhere in the (meandering) band
+    // around the line, rising PROGRESSIVELY — no step exceeds what the
+    // smooth profile allows — and fades back to the input well away.
+    {
+        const f32 lineX = static_cast<f32>(ridgeLine) * spec.mapSize;
+        f32 peak = 0.0f;
+        f32 previous =
+            applyMapGridShape(spec, lineX - 4200.0f, along, inland);
+        for (f32 x = lineX - 4196.0f; x <= lineX + 4200.0f; x += 4.0f) {
+            const f32 h = applyMapGridShape(spec, x, along, inland);
+            CHECK(std::abs(h - previous) < 4.0f); // progressive rise
+            peak = glm::max(peak, h - inland);
+            previous = h;
+        }
+        CHECK(peak >= 150.0f); // a real range on the line
+        CHECK(applyMapGridShape(spec, lineX - 8000.0f, along, inland) ==
+              doctest::Approx(inland));
+        CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
+              doctest::Approx(inland));
+        // The erosion keep exists on the range and nowhere far away.
+        CHECK(mapGridRidgeFactor(spec, lineX, along) > 0.2f);
+        CHECK(mapGridRidgeFactor(spec, lineX + 8000.0f, along) ==
+              doctest::Approx(0.0f));
+        // Crest height VARIES along the line (peaks and saddles — the
+        // cols emerge from the system, they are not authored).
+        f32 lo = 1.0e9f;
+        f32 hi = -1.0e9f;
+        for (f32 zz = 2000.0f; zz <= 22000.0f; zz += 250.0f) {
+            f32 crest = 0.0f;
+            for (f32 x = lineX - 1400.0f; x <= lineX + 1400.0f;
+                 x += 50.0f) {
+                crest = glm::max(
+                    crest, applyMapGridShape(spec, x, zz, inland));
+            }
+            lo = glm::min(lo, crest);
+            hi = glm::max(hi, crest);
+        }
+        CHECK(hi - lo > 80.0f);
+    }
+
+    // Sea line: a genuine channel — some point of the crossing sits at
+    // open water (or an islet standing just clear), continuously.
+    {
+        const f32 lineX = static_cast<f32>(seaLine) * spec.mapSize;
+        f32 low = 1.0e9f;
+        f32 previous =
+            applyMapGridShape(spec, lineX - 3200.0f, along, inland);
+        for (f32 x = lineX - 3196.0f; x <= lineX + 3200.0f; x += 4.0f) {
+            const f32 h = applyMapGridShape(spec, x, along, inland);
+            CHECK(std::abs(h - previous) < 4.0f);
+            low = glm::min(low, h);
+            previous = h;
+        }
+        CHECK(low <= spec.seaLevel + 26.01f);
+        CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
+              doctest::Approx(inland));
     }
 }
