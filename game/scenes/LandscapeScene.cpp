@@ -1902,7 +1902,7 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
                     tv);
             } else {
                 h = render::terraingen::applyMapGridShape(
-                    sandbox->grid, x, z,
+                    controls, sandbox->macro, sandbox->grid, x, z,
                     render::terraingen::macroHeightAnalytic(
                         controls, sandbox->macro, x, z));
             }

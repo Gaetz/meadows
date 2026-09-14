@@ -64,7 +64,8 @@ f32 proceduralBase(const render::TerrainParams& params, f32 x, f32 z) {
             controls, sb.macro, x, z);
         // Bounded-map border transitions: the same pure border-line
         // shaping the bakes use (identity when grid.valid is false).
-        return render::terraingen::applyMapGridShape(sb.grid, x, z, h);
+        return render::terraingen::applyMapGridShape(controls, sb.macro,
+                                                     sb.grid, x, z, h);
     }
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,
                            params.octaves, params.lacunarity, params.gain) *

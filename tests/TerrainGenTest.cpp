@@ -594,22 +594,32 @@ TEST_CASE("valley axis and trunk valleys: continuous, bounded, inland") {
           controls.at(-3111.0f, 9222.0f).axisCos);
 }
 
-TEST_CASE("map border transitions: shared lines, progressive shapes") {
+TEST_CASE("map border transitions: shared lines, coherent shapes") {
     // Chantier CARTES v2 (dev design): a transition belongs to the
-    // BORDER LINE — hashed Sea/Ridges per line, one pure meandering
+    // BORDER LINE — hashed Sea/Ridges per segment, one pure meandering
     // shape both neighbour maps and the fallback share. Ranges rise
     // progressively (never a wall), sea arms drown both coasts, an
-    // invalid spec is a strict identity.
+    // invalid spec is a strict identity — and everything reads the
+    // world it stands on (the proximity rule + the Sea veto).
     using render::terraingen::applyMapGridShape;
-    using render::terraingen::mapBorderStyle;
-    using render::terraingen::mapGridRidgeFactor;
+    using render::terraingen::MacroParams;
+    using render::terraingen::mapBorderStyleResolved;
     using render::terraingen::MapEdgeStyle;
+    using render::terraingen::mapGridRidgeFactor;
     using render::terraingen::MapGridSpec;
+    using render::terraingen::ProceduralControlParams;
+    using render::terraingen::ProceduralControls;
+
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    MacroParams macro;
+    macro.seaLevel = 21.0f;
 
     MapGridSpec off;
-    CHECK(applyMapGridShape(off, 123.0f, 456.0f, 78.9f) ==
-          doctest::Approx(78.9f));
-    CHECK(mapGridRidgeFactor(off, 0.0f, 0.0f, 78.9f) ==
+    CHECK(applyMapGridShape(controls, macro, off, 123.0f, 456.0f,
+                            78.9f) == doctest::Approx(78.9f));
+    CHECK(mapGridRidgeFactor(controls, macro, off, 0.0f, 0.0f, 78.9f) ==
           doctest::Approx(0.0f));
 
     MapGridSpec spec;
@@ -621,25 +631,50 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
     // Sample ALONG mid-cell so the perpendicular lines contribute 0.
     const f32 along = spec.mapSize * 0.5f;
 
-    // The hash yields both styles among the first vertical lines, and
-    // both neighbours of a line see the SAME style by construction.
-    i32 ridgeLine = -1;
-    i32 seaLine = -1;
-    for (i32 i = 0; i < 32 && (ridgeLine < 0 || seaLine < 0); ++i) {
-        const MapEdgeStyle s = mapBorderStyle(spec.seed, i, 0, true);
-        if (s == MapEdgeStyle::Ridges && ridgeLine < 0) {
+    // RESOLVED styles (the Sea veto applied): both kinds exist among
+    // the nearby vertical lines, and both neighbours of a line see the
+    // same style by construction.
+    i32 ridgeLine = -1000;
+    i32 seaLine = -1000;
+    for (i32 i = -32; i < 32 && (ridgeLine < -64 || seaLine < -64);
+         ++i) {
+        const MapEdgeStyle s =
+            mapBorderStyleResolved(controls, macro, spec, i, 0, true);
+        if (s == MapEdgeStyle::Ridges && ridgeLine < -64) {
             ridgeLine = i;
         }
-        if (s == MapEdgeStyle::Sea && seaLine < 0) {
+        if (s == MapEdgeStyle::Sea && seaLine < -64) {
             seaLine = i;
         }
     }
-    REQUIRE(ridgeLine >= 0);
-    REQUIRE(seaLine >= 0);
+    REQUIRE(ridgeLine > -64);
+    REQUIRE(seaLine > -64);
+
+    const auto shape = [&](f32 x, f32 z, f32 h) {
+        return applyMapGridShape(controls, macro, spec, x, z, h);
+    };
 
     // Deep inside a map: untouched.
-    CHECK(applyMapGridShape(spec, spec.mapSize * 0.5f, along, inland) ==
+    CHECK(shape(spec.mapSize * 0.5f, along, inland) ==
           doctest::Approx(inland));
+
+    // The Sea VETO itself: a segment whose analytic line is deep
+    // inland never keeps a Sea proposal — every resolved Sea segment
+    // has a genuinely coastal analytic line under it.
+    {
+        u32 oceanish = 0;
+        for (u32 i = 0; i < 9; ++i) {
+            const f32 sz = (static_cast<f32>(i) + 0.5f) / 9.0f *
+                           spec.mapSize;
+            if (render::terraingen::macroHeightAnalytic(
+                    controls, macro,
+                    static_cast<f32>(seaLine) * spec.mapSize, sz) <
+                spec.seaLevel + 2.0f) {
+                ++oceanish;
+            }
+        }
+        CHECK(oceanish >= 3); // 0.34 * 9 samples
+    }
 
     // Ridge line: the range stands somewhere in the (meandering) band
     // around the line, rising PROGRESSIVELY — no step exceeds what the
@@ -647,23 +682,23 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
     {
         const f32 lineX = static_cast<f32>(ridgeLine) * spec.mapSize;
         f32 peak = 0.0f;
-        f32 previous =
-            applyMapGridShape(spec, lineX - 4200.0f, along, inland);
+        f32 previous = shape(lineX - 4200.0f, along, inland);
         for (f32 x = lineX - 4196.0f; x <= lineX + 4200.0f; x += 4.0f) {
-            const f32 h = applyMapGridShape(spec, x, along, inland);
+            const f32 h = shape(x, along, inland);
             CHECK(std::abs(h - previous) < 4.0f); // progressive rise
             peak = glm::max(peak, h - inland);
             previous = h;
         }
         CHECK(peak >= 150.0f); // a real range on the line
-        CHECK(applyMapGridShape(spec, lineX - 8000.0f, along, inland) ==
+        CHECK(shape(lineX - 8000.0f, along, inland) ==
               doctest::Approx(inland));
-        CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
+        CHECK(shape(lineX + 8000.0f, along, inland) ==
               doctest::Approx(inland));
         // The erosion keep exists on the range and nowhere far away.
-        CHECK(mapGridRidgeFactor(spec, lineX, along, inland) > 0.2f);
-        CHECK(mapGridRidgeFactor(spec, lineX + 8000.0f, along, inland) ==
-              doctest::Approx(0.0f));
+        CHECK(mapGridRidgeFactor(controls, macro, spec, lineX, along,
+                                 inland) > 0.2f);
+        CHECK(mapGridRidgeFactor(controls, macro, spec, lineX + 8000.0f,
+                                 along, inland) == doctest::Approx(0.0f));
         // Crest height VARIES along the line (peaks and saddles — the
         // cols emerge from the system, they are not authored).
         f32 lo = 1.0e9f;
@@ -672,8 +707,7 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
             f32 crest = 0.0f;
             for (f32 x = lineX - 1400.0f; x <= lineX + 1400.0f;
                  x += 50.0f) {
-                crest = glm::max(
-                    crest, applyMapGridShape(spec, x, zz, inland));
+                crest = glm::max(crest, shape(x, zz, inland));
             }
             lo = glm::min(lo, crest);
             hi = glm::max(hi, crest);
@@ -686,16 +720,15 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
     {
         const f32 lineX = static_cast<f32>(seaLine) * spec.mapSize;
         f32 low = 1.0e9f;
-        f32 previous =
-            applyMapGridShape(spec, lineX - 3200.0f, along, inland);
+        f32 previous = shape(lineX - 3200.0f, along, inland);
         for (f32 x = lineX - 3196.0f; x <= lineX + 3200.0f; x += 4.0f) {
-            const f32 h = applyMapGridShape(spec, x, along, inland);
+            const f32 h = shape(x, along, inland);
             CHECK(std::abs(h - previous) < 4.0f);
             low = glm::min(low, h);
             previous = h;
         }
         CHECK(low <= spec.seaLevel + 26.01f);
-        CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
+        CHECK(shape(lineX + 8000.0f, along, inland) ==
               doctest::Approx(inland));
     }
 
@@ -708,11 +741,12 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
         const f32 ridgeX = static_cast<f32>(ridgeLine) * spec.mapSize;
         const f32 seaX = static_cast<f32>(seaLine) * spec.mapSize;
         for (f32 dx = -2400.0f; dx <= 2400.0f; dx += 80.0f) {
-            CHECK(applyMapGridShape(spec, ridgeX + dx, along, ocean) ==
+            CHECK(shape(ridgeX + dx, along, ocean) ==
                   doctest::Approx(ocean));
-            CHECK(applyMapGridShape(spec, seaX + dx, along, ocean) ==
+            CHECK(shape(seaX + dx, along, ocean) ==
                   doctest::Approx(ocean));
-            CHECK(mapGridRidgeFactor(spec, ridgeX + dx, along, ocean) ==
+            CHECK(mapGridRidgeFactor(controls, macro, spec, ridgeX + dx,
+                                     along, ocean) ==
                   doctest::Approx(0.0f));
         }
         // A shallow coastal strip crossed by a ridge line: the lift is
@@ -723,13 +757,9 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
         f32 inlandPeak = 0.0f;
         for (f32 dx = -1600.0f; dx <= 1600.0f; dx += 40.0f) {
             coastPeak = glm::max(
-                coastPeak, applyMapGridShape(spec, ridgeX + dx, along,
-                                             shallow) -
-                               shallow);
+                coastPeak, shape(ridgeX + dx, along, shallow) - shallow);
             inlandPeak = glm::max(
-                inlandPeak, applyMapGridShape(spec, ridgeX + dx, along,
-                                              inland) -
-                                inland);
+                inlandPeak, shape(ridgeX + dx, along, inland) - inland);
         }
         CHECK(coastPeak < inlandPeak * 0.75f);
     }
@@ -741,11 +771,9 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
     {
         const f32 lineX = static_cast<f32>(ridgeLine) * spec.mapSize;
         for (const f32 dx : { 0.0f, 600.0f }) {
-            f32 previous =
-                applyMapGridShape(spec, lineX + dx, -3000.0f, inland);
+            f32 previous = shape(lineX + dx, -3000.0f, inland);
             for (f32 zz = -2996.0f; zz <= 3000.0f; zz += 4.0f) {
-                const f32 h =
-                    applyMapGridShape(spec, lineX + dx, zz, inland);
+                const f32 h = shape(lineX + dx, zz, inland);
                 CHECK(std::abs(h - previous) < 4.0f);
                 previous = h;
             }

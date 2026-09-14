@@ -249,5 +249,21 @@ règle par-carte asymétrique. Le design dev, implémenté dans
    `kMapBorderStyleBlend` (1,8 km) de part et d'autre du coin : le bras
    de mer se referme en baie pendant que la chaîne monte hors de l'eau.
 
+8. **Veto Mer — le style haché est une PROPOSITION** (retour dev : un
+   bras de mer haché en plein continent creusait un canal de 4 km à
+   travers la terre ; « soit une mer plus large soit une annulation »
+   → annulation choisie). `mapBorderStyleResolved` échantillonne le
+   terrain analytique le long du segment (9 points, mémoïsé par
+   segment) : moins de `kMapBorderSeaVetoOceanFrac` (34 %) des points
+   sous la mer ⇒ la proposition Mer est rétrogradée en **Montagnes**,
+   la frontière terre-terre canonique. Les segments côtiers gardent
+   leur bras, qui se referme en baie/fjord côté terre (fondu §8.7 +
+   gate terre §8.6). Contrat : chaque appelant passe les MÊMES
+   (controls, macro) qu'il donne à `macroHeightAnalytic` — bakes et
+   fallback résolvent identiquement. Effet mesuré sur (0,0) seed
+   1337 : l'ouest (bras intérieur) devient montagnes 685-1139 m, le
+   sud (côtier) garde sa mer (passages −70 m), l'est inchangé (col
+   z=14464 intact).
+
 Une seule fonction pure (seed, treillis, h) → le bake des deux cartes,
 le fallback analytique, l'overview et l'horizon sont d'accord partout.

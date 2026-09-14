@@ -247,7 +247,7 @@ int bakeMapCmd(char** argv, int argc) {
                         const f32 fallback = fallbackAt(
                             x, z,
                             render::terraingen::applyMapGridShape(
-                                gridSpec, x, z,
+                                controls, params.macro, gridSpec, x, z,
                                 render::terraingen::
                                     macroHeightAnalytic(
                                         controls, params.macro, x,

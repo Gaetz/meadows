@@ -835,9 +835,9 @@ render::WaterSystem::FarWaterSet collectFarWater(
         }
         return false;
     };
+    const render::terraingen::ProceduralControls ctl { controls };
     const auto masters = render::terraingen::masterRiversNear(
-        render::terraingen::ProceduralControls { controls }, macro, net,
-        minX, minZ, maxX, maxZ);
+        ctl, macro, net, minX, minZ, maxX, maxZ);
     for (const render::terraingen::MasterRiver& river : masters) {
         render::WaterSystem::FarWaterSet::Ribbon run;
         for (const render::terraingen::MasterNode& node : river.nodes) {
@@ -846,7 +846,7 @@ render::WaterSystem::FarWaterSet collectFarWater(
             // range buried it), the ribbon must stop — otherwise it
             // floats over the drowned channel the far terrain shows.
             const f32 shaped = render::terraingen::applyMapGridShape(
-                grid, node.x, node.z, node.surface);
+                ctl, macro, grid, node.x, node.z, node.surface);
             if (node.surface <= seaLevel + 0.5f ||
                 shaped <= seaLevel + 0.5f ||
                 shaped > node.surface + 30.0f ||

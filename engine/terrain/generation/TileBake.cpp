@@ -92,7 +92,8 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                 f32& h =
                     macro.height[static_cast<size_t>(row) * out.sim.n +
                                  col];
-                h = applyMapGridShape(params.mapGrid, out.sim.x(col),
+                h = applyMapGridShape(controls, params.macro,
+                                      params.mapGrid, out.sim.x(col),
                                       out.sim.z(row), h);
             }
         }
@@ -235,7 +236,8 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             keep[i] = glm::max(
                 keep[i],
                 kMapBorderRidgeKeep *
-                    mapGridRidgeFactor(params.mapGrid, out.sim.x(col),
+                    mapGridRidgeFactor(controls, params.macro,
+                                       params.mapGrid, out.sim.x(col),
                                        out.sim.z(row),
                                        macro.height[i]));
         }

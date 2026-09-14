@@ -2,6 +2,7 @@
 #include "engine/terrain/generation/GridOps.hpp"
 
 #include <cmath>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 
@@ -982,7 +983,9 @@ struct BorderSample {
 // The two nearest border lines (one vertical, one horizontal) decide
 // everything: mapSize (24+ km) dwarfs every band, farther lines never
 // contribute.
-BorderSample sampleBorders(const MapGridSpec& g, f32 x, f32 z) {
+BorderSample sampleBorders(const ProceduralControls& controls,
+                           const MacroParams& macroParams,
+                           const MapGridSpec& g, f32 x, f32 z) {
     BorderSample out;
     const auto line = [&](bool vertical) {
         const f32 along = vertical ? z : x;
@@ -1012,7 +1015,8 @@ BorderSample sampleBorders(const MapGridSpec& g, f32 x, f32 z) {
         const f32 local =
             (cellF - static_cast<f32>(cellCross)) * g.mapSize;
         const auto ridges = [&](i32 cell) {
-            return mapBorderStyle(g.seed, lineIndex, cell, vertical) ==
+            return mapBorderStyleResolved(controls, macroParams, g,
+                                          lineIndex, cell, vertical) ==
                            MapEdgeStyle::Ridges
                        ? 1.0f
                        : 0.0f;
@@ -1087,11 +1091,62 @@ MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
                               : MapEdgeStyle::Sea;
 }
 
-f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
+MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
+                                    const MacroParams& macro,
+                                    const MapGridSpec& spec,
+                                    i32 lineIndex, i32 cellCross,
+                                    bool vertical) {
+    const MapEdgeStyle proposed =
+        mapBorderStyle(spec.seed, lineIndex, cellCross, vertical);
+    if (proposed != MapEdgeStyle::Sea) {
+        return proposed;
+    }
+    // Sea veto: a sea arm only stands where the analytic world already
+    // reads coastal along the segment — deep inland it demotes to the
+    // canonical land-land border (Ridges). Memoized per segment (the
+    // analytic samples are the cost); thread-local keeps it pure.
+    thread_local std::unordered_map<u64, MapEdgeStyle> memo;
+    u64 key = static_cast<u64>(static_cast<u32>(lineIndex)) |
+              (static_cast<u64>(static_cast<u32>(cellCross)) << 32);
+    key ^= vertical ? 0x9e3779b97f4a7c15ull : 0xc2b2ae3d27d4eb4full;
+    key ^= static_cast<u64>(spec.seed) * 0x100000001b3ull;
+    key ^= static_cast<u64>(
+               static_cast<i64>(spec.seaLevel * 64.0f)) << 17;
+    key ^= static_cast<u64>(spec.mapSize) << 3;
+    if (const auto it = memo.find(key); it != memo.end()) {
+        return it->second;
+    }
+    constexpr u32 kSamples = 9;
+    u32 oceanish = 0;
+    for (u32 i = 0; i < kSamples; ++i) {
+        const f32 along =
+            (static_cast<f32>(cellCross) +
+             (static_cast<f32>(i) + 0.5f) / static_cast<f32>(kSamples)) *
+            spec.mapSize;
+        const f32 lineAt = static_cast<f32>(lineIndex) * spec.mapSize;
+        const f32 sx = vertical ? lineAt : along;
+        const f32 sz = vertical ? along : lineAt;
+        if (macroHeightAnalytic(controls, macro, sx, sz) <
+            spec.seaLevel + 2.0f) {
+            ++oceanish;
+        }
+    }
+    const MapEdgeStyle resolved =
+        static_cast<f32>(oceanish) <
+                kMapBorderSeaVetoOceanFrac * static_cast<f32>(kSamples)
+            ? MapEdgeStyle::Ridges
+            : MapEdgeStyle::Sea;
+    memo.emplace(key, resolved);
+    return resolved;
+}
+
+f32 applyMapGridShape(const ProceduralControls& controls,
+                      const MacroParams& macro, const MapGridSpec& spec,
+                      f32 x, f32 z, f32 h) {
     if (!spec.valid) {
         return h;
     }
-    const BorderSample sample = sampleBorders(spec, x, z);
+    const BorderSample sample = sampleBorders(controls, macro, spec, x, z);
     // Coherence gate (the proximity rule): the transition reads the
     // ground under it — border features belong to the LAND the lattice
     // separates, never to the open ocean the line happens to cross.
@@ -1123,14 +1178,16 @@ f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
     return h;
 }
 
-f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
+f32 mapGridRidgeFactor(const ProceduralControls& controls,
+                       const MacroParams& macro, const MapGridSpec& spec,
+                       f32 x, f32 z, f32 h) {
     if (!spec.valid) {
         return 0.0f;
     }
     const f32 land = noise::smoothstep01(
         spec.seaLevel + kMapBorderLandFadeLow,
         spec.seaLevel + kMapBorderLandFadeHigh, h);
-    return sampleBorders(spec, x, z).mountainRaw * land;
+    return sampleBorders(controls, macro, spec, x, z).mountainRaw * land;
 }
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,

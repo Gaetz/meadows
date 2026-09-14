@@ -366,11 +366,12 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 // (the sea cut applies after the lift); sea+sea is open ocean.
 enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1 };
 
-// The style of one border LINE: `lineIndex` is the grid index of the
-// line (x = lineIndex * mapSize for vertical), `cellCross` the map
-// coordinate along the crossing axis.
+// The hashed style PROPOSAL of one border LINE segment: `lineIndex` is
+// the grid index of the line (x = lineIndex * mapSize for vertical),
+// `cellCross` the map coordinate along the crossing axis.
 MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
                             bool vertical);
+
 
 struct MapGridSpec {
     bool valid { false };
@@ -402,15 +403,34 @@ constexpr f32 kMapBorderLandFadeHigh = 24.0f; // full strength above
 // two styles cross-fade over this band along the line — a sea arm
 // closes into a bay while the range rises, never a dead-end channel.
 constexpr f32 kMapBorderStyleBlend = 1800.0f;
+// A Sea proposal needs at least this fraction of its segment's samples
+// under sea in the ANALYTIC world to stand; otherwise it demotes to
+// Ridges (no 4 km canal dug across a continent).
+constexpr f32 kMapBorderSeaVetoOceanFrac = 0.34f;
 
-f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h);
+// The RESOLVED style of a segment: the hashed proposal, with the Sea
+// veto above applied against the analytic ground sampled along the
+// nominal line (memoized per segment). Every caller passes the same
+// (controls, macro) it feeds macroHeightAnalytic, so the bakes and
+// the runtime fallback resolve identically.
+MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
+                                    const MacroParams& macro,
+                                    const MapGridSpec& spec,
+                                    i32 lineIndex, i32 cellCross,
+                                    bool vertical);
+
+f32 applyMapGridShape(const ProceduralControls& controls,
+                      const MacroParams& macro, const MapGridSpec& spec,
+                      f32 x, f32 z, f32 h);
 
 // The mountain factor alone (0 away, 1 on a ridge line): the stage-1
 // erosion KEEP for the ranges — without protection the artificial
 // crest has no plateau field and the fastscape carves it back down.
 // `h` is the (shaped) terrain height there: the keep carries the same
 // land gate as the lift, so ocean stretches keep no phantom crest.
-f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z, f32 h);
+f32 mapGridRidgeFactor(const ProceduralControls& controls,
+                       const MacroParams& macro, const MapGridSpec& spec,
+                       f32 x, f32 z, f32 h);
 
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes
