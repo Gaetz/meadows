@@ -46,6 +46,10 @@ struct SaveContext {
     bool playMode { true };
     bool editMode { false };
     i32 weatherSelected { -1 };
+    // The active bounded map (chantier CARTES M4.4).
+    bool sandboxMap { false };
+    i32 activeMapX { 0 };
+    i32 activeMapZ { 0 };
     // Sweep every live reference entity (the loaded cells' contents + the
     // persistent player) so performSave can capture each into the layer.
     std::function<void(const std::function<void(ecs::Entity)>&)> forEachLiveRef;

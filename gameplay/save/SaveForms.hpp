@@ -297,6 +297,12 @@ struct WorldStateForm : data::Form {
     // editMode, else Spectator.
     bool editMode { false };
     i32 weatherSelected { -1 };
+    // The active bounded map (chantier CARTES M4.4): a save on map
+    // (1, 0) must reload map (1, 0) — restoring the position without
+    // the map put the player in the previous map's ocean.
+    bool sandboxMap { false };
+    i32 activeMapX { 0 };
+    i32 activeMapZ { 0 };
 
     REFLECT_BEGIN(WorldStateForm, data::Form)
         REFLECT_FIELD(gameSeconds)
@@ -308,6 +314,9 @@ struct WorldStateForm : data::Form {
         REFLECT_FIELD(playMode)
         REFLECT_FIELD(editMode)
         REFLECT_FIELD(weatherSelected)
+        REFLECT_FIELD(sandboxMap)
+        REFLECT_FIELD(activeMapX)
+        REFLECT_FIELD(activeMapZ)
     REFLECT_END()
 };
 

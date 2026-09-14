@@ -42,6 +42,7 @@
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
 #include "game/MapBaker.hpp" // mapCacheDir + kMapTilesPerSide (M1.4)
+#include "world/scene/MapBounds.hpp"
 #include "game/RendererAssets.hpp"
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
 #include "game/scenes/EditorScene.hpp" // the Game DB overlay
@@ -1027,6 +1028,20 @@ void LandscapeScene::setupWorldAndStreaming() {
                 }
             }
         }
+        // A save made on another bounded map reloads THAT map --
+        // restoring the position alone put the player in the previous
+        // map's ocean.
+        if (sandboxActive && loadedWorldState->sandboxMap &&
+            (loadedWorldState->activeMapX != activeMapX ||
+             loadedWorldState->activeMapZ != activeMapZ)) {
+            applyMapWorld(loadedWorldState->activeMapX,
+                          loadedWorldState->activeMapZ);
+            const Vec3 around =
+                glm::length(loadedWorldState->cameraPosition) > 0.001f
+                    ? loadedWorldState->cameraPosition
+                    : probeSandboxSpawn();
+            armWarmup(around, false, true);
+        }
     }
     // A fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
@@ -1898,6 +1913,8 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ) {
 // travel puts the player at its marker, a mode switch at the start
 // camera).
 void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
+    activeMapX = mapX;
+    activeMapZ = mapZ;
     render::TerrainParams& params = renderer.terrainParams();
     auto sandbox = std::make_shared<render::SandboxTerrain>();
     sandbox->controls.seed = tuning.terrainSeed;
@@ -3561,6 +3578,9 @@ SaveContext LandscapeScene::makeSaveContext() {
         mode == SceneMode::Play,
         mode == SceneMode::Edit,
         weather.selected(),
+        sandboxActive, // the active bounded map (M4.4)
+        activeMapX,
+        activeMapZ,
         // Inline capture is safe: captureEntity reads components and writes
         // into the pending layer's own map — it mutates no ECS structure
         // (SaveGame.cpp), so no iterator invalidation during each.
@@ -4246,8 +4266,17 @@ PlayerContext LandscapeScene::makePlayerContext() {
             if (interiorMode) {
                 return Vec2 { 0.0f };
             }
-            return render::terrain::waterFlowQuery(makeWaterQuery(),
-                                                   at.x, at.z, at.y);
+            Vec2 flow = render::terrain::waterFlowQuery(
+                makeWaterQuery(), at.x, at.z, at.y);
+            // Bounded-map guard: past the rim the ocean turns the
+            // swimmer back (world/scene/MapBounds).
+            const auto& sandbox = renderer.terrainParams().sandbox;
+            if (sandbox && sandbox->edge.valid) {
+                flow += world::mapBoundsCurrent(
+                    at.x, at.z, sandbox->edge.minX, sandbox->edge.minZ,
+                    sandbox->edge.size, 512.0f, 6.0f);
+            }
+            return flow;
         },
     };
 }

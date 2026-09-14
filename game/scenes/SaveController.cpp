@@ -68,6 +68,9 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
     state.playMode = ctx.playMode;
     state.editMode = ctx.editMode;
     state.weatherSelected = ctx.weatherSelected;
+    state.sandboxMap = ctx.sandboxMap;
+    state.activeMapX = ctx.activeMapX;
+    state.activeMapZ = ctx.activeMapZ;
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(
                    "5a5e0000-0000-4000-8000-0000000000ff")));

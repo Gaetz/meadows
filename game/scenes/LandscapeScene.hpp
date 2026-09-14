@@ -510,6 +510,9 @@ private:
     // reuses it behind the fade.
     void travelToMap(i32 mapX, i32 mapZ);
     Vec3 probeSandboxSpawn() const;
+    // The active bounded map (set by applyMapWorld; saved/restored).
+    i32 activeMapX { 0 };
+    i32 activeMapZ { 0 };
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.
     void placeStartCamera();

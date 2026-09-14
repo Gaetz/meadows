@@ -5,6 +5,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "world/worldspace/FormCategory.hpp"
 #include "world/worldspace/WorldForms.hpp"
+#include "world/scene/MapBounds.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
 using core::Guid;
@@ -295,4 +296,28 @@ TEST_CASE("worldspace map fields reflect and default to inherit") {
     CHECK(type.findField("dominantBiome") != nullptr);
     CHECK(type.findField("edgeNorth") != nullptr);
     CHECK(type.findField("edgeWest") != nullptr);
+}
+
+TEST_CASE("map bounds current pushes inward past the rim only") {
+    // Chantier CARTES M3.3: zero inside the rect; ramping inward
+    // current beyond it, capped at `strength`.
+    const f32 minX = 0.0f;
+    const f32 minZ = 0.0f;
+    const f32 size = 1000.0f;
+    const auto at = [&](f32 x, f32 z) {
+        return world::mapBoundsCurrent(x, z, minX, minZ, size, 100.0f,
+                                       6.0f);
+    };
+    CHECK(at(500.0f, 500.0f) == Vec2 { 0.0f, 0.0f });
+    CHECK(at(1.0f, 999.0f) == Vec2 { 0.0f, 0.0f });
+    // Past +x: pushed back toward -x, ramping then capped.
+    CHECK(at(1050.0f, 500.0f).x == doctest::Approx(-3.0f));
+    CHECK(at(1500.0f, 500.0f).x == doctest::Approx(-6.0f));
+    CHECK(at(1050.0f, 500.0f).y == doctest::Approx(0.0f));
+    // Past -z: pushed toward +z.
+    CHECK(at(500.0f, -100.0f).y == doctest::Approx(6.0f));
+    // A corner pushes on both axes.
+    const Vec2 corner = at(-50.0f, -50.0f);
+    CHECK(corner.x > 0.0f);
+    CHECK(corner.y > 0.0f);
 }
