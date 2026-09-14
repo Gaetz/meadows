@@ -38,17 +38,33 @@ struct MapStageResult {
     u32 rivers { 0 };
 };
 
+// Deterministic identity of a PROCEDURAL map (§2.5 — derived, never
+// minted): every session, save and mod that bakes the same
+// (worldSeed, mapX, mapZ) talks about the same worldspace. An
+// authored map mints its guid at creation instead.
+core::Guid mapWorldspaceGuid(u32 worldSeed, i32 mapX, i32 mapZ);
+
+// The .trg asset identity of one slice, derived from the map guid —
+// stable across re-bakes, so a re-export patches the same records
+// and overwrites the same asset entries.
+core::Guid mapSliceAssetGuid(const core::Guid& mapGuid, u32 sliceIndex);
+
 // Stage one map: 1 WorldspaceForm (guid = mapGuid, bounded) + one
 // TerrainRegionForm per slice + WaterBodyForm per lake + RiverForm/
 // RiverPointForm per course, all worldspace-scoped to the map.
 // `lakes`/`rivers` are the merged .twb contents of the slices (the
 // caller reads them; lake masks stay in the .twb tier — a §5 water
 // record is the rect + level, like the editor's Accept path).
+// `riverThin` > 0 drops course points closer than that many meters to
+// the previous kept one (ends always kept): a full map's hydrology at
+// bake spacing is tens of thousands of records — the record tier only
+// needs ribbon fidelity (the far-water spacing, 48 m, is plenty).
 MapStageResult stageMapRecords(
     data::EditSession& session, const data::FormDatabase& forms,
     const core::Guid& mapGuid, const str& mapName, i32 mapX, i32 mapZ,
     f32 mapSize, u32 mapSeed, const vector<MapSliceRecord>& slices,
     const vector<render::terraingen::Lake>& lakes,
-    const vector<render::terraingen::River>& rivers);
+    const vector<render::terraingen::River>& rivers,
+    f32 riverThin = 0.0f);
 
 } // namespace world

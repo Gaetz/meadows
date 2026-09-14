@@ -157,6 +157,38 @@ TEST_CASE("map records: bake -> stage -> export -> resolve -> "
     CHECK(riverPoints == 3);
 }
 
+TEST_CASE("map records: riverThin keeps the ends, drops dense "
+          "midpoints") {
+    data::FormTypeRegistry types;
+    data::registerCoreFormTypes(types);
+    registerWorldFormTypes(types);
+    data::FormDatabase db;
+    data::EditSession session { db, types };
+
+    render::terraingen::River dense;
+    for (i32 i = 0; i < 10; ++i) {
+        dense.points.push_back(
+            { static_cast<f32>(i) * 10.0f, 0.0f, 60.0f - i, 3.0f });
+    }
+    stageMapRecords(session, db, kMapGuid, "ThinMap", 0, 0, 24576.0f,
+                    1u, {}, {}, { dense }, 48.0f);
+    const data::Plugin plugin = session.exportPlugin(
+        *core::Guid::fromString("aaaa00fe-0000-4000-8000-000000000001"),
+        "thin-map");
+    data::FormDatabase resolved;
+    data::resolve({ &plugin }, types, resolved);
+    vector<f32> xs;
+    data::forEach<RiverPointForm>(
+        resolved, [&](const RiverPointForm& pt) {
+            xs.push_back(pt.position.x);
+        });
+    // 10 points at 10 m: the first, the first >= 48 m on (x=50), and
+    // the LAST (always kept even under spacing).
+    CHECK(xs.size() == 3);
+    CHECK(std::count(xs.begin(), xs.end(), 0.0f) == 1);
+    CHECK(std::count(xs.begin(), xs.end(), 90.0f) == 1);
+}
+
 TEST_CASE("map records: re-stage patches the same records, no duplicates") {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);

@@ -43,12 +43,25 @@ struct Stager {
 
 } // namespace
 
+core::Guid mapWorldspaceGuid(u32 worldSeed, i32 mapX, i32 mapZ) {
+    const u64 coords =
+        (static_cast<u64>(static_cast<u32>(mapX)) << 32) |
+        static_cast<u64>(static_cast<u32>(mapZ));
+    return core::Guid::combine(
+        core::Guid { worldSeed, 0x6d61707365656431ull },
+        core::Guid { coords, 0x6d6170636f6f7264ull });
+}
+
+core::Guid mapSliceAssetGuid(const core::Guid& mapGuid, u32 sliceIndex) {
+    return derived(mapGuid, 0x6000 + sliceIndex);
+}
+
 MapStageResult stageMapRecords(
     data::EditSession& session, const data::FormDatabase& forms,
     const core::Guid& mapGuid, const str& mapName, i32 mapX, i32 mapZ,
     f32 mapSize, u32 mapSeed, const vector<MapSliceRecord>& slices,
     const vector<render::terraingen::Lake>& lakes,
-    const vector<render::terraingen::River>& rivers) {
+    const vector<render::terraingen::River>& rivers, f32 riverThin) {
     Stager st { session, forms };
     MapStageResult out;
     out.worldspace = mapGuid;
@@ -122,9 +135,24 @@ MapStageResult stageMapRecords(
                           mapName.c_str(), r);
             st.ensure(riverType, riverGuid, editorId);
             st.set(riverType, riverGuid, "worldspace", mapGuid);
+            // Thin the course to record-tier fidelity (ends kept).
+            vector<render::terraingen::RiverPoint> kept;
+            kept.reserve(river.points.size());
             for (size_t p = 0; p < river.points.size(); ++p) {
                 const render::terraingen::RiverPoint& pt =
                     river.points[p];
+                if (riverThin > 0.0f && !kept.empty() &&
+                    p + 1 < river.points.size()) {
+                    const f32 dx = pt.x - kept.back().x;
+                    const f32 dz = pt.z - kept.back().z;
+                    if (dx * dx + dz * dz < riverThin * riverThin) {
+                        continue;
+                    }
+                }
+                kept.push_back(pt);
+            }
+            for (size_t p = 0; p < kept.size(); ++p) {
+                const render::terraingen::RiverPoint& pt = kept[p];
                 const core::Guid pointGuid =
                     derived(riverGuid, kRiverPointBase + p);
                 char ptId[80];

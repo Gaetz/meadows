@@ -74,9 +74,13 @@ int usage() {
         "     band height-divergence profile, lake-mask truncation at\n"
         "     the owner rect, bed-carve asymmetry\n"
         "  cooker bake-map <gameDir> <mapX> <mapZ> [tilesPerSide=6]\n"
+        "                  [--] [--export-plugin <name>]\n"
         "     bakes one bounded map (ONE global erosion, slices +\n"
         "     manifest under terrain-cache/<seed>/map_<mx>_<mz>/) and\n"
-        "     reports the interior border divergence (<= 8 m)\n"
+        "     reports the interior border divergence; -- disables the\n"
+        "     border transitions; --export-plugin also ships the map\n"
+        "     as an ordinary par.5 mod (data/mods/<name>.toml +\n"
+        "     terrain assets)\n"
         "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
         "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
         "     bakes the sandbox tiles overlapping the rect (or the\n"
@@ -414,7 +418,7 @@ int main(int argc, char** argv) {
     if (command == "border-report" && argc >= 5 && argc <= 7) {
         return cooker::borderReport(argv, argc);
     }
-    if (command == "bake-map" && argc >= 5 && argc <= 7) {
+    if (command == "bake-map" && argc >= 5 && argc <= 9) {
         return cooker::bakeMapCmd(argv, argc);
     }
     return usage();

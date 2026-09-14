@@ -3,15 +3,20 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 
 #include "data/forms/LandscapeForms.hpp"
+#include "data/plugins/EditSession.hpp"
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/TerrainBase.hpp"
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
+#include "game/TerrainBakeStreamer.hpp"
+#include "world/terrain/MapRecords.hpp"
 #include "world/terrain/TerrainRegions.hpp"
 
 namespace cooker {
@@ -51,16 +56,26 @@ int bakeMapCmd(char** argv, int argc) {
     const std::filesystem::path gameDir = argv[2];
     const i32 mapX = std::atoi(argv[3]);
     const i32 mapZ = std::atoi(argv[4]);
+    const bool tilesGiven = argc >= 6 && argv[5][0] != '-';
     const i32 tilesPerSide =
-        argc >= 6 ? std::atoi(argv[5]) : game::kMapTilesPerSide;
+        tilesGiven ? std::atoi(argv[5]) : game::kMapTilesPerSide;
     if (tilesPerSide < 2 || tilesPerSide > 8) {
         LOG_ERROR("bake-map: tilesPerSide must be 2-8");
         return 1;
     }
-    // Border transitions ride the world-seed hash rule; "--" disables
-    // them (calibration bakes).
-    const bool borders =
-        !(argc >= 7 && std::strcmp(argv[6], "--") == 0);
+    // Optional flags after tilesPerSide: "--" disables the border
+    // transitions (calibration bakes); "--export-plugin <name>" also
+    // emits the map as an ordinary §5 plugin (M5.2).
+    bool borders = true;
+    const char* exportName = nullptr;
+    for (int i = 5; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--") == 0) {
+            borders = false;
+        } else if (std::strcmp(argv[i], "--export-plugin") == 0 &&
+                   i + 1 < argc) {
+            exportName = argv[++i];
+        }
+    }
 
     // Game bake params (the pre-bake resolution path: the SAME plugin-
     // resolved tuning the game bakes with).
@@ -283,6 +298,99 @@ int bakeMapCmd(char** argv, int argc) {
                      sum[b] / static_cast<f64>(n[b]), worstBand[b],
                      n[b]);
         }
+    }
+    // --export-plugin (M5.2): the baked map as an ORDINARY §5 mod —
+    // slices copied under data/mods/terrain/, records staged through
+    // stageMapRecords, one TOML out. Deterministic guids (map guid =
+    // f(seed, coords)) mean a re-export PATCHES the same world.
+    if (exportName) {
+        const core::Guid mapGuid = world::mapWorldspaceGuid(
+            params.worldSeed, mapX, mapZ);
+        const auto modsDir = gameDir / "data" / "mods";
+        char rel[64];
+        std::snprintf(rel, sizeof(rel), "terrain/map_%d_%d", mapX,
+                      mapZ);
+        std::error_code errc;
+        std::filesystem::create_directories(modsDir / rel, errc);
+
+        vector<world::MapSliceRecord> slices;
+        vector<data::AssetEntry> assetEntries;
+        vector<render::terraingen::Lake> lakes;
+        vector<render::terraingen::River> rivers;
+        for (i32 dz = 0; dz < tilesPerSide; ++dz) {
+            for (i32 dx = 0; dx < tilesPerSide; ++dx) {
+                const i32 tx = tx0 + dx;
+                const i32 tz = tz0 + dz;
+                char stem[64];
+                std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u",
+                              tx, tz,
+                              render::terraingen::kTileBakeVersion);
+                const auto trg = mapDir / (str { stem } + ".trg");
+                const auto dest = modsDir / rel / (str { stem } + ".trg");
+                std::filesystem::copy_file(
+                    trg, dest,
+                    std::filesystem::copy_options::overwrite_existing,
+                    errc);
+                if (errc) {
+                    LOG_ERROR("bake-map: cannot copy {} to the mod",
+                              trg.string());
+                    return 1;
+                }
+                const u32 index = static_cast<u32>(
+                    dz * tilesPerSide + dx);
+                const core::Guid asset =
+                    world::mapSliceAssetGuid(mapGuid, index);
+                slices.push_back(
+                    { tx, tz, asset,
+                      render::terraingen::kRegionDetailAmplitude,
+                      render::terraingen::kRegionDetailWavelength,
+                      render::terraingen::kRegionDetailOctaves });
+                assetEntries.push_back(
+                    { asset,
+                      str { rel } + "/" + stem + ".trg" });
+                vector<render::terraingen::Lake> sliceLakes;
+                vector<render::terraingen::River> sliceRivers;
+                if (game::readWaterFile(mapDir / (str { stem } + ".twb"),
+                                        sliceLakes, sliceRivers)) {
+                    for (auto& lake : sliceLakes) {
+                        lakes.push_back(std::move(lake));
+                    }
+                    for (auto& river : sliceRivers) {
+                        rivers.push_back(std::move(river));
+                    }
+                }
+            }
+        }
+
+        char mapName[64];
+        std::snprintf(mapName, sizeof(mapName), "Map_%d_%d", mapX,
+                      mapZ);
+        data::FormDatabase stageDb;
+        data::EditSession session { stageDb, formTypes };
+        world::stageMapRecords(session, stageDb, mapGuid, mapName,
+                               mapX, mapZ,
+                               params.tileSize *
+                                   static_cast<f32>(tilesPerSide),
+                               params.worldSeed, slices, lakes,
+                               rivers, 48.0f);
+        data::Plugin plugin = session.exportPlugin(
+            core::Guid::combine(mapGuid,
+                                core::Guid { 1, 0x6d6170706c756731ull }),
+            exportName);
+        plugin.assets = std::move(assetEntries);
+        const auto pluginPath =
+            modsDir / (str { exportName } + ".toml");
+        std::ofstream file { pluginPath, std::ios::trunc };
+        if (!file) {
+            LOG_ERROR("bake-map: cannot write {}",
+                      pluginPath.string());
+            return 1;
+        }
+        file << data::writePluginToml(plugin, formTypes);
+        LOG_INFO("bake-map: exported plugin {} ({} records, {} "
+                 "assets) — add 'mods/{}.toml' to plugins.toml",
+                 pluginPath.string(), plugin.records.size(),
+                 plugin.assets.size(), exportName);
     }
     return worst <= 5.0f ? 0 : 1;
 }
