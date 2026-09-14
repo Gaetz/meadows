@@ -380,6 +380,21 @@ constexpr f32 kMapEdgeRidgeLift = 650.0f; // crest above sea level
 
 f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h);
 
+// The ridge band factor alone (0 far inside, 1 at a ridge-side line,
+// decaying outside): the stage-1 erosion KEEP for the rim — without
+// protection the artificial wall has no plateau field and the
+// fastscape carves it back down (measured: median 313 m of a 670 m
+// crest survived).
+f32 mapEdgeRidgeFactor(const MapEdgeSpec& spec, f32 x, f32 z);
+constexpr f32 kMapEdgeRidgeKeep = 0.8f;
+
+// The deterministic per-BORDER style rule for procedural maps: each
+// border hashes (seed, border identity) to Sea or Ridges — symmetric
+// by construction (both maps of a border hash the same key), mixed by
+// value (~half ridges), so the world reads as a 2D patchwork, not a
+// strip. Authored maps override per WorldspaceForm.
+MapEdgeSpec mapEdgeStylesFor(u32 seed, i32 mapX, i32 mapZ);
+
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes
 // beyond baked tiles and the bake's boundary condition.

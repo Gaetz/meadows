@@ -20,6 +20,12 @@ struct SandboxTerrain {
     // the rim crest decaying outward, matching the baked rim at the
     // map line by construction.
     terraingen::MapEdgeSpec edge;
+    // Procedural map GRID (fallback beyond the active map): each
+    // position applies the edge mask of the map CONTAINING it (the
+    // hashed per-border rule), so the far view shows the true
+    // patchwork of bounded maps instead of raw analytic land.
+    bool mapGrid { false };
+    u32 gridSeed { 0 };
     // The baked map's 64 m OVERVIEW (decimated global stage-1, rim
     // included): the fallback INSIDE its coverage — a pointwise
     // analytic mirror cannot follow a globally carved valley network

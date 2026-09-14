@@ -1984,13 +1984,16 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     mapCfg.tilesPerSide = kMapTilesPerSide;
     mapCfg.mapX = mapX;
     mapCfg.mapZ = mapZ;
-    mapCfg.edgeStyles = mapEdgeStylesFor(mapX, mapZ);
+    mapCfg.edgeStyles = render::terraingen::mapEdgeStylesFor(
+        tuning.terrainSeed, mapX, mapZ);
     sandbox->edge = mapCfg.edgeStyles;
     sandbox->edge.size = bakeParams.tileSize *
                          static_cast<f32>(mapCfg.tilesPerSide);
     sandbox->edge.minX = static_cast<f32>(mapX) * sandbox->edge.size;
     sandbox->edge.minZ = static_cast<f32>(mapZ) * sandbox->edge.size;
     sandbox->edge.seaLevel = tuning.seaLevel;
+    sandbox->mapGrid = true;
+    sandbox->gridSeed = tuning.terrainSeed;
     // The baked map's overview (when the cache holds it): the
     // fallback inside the map becomes the map's own coarse truth.
     // A cold cache boots on the analytic + rim shape and picks the

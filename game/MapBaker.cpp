@@ -65,16 +65,6 @@ std::optional<MapOverview> loadMapOverview(
     return out;
 }
 
-render::terraingen::MapEdgeSpec mapEdgeStylesFor(i32, i32) {
-    render::terraingen::MapEdgeSpec styles;
-    styles.valid = true;
-    styles.east = render::terraingen::MapEdgeStyle::Ridges;
-    styles.west = render::terraingen::MapEdgeStyle::Ridges;
-    styles.north = render::terraingen::MapEdgeStyle::Sea;
-    styles.south = render::terraingen::MapEdgeStyle::Sea;
-    return styles;
-}
-
 bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
                       i32 mapZ, i32 tilesPerSide) {
     std::ifstream manifest {

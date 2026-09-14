@@ -63,7 +63,22 @@ f32 proceduralBase(const render::TerrainParams& params, f32 x, f32 z) {
         const f32 h = render::terraingen::macroHeightAnalytic(
             controls, sb.macro, x, z);
         // Bounded-map rim: shape the fallback exactly as the bake
-        // shaped the map (identity when edge.valid is false).
+        // shaped the map (identity when edge.valid is false). With the
+        // map GRID on, the mask is the one of the map CONTAINING the
+        // point — the far view shows the whole bounded-map patchwork.
+        if (sb.mapGrid && sb.edge.size > 0.0f) {
+            const f32 size = sb.edge.size;
+            const i32 mx = static_cast<i32>(std::floor(x / size));
+            const i32 mz = static_cast<i32>(std::floor(z / size));
+            render::terraingen::MapEdgeSpec spec =
+                render::terraingen::mapEdgeStylesFor(sb.gridSeed, mx,
+                                                     mz);
+            spec.minX = static_cast<f32>(mx) * size;
+            spec.minZ = static_cast<f32>(mz) * size;
+            spec.size = size;
+            spec.seaLevel = sb.edge.seaLevel;
+            return render::terraingen::applyMapEdgeShape(spec, x, z, h);
+        }
         return render::terraingen::applyMapEdgeShape(sb.edge, x, z, h);
     }
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,

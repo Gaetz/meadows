@@ -116,7 +116,8 @@ int preBake(char** argv, int argc) {
                          mz);
                 continue;
             }
-            params.mapEdge = game::mapEdgeStylesFor(mx, mz);
+            params.mapEdge = render::terraingen::mapEdgeStylesFor(
+                params.worldSeed, mx, mz);
             const game::MapBakeStats stats = game::bakeMap(
                 params, mx, mz, cacheDir, &jobs,
                 game::kMapTilesPerSide, [&](u32 landed, u32 total) {

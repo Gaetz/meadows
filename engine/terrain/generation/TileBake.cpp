@@ -225,6 +225,18 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             keep[i] *= glm::mix(1.0f - params.keepCrestFade, 1.0f,
                                 crest[i]);
         }
+        // The map-rim ridge resists too: the artificial wall has no
+        // plateau field — without this keep the fastscape carved a
+        // 670 m crest down to a 313 m median.
+        if (params.mapEdge.valid) {
+            const u32 col = static_cast<u32>(i % out.sim.n);
+            const u32 row = static_cast<u32>(i / out.sim.n);
+            keep[i] = glm::max(
+                keep[i],
+                kMapEdgeRidgeKeep *
+                    mapEdgeRidgeFactor(params.mapEdge, out.sim.x(col),
+                                       out.sim.z(row)));
+        }
         // The imprinted fleuve channel/plain resists the fastscape: the
         // constructed course must survive erosion like a pad would.
         keep[i] = glm::max(keep[i], imprintKeep[i]);

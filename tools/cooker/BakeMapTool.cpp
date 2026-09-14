@@ -60,8 +60,7 @@ int bakeMapCmd(char** argv, int argc) {
     // Edge styles, one char per side N/E/S/W: s = sea, r = ridges,
     // - = no rim at all. Default: an island (sea everywhere).
     const char* edges = argc >= 7 ? argv[6] : nullptr;
-    render::terraingen::MapEdgeSpec edge =
-        game::mapEdgeStylesFor(mapX, mapZ); // the shared rule
+    render::terraingen::MapEdgeSpec edge; // filled by the rule below
     if (edges && std::strcmp(edges, "----") == 0) {
         edge = render::terraingen::MapEdgeSpec {}; // no rim at all
     } else if (edges && std::strlen(edges) == 4) {
@@ -110,6 +109,10 @@ int bakeMapCmd(char** argv, int argc) {
     params.macro.recurveLow = tuning.terrainRecurveLow;
     params.macro.recurveMid = tuning.terrainRecurveMid;
     params.macro.recurveHigh = tuning.terrainRecurveHigh;
+    if (!edges) {
+        edge = render::terraingen::mapEdgeStylesFor(params.worldSeed,
+                                                    mapX, mapZ);
+    }
     params.mapEdge = edge; // styles only; MapBaker fills the rect
 
     const auto cacheDir = gameDir / "terrain-cache" /

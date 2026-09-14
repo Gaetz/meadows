@@ -4,10 +4,9 @@
 # arrival point on the FAR side of the crossing, 400 m past the twin
 # trigger so the arrival never bounces back.
 #
-# Col de la Gorge — the master-river gorge piercing the east ridge of
-# map (0, 0) at z~15040 (the saddle sits at ~24 m: the fleuve carved
-# the rim down to water level — the natural river exit the edge design
-# promised).
+# Col de l'Ouest — the lowest saddle of map (0, 0)'s west ridge
+# (border x = 0, crest median ~600 m): a 365 m mountain col at
+# z ~ 14208, crossing into map (-1, 0).
 
 [plugin]
 id = "c01dea55-0000-4000-8000-0000000000ff"
@@ -18,9 +17,9 @@ form = "c01dea55-0000-4000-8000-000000000001"
 type = "TriggerForm"
 new = true
 [records.fields]
-editorId = "ColGorgeEstAller"
-halfExtents = [80.0, 200.0, 140.0]
-script = "travelToMap(1, 0, 24976.0, 15040.0)"
+editorId = "ColOuestAller"
+halfExtents = [80.0, 250.0, 140.0]
+script = "travelToMap(-1, 0, -400.0, 14208.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000002"
@@ -28,16 +27,16 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000001"
-position = [24496.0, 24.0, 15040.0]
+position = [80.0, 365.0, 14208.0]
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000003"
 type = "TriggerForm"
 new = true
 [records.fields]
-editorId = "ColGorgeEstRetour"
-halfExtents = [80.0, 200.0, 140.0]
-script = "travelToMap(0, 0, 24176.0, 15040.0)"
+editorId = "ColOuestRetour"
+halfExtents = [80.0, 250.0, 140.0]
+script = "travelToMap(0, 0, 400.0, 14208.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000004"
@@ -45,4 +44,4 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000003"
-position = [24656.0, 24.0, 15040.0]
+position = [-80.0, 365.0, 14208.0]

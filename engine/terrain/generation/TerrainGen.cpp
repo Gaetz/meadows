@@ -993,6 +993,55 @@ f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h) {
     return h;
 }
 
+f32 mapEdgeRidgeFactor(const MapEdgeSpec& spec, f32 x, f32 z) {
+    if (!spec.valid) {
+        return 0.0f;
+    }
+    const auto ridgeP = [](f32 d) {
+        return d >= 0.0f
+                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
+                   : 1.0f - glm::clamp(-d / kMapEdgeDecay, 0.0f, 1.0f);
+    };
+    f32 ridge = 0.0f;
+    const auto side = [&](MapEdgeStyle style, f32 d) {
+        if (style == MapEdgeStyle::Ridges) {
+            ridge = glm::max(ridge, ridgeP(d));
+        }
+    };
+    side(spec.west, x - spec.minX);
+    side(spec.east, spec.minX + spec.size - x);
+    side(spec.south, z - spec.minZ);
+    side(spec.north, spec.minZ + spec.size - z);
+    return ridge;
+}
+
+MapEdgeSpec mapEdgeStylesFor(u32 seed, i32 mapX, i32 mapZ) {
+    const auto borderStyle = [seed](i32 a, i32 b, bool vertical) {
+        u64 h = 14695981039346656037ull;
+        const auto mix = [&h](u64 v) {
+            for (int byte = 0; byte < 8; ++byte) {
+                h ^= (v >> (byte * 8)) & 0xFF;
+                h *= 1099511628211ull;
+            }
+        };
+        mix(seed);
+        mix(static_cast<u64>(static_cast<u32>(a)));
+        mix(static_cast<u64>(static_cast<u32>(b)));
+        mix(vertical ? 0x76ull : 0x68ull);
+        return (h & 1ull) != 0ull ? MapEdgeStyle::Ridges
+                                  : MapEdgeStyle::Sea;
+    };
+    MapEdgeSpec styles;
+    styles.valid = true;
+    // A border's identity is its LINE, not the map side: both
+    // neighbours hash the same key and agree.
+    styles.west = borderStyle(mapX, mapZ, true);
+    styles.east = borderStyle(mapX + 1, mapZ, true);
+    styles.south = borderStyle(mapX, mapZ, false);
+    styles.north = borderStyle(mapX, mapZ + 1, false);
+    return styles;
+}
+
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
     // The sample's own continentalness serves the shore distance below:
