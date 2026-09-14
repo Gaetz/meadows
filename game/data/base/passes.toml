@@ -5,8 +5,10 @@
 # trigger so the arrival never bounces back.
 #
 # Col de l'Est — the lowest interior saddle of the border range on line
-# x = 24576 (map (0,0) <-> map (1,0), hashed style Ridges): a 385 m col
-# at z ~ 5400 between the coastal tail and the northern massif.
+# x = 24576 (map (0,0) <-> map (1,0), hashed style Ridges): a ~620 m col
+# at z ~ 14464. South of z ~ 5000 the range tapers into the coast and
+# the border is an open strait (the coherence rule) — the col sits in
+# the real wall.
 
 [plugin]
 id = "c01dea55-0000-4000-8000-0000000000ff"
@@ -18,8 +20,8 @@ type = "TriggerForm"
 new = true
 [records.fields]
 editorId = "ColEstAller"
-halfExtents = [80.0, 300.0, 350.0]
-script = "travelToMap(1, 0, 24976.0, 5400.0)"
+halfExtents = [80.0, 350.0, 350.0]
+script = "travelToMap(1, 0, 24976.0, 14464.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000002"
@@ -27,7 +29,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000001"
-position = [24496.0, 385.0, 5400.0]
+position = [24496.0, 350.0, 14464.0]
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000003"
@@ -35,8 +37,8 @@ type = "TriggerForm"
 new = true
 [records.fields]
 editorId = "ColEstRetour"
-halfExtents = [80.0, 300.0, 350.0]
-script = "travelToMap(0, 0, 24176.0, 5400.0)"
+halfExtents = [80.0, 350.0, 350.0]
+script = "travelToMap(0, 0, 24176.0, 14464.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000004"
@@ -44,4 +46,4 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000003"
-position = [24656.0, 385.0, 5400.0]
+position = [24656.0, 450.0, 14464.0]

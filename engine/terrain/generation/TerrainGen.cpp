@@ -1068,31 +1068,45 @@ f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
         return h;
     }
     const BorderSample sample = sampleBorders(spec, x, z);
+    // Coherence gate (the proximity rule): the transition reads the
+    // ground under it — border features belong to the LAND the lattice
+    // separates, never to the open ocean the line happens to cross.
+    const f32 land = noise::smoothstep01(
+        spec.seaLevel + kMapBorderLandFadeLow,
+        spec.seaLevel + kMapBorderLandFadeHigh, h);
     // The range rises progressively out of the EXISTING terrain (an
-    // additive lift, never a wall out of the ground)...
-    h += kMapBorderMountainLift * sample.mountain;
-    // ...and dives into a sea arm where one crosses (coastal cliffs);
-    // islets resist the drowning.
+    // additive lift, never a wall out of the ground) — and only out of
+    // LAND: the chain tapers into the coast instead of marching across
+    // the sea.
+    h += kMapBorderMountainLift * sample.mountain * land;
+    // A sea arm drowns the land it crosses (coastal cliffs where a
+    // range dives in); islets are drowned land resisting.
     if (sample.sea > 0.0f) {
-        const f32 drown =
-            sample.sea * (1.0f - glm::clamp(sample.island, 0.0f, 1.0f));
-        h = glm::mix(h, spec.seaLevel - kMapBorderSeaDepth, drown);
+        const f32 island = glm::clamp(sample.island, 0.0f, 1.0f) * land;
+        const f32 drown = sample.sea * (1.0f - island);
+        // min(): the arm only DEEPENS — an already-deeper ocean floor
+        // stays, instead of being lifted into a shallow shelf.
+        h = glm::min(
+            h, glm::mix(h, spec.seaLevel - kMapBorderSeaDepth, drown));
         // An islet stands clear of the water even where the base
         // channel would be deep.
-        if (sample.island > 0.0f) {
-            h = glm::max(
-                h, glm::mix(spec.seaLevel - kMapBorderSeaDepth,
-                            spec.seaLevel + 26.0f, sample.island));
+        if (island > 0.0f) {
+            h = glm::max(h,
+                         glm::mix(spec.seaLevel - kMapBorderSeaDepth,
+                                  spec.seaLevel + 26.0f, island));
         }
     }
     return h;
 }
 
-f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z) {
+f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z, f32 h) {
     if (!spec.valid) {
         return 0.0f;
     }
-    return sampleBorders(spec, x, z).mountainRaw;
+    const f32 land = noise::smoothstep01(
+        spec.seaLevel + kMapBorderLandFadeLow,
+        spec.seaLevel + kMapBorderLandFadeHigh, h);
+    return sampleBorders(spec, x, z).mountainRaw * land;
 }
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,

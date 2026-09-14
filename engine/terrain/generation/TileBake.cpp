@@ -236,7 +236,8 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                 keep[i],
                 kMapBorderRidgeKeep *
                     mapGridRidgeFactor(params.mapGrid, out.sim.x(col),
-                                       out.sim.z(row)));
+                                       out.sim.z(row),
+                                       macro.height[i]));
         }
         // The imprinted fleuve channel/plain resists the fastscape: the
         // constructed course must survive erosion like a pad would.

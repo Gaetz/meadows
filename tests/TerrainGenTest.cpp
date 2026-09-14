@@ -609,7 +609,8 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
     MapGridSpec off;
     CHECK(applyMapGridShape(off, 123.0f, 456.0f, 78.9f) ==
           doctest::Approx(78.9f));
-    CHECK(mapGridRidgeFactor(off, 0.0f, 0.0f) == doctest::Approx(0.0f));
+    CHECK(mapGridRidgeFactor(off, 0.0f, 0.0f, 78.9f) ==
+          doctest::Approx(0.0f));
 
     MapGridSpec spec;
     spec.valid = true;
@@ -660,8 +661,8 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
         CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
               doctest::Approx(inland));
         // The erosion keep exists on the range and nowhere far away.
-        CHECK(mapGridRidgeFactor(spec, lineX, along) > 0.2f);
-        CHECK(mapGridRidgeFactor(spec, lineX + 8000.0f, along) ==
+        CHECK(mapGridRidgeFactor(spec, lineX, along, inland) > 0.2f);
+        CHECK(mapGridRidgeFactor(spec, lineX + 8000.0f, along, inland) ==
               doctest::Approx(0.0f));
         // Crest height VARIES along the line (peaks and saddles — the
         // cols emerge from the system, they are not authored).
@@ -696,5 +697,40 @@ TEST_CASE("map border transitions: shared lines, progressive shapes") {
         CHECK(low <= spec.seaLevel + 26.01f);
         CHECK(applyMapGridShape(spec, lineX + 8000.0f, along, inland) ==
               doctest::Approx(inland));
+    }
+
+    // Coherence with the underlying terrain (the proximity rule): over
+    // OPEN OCEAN the lattice is invisible — no range rises from the
+    // sea, no islet chain appears, and a deep floor is never lifted
+    // into a shelf.
+    {
+        const f32 ocean = spec.seaLevel - 120.0f;
+        const f32 ridgeX = static_cast<f32>(ridgeLine) * spec.mapSize;
+        const f32 seaX = static_cast<f32>(seaLine) * spec.mapSize;
+        for (f32 dx = -2400.0f; dx <= 2400.0f; dx += 80.0f) {
+            CHECK(applyMapGridShape(spec, ridgeX + dx, along, ocean) ==
+                  doctest::Approx(ocean));
+            CHECK(applyMapGridShape(spec, seaX + dx, along, ocean) ==
+                  doctest::Approx(ocean));
+            CHECK(mapGridRidgeFactor(spec, ridgeX + dx, along, ocean) ==
+                  doctest::Approx(0.0f));
+        }
+        // A shallow coastal strip crossed by a ridge line: the lift is
+        // TAPERED (less than the full inland lift), so the chain ends
+        // at the coast instead of stepping into the water.
+        const f32 shallow = spec.seaLevel + 4.0f;
+        f32 coastPeak = 0.0f;
+        f32 inlandPeak = 0.0f;
+        for (f32 dx = -1600.0f; dx <= 1600.0f; dx += 40.0f) {
+            coastPeak = glm::max(
+                coastPeak, applyMapGridShape(spec, ridgeX + dx, along,
+                                             shallow) -
+                               shallow);
+            inlandPeak = glm::max(
+                inlandPeak, applyMapGridShape(spec, ridgeX + dx, along,
+                                              inland) -
+                                inland);
+        }
+        CHECK(coastPeak < inlandPeak * 0.75f);
     }
 }

@@ -223,5 +223,22 @@ règle par-carte asymétrique. Le design dev, implémenté dans
    deux bakes et le fallback : la symétrie survit. La frontière LOGIQUE
    (voyage, rect de streaming) reste la ligne nominale.
 
-Une seule fonction pure (seed, treillis) → le bake des deux cartes, le
-fallback analytique, l'overview et l'horizon sont d'accord partout.
+6. **Cohérence avec le terrain sous-jacent — la règle de proximité**
+   (retour dev sur la minimap 100 km : chaînes en treillis sur l'océan
+   ouvert, chapelets d'îlots en pleine mer). La transition LIT le sol
+   sur lequel elle s'applique, via le `h` entrant (aucun échantillon
+   supplémentaire) : un gate terre
+   (`smoothstep(seaLevel + kMapBorderLandFadeLow … High, h)`) fait que
+   la montagne ne se lève QUE sur la terre et s'éteint à la côte (une
+   frontière peut donc être un détroit ouvert là où le continent
+   s'arrête) ; un bras de mer ne fait que CREUSER (`min()` — jamais
+   remonter un fond océanique en plateau) ; les îlots sont de la terre
+   noyée (gate terre aussi) — jamais de chapelet en plein océan. Le
+   keep d'érosion porte le même gate (pas de crête fantôme protégée
+   sur l'eau). Conséquence assumée : une frontière « montagnes » n'a
+   de muraille que là où la carte a de la terre — le franchissement
+   par le détroit sans col (donc sans swap de carte) est une question
+   de design ouverte (auto-voyage au passage de ligne ?).
+
+Une seule fonction pure (seed, treillis, h) → le bake des deux cartes,
+le fallback analytique, l'overview et l'horizon sont d'accord partout.

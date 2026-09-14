@@ -391,13 +391,22 @@ constexpr f32 kMapBorderRidgeKeep = 0.8f; // stage-1 erosion keep
 // fallback share the same pure warp — symmetry survives.
 constexpr f32 kMapBorderWander = 900.0f;            // max offset
 constexpr f32 kMapBorderWanderWavelength = 9000.0f; // long-range wave
+// Coherence with the UNDERLYING terrain (the proximity rule): the
+// transition reads the ground it stands on, via the input height. A
+// range only rises from LAND (the gate fades across this band around
+// sea level), a sea arm only DEEPENS (never lifts an open-ocean floor
+// into a shelf), and islets are drowned land — never mid-ocean chains.
+constexpr f32 kMapBorderLandFadeLow = -8.0f;  // vs seaLevel
+constexpr f32 kMapBorderLandFadeHigh = 24.0f; // full strength above
 
 f32 applyMapGridShape(const MapGridSpec& spec, f32 x, f32 z, f32 h);
 
 // The mountain factor alone (0 away, 1 on a ridge line): the stage-1
 // erosion KEEP for the ranges — without protection the artificial
 // crest has no plateau field and the fastscape carves it back down.
-f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z);
+// `h` is the (shaped) terrain height there: the keep carries the same
+// land gate as the lift, so ocean stretches keep no phantom crest.
+f32 mapGridRidgeFactor(const MapGridSpec& spec, f32 x, f32 z, f32 h);
 
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes
