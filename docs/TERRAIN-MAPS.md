@@ -147,6 +147,32 @@ Ordre : M1 seul livre déjà la valeur (le monde actuel re-baké en cartes
 sans falaises) ; M2-M5 peuvent suivre par valeur. Chaque chantier se
 planifie brique par brique à son ouverture (cadence habituelle).
 
+## 6bis. M1.1 + M1.2 LIVRÉES (2026-09-14) — mesures réelles
+
+`game::bakeMap` (stage-1 global → `extractMapHydrology` UNE fois →
+`bakeMapSlice` par tranche sur les workers → `.trg`/`.twb` format streamer +
+manifest écrit en dernier) + `cooker bake-map`. Carte 24×24 km (6×6
+tranches), seed 1337 :
+
+```
+stage-1 global 1921²    : 80 s
+hydrologie carte 1665²  : ~2 s
+36 tranches (workers)   : 11,7 s        → ~94 s la carte complète
+pire divergence interne : 0,281 m  (sur 60 frontières)
+```
+
+La cascade qui valide la théorie : 200-441 m (fenêtré) → 103,8 m (surface
+partagée mais hydrologie PAR TRANCHE — les carves S5c/S5d-bis visent des
+surfaces d'eau routées différentes par fenêtre, divergence non bornée) →
+**0,281 m** (surface + hydrologie partagées ; il ne reste que les effets de
+bord de support de l'érosion fine). Leçon consignée : le partage de la
+SURFACE ne suffit pas, il faut partager l'EAU. Le reconcile de masques a
+gagné son fallback hors-rect (le sol carte remplace le mur 10⁹) — un lac
+inter-tranches garde sa moitié lointaine chez son propriétaire : le
+mécanisme « lac interrompu » est mort à la source. Suite 711/711 (le chemin
+fenêtré est intact — `bakeMapSlice` est une voie parallèle, tuée avec lui
+en M1.5).
+
 ## 7. Décisions dev (2026-09-14)
 
 1. **Taille de carte : 24×24 km** — la super-région du MasterNetwork :

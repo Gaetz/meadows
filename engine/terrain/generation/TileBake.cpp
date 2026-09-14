@@ -845,6 +845,267 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
                           cancel);
 }
 
+MapHydrology extractMapHydrology(const TileBakeParams& params,
+                                 const TileStage1& mapS1, i32 mapX,
+                                 i32 mapZ, i32 tilesPerSide,
+                                 const std::atomic<bool>* cancel) {
+    MapHydrology out;
+    const f32 mapSize =
+        params.tileSize * static_cast<f32>(tilesPerSide);
+    out.window.texelSize = params.macroTexel;
+    out.window.originX =
+        static_cast<f32>(mapX) * mapSize - params.waterMargin;
+    out.window.originZ =
+        static_cast<f32>(mapZ) * mapSize - params.waterMargin;
+    out.window.n =
+        texels(mapSize + 2.0f * params.waterMargin, params.macroTexel) +
+        1;
+    out.ground.resize(out.window.cells());
+    for (u32 row = 0; row < out.window.n; ++row) {
+        for (u32 col = 0; col < out.window.n; ++col) {
+            out.ground[static_cast<size_t>(row) * out.window.n + col] =
+                bilinearWorld(mapS1.sim, mapS1.eroded,
+                              out.window.x(col), out.window.z(row));
+        }
+    }
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        return out; // partial: caller discards
+    }
+    HydrologyParams hydrology = params.hydrology;
+    hydrology.seaLevel = params.macro.seaLevel;
+    out.hydro = extractHydrology(out.window, out.ground, hydrology);
+    // Tier classification (S4 tail): the master network's TRUE drainage
+    // areas, once for the whole map.
+    {
+        ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        MasterNetworkParams network = params.network;
+        network.seaLevel = params.macro.seaLevel;
+        const f32 windowMaxX =
+            out.window.originX +
+            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+        const f32 windowMaxZ =
+            out.window.originZ +
+            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+        const vector<MasterRiver> master = masterRiversNear(
+            ProceduralControls { cp }, params.macro, network,
+            out.window.originX, out.window.originZ, windowMaxX,
+            windowMaxZ);
+        classifyRivers(out.hydro.rivers, hydrology, params.worldSeed,
+                       master);
+    }
+    return out;
+}
+
+TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
+                            i32 tz, const TileStage1& mapS1,
+                            const MapHydrology& mapHydro,
+                            const std::atomic<bool>* cancel) {
+    const auto cancelled = [cancel] {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    };
+    const f32 tileMinX = static_cast<f32>(tx) * params.tileSize;
+    const f32 tileMinZ = static_cast<f32>(tz) * params.tileSize;
+    const TileStage1& self = mapS1;
+    const GridSpec& sim = self.sim;
+    const GridSpec& window = mapHydro.window;
+    const HydrologyResult& hydro = mapHydro.hydro;
+
+    // --- Finalize the slice against the SHARED map surface and
+    // hydrology (the bakeTileStage2 finalize prologue, self = the map).
+    MacroResult macroFields;
+    macroFields.spec = sim;
+    macroFields.seaDist = self.seaDist;
+    macroFields.biome = self.biome;
+    BiomeCharacter character =
+        biomeCharacter(sim, self.biome, params.biomeErosion);
+    const vector<f32>& fineDamp =
+        self.calm.empty() ? self.gentle : self.calm;
+    if (!fineDamp.empty()) {
+        if (character.fineScale.empty()) {
+            character.fineScale.assign(sim.cells(), 1.0f);
+        }
+        const u32 simN = sim.n;
+        for (size_t i = 0; i < fineDamp.size(); ++i) {
+            const f32 damp =
+                params.fineCalmGateHigh > 0.0f
+                    ? glm::smoothstep(params.fineCalmGateLow,
+                                      params.fineCalmGateHigh,
+                                      fineDamp[i])
+                    : fineDamp[i];
+            character.fineScale[i] *= 1.0f - 0.95f * damp;
+            if (params.fineSlopeReturn > 0.0f &&
+                !self.eroded.empty()) {
+                const u32 col = static_cast<u32>(i % simN);
+                const u32 row = static_cast<u32>(i / simN);
+                const u32 c1 = glm::min(col + 1, simN - 1);
+                const u32 r1 = glm::min(row + 1, simN - 1);
+                const f32 sx =
+                    (self.eroded[static_cast<size_t>(row) * simN + c1] -
+                     self.eroded[i]) /
+                    sim.texelSize;
+                const f32 sz =
+                    (self.eroded[static_cast<size_t>(r1) * simN + col] -
+                     self.eroded[i]) /
+                    sim.texelSize;
+                const f32 steep = glm::smoothstep(
+                    0.18f, 0.45f, std::sqrt(sx * sx + sz * sz));
+                character.fineScale[i] *=
+                    1.0f +
+                    params.fineSlopeReturn * steep * (1.0f - damp);
+            }
+        }
+    }
+    if (!self.uplift.empty()) {
+        if (character.fineScale.empty()) {
+            character.fineScale.assign(sim.cells(), 1.0f);
+        }
+        for (size_t i = 0; i < self.uplift.size(); ++i) {
+            const f32 low =
+                1.0f - glm::smoothstep(0.05f, 0.4f, self.uplift[i]);
+            character.fineScale[i] *= 1.0f - 0.5f * low;
+        }
+    }
+    const f32 keepMinX = tileMinX - params.overlapMargin;
+    const f32 keepMinZ = tileMinZ - params.overlapMargin;
+    const f32 keepSpan = params.tileSize + 2.0f * params.overlapMargin;
+
+    FinalizeParams finalize = params.finalize;
+    finalize.seaLevel = params.macro.seaLevel;
+    finalize.upsampleFactor = glm::max(finalize.upsampleFactor, 1u);
+    finalize.fineMinX = keepMinX - kFineErosionHalo;
+    finalize.fineMinZ = keepMinZ - kFineErosionHalo;
+    finalize.fineSpan = keepSpan + 2.0f * kFineErosionHalo;
+    if (cancelled()) {
+        return {};
+    }
+    const FinalizeResult fine = finalizeTerrain(
+        sim, self.eroded, macroFields, hydro, window, finalize,
+        params.worldSeed,
+        character.fineScale.empty() ? nullptr : &character.fineScale,
+        self.deposit.empty() ? nullptr : &self.deposit, cancel);
+
+    // Crop to slice + overlap margin (the bakeTileStage2 crop —
+    // neighbouring slices carry bit-identical bands by construction).
+    TileBakeResult out;
+    TerrainRegion& region = out.region;
+    region.originX = keepMinX;
+    region.originZ = keepMinZ;
+    region.texelSize = fine.fineSpec.texelSize;
+    region.edgeBlend = 2.0f * params.overlapMargin;
+    const u32 fineOff = texels(keepMinX - fine.fineSpec.originX,
+                               fine.fineSpec.texelSize);
+    const u32 fineN = texels(keepSpan, fine.fineSpec.texelSize) + 1;
+    region.width = fineN;
+    region.height = fineN;
+    region.heights.resize(static_cast<size_t>(fineN) * fineN);
+    for (u32 row = 0; row < fineN; ++row) {
+        const size_t src =
+            static_cast<size_t>(row + fineOff) * fine.fineSpec.n +
+            fineOff;
+        std::copy_n(fine.height.begin() + static_cast<ptrdiff_t>(src),
+                    fineN,
+                    region.heights.begin() +
+                        static_cast<ptrdiff_t>(
+                            static_cast<size_t>(row) * fineN));
+    }
+    const u32 maskOff = texels(keepMinX - sim.originX, sim.texelSize);
+    const u32 maskN = texels(keepSpan, sim.texelSize) + 1;
+    region.maskWidth = maskN;
+    region.maskHeight = maskN;
+    const auto crop = [&](const vector<u8>& srcGrid, vector<u8>& dst) {
+        dst.resize(static_cast<size_t>(maskN) * maskN);
+        for (u32 row = 0; row < maskN; ++row) {
+            const size_t src =
+                static_cast<size_t>(row + maskOff) * sim.n + maskOff;
+            std::copy_n(srcGrid.begin() + static_cast<ptrdiff_t>(src),
+                        maskN,
+                        dst.begin() + static_cast<ptrdiff_t>(
+                                          static_cast<size_t>(row) *
+                                          maskN));
+        }
+    };
+    crop(fine.flow, region.flow);
+    crop(fine.wetness, region.wetness);
+    crop(fine.beach, region.beach);
+    crop(fine.detailAmp, region.detailAmp);
+    crop(self.biome, region.biome);
+    crop(fine.rockExposure, region.rockExposure);
+    region.detailAmplitude = kRegionDetailAmplitude;
+    region.detailWavelength = kRegionDetailWavelength;
+    region.detailOctaves = kRegionDetailOctaves;
+
+    // Water ownership: ONE hydrology per map — a lake belongs to the
+    // slice holding its bbox center, full stop (no anchor machinery:
+    // every slice sees the same basin at the same level). Rivers are
+    // clipped to this slice's kept rect as in the windowed path.
+    const f32 tileMaxX = tileMinX + params.tileSize;
+    const f32 tileMaxZ = tileMinZ + params.tileSize;
+    for (const Lake& lake : hydro.lakes) {
+        const f32 cx = (lake.minX + lake.maxX) * 0.5f;
+        const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
+        if (cx < tileMinX || cx >= tileMaxX || cz < tileMinZ ||
+            cz >= tileMaxZ) {
+            continue;
+        }
+        out.lakes.push_back(lake);
+    }
+    // Re-validate against the FINAL ground; outside this slice's rect
+    // the coarse map surface stands in for the wall, so a cross-slice
+    // lake keeps its far half.
+    reconcileLakesWithTerrain(out.lakes, out.region, &mapHydro.window,
+                              &mapHydro.ground);
+    vector<Lake> allLakes = hydro.lakes;
+    reconcileLakesWithTerrain(allLakes, out.region, &mapHydro.window,
+                              &mapHydro.ground);
+    const f32 keepMaxX = keepMinX + keepSpan;
+    const f32 keepMaxZ = keepMinZ + keepSpan;
+    const auto inKeep = [&](const RiverPoint& pt) {
+        return pt.x >= keepMinX && pt.x <= keepMaxX && pt.z >= keepMinZ &&
+               pt.z <= keepMaxZ;
+    };
+    for (const River& river : hydro.rivers) {
+        if (river.lakeFed != 0 && !river.points.empty() &&
+            !lakeReachesPoint(allLakes, river.points.front().x,
+                              river.points.front().z)) {
+            continue;
+        }
+        const auto emit = [&](River&& run) {
+            for (const Vec2& ford : river.fords) {
+                for (const RiverPoint& pt : run.points) {
+                    const f32 dx = pt.x - ford.x;
+                    const f32 dz = pt.z - ford.y;
+                    if (dx * dx + dz * dz < 64.0f * 64.0f) {
+                        run.fords.push_back(ford);
+                        break;
+                    }
+                }
+            }
+            out.rivers.push_back(std::move(run));
+        };
+        River run;
+        run.tier = river.tier;
+        for (const RiverPoint& pt : river.points) {
+            if (inKeep(pt)) {
+                run.points.push_back(pt);
+                continue;
+            }
+            if (run.points.size() >= 2) {
+                emit(std::move(run));
+                run = River {};
+            }
+            run.points.clear();
+            run.tier = river.tier;
+        }
+        if (run.points.size() >= 2) {
+            emit(std::move(run));
+        }
+    }
+    reconcileRiversWithTerrain(out.rivers, out.lakes, out.region,
+                               params.finalize);
+    return out;
+}
+
 namespace {
 
 // Bilinear FINAL ground from the published region; outside its rect
@@ -872,13 +1133,34 @@ f32 finalGroundAt(const render::TerrainRegion& region, f32 x, f32 z) {
 } // namespace
 
 void reconcileLakesWithTerrain(vector<Lake>& lakes,
-                               const render::TerrainRegion& region) {
+                               const render::TerrainRegion& region,
+                               const GridSpec* fallbackSpec,
+                               const vector<f32>* fallbackGround) {
     if (region.heights.empty() || region.width < 2 ||
         region.height < 2 || region.texelSize <= 0.0f) {
         return;
     }
     const auto groundAt = [&](f32 x, f32 z) {
-        return finalGroundAt(region, x, z);
+        const f32 g = finalGroundAt(region, x, z);
+        if (g < 0.9e9f || !fallbackSpec || !fallbackGround) {
+            return g;
+        }
+        // Outside the published rect: the coarse map surface keeps the
+        // flood honest there instead of walling it — a cross-slice
+        // lake keeps the half beyond its owner's rect.
+        const f32 maxX =
+            fallbackSpec->originX +
+            static_cast<f32>(fallbackSpec->n - 1) *
+                fallbackSpec->texelSize;
+        const f32 maxZ =
+            fallbackSpec->originZ +
+            static_cast<f32>(fallbackSpec->n - 1) *
+                fallbackSpec->texelSize;
+        if (x < fallbackSpec->originX || x > maxX ||
+            z < fallbackSpec->originZ || z > maxZ) {
+            return g; // beyond the map window too: the wall stands
+        }
+        return bilinearWorld(*fallbackSpec, *fallbackGround, x, z);
     };
     vector<Lake> split; // extra enclosure components, appended after
     for (size_t li = 0; li < lakes.size();) {

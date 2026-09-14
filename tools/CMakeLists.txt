@@ -14,7 +14,7 @@ add_executable(cooker cooker/Main.cpp cooker/TextureCook.cpp
     cooker/WaterSolveTool.cpp
                cooker/PreBakeTool.cpp
                cooker/BorderReportTool.cpp
-               cooker/MapProtoTool.cpp
+               cooker/BakeMapTool.cpp
                ${PROJECT_SOURCE_DIR}/game/AllForms.cpp)
 # stb/bc7enc/toml++: the cook-terrain-materials subcommand decodes, resizes
 # and BC-encodes textures offline — the runtime never links the encoders.

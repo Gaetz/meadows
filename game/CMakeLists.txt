@@ -14,6 +14,7 @@ add_library(meadows-runtime STATIC
     ScreenStack.cpp
     Settings.cpp
     SoundResolver.cpp
+    MapBaker.cpp
     TerrainBakeStreamer.cpp
     TerrainCollision.cpp
     scenes/DungeonGenTool.cpp

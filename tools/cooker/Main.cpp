@@ -27,9 +27,9 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "BakeMapTool.hpp"
 #include "BorderReportTool.hpp"
 #include "ErosionBench.hpp"
-#include "MapProtoTool.hpp"
 #include "TerrainMap.hpp"
 #include "PreBakeTool.hpp"
 #include "WaterReplayTool.hpp"
@@ -73,10 +73,10 @@ int usage() {
         "     the terrain cache and reports the border continuity:\n"
         "     band height-divergence profile, lake-mask truncation at\n"
         "     the owner rect, bed-carve asymmetry\n"
-        "  cooker map-proto <gameDir> <mapTx> <mapTz> [tilesPerSide]\n"
-        "     TERRAIN-RECUL prototype: one GLOBAL map-sized erosion,\n"
-        "     per-tile finalize against the shared surface, interior\n"
-        "     border divergence report (expected ~0)\n"
+        "  cooker bake-map <gameDir> <mapX> <mapZ> [tilesPerSide=6]\n"
+        "     bakes one bounded map (ONE global erosion, slices +\n"
+        "     manifest under terrain-cache/<seed>/map_<mx>_<mz>/) and\n"
+        "     reports the interior border divergence (<= 8 m)\n"
         "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
         "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
         "     bakes the sandbox tiles overlapping the rect (or the\n"
@@ -414,8 +414,8 @@ int main(int argc, char** argv) {
     if (command == "border-report" && argc >= 5 && argc <= 7) {
         return cooker::borderReport(argv, argc);
     }
-    if (command == "map-proto" && (argc == 5 || argc == 6)) {
-        return cooker::mapProto(argv, argc);
+    if (command == "bake-map" && (argc == 5 || argc == 6)) {
+        return cooker::bakeMapCmd(argv, argc);
     }
     return usage();
 }

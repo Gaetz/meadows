@@ -170,6 +170,40 @@ TileBakeResult bakeTileStage2(
 TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
                         const std::atomic<bool>* cancel = nullptr);
 
+// --- Bounded-map path (chantier CARTES, docs/TERRAIN-MAPS.md). The
+// map is eroded ONCE (a map-sized stage-1); its hydrology is derived
+// ONCE over the whole map window; every slice then finalizes against
+// that same surface AND the same routed water. Per-slice hydrology
+// windows carved toward different water surfaces — up to ~100 m of
+// band divergence measured; sharing the hydrology is what makes slice
+// borders agree to the fine-erosion residual.
+
+struct MapHydrology {
+    GridSpec window;    // map rect + waterMargin, at macroTexel
+    vector<f32> ground; // the map surface on `window` (reconcile
+                        //   fallback outside a slice's rect)
+    HydrologyResult hydro;
+};
+
+// `mapS1.sim` must cover `window` (bake the map stage-1 with apron >=
+// kBasinResolveMargin). No canonical basin resolution: there is no
+// cross-slice truncation inside a map — basins clipped at the MAP
+// window rim are identical for every slice (the edge mask makes the
+// rim sea/ridge).
+MapHydrology extractMapHydrology(const TileBakeParams& params,
+                                 const TileStage1& mapS1, i32 mapX,
+                                 i32 mapZ, i32 tilesPerSide,
+                                 const std::atomic<bool>* cancel =
+                                     nullptr);
+
+// Finalizes ONE slice of the map against the shared surface and
+// hydrology. Lake ownership = bbox center in the slice rect (no anchor
+// machinery — one solve, one identity per basin).
+TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
+                            i32 tz, const TileStage1& mapS1,
+                            const MapHydrology& mapHydro,
+                            const std::atomic<bool>* cancel = nullptr);
+
 // The hydrology floods lakes on the COMPOSITE terrain, BEFORE the
 // finalize passes — and the discharge-driven fine erosion then carves
 // gorges the flood never saw. A lake mask can therefore claim water
@@ -179,10 +213,16 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
 // PUBLISHED ground finds the true spill of its deepest cell — the
 // level is lowered to it (never raised), the mask re-cut to the cells
 // actually enclosed, and a lake left shallower than ~0.5 m is
-// dropped. Ground outside the region rect reads as a wall
-// (conservative: never deletes what it cannot see).
+// dropped. Ground outside the region rect reads as the coarse
+// `fallbackGround` on `fallbackSpec` when given (the map surface — the
+// owner's mask survives past its slice rect), else as a wall
+// (conservative: the old behavior cut every cross-border lake to its
+// rect).
 void reconcileLakesWithTerrain(vector<Lake>& lakes,
-                               const render::TerrainRegion& region);
+                               const render::TerrainRegion& region,
+                               const GridSpec* fallbackSpec = nullptr,
+                               const vector<f32>* fallbackGround =
+                                   nullptr);
 
 // Same debt for the RIVERS: their node surfaces come from the
 // pre-finalize hydrology, and the carves (plus the lake reconcile

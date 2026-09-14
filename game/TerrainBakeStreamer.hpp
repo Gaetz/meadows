@@ -21,6 +21,16 @@ namespace game {
 // even far away), plus the master-network fleuves wherever no tile
 // was ever baked. Pure and worker-callable: file reads + the memoized
 // master network. Lakes are downsampled to ~64 m coarse masks.
+// Water sidecar next to a tile's .trg (lakes with their basin masks +
+// river polylines) — the streamer's cache format, shared with the map
+// baker (docs/TERRAIN-MAPS.md).
+bool writeWaterFile(const std::filesystem::path& path,
+                    const vector<render::terraingen::Lake>& lakes,
+                    const vector<render::terraingen::River>& rivers);
+bool readWaterFile(const std::filesystem::path& path,
+                   vector<render::terraingen::Lake>& lakes,
+                   vector<render::terraingen::River>& rivers);
+
 render::WaterSystem::FarWaterSet collectFarWater(
     const std::filesystem::path& cacheDir, f32 tileSize,
     const render::terraingen::ProceduralControlParams& controls,

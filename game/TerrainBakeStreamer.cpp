@@ -21,6 +21,8 @@ using render::terraingen::RiverPoint;
 
 constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '3' };
 
+} // namespace
+
 // Water sidecar next to the tile's .trg: the lakes/rivers a re-load
 // cannot re-derive without re-running the bake. Lakes carry their basin
 // mask, so no fixed-size dump — per-field IO.
@@ -133,6 +135,8 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
     }
     return static_cast<bool>(file);
 }
+
+namespace {
 
 // Stage-1 cache: the per-tile eroded coarse terrain the stage-2 water
 // pass composes across neighbourhoods. "TS16": spec + eroded + uplift
