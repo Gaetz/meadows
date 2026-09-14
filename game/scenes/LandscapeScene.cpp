@@ -1823,10 +1823,37 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
                 radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
             const f32 x = mapMid + std::cos(angle) * radius;
             const f32 z = mapMidZ + std::sin(angle) * radius;
-            const f32 h = render::terraingen::applyMapEdgeShape(
-                sandbox->edge, x, z,
-                render::terraingen::macroHeightAnalytic(
-                    controls, sandbox->macro, x, z));
+            // The overview is the truth when the map is baked (the
+            // analytic drifts by hundreds of meters against a global
+            // erosion — a spawn picked on it can sit in a real lake).
+            f32 h;
+            if (!sandbox->overview.empty() &&
+                sandbox->overviewGrid.n >= 2) {
+                const auto& g = sandbox->overviewGrid;
+                const f32 u = glm::clamp(
+                    (x - g.originX) / g.texelSize, 0.0f,
+                    static_cast<f32>(g.n - 1));
+                const f32 v = glm::clamp(
+                    (z - g.originZ) / g.texelSize, 0.0f,
+                    static_cast<f32>(g.n - 1));
+                const u32 c0 = glm::min(static_cast<u32>(u), g.n - 2);
+                const u32 r0 = glm::min(static_cast<u32>(v), g.n - 2);
+                const f32 tu = u - static_cast<f32>(c0);
+                const f32 tv = v - static_cast<f32>(r0);
+                const auto at = [&](u32 c, u32 r) {
+                    return sandbox
+                        ->overview[static_cast<size_t>(r) * g.n + c];
+                };
+                h = glm::mix(
+                    glm::mix(at(c0, r0), at(c0 + 1, r0), tu),
+                    glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu),
+                    tv);
+            } else {
+                h = render::terraingen::applyMapEdgeShape(
+                    sandbox->edge, x, z,
+                    render::terraingen::macroHeightAnalytic(
+                        controls, sandbox->macro, x, z));
+            }
             if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
                 controls.at(x, z).biome == 0) {
                 return { x, h, z };
@@ -1849,6 +1876,19 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ) {
     sandboxSpawn = probeSandboxSpawn();
     sandboxSpawnValid = true;
     armWarmup(sandboxSpawn, true, false);
+    // MOVE the traveler: the old position lies outside the new map's
+    // rect — nothing streams there, the fallback reads open sea, and a
+    // player left behind stares at water forever (the M4.1 first-run
+    // bug). Same mechanism as performTravel: respawn the capsule, park
+    // the fly camera at the spawn.
+    if (playerController.body()) {
+        playerController.spawnBody(
+            *physics, sandboxSpawn + Vec3 { 0.0f, 0.25f, 0.0f });
+        followerController.repositionActiveFollowers(
+            makeFollowerContext(), sandboxSpawn);
+    }
+    placeStartCamera();
+    streaming.snapCellEntities(makeStreamingContext());
 }
 
 // The ONE map-swap transaction (chantier CARTES M2.3): everything that
