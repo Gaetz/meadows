@@ -2046,15 +2046,15 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
         // The active map's slice dir (the .twb scan is flat, not
         // recursive).
         renderer.waterSystem().setFarWater(
-            [cp, macro, net, sea = tuning.seaLevel,
-             tileSize = bakeParams.tileSize,
+            [cp, macro, net, grid = sandbox->grid,
+             sea = tuning.seaLevel, tileSize = bakeParams.tileSize,
              cacheDir = mapCacheDir(
                  platform::executableDir() / "terrain-cache" /
                      std::to_string(tuning.terrainSeed),
                  mapX, mapZ)](f32 cx, f32 cz, f32 halfSpan) {
                 return collectFarWater(cacheDir, tileSize, cp,
-                                       macro, net, sea, cx, cz,
-                                       halfSpan);
+                                       macro, net, grid, sea, cx,
+                                       cz, halfSpan);
             });
     }
     // Fresh base: authored regions only -- the previous map's slices

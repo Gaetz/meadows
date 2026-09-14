@@ -709,7 +709,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const std::filesystem::path& cacheDir, f32 tileSize,
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
-    const render::terraingen::MasterNetworkParams& net, f32 seaLevel,
+    const render::terraingen::MasterNetworkParams& net,
+    const render::terraingen::MapGridSpec& grid, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan) {
     render::WaterSystem::FarWaterSet set;
     const f32 minX = cx - halfSpan;
@@ -840,7 +841,15 @@ render::WaterSystem::FarWaterSet collectFarWater(
     for (const render::terraingen::MasterRiver& river : masters) {
         render::WaterSystem::FarWaterSet::Ribbon run;
         for (const render::terraingen::MasterNode& node : river.nodes) {
+            // The course was routed on the ANALYTIC ground; where a
+            // border transition reshaped it (a sea arm drowned it, a
+            // range buried it), the ribbon must stop — otherwise it
+            // floats over the drowned channel the far terrain shows.
+            const f32 shaped = render::terraingen::applyMapGridShape(
+                grid, node.x, node.z, node.surface);
             if (node.surface <= seaLevel + 0.5f ||
+                shaped <= seaLevel + 0.5f ||
+                shaped > node.surface + 30.0f ||
                 inCovered(node.x, node.z)) {
                 if (run.nodes.size() >= 2) {
                     set.ribbons.push_back(std::move(run));

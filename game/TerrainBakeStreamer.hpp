@@ -31,11 +31,16 @@ bool readWaterFile(const std::filesystem::path& path,
                    vector<render::terraingen::Lake>& lakes,
                    vector<render::terraingen::River>& rivers);
 
+// `grid`: the border-transition lattice — master-fleuve ribbons are
+// cut where a border reshaped the analytic ground they were routed on
+// (a sea arm drowned it, or a range buried it), so no course floats
+// over a channel the fallback terrain shows drowned.
 render::WaterSystem::FarWaterSet collectFarWater(
     const std::filesystem::path& cacheDir, f32 tileSize,
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
-    const render::terraingen::MasterNetworkParams& net, f32 seaLevel,
+    const render::terraingen::MasterNetworkParams& net,
+    const render::terraingen::MapGridSpec& grid, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan);
 
 // Sandbox terrain streamer: bakes 4 km tiles around the focus on
