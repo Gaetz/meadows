@@ -14,6 +14,12 @@ namespace render {
 struct SandboxTerrain {
     terraingen::ProceduralControlParams controls;
     terraingen::MacroParams macro;
+    // Bounded-map rim (chantier CARTES M3.1): when valid, the analytic
+    // fallback OUTSIDE baked slices applies the same edge shaping the
+    // map bake used — sea sides read as endless ocean, ridge sides as
+    // the rim crest decaying outward, matching the baked rim at the
+    // map line by construction.
+    terraingen::MapEdgeSpec edge;
 };
 
 } // namespace render

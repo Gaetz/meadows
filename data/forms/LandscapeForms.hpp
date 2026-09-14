@@ -262,6 +262,10 @@ struct LandscapeTuningForm : Form {
     // Snow altitude of the sandbox world (its peaks top ~1600 m; the
     // story world keeps `snowLine` above).
     f32 sandboxSnowLine { 950.0f };
+    // The worldspace the game boots into, by GUID — replaces the old
+    // editorId string lookup ("Overworld"), which broke the day two
+    // records shipped with that name. Null = legacy editorId fallback.
+    core::Guid startWorldspace;
     // Named tree-type records (editorId in the TreeCreationScene
     // library) assigned to the scatter's variant-slot partition:
     // broadleaf = the low slots, conifer = the high ones (the altitude
@@ -442,6 +446,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(mountainMaskHigh)
         REFLECT_FIELD(sandboxTerrain)
         REFLECT_FIELD(sandboxSnowLine)
+        REFLECT_FIELD(startWorldspace)
         REFLECT_FIELD(broadleafTreeType)
         REFLECT_FIELD(coniferTreeType)
         REFLECT_FIELD(bushTreeType)

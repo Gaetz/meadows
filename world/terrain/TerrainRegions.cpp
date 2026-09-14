@@ -236,10 +236,14 @@ std::optional<render::TerrainRegion> readTrgFile(
 }
 
 sptr<const render::TerrainBase> buildTerrainBase(
-    const data::FormDatabase& forms, const assets::AssetDatabase& assets) {
+    const data::FormDatabase& forms, const assets::AssetDatabase& assets,
+    const WorldspaceFilter& filter) {
     auto base = std::make_shared<render::TerrainBase>();
     data::forEach<TerrainRegionForm>(
         forms, [&](const TerrainRegionForm& form) {
+            if (!filter.matches(form.worldspace)) {
+                return;
+            }
             const auto path = assets.resolve(form.asset);
             if (!path) {
                 LOG_WARN("TerrainRegion '{}': asset {} not registered",

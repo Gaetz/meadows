@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "data/forms/LandscapeForms.hpp"
 #include "data/plugins/PluginConfig.hpp"
@@ -56,6 +57,21 @@ int bakeMapCmd(char** argv, int argc) {
         LOG_ERROR("bake-map: tilesPerSide must be 2-8");
         return 1;
     }
+    // Edge styles, one char per side N/E/S/W: s = sea, r = ridges,
+    // - = no rim at all. Default: an island (sea everywhere).
+    const char* edges = argc >= 7 ? argv[6] : "ssss";
+    render::terraingen::MapEdgeSpec edge;
+    if (std::strlen(edges) == 4 && std::strcmp(edges, "----") != 0) {
+        const auto style = [](char c) {
+            return c == 'r' ? render::terraingen::MapEdgeStyle::Ridges
+                            : render::terraingen::MapEdgeStyle::Sea;
+        };
+        edge.valid = true;
+        edge.north = style(edges[0]);
+        edge.east = style(edges[1]);
+        edge.south = style(edges[2]);
+        edge.west = style(edges[3]);
+    }
 
     // Game bake params (the pre-bake resolution path: the SAME plugin-
     // resolved tuning the game bakes with).
@@ -91,6 +107,7 @@ int bakeMapCmd(char** argv, int argc) {
     params.macro.recurveLow = tuning.terrainRecurveLow;
     params.macro.recurveMid = tuning.terrainRecurveMid;
     params.macro.recurveHigh = tuning.terrainRecurveHigh;
+    params.mapEdge = edge; // styles only; MapBaker fills the rect
 
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);

@@ -348,6 +348,38 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
                             u32 seed);
 
+// Bounded-map edge shaping (chantier CARTES, docs/TERRAIN-MAPS.md): a
+// pure post-macro remap turning each map side into a natural barrier —
+// sea (the band ramps to open water, ocean beyond the rim forever) or
+// ridges (a rim crest at the map line, decaying back to the macro
+// outside). Applied by the map bake BEFORE erosion (sea sides become
+// perfect drainage outlets) and by the runtime analytic fallback
+// OUTSIDE baked slices — one function, so the baked rim and the
+// horizon beyond it agree at the map line by construction. The master
+// network stays world-continuous (unaware of edges): a fleuve imprint
+// crossing a ridge rim carves a gorge through it — a natural river
+// exit, not a bug.
+enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1 };
+
+struct MapEdgeSpec {
+    bool valid { false };
+    f32 minX { 0.0f };
+    f32 minZ { 0.0f };
+    f32 size { 24576.0f };
+    f32 seaLevel { kDefaultSeaLevel };
+    MapEdgeStyle north { MapEdgeStyle::Sea }; // +z side
+    MapEdgeStyle east { MapEdgeStyle::Sea };  // +x side
+    MapEdgeStyle south { MapEdgeStyle::Sea }; // -z side
+    MapEdgeStyle west { MapEdgeStyle::Sea };  // -x side
+};
+
+constexpr f32 kMapEdgeBand = 1536.0f;     // shaping band inside the rim
+constexpr f32 kMapEdgeDecay = 3072.0f;    // ridge falloff outside
+constexpr f32 kMapEdgeSeaDepth = 40.0f;   // ocean floor below sea level
+constexpr f32 kMapEdgeRidgeLift = 650.0f; // crest above sea level
+
+f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h);
+
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes
 // beyond baked tiles and the bake's boundary condition.

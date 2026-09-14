@@ -593,3 +593,62 @@ TEST_CASE("valley axis and trunk valleys: continuous, bounded, inland") {
     CHECK(again.at(-3111.0f, 9222.0f).axisCos ==
           controls.at(-3111.0f, 9222.0f).axisCos);
 }
+
+TEST_CASE("map edge shaping: barriers at the rim, identity elsewhere") {
+    // Chantier CARTES M1.3/M3.1: the pure remap both the map bake and
+    // the runtime fallback apply — sea sides ramp to open water and
+    // stay ocean beyond, ridge sides crest at the map line and decay
+    // back outside, and a default-invalid spec is a strict identity.
+    using render::terraingen::applyMapEdgeShape;
+    using render::terraingen::MapEdgeSpec;
+    using render::terraingen::MapEdgeStyle;
+
+    MapEdgeSpec off;
+    CHECK(applyMapEdgeShape(off, 123.0f, 456.0f, 78.9f) ==
+          doctest::Approx(78.9f));
+
+    MapEdgeSpec spec;
+    spec.valid = true;
+    spec.minX = 0.0f;
+    spec.minZ = 0.0f;
+    spec.size = 8192.0f;
+    spec.seaLevel = 21.0f;
+    spec.north = MapEdgeStyle::Ridges; // +z
+    spec.east = MapEdgeStyle::Sea;     // +x
+    spec.south = MapEdgeStyle::Sea;
+    spec.west = MapEdgeStyle::Sea;
+    const f32 inland = 150.0f;
+
+    // Deep inside: untouched.
+    CHECK(applyMapEdgeShape(spec, 4096.0f, 4096.0f, inland) ==
+          doctest::Approx(inland));
+    // Sea side, at and beyond the line: open water.
+    CHECK(applyMapEdgeShape(spec, 8192.0f, 4096.0f, inland) ==
+          doctest::Approx(21.0f - 40.0f));
+    CHECK(applyMapEdgeShape(spec, 9500.0f, 4096.0f, inland) ==
+          doctest::Approx(21.0f - 40.0f));
+    // Ridge side: a crest at the line...
+    CHECK(applyMapEdgeShape(spec, 4096.0f, 8192.0f, inland) >=
+          21.0f + 600.0f);
+    // ...decaying back to the input far outside.
+    CHECK(applyMapEdgeShape(spec, 4096.0f, 8192.0f + 5000.0f, inland) ==
+          doctest::Approx(inland));
+
+    // Continuity across the lines (1 m steps, both styles).
+    for (const f32 zLine : { 8192.0f }) {
+        f32 previous =
+            applyMapEdgeShape(spec, 4096.0f, zLine - 200.0f, inland);
+        for (f32 z = zLine - 199.0f; z <= zLine + 200.0f; z += 1.0f) {
+            const f32 h = applyMapEdgeShape(spec, 4096.0f, z, inland);
+            CHECK(std::abs(h - previous) < 3.0f);
+            previous = h;
+        }
+    }
+    f32 previous =
+        applyMapEdgeShape(spec, 8192.0f - 200.0f, 4096.0f, inland);
+    for (f32 x = 8192.0f - 199.0f; x <= 8392.0f; x += 1.0f) {
+        const f32 h = applyMapEdgeShape(spec, x, 4096.0f, inland);
+        CHECK(std::abs(h - previous) < 3.0f);
+        previous = h;
+    }
+}

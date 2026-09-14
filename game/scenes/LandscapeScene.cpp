@@ -41,6 +41,7 @@
 #include "data/plugins/TomlWriter.hpp" // saveRenderTuning
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
+#include "game/MapBaker.hpp" // mapCacheDir + kMapTilesPerSide (M1.4)
 #include "game/RendererAssets.hpp"
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
 #include "game/scenes/EditorScene.hpp" // the Game DB overlay
@@ -974,12 +975,23 @@ void LandscapeScene::setupWorldAndStreaming() {
         return saveController.pending().isEnabled(referenceId) &&
                !saveController.pending().isRehomed(referenceId);
     };
+    // The boot worldspace resolves by GUID (tuning.startWorldspace) —
+    // the editorId lookup stays as a deprecated fallback: it returns
+    // the FIRST record named "Overworld", which broke the day two
+    // shipped with that name.
     overworldHandle = data::FormHandle {};
-    if (const auto* overworld =
-            data::findByEditorId<world::WorldspaceForm>(forms, "Overworld")) {
+    if (tuning.startWorldspace.isValid() &&
+        forms.find(tuning.startWorldspace)) {
+        overworldHandle = forms.handleOf(tuning.startWorldspace);
+    } else if (const auto* overworld =
+                   data::findByEditorId<world::WorldspaceForm>(
+                       forms, "Overworld")) {
         overworldHandle = forms.handleOf(overworld->id);
+        LOG_WARN("startWorldspace unset — resolved 'Overworld' by "
+                 "editorId (deprecated: set LandscapeTuningForm."
+                 "startWorldspace)");
     } else {
-        LOG_WARN("no Overworld worldspace — nothing streams");
+        LOG_WARN("no start worldspace — nothing streams");
     }
     activeWorldspace = overworldHandle;
     interiorMode = false;
@@ -1803,19 +1815,37 @@ void LandscapeScene::setSandboxMode(bool enable) {
         sandbox->macro.recurveLow = tuning.terrainRecurveLow;
         sandbox->macro.recurveMid = tuning.terrainRecurveMid;
         sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
-        params.sandbox = sandbox;
-        activeSnowLine = tuning.sandboxSnowLine;
+        // Bounded map (chantier CARTES M1.4): the sandbox world IS map
+        // (0, 0), an island (sea rim on every side) — the fallback
+        // beyond the rim reads as open ocean, matching the baked rim.
+        // M4 (map-to-map travel) will make the active map dynamic.
         render::terraingen::TileBakeParams bakeParams;
         bakeParams.worldSeed = tuning.terrainSeed;
         bakeParams.controls = sandbox->controls;
         bakeParams.macro = sandbox->macro;
+        TerrainBakeStreamer::MapStreamConfig mapCfg;
+        mapCfg.enabled = true;
+        mapCfg.tilesPerSide = kMapTilesPerSide;
+        mapCfg.mapX = 0;
+        mapCfg.mapZ = 0;
+        mapCfg.edgeStyles.valid = true; // all sides Sea by default
+        sandbox->edge = mapCfg.edgeStyles;
+        sandbox->edge.minX = 0.0f;
+        sandbox->edge.minZ = 0.0f;
+        sandbox->edge.size = bakeParams.tileSize *
+                             static_cast<f32>(mapCfg.tilesPerSide);
+        sandbox->edge.seaLevel = tuning.seaLevel;
+        params.sandbox = sandbox;
+        activeSnowLine = tuning.sandboxSnowLine;
         bakeStreamer = std::make_unique<TerrainBakeStreamer>(
             bakeParams,
             platform::executableDir() / "terrain-cache" /
                 std::to_string(tuning.terrainSeed),
-            &engine->getJobSystem());
-        LOG_INFO("Sandbox terrain: seed {}, {} m tiles",
-                 tuning.terrainSeed, bakeParams.tileSize);
+            &engine->getJobSystem(), mapCfg);
+        LOG_INFO("Sandbox terrain: seed {}, map (0, 0) = {:.0f} m "
+                 "island, {} m slices",
+                 tuning.terrainSeed, sandbox->edge.size,
+                 bakeParams.tileSize);
         // Live water sim (option C): boundary inflow from the master
         // network — worker-callable and pure (the memoized network
         // makes repeat queries cheap after the first).
@@ -1843,12 +1873,15 @@ void LandscapeScene::setSandboxMode(bool enable) {
                 tuning.seaLevel;
             // Far water (E4a): distant lakes/rivers for the FarTerrain
             // — cached .twb + master fleuves, gathered on the worker.
+            // The active map's slice dir (the .twb scan is flat, not
+            // recursive).
             renderer.waterSystem().setFarWater(
                 [cp, macro, net, sea = tuning.seaLevel,
                  tileSize = bakeParams.tileSize,
-                 cacheDir = platform::executableDir() / "terrain-cache" /
-                            std::to_string(tuning.terrainSeed)](
-                    f32 cx, f32 cz, f32 halfSpan) {
+                 cacheDir = mapCacheDir(
+                     platform::executableDir() / "terrain-cache" /
+                         std::to_string(tuning.terrainSeed),
+                     0, 0)](f32 cx, f32 cz, f32 halfSpan) {
                     return collectFarWater(cacheDir, tileSize, cp,
                                            macro, net, sea, cx, cz,
                                            halfSpan);
@@ -1869,17 +1902,26 @@ void LandscapeScene::setSandboxMode(bool enable) {
         const render::terraingen::ProceduralControls controls {
             sandbox->controls
         };
-        Vec3 start { 2600.0f, 0.0f, 0.0f };
+        // The spiral is anchored on the MAP CENTER (the world origin is
+        // the island's sea corner) and clamped to the map interior.
+        const f32 mapMid = sandbox->edge.size * 0.5f;
+        const f32 mapReach =
+            sandbox->edge.size * 0.5f -
+            render::terraingen::kMapEdgeBand;
+        Vec3 start { mapMid, 0.0f, mapMid };
         bool found = false;
-        for (f32 radius = 2600.0f; radius <= 24000.0f && !found;
+        for (f32 radius = 2600.0f;
+             radius <= glm::min(24000.0f, mapReach) && !found;
              radius += 700.0f) {
             for (u32 step = 0; step < 16 && !found; ++step) {
                 const f32 angle = radius * 0.0137f +
                                   static_cast<f32>(step) * 0.3927f;
-                const f32 x = std::cos(angle) * radius;
-                const f32 z = std::sin(angle) * radius;
-                const f32 h = render::terraingen::macroHeightAnalytic(
-                    controls, sandbox->macro, x, z);
+                const f32 x = mapMid + std::cos(angle) * radius;
+                const f32 z = mapMid + std::sin(angle) * radius;
+                const f32 h = render::terraingen::applyMapEdgeShape(
+                    sandbox->edge, x, z,
+                    render::terraingen::macroHeightAnalytic(
+                        controls, sandbox->macro, x, z));
                 if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
                     controls.at(x, z).biome == 0) {
                     start = { x, h, z };
@@ -1954,6 +1996,13 @@ void LandscapeScene::reconcileWaterWithTerrain(
                     lake.minX + static_cast<f32>(col) * lake.maskTexel;
                 const f32 wz =
                     lake.minZ + static_cast<f32>(row) * lake.maskTexel;
+                // Never clear against the procedural fallback: ground
+                // that is not baked yet says nothing about this cell
+                // (the clear is destructive — no re-flood ever).
+                if (!terrainBase || !terrainBase->regionAt(wx, wz)) {
+                    ++kept;
+                    continue;
+                }
                 if (render::terrain::height(tp, wx, wz) >
                     lake.level - 0.15f) {
                     cell = 0; // not submerged by the REAL ground

@@ -10,7 +10,8 @@
 namespace world {
 
 sptr<const render::WaterBodies> buildWaterBodies(
-    const data::FormDatabase& forms, f32 seaLevel) {
+    const data::FormDatabase& forms, f32 seaLevel,
+    const WorldspaceFilter& filter) {
     auto bodies = std::make_shared<render::WaterBodies>();
     bodies->seaLevel = seaLevel;
 
@@ -59,6 +60,9 @@ sptr<const render::WaterBodies> buildWaterBodies(
     };
 
     data::forEach<WaterBodyForm>(forms, [&](const WaterBodyForm& form) {
+        if (!filter.matches(form.worldspace)) {
+            return;
+        }
         render::LakeSurface lake;
         lake.level = form.surfaceLevel;
         lake.minX = form.minX;
@@ -80,6 +84,9 @@ sptr<const render::WaterBodies> buildWaterBodies(
         return guid.hi ^ (guid.lo * 0x9e3779b97f4a7c15ull);
     };
     data::forEach<RiverForm>(forms, [&](const RiverForm& form) {
+        if (!filter.matches(form.worldspace)) {
+            return;
+        }
         courses[keyOf(form.id)].river = &form;
     });
     data::forEach<RiverPointForm>(forms,

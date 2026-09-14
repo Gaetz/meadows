@@ -950,6 +950,49 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     return out;
 }
 
+f32 applyMapEdgeShape(const MapEdgeSpec& spec, f32 x, f32 z, f32 h) {
+    if (!spec.valid) {
+        return h;
+    }
+    // Band factor per side: 0 deep inside, 1 at the map line. Sea stays
+    // 1 forever beyond (ocean); ridges decay back to the macro outside.
+    const auto seaP = [](f32 d) {
+        return d >= 0.0f
+                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
+                   : 1.0f;
+    };
+    const auto ridgeP = [](f32 d) {
+        return d >= 0.0f
+                   ? 1.0f - glm::clamp(d / kMapEdgeBand, 0.0f, 1.0f)
+                   : 1.0f - glm::clamp(-d / kMapEdgeDecay, 0.0f, 1.0f);
+    };
+    f32 sea = 0.0f;
+    f32 ridge = 0.0f;
+    const auto side = [&](MapEdgeStyle style, f32 d) {
+        if (style == MapEdgeStyle::Sea) {
+            sea = glm::max(sea, seaP(d));
+        } else {
+            ridge = glm::max(ridge, ridgeP(d));
+        }
+    };
+    side(spec.west, x - spec.minX);
+    side(spec.east, spec.minX + spec.size - x);
+    side(spec.south, z - spec.minZ);
+    side(spec.north, spec.minZ + spec.size - z);
+    // Ridge first (raise), sea second (drown): a sea corner floods the
+    // ridge end into a cliff coast.
+    if (ridge > 0.0f) {
+        const f32 t = glm::smoothstep(0.0f, 1.0f, ridge);
+        h = glm::max(
+            h, glm::mix(h, spec.seaLevel + kMapEdgeRidgeLift, t * t));
+    }
+    if (sea > 0.0f) {
+        h = glm::mix(h, spec.seaLevel - kMapEdgeSeaDepth,
+                     glm::smoothstep(0.0f, 1.0f, sea));
+    }
+    return h;
+}
+
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
     // The sample's own continentalness serves the shore distance below:

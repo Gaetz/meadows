@@ -2,6 +2,7 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "engine/terrain/WaterBodies.hpp"
+#include "world/worldspace/WorldForms.hpp"
 
 // WaterBodyForm/RiverForm records -> the engine's immutable
 // render::WaterBodies (sibling of buildHeightPatches/buildTerrainBase:
@@ -11,6 +12,7 @@
 namespace world {
 
 sptr<const render::WaterBodies> buildWaterBodies(
-    const data::FormDatabase& forms, f32 seaLevel);
+    const data::FormDatabase& forms, f32 seaLevel,
+    const WorldspaceFilter& filter = {});
 
 } // namespace world

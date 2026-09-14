@@ -6,6 +6,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/terrain/HeightPatches.hpp"
+#include "world/worldspace/WorldForms.hpp"
 
 // Authored-terrain plumbing: TerrainPatchForm records +
 // `.ter` delta-grid assets -> the engine's immutable render::HeightPatches
@@ -28,6 +29,6 @@ std::optional<render::HeightPatch> readTerFile(
 // overlay with no chunks — height() then matches the pure noise.
 sptr<const render::HeightPatches> buildHeightPatches(
     const data::FormDatabase& forms, const assets::AssetDatabase& assets,
-    f32 chunkSize = 64.0f);
+    f32 chunkSize = 64.0f, const WorldspaceFilter& filter = {});
 
 } // namespace world

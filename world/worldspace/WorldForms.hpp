@@ -26,12 +26,45 @@ struct WorldspaceForm : data::Form {
     // out per POSITION (a cellar under a windowed house settles itself).
     // Default: far below everything = the rule is off.
     f32 buriedBelowY { -1.0e9f };
+    // Bounded map (chantier CARTES, docs/TERRAIN-MAPS.md): one map =
+    // one worldspace, terrain eroded globally per map. false = legacy
+    // unbounded exterior or interior.
+    bool bounded { false };
+    // Map-graph coords: the rect derives (min = map{X,Z} * mapSize).
+    i32 mapX { 0 };
+    i32 mapZ { 0 };
+    f32 mapSize { 24576.0f }; // one MasterNetwork super-region
+    // 0 = derive from tuning.terrainSeed + (mapX, mapZ).
+    u32 mapSeed { 0 };
+    // < 0 = inherit the tuning singleton's value.
+    f32 seaLevel { -1.0f };
+    f32 snowLine { -1.0f };
+    // Per-map character (phase-1 procedural maps): a BiomeForm guid.
+    core::Guid dominantBiome;
+    // Edge style per side (0 = sea, 1 = ridges) — the generation mask
+    // the map bake imposes on its rim.
+    i32 edgeNorth { 0 };
+    i32 edgeEast { 0 };
+    i32 edgeSouth { 0 };
+    i32 edgeWest { 0 };
 
     REFLECT_BEGIN(WorldspaceForm, data::Form)
         REFLECT_FIELD(cellSize)
         REFLECT_FIELD(interior)
         REFLECT_FIELD(killZ)
         REFLECT_FIELD(buriedBelowY)
+        REFLECT_FIELD(bounded)
+        REFLECT_FIELD(mapX)
+        REFLECT_FIELD(mapZ)
+        REFLECT_FIELD(mapSize)
+        REFLECT_FIELD(mapSeed)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(snowLine)
+        REFLECT_FIELD(dominantBiome)
+        REFLECT_FIELD(edgeNorth)
+        REFLECT_FIELD(edgeEast)
+        REFLECT_FIELD(edgeSouth)
+        REFLECT_FIELD(edgeWest)
     REFLECT_END()
 };
 
@@ -51,6 +84,27 @@ struct CellForm : data::Form {
         REFLECT_FIELD(gridY)
         REFLECT_FIELD(interior)
     REFLECT_END()
+};
+
+// Which map's records a world builder collects (chantier CARTES M2.2,
+// docs/TERRAIN-MAPS.md). Default (null worldspace) = every record —
+// the legacy single-world behavior, kept for tools and tests. With a
+// worldspace set: records tagged with it, plus UNTAGGED records only
+// when `includeUntagged` (the migration rule: a record whose
+// worldspace field is null belongs to the default overworld alone).
+struct WorldspaceFilter {
+    core::Guid worldspace;
+    bool includeUntagged { true };
+
+    bool matches(const core::Guid& recordWorldspace) const {
+        if (!worldspace.isValid()) {
+            return true;
+        }
+        if (recordWorldspace == worldspace) {
+            return true;
+        }
+        return !recordWorldspace.isValid() && includeUntagged;
+    }
 };
 
 // Implicit cells: the DETERMINISTIC
@@ -164,11 +218,14 @@ struct DoorForm : data::Form {
 // bilinear(delta). Mods override the grid by shipping the asset guid (§5
 // VFS) or patch the record. IO + overlay building: world/terrain/.
 struct TerrainPatchForm : data::Form {
+    // Owning map (chantier CARTES): null = the default overworld only.
+    core::Guid worldspace;
     i32 chunkX { 0 };
     i32 chunkZ { 0 };
     core::Guid asset; // .ter grid file
 
     REFLECT_BEGIN(TerrainPatchForm, data::Form)
+        REFLECT_FIELD(worldspace)
         REFLECT_FIELD(chunkX)
         REFLECT_FIELD(chunkZ)
         REFLECT_FIELD(asset)
@@ -183,6 +240,8 @@ struct TerrainPatchForm : data::Form {
 // detail per field or replace the whole grid by asset guid (§5 VFS).
 struct TerrainRegionForm : data::Form {
     str displayName;
+    // Owning map (chantier CARTES): null = the default overworld only.
+    core::Guid worldspace;
     core::Guid asset;               // .trg region file
     f32 detailAmplitude { 0.0f };   // meters of runtime detail noise
     f32 detailWavelength { 60.0f }; // meters
@@ -190,6 +249,7 @@ struct TerrainRegionForm : data::Form {
 
     REFLECT_BEGIN(TerrainRegionForm, data::Form)
         REFLECT_FIELD(displayName)
+        REFLECT_FIELD(worldspace)
         REFLECT_FIELD(asset)
         REFLECT_FIELD(detailAmplitude)
         REFLECT_FIELD(detailWavelength)
@@ -236,6 +296,8 @@ struct WaterMaterialForm : data::Form {
 // as ordinary records; a modder raises a lake in pure TOML (§5).
 struct WaterBodyForm : data::Form {
     str displayName;
+    // Owning map (chantier CARTES): null = the default overworld only.
+    core::Guid worldspace;
     f32 surfaceLevel { 30.0f };
     f32 minX { 0.0f };
     f32 minZ { 0.0f };
@@ -247,6 +309,7 @@ struct WaterBodyForm : data::Form {
 
     REFLECT_BEGIN(WaterBodyForm, data::Form)
         REFLECT_FIELD(displayName)
+        REFLECT_FIELD(worldspace)
         REFLECT_FIELD(surfaceLevel)
         REFLECT_FIELD(minX)
         REFLECT_FIELD(minZ)
@@ -262,12 +325,16 @@ struct WaterBodyForm : data::Form {
 // (the §C.1 child-record convention — reflection stays flat).
 struct RiverForm : data::Form {
     str displayName;
+    // Owning map (chantier CARTES): null = the default overworld only.
+    // RiverPointForm children inherit through `parent`.
+    core::Guid worldspace;
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 flowSpeed { 1.0f };
     core::Guid material; // WaterMaterialForm; null = default water
 
     REFLECT_BEGIN(RiverForm, data::Form)
         REFLECT_FIELD(displayName)
+        REFLECT_FIELD(worldspace)
         REFLECT_FIELD(tint)
         REFLECT_FIELD(flowSpeed)
         REFLECT_FIELD(material)
@@ -339,9 +406,12 @@ struct BiomeVegetationForm : data::Form {
 // The painted biome index map (scenario mode; sandbox tiles derive their
 // ids from the seed instead). Asset: "TBM1" u8 grid.
 struct BiomeMapForm : data::Form {
+    // Owning map (chantier CARTES): null = the default overworld only.
+    core::Guid worldspace;
     core::Guid asset;
 
     REFLECT_BEGIN(BiomeMapForm, data::Form)
+        REFLECT_FIELD(worldspace)
         REFLECT_FIELD(asset)
     REFLECT_END()
 };

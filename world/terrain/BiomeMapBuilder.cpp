@@ -77,7 +77,8 @@ std::optional<BiomeIndexMap> readTbmFile(
 }
 
 sptr<const render::BiomeSet> buildBiomeSet(
-    const data::FormDatabase& forms, const assets::AssetDatabase& assets) {
+    const data::FormDatabase& forms, const assets::AssetDatabase& assets,
+    const WorldspaceFilter& filter) {
     auto set = std::make_shared<render::BiomeSet>();
     set->table.push_back({}); // [0] neutral, always present
     data::forEach<BiomeForm>(forms, [&](const BiomeForm& form) {
@@ -103,6 +104,9 @@ sptr<const render::BiomeSet> buildBiomeSet(
             glm::max(form.vegetationSet, 0));
     });
     data::forEach<BiomeMapForm>(forms, [&](const BiomeMapForm& form) {
+        if (!filter.matches(form.worldspace)) {
+            return;
+        }
         const auto path = assets.resolve(form.asset);
         if (!path) {
             LOG_WARN("BiomeMap: asset {} not registered",

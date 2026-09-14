@@ -66,11 +66,14 @@ std::optional<render::HeightPatch> readTerFile(
 
 sptr<const render::HeightPatches> buildHeightPatches(
     const data::FormDatabase& forms, const assets::AssetDatabase& assets,
-    f32 chunkSize) {
+    f32 chunkSize, const WorldspaceFilter& filter) {
     auto patches = std::make_shared<render::HeightPatches>();
     patches->chunkSize = chunkSize;
     data::forEach<TerrainPatchForm>(
         forms, [&](const TerrainPatchForm& form) {
+            if (!filter.matches(form.worldspace)) {
+                return;
+            }
             const auto path = assets.resolve(form.asset);
             if (!path) {
                 LOG_WARN("TerrainPatch ({}, {}): asset {} not registered",

@@ -38,6 +38,10 @@ new = true
 [records.fields]
 editorId = "LandscapeTuning"
 
+# The worldspace the game boots into (adventure.toml's overworld) —
+# resolved by GUID, never by editorId.
+startWorldspace = "3c6f8e20-0000-4000-8000-000000000001"
+
 # --- Terrain shape ------------------------------------------------------
 terrainSeed = 1337
 hillWavelength = 500.0      # meters per base noise octave

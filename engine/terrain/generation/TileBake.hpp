@@ -74,6 +74,10 @@ struct TileBakeParams {
     // The fleuve imprint (S1): the master courses are CONSTRUCTED into
     // the macro before erosion — channel, alluvial plain, monotone bed.
     MasterImprintParams imprint;
+    // Bounded-map rim (chantier CARTES M1.3): shaped into the macro
+    // BEFORE the imprint and the erosion. .valid = false = no rim (the
+    // windowed path never sets it; the map baker fills the rect).
+    MapEdgeSpec mapEdge;
     FinalizeParams finalize;
     // Solver parameters shared with the sim's boundary sources and the
     // offline oracle (the per-tile option-D solve itself is purged —

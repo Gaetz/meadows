@@ -32,8 +32,12 @@ f32 proceduralBase(const render::TerrainParams& params, f32 x, f32 z) {
         const render::terraingen::ProceduralControls controls {
             params.sandbox->controls
         };
-        return render::terraingen::macroHeightAnalytic(
+        const f32 h = render::terraingen::macroHeightAnalytic(
             controls, params.sandbox->macro, x, z);
+        // Bounded-map rim: shape the fallback exactly as the bake
+        // shaped the map (identity when edge.valid is false).
+        return render::terraingen::applyMapEdgeShape(
+            params.sandbox->edge, x, z, h);
     }
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,
                            params.octaves, params.lacunarity, params.gain) *

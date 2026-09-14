@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
     if (command == "border-report" && argc >= 5 && argc <= 7) {
         return cooker::borderReport(argv, argc);
     }
-    if (command == "bake-map" && (argc == 5 || argc == 6)) {
+    if (command == "bake-map" && argc >= 5 && argc <= 7) {
         return cooker::bakeMapCmd(argv, argc);
     }
     return usage();

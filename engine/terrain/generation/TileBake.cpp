@@ -82,6 +82,20 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     macroParams.hillChainWavelength = controlParams.hillChainWavelength;
     MacroResult macro =
         synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
+    // Bounded-map rim: shaped BEFORE the imprint (a master course may
+    // carve its gorge through a ridge rim — the river exit) and BEFORE
+    // the erosion (a sea rim is a perfect drainage outlet).
+    if (params.mapEdge.valid) {
+        for (u32 row = 0; row < out.sim.n; ++row) {
+            for (u32 col = 0; col < out.sim.n; ++col) {
+                f32& h =
+                    macro.height[static_cast<size_t>(row) * out.sim.n +
+                                 col];
+                h = applyMapEdgeShape(params.mapEdge, out.sim.x(col),
+                                      out.sim.z(row), h);
+            }
+        }
+    }
     // The fleuve imprint — the "authored -> S1 before erosion" slot: the
     // master courses carve their channel, plain and monotone bed into
     // the macro BEFORE the fastscape, which then sculpts around them

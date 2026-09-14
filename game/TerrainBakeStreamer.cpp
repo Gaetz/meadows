@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
+#include "game/MapBaker.hpp"
 #include "world/terrain/TerrainRegions.hpp"
 
 namespace game {
@@ -319,11 +320,15 @@ sptr<const render::terraingen::TileStage1> acquireStage1(
 
 TerrainBakeStreamer::TerrainBakeStreamer(
     const render::terraingen::TileBakeParams& bakeParams,
-    std::filesystem::path dir, core::JobSystem* jobSystem)
+    std::filesystem::path dir, core::JobSystem* jobSystem,
+    MapStreamConfig mapConfig)
     : params { bakeParams }, cacheDir { std::move(dir) },
-      jobs { jobSystem },
+      jobs { jobSystem }, map { mapConfig },
       built { std::make_shared<
           core::ConcurrentQueue<PublishedTile>>() } {
+    if (map.enabled) {
+        params.mapEdge = map.edgeStyles; // the bake fills the rect
+    }
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
     if (ec) {
@@ -337,6 +342,83 @@ u32 TerrainBakeStreamer::stage1Count() const {
 }
 
 void TerrainBakeStreamer::request(i32 tx, i32 tz) {
+    if (map.enabled) {
+        // Slices come from the map cache; a request into an unbaked
+        // map defers the tile and kicks ONE background map bake.
+        const i32 tps = map.tilesPerSide;
+        const auto floorDiv = [](i32 a, i32 b) {
+            return a >= 0 ? a / b : -((-a + b - 1) / b);
+        };
+        if (floorDiv(tx, tps) != map.mapX ||
+            floorDiv(tz, tps) != map.mapZ) {
+            return; // beyond the map rect: nothing exists there
+        }
+        if (deferredForMap.count(keyOf(tx, tz))) {
+            return; // already parked on the map bake — no fs churn
+        }
+        const auto mapDir = mapCacheDir(cacheDir, map.mapX, map.mapZ);
+        std::error_code probe;
+        if (!std::filesystem::exists(mapDir / "manifest.txt", probe)) {
+            deferredForMap.insert(keyOf(tx, tz));
+            if (!mapBaking->exchange(true)) {
+                const auto work = [params = params, cacheDir = cacheDir,
+                                   mx = map.mapX, mz = map.mapZ,
+                                   tps = tps, jobsRef = jobs,
+                                   baking = mapBaking] {
+                    if (!jobsRef || !jobsRef->isStopping()) {
+                        bakeMap(params, mx, mz, cacheDir, jobsRef, tps);
+                    }
+                    baking->store(false);
+                };
+                if (jobs) {
+                    jobs->enqueue(work);
+                } else {
+                    work();
+                }
+            }
+            return;
+        }
+        pending.insert(keyOf(tx, tz));
+        const auto work = [mapDir, tx, tz, queue = built,
+                           jobsRef = jobs,
+                           detailAmp =
+                               render::terraingen::kRegionDetailAmplitude,
+                           detailWave =
+                               render::terraingen::kRegionDetailWavelength,
+                           detailOct =
+                               render::terraingen::kRegionDetailOctaves] {
+            if (jobsRef && jobsRef->isStopping()) {
+                return;
+            }
+            const std::string stem =
+                "tile_" + std::to_string(tx) + "_" + std::to_string(tz) +
+                "_v" +
+                std::to_string(render::terraingen::kTileBakeVersion);
+            PublishedTile tile;
+            tile.tx = tx;
+            tile.tz = tz;
+            auto slice = world::readTrgFile(mapDir / (stem + ".trg"));
+            if (!slice ||
+                !readWaterFile(mapDir / (stem + ".twb"), tile.lakes,
+                               tile.rivers)) {
+                LOG_ERROR("Map cache: slice ({}, {}) unreadable in {} — "
+                          "delete the map dir to force a re-bake",
+                          tx, tz, mapDir.string());
+                return;
+            }
+            tile.region = std::move(*slice);
+            tile.region.detailAmplitude = detailAmp;
+            tile.region.detailWavelength = detailWave;
+            tile.region.detailOctaves = detailOct;
+            queue->push(std::move(tile));
+        };
+        if (jobs) {
+            jobs->enqueue(work);
+        } else {
+            work();
+        }
+        return;
+    }
     pending.insert(keyOf(tx, tz));
     const auto work = [params = params, cacheDir = cacheDir, tx, tz,
                        queue = built, registry = stage1s,
@@ -463,6 +545,19 @@ TerrainBakeStreamer::RingStatus TerrainBakeStreamer::ringStatus(
     RingStatus status;
     for (i32 tz = tz0; tz <= tz1; ++tz) {
         for (i32 tx = tx0; tx <= tx1; ++tx) {
+            if (map.enabled) {
+                // Only in-rect tiles count: beyond the rim nothing
+                // exists, and counting it would hold the warmup gate
+                // open forever near a map edge.
+                const i32 tps = map.tilesPerSide;
+                const auto floorDiv = [](i32 a, i32 b) {
+                    return a >= 0 ? a / b : -((-a + b - 1) / b);
+                };
+                if (floorDiv(tx, tps) != map.mapX ||
+                    floorDiv(tz, tps) != map.mapZ) {
+                    continue;
+                }
+            }
             ++status.needed;
             if (published.count(keyOf(tx, tz))) {
                 ++status.published;
@@ -524,6 +619,30 @@ void TerrainBakeStreamer::update(
               });
     for (const Want& want : wanted) {
         request(want.tx, want.tz);
+    }
+    // Deferred map tiles: once the background map bake lands its
+    // manifest, re-drive them through the read path (throttled — an
+    // exists() per frame per tile would be waste).
+    if (map.enabled && !deferredForMap.empty() && !mapBaking->load()) {
+        if (manifestCheckCountdown > 0) {
+            --manifestCheckCountdown;
+        } else {
+            manifestCheckCountdown = 30;
+            std::error_code probe;
+            if (std::filesystem::exists(
+                    mapCacheDir(cacheDir, map.mapX, map.mapZ) /
+                        "manifest.txt",
+                    probe)) {
+                const auto deferred = std::move(deferredForMap);
+                deferredForMap.clear();
+                for (const u64 key : deferred) {
+                    request(static_cast<i32>(
+                                static_cast<u32>(key >> 32)),
+                            static_cast<i32>(
+                                static_cast<u32>(key & 0xFFFFFFFFull)));
+                }
+            }
+        }
     }
     // Drain the mailbox on the frame thread.
     drain(publish);

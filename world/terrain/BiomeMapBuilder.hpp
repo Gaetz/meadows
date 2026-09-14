@@ -6,6 +6,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/terrain/BiomeMap.hpp"
+#include "world/worldspace/WorldForms.hpp"
 
 // BiomeForm records (+ optional BiomeMapForm painted index map) -> the
 // engine's immutable render::BiomeSet. Sibling of buildHeightPatches /
@@ -31,6 +32,7 @@ std::optional<BiomeIndexMap> readTbmFile(const std::filesystem::path& path);
 // Table indexed by BiomeForm::paletteIndex (gaps filled with the neutral
 // biome); the painted map rides along when a BiomeMapForm resolves.
 sptr<const render::BiomeSet> buildBiomeSet(
-    const data::FormDatabase& forms, const assets::AssetDatabase& assets);
+    const data::FormDatabase& forms, const assets::AssetDatabase& assets,
+    const WorldspaceFilter& filter = {});
 
 } // namespace world

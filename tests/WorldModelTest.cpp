@@ -271,3 +271,28 @@ TEST_CASE("materializeCell inherits the interior flag") {
     REQUIRE(cell.isValid());
     CHECK(static_cast<const world::CellForm*>(forms.get(cell))->interior);
 }
+
+TEST_CASE("worldspace map fields reflect and default to inherit") {
+    // Chantier CARTES M2.1: the bounded-map identity lives ON the
+    // worldspace (one map = one worldspace); < 0 climate fields mean
+    // "inherit the tuning singleton".
+    world::WorldspaceForm space;
+    CHECK_FALSE(space.bounded);
+    CHECK(space.mapSize == doctest::Approx(24576.0f));
+    CHECK(space.seaLevel < 0.0f);
+    CHECK(space.snowLine < 0.0f);
+    CHECK_FALSE(space.dominantBiome.isValid());
+
+    const reflect::TypeInfo& type =
+        world::WorldspaceForm::staticTypeInfo();
+    CHECK(type.findField("bounded") != nullptr);
+    CHECK(type.findField("mapX") != nullptr);
+    CHECK(type.findField("mapZ") != nullptr);
+    CHECK(type.findField("mapSize") != nullptr);
+    CHECK(type.findField("mapSeed") != nullptr);
+    CHECK(type.findField("seaLevel") != nullptr);
+    CHECK(type.findField("snowLine") != nullptr);
+    CHECK(type.findField("dominantBiome") != nullptr);
+    CHECK(type.findField("edgeNorth") != nullptr);
+    CHECK(type.findField("edgeWest") != nullptr);
+}

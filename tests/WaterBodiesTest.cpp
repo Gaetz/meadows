@@ -334,3 +334,55 @@ material = "80000000-0000-4000-8000-0000000000ff"
     CHECK(bodies->lakes[1].materialIndex == 0); // plain pond
     CHECK(bodies->lakes[2].materialIndex == 0); // dangling -> default
 }
+
+TEST_CASE("worldspace filter scopes water records to their map") {
+    // Chantier CARTES M2.2: with a filter, a builder keeps records
+    // tagged with the active worldspace, and untagged records only for
+    // the default overworld (the migration rule). No filter = legacy:
+    // everything.
+    world::WorldspaceFilter none;
+    const core::Guid mapA =
+        *core::Guid::fromString("aaaa0000-0000-4000-8000-000000000001");
+    const core::Guid mapB =
+        *core::Guid::fromString("bbbb0000-0000-4000-8000-000000000001");
+    CHECK(none.matches(core::Guid {}));
+    CHECK(none.matches(mapA));
+
+    world::WorldspaceFilter overworld { mapA, true };
+    CHECK(overworld.matches(mapA));
+    CHECK(overworld.matches(core::Guid {})); // untagged = the default
+    CHECK_FALSE(overworld.matches(mapB));
+
+    world::WorldspaceFilter bounded { mapB, false };
+    CHECK(bounded.matches(mapB));
+    CHECK_FALSE(bounded.matches(core::Guid {}));
+    CHECK_FALSE(bounded.matches(mapA));
+
+    // Through the real builder: two lakes on two maps.
+    data::FormDatabase db;
+    auto addLake = [&](const char* guid, const core::Guid& ws,
+                       f32 level) {
+        auto lake = std::make_unique<world::WaterBodyForm>();
+        lake->id = *core::Guid::fromString(guid);
+        lake->worldspace = ws;
+        lake->surfaceLevel = level;
+        lake->minX = 0.0f;
+        lake->minZ = 0.0f;
+        lake->maxX = 100.0f;
+        lake->maxZ = 100.0f;
+        db.add(std::move(lake),
+               world::WaterBodyForm::staticTypeInfo());
+    };
+    addLake("cccc0000-0000-4000-8000-000000000001", mapA, 50.0f);
+    addLake("cccc0000-0000-4000-8000-000000000002", mapB, 60.0f);
+    addLake("cccc0000-0000-4000-8000-000000000003", core::Guid {},
+            70.0f);
+
+    CHECK(world::buildWaterBodies(db, 21.0f)->lakes.size() == 3);
+    CHECK(world::buildWaterBodies(db, 21.0f,
+                                  world::WorldspaceFilter { mapA, true })
+              ->lakes.size() == 2); // mapA + untagged
+    CHECK(world::buildWaterBodies(db, 21.0f,
+                                  world::WorldspaceFilter { mapB, false })
+              ->lakes.size() == 1); // mapB only
+}

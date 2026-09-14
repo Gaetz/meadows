@@ -6,6 +6,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/terrain/TerrainBase.hpp"
+#include "world/worldspace/WorldForms.hpp"
 
 // Baked-terrain region IO: `.trg` assets carry the absolute height grid and
 // the coarse mask channels of one render::TerrainRegion. Detail-noise knobs
@@ -30,6 +31,7 @@ std::optional<render::TerrainRegion> readTrgFile(
 // unreadable assets are skipped (logged). An empty database yields a base
 // with no regions — height() then matches the pure noise.
 sptr<const render::TerrainBase> buildTerrainBase(
-    const data::FormDatabase& forms, const assets::AssetDatabase& assets);
+    const data::FormDatabase& forms, const assets::AssetDatabase& assets,
+    const WorldspaceFilter& filter = {});
 
 } // namespace world

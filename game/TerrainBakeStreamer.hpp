@@ -57,9 +57,26 @@ public:
         i32 tz { 0 };
     };
 
+    // Bounded-map streaming (chantier CARTES M1.4, docs/TERRAIN-MAPS.md):
+    // slices are READ from <cacheDir>/map_<mx>_<mz>/ — a request into an
+    // unbaked map defers the tile and kicks ONE background map bake
+    // (game::bakeMap on a worker; the deferred tiles occupy no worker,
+    // so the bake's own slice jobs cannot starve). Requests outside the
+    // active map rect are dropped (the M3.2 clamp — ringStatus counts
+    // only in-rect tiles or the warmup gate never completes at a rim).
+    struct MapStreamConfig {
+        bool enabled { false };
+        i32 tilesPerSide { 6 };
+        i32 mapX { 0 }; // the active map
+        i32 mapZ { 0 };
+        // Styles only (.valid + sides); the bake fills the rect.
+        render::terraingen::MapEdgeSpec edgeStyles;
+    };
+
     TerrainBakeStreamer(const render::terraingen::TileBakeParams& params,
                         std::filesystem::path cacheDir,
-                        core::JobSystem* jobs = nullptr);
+                        core::JobSystem* jobs = nullptr,
+                        MapStreamConfig map = {});
 
     // Converges the desired tile set around `focus` (its tile + any tile
     // within prefetch reach), drains finished bakes into `publish` on the
@@ -112,6 +129,14 @@ private:
     render::terraingen::TileBakeParams params;
     std::filesystem::path cacheDir;
     core::JobSystem* jobs { nullptr };
+    MapStreamConfig map;
+    // Tiles waiting for their map's bake to land (main thread only).
+    std::unordered_set<u64> deferredForMap;
+    // One map bake in flight, ever (shared: the worker clears it).
+    std::shared_ptr<std::atomic<bool>> mapBaking {
+        std::make_shared<std::atomic<bool>>(false)
+    };
+    u32 manifestCheckCountdown { 0 };
     f32 prefetchReach { 1408.0f }; // beyond the view ring, before FarTerrain
     Vec3 lastFocus { 0.0f };       // for the heading-biased request order
     // Workers push, the frame thread drains; shared_ptr so in-flight

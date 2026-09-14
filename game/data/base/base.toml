@@ -167,7 +167,10 @@ form = "11110000-0000-4000-8000-000000000001"
 type = "WorldspaceForm"
 new = true
 [records.fields]
-editorId = "Overworld"
+# Renamed from "Overworld": two records shared that editorId and the
+# boot lookup took the FIRST — the real overworld is adventure.toml's
+# 3c6f8e20 (see LandscapeTuningForm.startWorldspace).
+editorId = "LegacySwordDemo"
 cellSize = 16.0
 
 [[records]]
