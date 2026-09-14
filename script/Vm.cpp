@@ -321,6 +321,14 @@ str Vm::callBrain(const core::Guid& key, const std::string& code,
                                    : str {};
 }
 
+void Vm::bindMapTravel(std::function<void(i32, i32)> travel) {
+    impl->lua.set_function(
+        "travelToMap",
+        [travel = std::move(travel)](i32 mapX, i32 mapZ) {
+            travel(mapX, mapZ);
+        });
+}
+
 void Vm::bindEvents(gameplay::EventBus& bus) {
     sol::table events = impl->lua.create_named_table("events");
     events.set_function(

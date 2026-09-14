@@ -1426,6 +1426,44 @@ void LandscapeScene::update(f32 dt) {
             };
             world::updateTriggerVolumes(world, triggerCb, &spatialIndex);
         }
+        // Approach prefetch (M4.3): nearing a rim warms the neighbour
+        // map in the background — the crossing then costs a fade, not
+        // a bake. Cheap check every 2 s.
+        mapPrefetchCooldown -= dt;
+        if (sandboxActive && bakeStreamer &&
+            mapPrefetchCooldown <= 0.0f) {
+            mapPrefetchCooldown = 2.0f;
+            const auto& sandbox = renderer.terrainParams().sandbox;
+            if (sandbox && sandbox->edge.valid) {
+                const Vec3 at = flyCamera.camera.position;
+                const f32 near = 1536.0f;
+                const f32 minX = sandbox->edge.minX;
+                const f32 minZ = sandbox->edge.minZ;
+                const f32 size = sandbox->edge.size;
+                if (at.x - minX < near) {
+                    bakeStreamer->prefetchMap(activeMapX - 1,
+                                              activeMapZ);
+                } else if (minX + size - at.x < near) {
+                    bakeStreamer->prefetchMap(activeMapX + 1,
+                                              activeMapZ);
+                }
+                if (at.z - minZ < near) {
+                    bakeStreamer->prefetchMap(activeMapX,
+                                              activeMapZ - 1);
+                } else if (minZ + size - at.z < near) {
+                    bakeStreamer->prefetchMap(activeMapX,
+                                              activeMapZ + 1);
+                }
+            }
+        }
+        // A pass trigger asked for a map crossing: execute now, after
+        // every ECS iteration of the frame section is done.
+        if (pendingMapTravel) {
+            const i32 mx = static_cast<i32>(pendingMapTravel->x);
+            const i32 mz = static_cast<i32>(pendingMapTravel->y);
+            pendingMapTravel.reset();
+            travelToMap(mx, mz);
+        }
     }
     {
         // Everything render() needs from the World is extracted HERE —
@@ -3869,6 +3907,17 @@ void LandscapeScene::createConsole() {
     // commands are registered by the scene that owns a world; reflection
     // stays the backbone for get/set).
     ConsolePanel& panel = sceneConsole.create(forms, formTypes);
+    // Pass triggers: a TriggerVolume snippet calls travelToMap(mx, mz)
+    // to start a map crossing (chantier CARTES M4.2). Deferred to the
+    // end of frame: the trigger fires mid-ECS-iteration and the swap
+    // tears the world down (the flecs locked-storage rule).
+    sceneConsole.vm()->bindMapTravel([this](i32 mx, i32 mz) {
+        if (!sandboxActive) {
+            return;
+        }
+        pendingMapTravel = Vec2 { static_cast<f32>(mx),
+                                  static_cast<f32>(mz) };
+    });
     panel.addCommand("spawn", [this](const str& args) -> str {
         if (args.empty()) {
             return "usage: spawn <EditorId>";

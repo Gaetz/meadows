@@ -531,6 +531,32 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
     }
 }
 
+void TerrainBakeStreamer::prefetchMap(i32 mapX, i32 mapZ) {
+    if (!map.enabled ||
+        mapBakedAndValid(cacheDir, mapX, mapZ, map.tilesPerSide)) {
+        return;
+    }
+    if (mapBaking->exchange(true)) {
+        return; // one map bake at a time, ever
+    }
+    LOG_INFO("Map prefetch: baking neighbour map ({}, {}) in the "
+             "background",
+             mapX, mapZ);
+    const auto work = [params = params, cacheDir = cacheDir, mapX,
+                       mapZ, tps = map.tilesPerSide, jobsRef = jobs,
+                       baking = mapBaking] {
+        if (!jobsRef || !jobsRef->isStopping()) {
+            bakeMap(params, mapX, mapZ, cacheDir, jobsRef, tps);
+        }
+        baking->store(false);
+    };
+    if (jobs) {
+        jobs->enqueue(work);
+    } else {
+        work();
+    }
+}
+
 TerrainBakeStreamer::RingStatus TerrainBakeStreamer::ringStatus(
     const Vec3& focus) const {
     const f32 t = params.tileSize;

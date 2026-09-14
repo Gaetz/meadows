@@ -85,6 +85,12 @@ public:
     // a number.
     std::optional<f64> getNumber(const std::string& name);
 
+    // Exposes Lua `travelToMap(mapX, mapZ)` — bounded-map travel from
+    // a script (a pass TriggerForm's snippet starts the crossing). The
+    // callback must outlive this Vm; it runs on the frame thread from
+    // the trigger dispatch.
+    void bindMapTravel(std::function<void(i32, i32)> travel);
+
     // --- Latent ability execution: Lua coroutines + a central scheduler (§2.8) ---
 
     // Starts `code` as a coroutine with `self`/`target` bound. The script may

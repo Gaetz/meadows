@@ -119,6 +119,12 @@ public:
     // The scene evicted this tile's region: re-request it on return.
     void forgetTile(i32 tx, i32 tz) { published.erase(keyOf(tx, tz)); }
 
+    // Background-bakes ANOTHER map (the approach prefetch, chantier
+    // CARTES M4.3): the player nearing a rim warms the neighbour so the
+    // crossing costs a fade, not a bake. Shares the one-bake-in-flight
+    // gate with the active map. No-op when already baked or busy.
+    void prefetchMap(i32 mapX, i32 mapZ);
+
 private:
     static u64 keyOf(i32 tx, i32 tz) {
         return (static_cast<u64>(static_cast<u32>(tx)) << 32) |

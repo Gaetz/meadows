@@ -513,6 +513,10 @@ private:
     // The active bounded map (set by applyMapWorld; saved/restored).
     i32 activeMapX { 0 };
     i32 activeMapZ { 0 };
+    // A map crossing asked mid-frame (pass trigger Lua): executed at a
+    // safe point, never inside an ECS iteration.
+    std::optional<Vec2> pendingMapTravel;
+    f32 mapPrefetchCooldown { 0.0f };
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.
     void placeStartCamera();
