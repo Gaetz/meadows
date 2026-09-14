@@ -189,6 +189,115 @@ int bakeMapCmd(char** argv, int argc) {
     LOG_INFO("bake-map: worst interior band divergence {:.3f} m "
              "(acceptance <= 5 m — fine-erosion residual)",
              worst);
+
+    // Mirror calibration report: mean/max (baked - shaped analytic)
+    // per 100 m analytic band — the data that refits the
+    // macroHeightAnalytic compression (its constants were fitted to
+    // the WINDOWED bake; a drifted mirror pops the ground when slices
+    // land and draws a long straight step at the streaming frontier).
+    {
+        const render::terraingen::ProceduralControls controls {
+            [&] {
+                render::terraingen::ProceduralControlParams cp =
+                    params.controls;
+                cp.seed = params.worldSeed;
+                return cp;
+            }()
+        };
+        render::terraingen::MapEdgeSpec edgeSpec = params.mapEdge;
+        if (edgeSpec.valid) {
+            edgeSpec.minX = static_cast<f32>(mapX) * tileSize *
+                            static_cast<f32>(tilesPerSide);
+            edgeSpec.minZ = static_cast<f32>(mapZ) * tileSize *
+                            static_cast<f32>(tilesPerSide);
+            edgeSpec.size =
+                tileSize * static_cast<f32>(tilesPerSide);
+            edgeSpec.seaLevel = params.macro.seaLevel;
+        }
+        const auto overview = game::loadMapOverview(mapDir);
+        const auto fallbackAt = [&](f32 x, f32 z, f32 analytic) {
+            if (!overview) {
+                return analytic;
+            }
+            const auto& g = overview->grid;
+            const f32 u = (x - g.originX) / g.texelSize;
+            const f32 v = (z - g.originZ) / g.texelSize;
+            if (u < 0.0f || v < 0.0f ||
+                u > static_cast<f32>(g.n - 1) ||
+                v > static_cast<f32>(g.n - 1)) {
+                return analytic;
+            }
+            const u32 c0 = glm::min(static_cast<u32>(u), g.n - 2);
+            const u32 r0 = glm::min(static_cast<u32>(v), g.n - 2);
+            const f32 tu = u - static_cast<f32>(c0);
+            const f32 tv = v - static_cast<f32>(r0);
+            const auto at = [&](u32 c, u32 r) {
+                return overview
+                    ->heights[static_cast<size_t>(r) * g.n + c];
+            };
+            return glm::mix(
+                glm::mix(at(c0, r0), at(c0 + 1, r0), tu),
+                glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu), tv);
+        };
+        LOG_INFO("bake-map: mirror report vs {}",
+                 overview ? "the 64 m overview" : "the shaped analytic");
+        constexpr u32 kBands = 12;
+        f64 sum[kBands] = {};
+        f32 worstBand[kBands] = {};
+        u32 n[kBands] = {};
+        for (i32 dz = 0; dz < tilesPerSide; ++dz) {
+            for (i32 dx = 0; dx < tilesPerSide; ++dx) {
+                const auto slice =
+                    readSlice(mapDir, tx0 + dx, tz0 + dz);
+                if (!slice) {
+                    continue;
+                }
+                for (f32 z = slice->originZ + 128.0f;
+                     z < slice->originZ + slice->spanZ() - 128.0f;
+                     z += 96.0f) {
+                    for (f32 x = slice->originX + 128.0f;
+                         x < slice->originX + slice->spanX() - 128.0f;
+                         x += 96.0f) {
+                        const f32 fallback = fallbackAt(
+                            x, z,
+                            render::terraingen::applyMapEdgeShape(
+                                edgeSpec, x, z,
+                                render::terraingen::
+                                    macroHeightAnalytic(
+                                        controls, params.macro, x,
+                                        z)));
+                        const f32 rel =
+                            fallback - params.macro.seaLevel;
+                        if (rel < 0.0f) {
+                            continue; // the sea agrees by decree
+                        }
+                        const u32 band = glm::min(
+                            kBands - 1,
+                            static_cast<u32>(rel / 100.0f));
+                        const f32 delta =
+                            render::terrain::baseHeight(*slice, x,
+                                                        z) -
+                            fallback;
+                        sum[band] += delta;
+                        worstBand[band] = glm::max(
+                            worstBand[band], std::abs(delta));
+                        ++n[band];
+                    }
+                }
+            }
+        }
+        for (u32 b = 0; b < kBands; ++b) {
+            if (n[b] == 0) {
+                continue;
+            }
+            LOG_INFO("bake-map: mirror band {:>4}-{:<4} m — mean "
+                     "delta {:+7.1f} m, max |delta| {:6.1f} m ({} "
+                     "samples)",
+                     b * 100, (b + 1) * 100,
+                     sum[b] / static_cast<f64>(n[b]), worstBand[b],
+                     n[b]);
+        }
+    }
     return worst <= 5.0f ? 0 : 1;
 }
 

@@ -704,3 +704,45 @@ TEST_CASE("stage-1 calm: valley floors join the family, deterministic") {
               roughDev / static_cast<f64>(roughCount));
     }
 }
+
+TEST_CASE("map slices agree in their shared band") {
+    // Chantier CARTES: one stage-1 + one hydrology for the whole map —
+    // adjacent slices derive from the same surface AND the same routed
+    // water, so their shared band carries only the fine-erosion
+    // residual (production measured 0.14-0.28 m vs 200-441 m for
+    // independently windowed tiles). Toy 2x1 map.
+    TileBakeParams params = testParams();
+    TileBakeParams mapParams = params;
+    mapParams.tileSize = params.tileSize * 2.0f; // 2x2 slices
+    mapParams.apron = 1088.0f; // covers the map hydrology window
+    const TileStage1 mapS1 = bakeTileStage1(mapParams, 0, 0);
+    const MapHydrology hydro =
+        extractMapHydrology(params, mapS1, 0, 0, 2);
+    REQUIRE(hydro.window.n > 2);
+
+    const TileBakeResult a = bakeMapSlice(params, 0, 0, mapS1, hydro);
+    const TileBakeResult b = bakeMapSlice(params, 1, 0, mapS1, hydro);
+    REQUIRE(a.region.width > 2);
+    REQUIRE(b.region.width > 2);
+
+    const f32 border = params.tileSize;
+    f32 maxDiverge = 0.0f;
+    for (f32 z = 8.0f; z < params.tileSize; z += 8.0f) {
+        for (f32 x = border - params.overlapMargin + 2.0f;
+             x < border + params.overlapMargin - 2.0f; x += 4.0f) {
+            const f32 ha = render::terrain::baseHeight(a.region, x, z);
+            const f32 hb = render::terrain::baseHeight(b.region, x, z);
+            maxDiverge = std::max(maxDiverge, std::abs(ha - hb));
+        }
+    }
+    CHECK(maxDiverge < 1.0f);
+
+    // One hydrology, one owner: no lake published by both slices.
+    for (const auto& la : a.lakes) {
+        for (const auto& lb : b.lakes) {
+            const bool same = la.minX == lb.minX && la.minZ == lb.minZ &&
+                              la.level == lb.level;
+            CHECK_FALSE(same);
+        }
+    }
+}

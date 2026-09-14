@@ -20,6 +20,13 @@ struct SandboxTerrain {
     // the rim crest decaying outward, matching the baked rim at the
     // map line by construction.
     terraingen::MapEdgeSpec edge;
+    // The baked map's 64 m OVERVIEW (decimated global stage-1, rim
+    // included): the fallback INSIDE its coverage — a pointwise
+    // analytic mirror cannot follow a globally carved valley network
+    // (measured hundreds of meters of drift); the map's own coarse
+    // truth can. Empty = analytic fallback (legacy / unbaked map).
+    terraingen::GridSpec overviewGrid;
+    vector<f32> overview;
 };
 
 } // namespace render

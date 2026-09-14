@@ -11,7 +11,7 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "game/AllForms.hpp"
-#include "game/TerrainBakeStreamer.hpp"
+#include "game/MapBaker.hpp"
 
 namespace cooker {
 
@@ -91,45 +91,45 @@ int preBake(char** argv, int argc) {
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
 
-    const f32 t = params.tileSize;
-    const i32 tilesX = static_cast<i32>(std::floor(maxX / t)) -
-                       static_cast<i32>(std::floor(minX / t)) + 1;
-    const i32 tilesZ = static_cast<i32>(std::floor(maxZ / t)) -
-                       static_cast<i32>(std::floor(minZ / t)) + 1;
+    // Bounded maps (chantier CARTES): the pre-bake unit is a whole map
+    // — every map overlapping the rect, island rim (the game default),
+    // skipped when its manifest already stands.
+    params.mapEdge.valid = true; // all sides Sea
+    const f32 mapSize =
+        params.tileSize * static_cast<f32>(game::kMapTilesPerSide);
+    const i32 mx0 = static_cast<i32>(std::floor(minX / mapSize));
+    const i32 mx1 = static_cast<i32>(std::floor(maxX / mapSize));
+    const i32 mz0 = static_cast<i32>(std::floor(minZ / mapSize));
+    const i32 mz1 = static_cast<i32>(std::floor(maxZ / mapSize));
     LOG_INFO("pre-bake: seed {} sea {:.1f} | rect ({:.0f},{:.0f})-"
-             "({:.0f},{:.0f}) = {}x{} tiles (v{}) -> {}",
+             "({:.0f},{:.0f}) = maps ({},{})..({},{}) -> {}",
              tuning.terrainSeed, tuning.seaLevel, minX, minZ, maxX, maxZ,
-             tilesX, tilesZ, render::terraingen::kTileBakeVersion,
-             cacheDir.string());
+             mx0, mz0, mx1, mz1, cacheDir.string());
 
     core::JobSystem jobs; // one worker per hardware thread
-    game::TerrainBakeStreamer streamer { params, cacheDir, &jobs };
-    streamer.requestRect(minX, minZ, maxX, maxZ);
-    const u32 total = streamer.pendingCount();
-    LOG_INFO("pre-bake: {} tile(s) requested (cache hits publish "
-             "instantly)",
-             total);
-
     const auto start = std::chrono::steady_clock::now();
-    u32 done = 0;
-    while (streamer.pendingCount() > 0) {
-        streamer.drain([&](game::TerrainBakeStreamer::PublishedTile&&
-                               tile) {
-            ++done;
-            LOG_INFO("pre-bake: [{}/{}] tile ({}, {}) — {} lake(s), "
-                     "{} river(s) | stage-1 {} | {:.0f} s elapsed",
-                     done, total, tile.tx, tile.tz, tile.lakes.size(),
-                     tile.rivers.size(), streamer.stage1Count(),
-                     std::chrono::duration<f64> {
-                         std::chrono::steady_clock::now() - start }
-                         .count());
-        });
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    u32 baked = 0;
+    for (i32 mz = mz0; mz <= mz1; ++mz) {
+        for (i32 mx = mx0; mx <= mx1; ++mx) {
+            std::error_code probe;
+            if (std::filesystem::exists(
+                    game::mapCacheDir(cacheDir, mx, mz) /
+                        "manifest.txt",
+                    probe)) {
+                LOG_INFO("pre-bake: map ({}, {}) already baked", mx,
+                         mz);
+                continue;
+            }
+            const game::MapBakeStats stats = game::bakeMap(
+                params, mx, mz, cacheDir, &jobs,
+                game::kMapTilesPerSide, [&](u32 landed, u32 total) {
+                    LOG_INFO("pre-bake: map ({}, {}) [{}/{}] slice",
+                             mx, mz, landed, total);
+                });
+            baked += stats.slicesWritten > 0 ? 1u : 0u;
+        }
     }
-    streamer.drain([&](game::TerrainBakeStreamer::PublishedTile&&) {
-        ++done;
-    });
-    LOG_INFO("pre-bake: done — {} tile(s) in {:.0f} s", done,
+    LOG_INFO("pre-bake: done — {} map(s) baked in {:.0f} s", baked,
              std::chrono::duration<f64> {
                  std::chrono::steady_clock::now() - start }
                  .count());

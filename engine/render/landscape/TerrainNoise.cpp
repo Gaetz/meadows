@@ -29,15 +29,42 @@ f32 smoothstepf(f32 low, f32 high, f32 x) {
 // pre-baked-terrain behavior in that case.
 f32 proceduralBase(const render::TerrainParams& params, f32 x, f32 z) {
     if (params.sandbox) {
+        // Inside a baked map's coverage the fallback is the map's own
+        // 64 m overview (bilinear) — the analytic mirror cannot follow
+        // a globally carved valley network.
+        const render::SandboxTerrain& sb = *params.sandbox;
+        if (!sb.overview.empty() && sb.overviewGrid.n >= 2) {
+            const render::terraingen::GridSpec& g = sb.overviewGrid;
+            const f32 u = (x - g.originX) / g.texelSize;
+            const f32 v = (z - g.originZ) / g.texelSize;
+            if (u >= 0.0f && v >= 0.0f &&
+                u <= static_cast<f32>(g.n - 1) &&
+                v <= static_cast<f32>(g.n - 1)) {
+                const u32 c0 =
+                    glm::min(static_cast<u32>(u), g.n - 2);
+                const u32 r0 =
+                    glm::min(static_cast<u32>(v), g.n - 2);
+                const f32 tu = u - static_cast<f32>(c0);
+                const f32 tv = v - static_cast<f32>(r0);
+                const auto at = [&](u32 c, u32 r) {
+                    return sb.overview[static_cast<size_t>(r) * g.n +
+                                       c];
+                };
+                const f32 a =
+                    glm::mix(at(c0, r0), at(c0 + 1, r0), tu);
+                const f32 b =
+                    glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu);
+                return glm::mix(a, b, tv);
+            }
+        }
         const render::terraingen::ProceduralControls controls {
-            params.sandbox->controls
+            sb.controls
         };
         const f32 h = render::terraingen::macroHeightAnalytic(
-            controls, params.sandbox->macro, x, z);
+            controls, sb.macro, x, z);
         // Bounded-map rim: shape the fallback exactly as the bake
         // shaped the map (identity when edge.valid is false).
-        return render::terraingen::applyMapEdgeShape(
-            params.sandbox->edge, x, z, h);
+        return render::terraingen::applyMapEdgeShape(sb.edge, x, z, h);
     }
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,
                            params.octaves, params.lacunarity, params.gain) *

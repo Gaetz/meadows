@@ -3,7 +3,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <optional>
 #include <thread>
 
 #include "engine/core/ConcurrentQueue.hpp"
@@ -25,6 +27,43 @@ f64 secondsSince(const std::chrono::steady_clock::time_point& start) {
 }
 
 } // namespace
+
+namespace {
+constexpr char kOverviewMagic[4] = { 'M', 'O', 'V', '1' };
+constexpr u32 kOverviewStep = 4; // 16 m stage-1 texels -> 64 m
+} // namespace
+
+std::optional<MapOverview> loadMapOverview(
+    const std::filesystem::path& mapDir) {
+    std::ifstream file { mapDir / "overview.bin", std::ios::binary };
+    if (!file) {
+        return std::nullopt;
+    }
+    char magic[4] = {};
+    MapOverview out;
+    const auto read = [&](auto& value) {
+        file.read(reinterpret_cast<char*>(&value), sizeof(value));
+    };
+    file.read(magic, 4);
+    read(out.grid.originX);
+    read(out.grid.originZ);
+    read(out.grid.texelSize);
+    read(out.grid.n);
+    if (!file || std::memcmp(magic, kOverviewMagic, 4) != 0 ||
+        out.grid.n < 2 || out.grid.n > 8192) {
+        LOG_WARN("Map cache: rejected {} (corrupt overview)",
+                 (mapDir / "overview.bin").string());
+        return std::nullopt;
+    }
+    out.heights.resize(out.grid.cells());
+    file.read(reinterpret_cast<char*>(out.heights.data()),
+              static_cast<std::streamsize>(out.heights.size() *
+                                           sizeof(f32)));
+    if (!file) {
+        return std::nullopt;
+    }
+    return out;
+}
 
 std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
                                   i32 mapX, i32 mapZ) {
@@ -163,6 +202,50 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
                  "manifest written",
                  mapX, mapZ, written, total);
         return stats;
+    }
+
+    // The overview: the shared surface decimated to 64 m (exact texel
+    // picks — rim and shaped apron included), the runtime fallback
+    // inside the map.
+    {
+        MapOverview overview;
+        overview.grid.originX = mapS1.sim.originX;
+        overview.grid.originZ = mapS1.sim.originZ;
+        overview.grid.texelSize =
+            mapS1.sim.texelSize * static_cast<f32>(kOverviewStep);
+        overview.grid.n = (mapS1.sim.n - 1) / kOverviewStep + 1;
+        overview.heights.resize(overview.grid.cells());
+        for (u32 row = 0; row < overview.grid.n; ++row) {
+            for (u32 col = 0; col < overview.grid.n; ++col) {
+                overview.heights[static_cast<size_t>(row) *
+                                     overview.grid.n +
+                                 col] =
+                    mapS1.eroded[static_cast<size_t>(row) *
+                                     kOverviewStep * mapS1.sim.n +
+                                 static_cast<size_t>(col) *
+                                     kOverviewStep];
+            }
+        }
+        std::ofstream file { mapDir / "overview.bin",
+                             std::ios::binary | std::ios::trunc };
+        const auto write = [&](const auto& value) {
+            file.write(reinterpret_cast<const char*>(&value),
+                       sizeof(value));
+        };
+        file.write(kOverviewMagic, 4);
+        write(overview.grid.originX);
+        write(overview.grid.originZ);
+        write(overview.grid.texelSize);
+        write(overview.grid.n);
+        file.write(
+            reinterpret_cast<const char*>(overview.heights.data()),
+            static_cast<std::streamsize>(overview.heights.size() *
+                                         sizeof(f32)));
+        if (!file) {
+            LOG_ERROR("map bake: cannot write overview in {}",
+                      mapDir.string());
+            return stats;
+        }
     }
 
     // The manifest marks the map COMPLETE and carries what the runtime

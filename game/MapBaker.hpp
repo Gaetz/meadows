@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <optional>
 
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
@@ -53,5 +54,18 @@ MapBakeStats bakeMap(const render::terraingen::TileBakeParams& params,
 // The map's cache directory under the seed cache root.
 std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
                                   i32 mapX, i32 mapZ);
+
+// The map OVERVIEW: the global stage-1 surface decimated to 64 m,
+// written by bakeMap next to the slices (rim + 3 km of shaped apron
+// included). It is the runtime fallback INSIDE a baked map — a
+// pointwise analytic mirror cannot follow a globally carved valley
+// network (measured -250..-456 m mean drift in the highlands), the
+// map's own coarse truth can (upsampling error only).
+struct MapOverview {
+    render::terraingen::GridSpec grid;
+    vector<f32> heights;
+};
+std::optional<MapOverview> loadMapOverview(
+    const std::filesystem::path& mapDir);
 
 } // namespace game

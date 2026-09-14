@@ -1835,6 +1835,23 @@ void LandscapeScene::setSandboxMode(bool enable) {
         sandbox->edge.size = bakeParams.tileSize *
                              static_cast<f32>(mapCfg.tilesPerSide);
         sandbox->edge.seaLevel = tuning.seaLevel;
+        // The baked map's overview (when the cache holds it): the
+        // fallback inside the map becomes the map's own coarse truth.
+        // A cold cache boots on the analytic + rim shape and picks the
+        // overview up on the NEXT session (the background bake writes
+        // it; hot-swapping it mid-session would move the fallback
+        // ground under unbaked chunks).
+        if (const auto overview = loadMapOverview(mapCacheDir(
+                platform::executableDir() / "terrain-cache" /
+                    std::to_string(tuning.terrainSeed),
+                mapCfg.mapX, mapCfg.mapZ))) {
+            sandbox->overviewGrid = overview->grid;
+            sandbox->overview = std::move(overview->heights);
+            LOG_INFO("Sandbox terrain: map overview loaded ({}x{} at "
+                     "{:.0f} m)",
+                     overview->grid.n, overview->grid.n,
+                     overview->grid.texelSize);
+        }
         params.sandbox = sandbox;
         activeSnowLine = tuning.sandboxSnowLine;
         bakeStreamer = std::make_unique<TerrainBakeStreamer>(
@@ -1964,69 +1981,6 @@ void LandscapeScene::setSandboxMode(bool enable) {
                 *physics, params, &engine->getJobSystem());
     }
     streaming.snapCellEntities(makeStreamingContext());
-}
-
-void LandscapeScene::reconcileWaterWithTerrain(
-    const render::TerrainRegion& region) {
-    const render::TerrainParams& tp = renderer.terrainParams();
-    const f32 minX = region.originX;
-    const f32 maxX = region.originX + region.spanX();
-    const f32 minZ = region.originZ;
-    const f32 maxZ = region.originZ + region.spanZ();
-    const auto intersects = [&](f32 bMinX, f32 bMinZ, f32 bMaxX,
-                                f32 bMaxZ) {
-        return bMaxX >= minX && bMinX <= maxX && bMaxZ >= minZ &&
-               bMinZ <= maxZ;
-    };
-    for (render::terraingen::Lake& lake : sandboxLakes) {
-        if (lake.mask.empty() ||
-            !intersects(lake.minX, lake.minZ, lake.maxX, lake.maxZ)) {
-            continue;
-        }
-        u32 kept = 0;
-        for (u32 row = 0; row < lake.maskHeight; ++row) {
-            for (u32 col = 0; col < lake.maskWidth; ++col) {
-                u8& cell = lake.mask[static_cast<size_t>(row) *
-                                         lake.maskWidth +
-                                     col];
-                if (!cell) {
-                    continue;
-                }
-                const f32 wx =
-                    lake.minX + static_cast<f32>(col) * lake.maskTexel;
-                const f32 wz =
-                    lake.minZ + static_cast<f32>(row) * lake.maskTexel;
-                // Never clear against the procedural fallback: ground
-                // that is not baked yet says nothing about this cell
-                // (the clear is destructive — no re-flood ever).
-                if (!terrainBase || !terrainBase->regionAt(wx, wz)) {
-                    ++kept;
-                    continue;
-                }
-                if (render::terrain::height(tp, wx, wz) >
-                    lake.level - 0.15f) {
-                    cell = 0; // not submerged by the REAL ground
-                    continue;
-                }
-                ++kept;
-            }
-        }
-        lake.cells = kept;
-    }
-    std::erase_if(sandboxLakes,
-                  [](const render::terraingen::Lake& lake) {
-                      return !lake.mask.empty() && lake.cells < 6;
-                  });
-    // Rivers: NOTHING here any more. The bake rebuilds their profile
-    // against the FINAL ground upstream-from-the-mouth
-    // (reconcileRiversWithTerrain, v65) and the ribbon builder
-    // re-grounds its densified nodes on the FULL runtime height
-    // (detail included). The legacy clamp that lived here —
-    // min(surface, height + 4) plus a downstream running-min, re-run
-    // on every resident river at EVERY tile publish — ratcheted the
-    // surfaces down under each bed rise as the streaming went on
-    // (dev: torrents flowing between the two ground representations,
-    // (9622, 4131) and (9568, 2837)).
 }
 
 void LandscapeScene::publishWaterBodies() {
@@ -2250,96 +2204,14 @@ void LandscapeScene::publishBakedTiles(
     }
     streaming.snapCellEntities(makeStreamingContext());
     const f64 collisionMs = sectionMs();
-    // Cross-tile duplicate suppression (the belt over the canonical
-    // basin resolution): two materially overlapping lake masks are two
-    // views of ONE basin — keep the LOWER surface, which never leaves
-    // a floating sheet the other cannot explain.
-    if (!tiles.empty() && sandboxLakes.size() > 1) {
-        const auto lakeCoversPoint = [](const render::terraingen::Lake& lake,
-                                        f32 x, f32 z) {
-            if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
-                z > lake.maxZ || lake.mask.empty()) {
-                return false;
-            }
-            const u32 mx = static_cast<u32>(glm::clamp(
-                (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f,
-                static_cast<f32>(lake.maskWidth - 1)));
-            const u32 mz = static_cast<u32>(glm::clamp(
-                (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f,
-                static_cast<f32>(lake.maskHeight - 1)));
-            return lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
-                             mx] != 0;
-        };
-        vector<u8> drop(sandboxLakes.size(), 0);
-        for (size_t a = 0; a < sandboxLakes.size(); ++a) {
-            if (drop[a]) {
-                continue;
-            }
-            for (size_t b = a + 1; b < sandboxLakes.size(); ++b) {
-                if (drop[b]) {
-                    continue;
-                }
-                const auto& la = sandboxLakes[a];
-                const auto& lb = sandboxLakes[b];
-                if (la.minX > lb.maxX || lb.minX > la.maxX ||
-                    la.minZ > lb.maxZ || lb.minZ > la.maxZ ||
-                    la.mask.empty() || lb.mask.empty()) {
-                    continue;
-                }
-                // Sample the smaller mask against the bigger one.
-                const bool aSmall = la.cells <= lb.cells;
-                const auto& small = aSmall ? la : lb;
-                const auto& big = aSmall ? lb : la;
-                u32 sampled = 0;
-                u32 shared = 0;
-                for (u32 mz = 0; mz < small.maskHeight; mz += 3) {
-                    for (u32 mx = 0; mx < small.maskWidth; mx += 3) {
-                        if (!small.mask[static_cast<size_t>(mz) *
-                                            small.maskWidth +
-                                        mx]) {
-                            continue;
-                        }
-                        ++sampled;
-                        const f32 x = small.minX +
-                                      static_cast<f32>(mx) *
-                                          small.maskTexel;
-                        const f32 z = small.minZ +
-                                      static_cast<f32>(mz) *
-                                          small.maskTexel;
-                        if (lakeCoversPoint(big, x, z)) {
-                            ++shared;
-                        }
-                    }
-                }
-                if (sampled == 0 ||
-                    static_cast<f32>(shared) <
-                        0.3f * static_cast<f32>(sampled)) {
-                    continue;
-                }
-                // Same basin twice: the higher sheet goes.
-                drop[la.level > lb.level ? a : b] = 1;
-            }
-        }
-        u32 dropped = 0;
-        for (size_t l = sandboxLakes.size(); l-- > 0;) {
-            if (drop[l]) {
-                sandboxLakes.erase(
-                    sandboxLakes.begin() + static_cast<ptrdiff_t>(l));
-                ++dropped;
-            }
-        }
-        if (dropped > 0) {
-            LOG_INFO("Water: dropped {} duplicate lake sheet(s)",
-                     dropped);
-        }
-    }
+    // (The cross-tile duplicate-lake suppression lived here: one
+    // hydrology per MAP gives every basin a single identity — there is
+    // nothing left to dedupe. Chantier CARTES M1.5.)
     const f64 dedupeMs = sectionMs();
-    // The new regions re-blend the overlap bands: re-validate every
-    // stored water body they touch against the LIVE terrain, then
-    // republish once.
-    for (size_t r = firstNew; r < next->regions.size(); ++r) {
-        reconcileWaterWithTerrain(*next->regions[r]);
-    }
+    // (The runtime lake re-validation lived here: the in-bake
+    // reconcile now sees past a slice's rect through the map fallback,
+    // and slices of one map are carve-coherent — the belt is gone with
+    // the divergence it guarded. Chantier CARTES M1.5.)
     const f64 reconcileMs = sectionMs();
     publishWaterBodies();
     // Fresh regions changed the ground under the sim window — it

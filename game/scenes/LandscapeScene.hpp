@@ -496,13 +496,6 @@ private:
     // Rebuilds waterBodies from Forms + sandbox results and hands it to
     // the swim queries and the WaterSystem.
     void publishWaterBodies();
-    // Cross-tile water reconciliation: the bake validated each body
-    // against ITS OWN tile's terrain, but the DISPLAYED ground in
-    // overlap bands is the blend of neighbours — re-validate the stored
-    // bodies touching `region` against the live height() so nothing
-    // floats over blended terrain. Runs on every tile publish
-    // (cumulative: later neighbours re-blend the band and re-trigger).
-    void reconcileWaterWithTerrain(const render::TerrainRegion& region);
     // Main-menu game mode: story (authored world, legacy terrain) or
     // sandbox (infinite generated world + streamer). Idempotent; sandbox
     // also moves the fly camera to a pleasant generated start so the
