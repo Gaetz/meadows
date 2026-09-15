@@ -558,8 +558,13 @@ private:
         BuildScene,
         Reveal,
     };
+    // `spawnSearchRadius`: how far the wet-spawn validation may
+    // relocate. Mode entries scout up to 6 km; a TRAVEL arrival is an
+    // authored point — it may only snap locally, never be re-scouted
+    // kilometers away.
     void armWarmup(const Vec3& target, bool placeSpawn, bool soft,
-                   f32 minSeconds = 0.0f);
+                   f32 minSeconds = 0.0f,
+                   f32 spawnSearchRadius = 6000.0f);
     void updateWarmup(f32 dt);    // end of update(): phase machine + veil state
     void finalizeSandboxSpawn();  // the single-shot spawn validation
     WarmupPhase warmupPhase { WarmupPhase::Idle };
@@ -571,6 +576,7 @@ private:
     u32 warmupPeakPending { 0 };  // BuildScene high-water mark
     f32 warmupProgress { 0.0f };  // monotone within one warmup
     f32 warmupElapsed { 0.0f };   // wall time under the veil
+    f32 warmupSpawnRadius { 6000.0f }; // wet-relocation bound (armWarmup)
     // Minimum veil time (map travel asks ~1 s so the crossing READS as
     // a transition even with both maps warm; 0 everywhere else).
     f32 warmupMinSeconds { 0.0f };

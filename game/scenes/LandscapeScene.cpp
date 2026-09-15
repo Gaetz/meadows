@@ -1940,8 +1940,10 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
     sandboxSpawnValid = true;
     // A crossing must READ as one: hold the veil at least ~1 s even
     // with both maps warm in cache (dev ask — the instant swap was
-    // unreadable at the col).
-    armWarmup(sandboxSpawn, true, false, 1.0f);
+    // unreadable at the col). The arrival is an AUTHORED point: the
+    // wet-spawn validation may nudge it a couple hundred meters (a
+    // pond at the pass), never re-scout kilometers away.
+    armWarmup(sandboxSpawn, true, false, 1.0f, 240.0f);
     // MOVE the traveler: the old position lies outside the new map's
     // rect — nothing streams there, the fallback reads open sea, and a
     // player left behind stares at water forever (the M4.1 first-run
@@ -2420,7 +2422,8 @@ void LandscapeScene::finalizeSandboxSpawn() {
         // the compressed world) — a failed search keeps the old spot
         // and logs, never silently.
         bool relocated = false;
-        for (f32 radius = 60.0f; radius <= 6000.0f && !relocated;
+        for (f32 radius = 60.0f;
+             radius <= warmupSpawnRadius && !relocated;
              radius += 60.0f) {
             for (u32 k = 0; k < 12 && !relocated; ++k) {
                 const f32 angle =
@@ -2450,7 +2453,8 @@ void LandscapeScene::finalizeSandboxSpawn() {
 }
 
 void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
-                               bool soft, f32 minSeconds) {
+                               bool soft, f32 minSeconds,
+                               f32 spawnSearchRadius) {
     warmupPhase = WarmupPhase::BakeRing;
     warmupTarget = target;
     warmupPlaceSpawn = placeSpawn;
@@ -2460,6 +2464,7 @@ void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
     warmupProgress = 0.0f;
     warmupElapsed = 0.0f;
     warmupMinSeconds = minSeconds;
+    warmupSpawnRadius = spawnSearchRadius;
     loadingGateShown = 0.0f;
     if (uiCreated && screenStack.find("loading")) {
         screenStack.show("loading");
