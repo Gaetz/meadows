@@ -558,7 +558,8 @@ private:
         BuildScene,
         Reveal,
     };
-    void armWarmup(const Vec3& target, bool placeSpawn, bool soft);
+    void armWarmup(const Vec3& target, bool placeSpawn, bool soft,
+                   f32 minSeconds = 0.0f);
     void updateWarmup(f32 dt);    // end of update(): phase machine + veil state
     void finalizeSandboxSpawn();  // the single-shot spawn validation
     WarmupPhase warmupPhase { WarmupPhase::Idle };
@@ -569,6 +570,14 @@ private:
     u32 warmupFrames { 0 };
     u32 warmupPeakPending { 0 };  // BuildScene high-water mark
     f32 warmupProgress { 0.0f };  // monotone within one warmup
+    f32 warmupElapsed { 0.0f };   // wall time under the veil
+    // Minimum veil time (map travel asks ~1 s so the crossing READS as
+    // a transition even with both maps warm; 0 everywhere else).
+    f32 warmupMinSeconds { 0.0f };
+    // Spectator soft veil re-arm cooldown: a hover near the map rim
+    // completes its clamped ring instantly — without the cooldown the
+    // veil arms and reveals every few frames (border flicker).
+    f32 softVeilCooldown { 0.0f };
     f32 loadingGateAlpha { 0.0f };
     f32 loadingGateShown { 0.0f }; // eased display value (bar/label)
     Vec3 warmupLastCamPos { 0.0f }; // spectator speed estimate

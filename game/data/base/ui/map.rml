@@ -49,6 +49,13 @@
 			width: 0;
 			height: 0;
 		}
+		/* Visibility by CLASS toggle, not data-if: the marker stays in
+		   the tree so its data-style left/top re-evaluate like the HUD
+		   bars do — data-if + data-style on one element left the dot
+		   parked at the origin. */
+		#player.hidden {
+			display: none;
+		}
 		#player .pdot {
 			position: absolute;
 			left: -4dp;
@@ -83,7 +90,7 @@
 				<div class="dot"/>
 				<div class="poiname">{{ d.c0 }}</div>
 			</div>
-			<div id="player" data-if="playerVisible" data-style-left="playerX + '%'" data-style-top="playerY + '%'">
+			<div id="player" data-class-hidden="!playerVisible" data-style-left="playerX + '%'" data-style-top="playerY + '%'">
 				<div class="pdot"/>
 			</div>
 		</div>

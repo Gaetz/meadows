@@ -1938,7 +1938,10 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
         sandboxSpawn = probeSandboxSpawn();
     }
     sandboxSpawnValid = true;
-    armWarmup(sandboxSpawn, true, false);
+    // A crossing must READ as one: hold the veil at least ~1 s even
+    // with both maps warm in cache (dev ask — the instant swap was
+    // unreadable at the col).
+    armWarmup(sandboxSpawn, true, false, 1.0f);
     // MOVE the traveler: the old position lies outside the new map's
     // rect — nothing streams there, the fallback reads open sea, and a
     // player left behind stares at water forever (the M4.1 first-run
@@ -2447,7 +2450,7 @@ void LandscapeScene::finalizeSandboxSpawn() {
 }
 
 void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
-                               bool soft) {
+                               bool soft, f32 minSeconds) {
     warmupPhase = WarmupPhase::BakeRing;
     warmupTarget = target;
     warmupPlaceSpawn = placeSpawn;
@@ -2455,6 +2458,8 @@ void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
     warmupFrames = 0;
     warmupPeakPending = 0;
     warmupProgress = 0.0f;
+    warmupElapsed = 0.0f;
+    warmupMinSeconds = minSeconds;
     loadingGateShown = 0.0f;
     if (uiCreated && screenStack.find("loading")) {
         screenStack.show("loading");
@@ -2470,14 +2475,20 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
     const f32 camSpeed = glm::length(camPos - warmupLastCamPos) / dt;
     warmupLastCamPos = camPos;
     if (warmupPhase == WarmupPhase::Idle) {
+        softVeilCooldown = glm::max(0.0f, softVeilCooldown - dt);
         const bool menuOpen = uiCreated && screenStack.modalOpen();
         // No terrain exists in interiors: the camera sits in the interior
         // frame, so the ring probe would ask for overworld tiles around a
         // meaningless position and the veil would never complete.
         if (bakeStreamer && mode == SceneMode::Spectator && !interiorMode &&
-            !menuOpen && camSpeed < 6.0f) {
+            !menuOpen && camSpeed < 6.0f && softVeilCooldown <= 0.0f) {
             const auto ring = bakeStreamer->ringStatus(camPos);
-            if (ring.published < ring.needed) {
+            // >= 2 missing: near the map rim the clamped ring drops to
+            // a couple of tiles and completes within frames — arming
+            // there strobes the veil (the border flicker); a real hole
+            // in the world is several tiles deep.
+            if (ring.needed > ring.published &&
+                ring.needed - ring.published >= 2) {
                 armWarmup(camPos, false, true);
             }
         }
@@ -2487,6 +2498,7 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
         }
     }
     ++warmupFrames;
+    warmupElapsed += dt;
     // A soft veil cancels itself when the camera speeds off again.
     if (warmupSoft && warmupPhase != WarmupPhase::Reveal &&
         camSpeed > 20.0f) {
@@ -2567,8 +2579,11 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
                 : 1.0f - static_cast<f32>(pending) /
                              static_cast<f32>(warmupPeakPending);
         progress = 0.7f + 0.3f * buildFrac;
-        // Grace: the first frames are still announcing work.
-        if (warmupFrames > 30 && pending == 0) {
+        // Grace: the first frames are still announcing work — and the
+        // veil holds its caller's minimum (map travel asks ~1 s so a
+        // warm-cache crossing still READS as a transition).
+        if (warmupFrames > 30 && pending == 0 &&
+            warmupElapsed >= warmupMinSeconds) {
             progress = 1.0f;
             warmupPhase = WarmupPhase::Reveal;
         }
@@ -2605,6 +2620,9 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
                 glm::max(0.0f, loadingGateAlpha - dt / 0.8f);
             if (loadingGateAlpha <= 0.0f) {
                 warmupPhase = WarmupPhase::Idle;
+                if (warmupSoft) {
+                    softVeilCooldown = 3.0f; // no border strobing
+                }
             }
         }
     } else {
