@@ -276,15 +276,23 @@ endfunction()
 # --- RHI backend gating (§2.1) --------------------------------------------
 # Backend *selection* is runtime (a preference/fallback chain, Vulkan->GL);
 # WHICH backends are compiled into the binary is this compile-time gate. The
-# GL backends are always built for now (the demo and the 2D/dev-UI path run on
-# them); Vulkan is the intended FINAL renderer, brought up brick by brick
-# (docs/VULKAN.md). Defaults: ON on macOS (Apple GL 4.1 cannot run the 3D
-# renderer, so Vulkan is the only path there); opt-in elsewhere until it is
-# functional. macOS ships MoltenVK; Linux/Windows use their native loader.
+# Vulkan is the SHIPPED backend (GL 4.6 stays the PC fallback), so it
+# defaults ON wherever the SDK is present — a fresh configure (new IDE
+# profile, wiped cache) must never silently produce a GL-only build.
+# Explicit -DMEADOWS_RHI_VULKAN=OFF still opts out. macOS ships
+# MoltenVK; Linux/Windows use their native loader.
 if(APPLE)
     option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend (+ MoltenVK)" ON)
 else()
-    option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend" OFF)
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend" ON)
+    else()
+        message(WARNING "Meadows: Vulkan SDK not found — building the "
+                        "GL backends only (install the SDK or set "
+                        "VULKAN_SDK to get the shipped backend)")
+        option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend" OFF)
+    endif()
 endif()
 
 if(MEADOWS_RHI_VULKAN)
