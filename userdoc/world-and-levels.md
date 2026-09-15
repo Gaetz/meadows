@@ -184,4 +184,10 @@ Re-generating with the same seed patches the same records — your manual
 retouches (props, lights, extra rooms placed with the level editor)
 layer on top and survive. **Export** ships the dungeon as a normal mod.
 
+## Bounded maps
+
+The overworld itself is one **bounded map** in a graph of 24 km maps —
+mountain or sea borders, cols to cross, and whole new maps shippable as
+mods. That story has its own page: [Bounded maps](maps.md).
+
 Related: [The data model](data-model.md) · [In-game tools](tools.md)

@@ -267,3 +267,25 @@ règle par-carte asymétrique. Le design dev, implémenté dans
 
 Une seule fonction pure (seed, treillis, h) → le bake des deux cartes,
 le fallback analytique, l'overview et l'horizon sont d'accord partout.
+
+## 9. Capacités livrées (état 2026-09-15) — où est chaque chose
+
+Le chantier M1-M5 est livré à l'exception de M1.5b (kill du chemin
+fenêtré, attend la validation dev de l'éditeur) et de la vérification
+de fin de chantier. Doc utilisateur/moddeur : **`userdoc/maps.md`**.
+
+| Capacité | Où |
+|---|---|
+| Bake de carte (érosion globale + hydrologie UNE fois + tranches) | `game/MapBaker` (`bakeMap`, `extractMapHydrology`), tranches par `bakeMapSlice` (TileBake) |
+| CLI : bake + mesure de divergence | `cooker bake-map <gameDir> <mx> <mz> [tps] [--] [--export-plugin <name>]` |
+| Transitions de bordure (lignes hachées, méandre, veto Mer) | `TerrainGen` : `MapGridSpec`, `applyMapGridShape`, `mapBorderStyleResolved` (§8) |
+| Streaming du mode carte + bake de fond + prefetch d'approche | `TerrainBakeStreamer` (`MapStreamConfig`, `prefetchMap`) |
+| Fallback = overview 64 m dans la carte, aperçu du treillis dehors | `MapBaker` (`loadMapOverview`) + `TerrainNoise::proceduralBase` |
+| Swap de monde (LA transaction) | `LandscapeScene::applyMapWorld` ; console `map <mx> <mz>` |
+| Voyage par col en pur data | binding Lua `travelToMap(mx, mz, x, z)` ; exemple `base/passes.toml` |
+| Carte active dans les saves | `WorldStateForm.sandboxMap/activeMapX/activeMapZ` |
+| Écran M à l'étendue de la carte | `MapController` (branche `bounded`) |
+| Une carte = un worldspace §5 | `WorldspaceForm.bounded/mapX/mapZ/mapSize/mapSeed` ; builders filtrés par `WorldspaceFilter` |
+| Carte → records §5 (mod) | `world/terrain/MapRecords` (`stageMapRecords`, guids dérivés du guid carte, `riverThin`) |
+| Export mod complet | CLI `--export-plugin` ou éditeur (panneau Terrain generation → « Bounded map » : Bake/Accept/Export) |
+| Test le plus fort | `tests/MapRecordsTest` : export→resolve→`buildTerrainBase` bit-identique |
