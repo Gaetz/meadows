@@ -1039,13 +1039,18 @@ BorderSample sampleBorders(const ProceduralControls& controls,
             const f32 p = mountainProfile(dist) * r;
             if (p > 0.0f) {
                 // Crest height varies ALONG the line: peaks and
-                // saddles — the natural cols. [0.45, 1] of the lift.
+                // saddles — the natural cols. [0.3, 1] of the lift.
                 const f32 var = noise::fbm(
                     lineSeed ^ kSaltBorderCrest, along, 0.0f,
                     1.0f / kMapBorderCrestWavelength, 2, 2.0f, 0.5f);
-                out.mountain = glm::max(
-                    out.mountain, p * glm::mix(0.45f, 1.0f, var));
-                out.mountainRaw = glm::max(out.mountainRaw, p);
+                const f32 varied = p * glm::mix(0.3f, 1.0f, var);
+                out.mountain = glm::max(out.mountain, varied);
+                // The erosion keep follows the VARIED crest, not the
+                // raw profile: saddles resist less, so the fastscape
+                // carves them into WALKABLE passes — peaks keep their
+                // wall (a full-strength keep at the cols left them
+                // too steep to climb).
+                out.mountainRaw = glm::max(out.mountainRaw, varied);
             }
         }
         if (r < 1.0f) {

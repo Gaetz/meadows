@@ -4,12 +4,13 @@
 # arrival point on the FAR side of the crossing, 400 m past the twin
 # trigger so the arrival never bounces back.
 #
-# Col de l'Est — a genuine SADDLE of the border range on line x = 24576
-# (map (0,0) <-> map (1,0), hashed style Ridges): crossing ~680 m at
-# z ~ 13280, both approaches mountain flanks (~350-460 m at +-1.4 km) —
-# picked by colness (low crossing AND high shoulders), not raw minimum,
-# which had landed on a cliff above a lake basin. South of z ~ 5000 the
-# range tapers into the coast (open strait, no pass).
+# Col de l'Est — a WALKABLE saddle of the border range on line
+# x = 24576 (map (0,0) <-> map (1,0), hashed style Ridges): crossing
+# ~454 m at z ~ 21088 (max transect grade ~0.4 — the saddle-scaled
+# erosion keep lets the fastscape carve real passes). The crest
+# MEANDERS ~325 m east of the nominal line there, so the trigger pair
+# sits ON the crest, not on the line — the fade fires at the top of
+# the climb, where a pass reads as one.
 
 [plugin]
 id = "c01dea55-0000-4000-8000-0000000000ff"
@@ -22,7 +23,7 @@ new = true
 [records.fields]
 editorId = "ColEstAller"
 halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(1, 0, 24976.0, 13280.0)"
+script = "travelToMap(1, 0, 25381.0, 21088.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000002"
@@ -30,7 +31,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000001"
-position = [24496.0, 460.0, 13280.0]
+position = [24821.0, 450.0, 21088.0]
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000003"
@@ -39,7 +40,7 @@ new = true
 [records.fields]
 editorId = "ColEstRetour"
 halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(0, 0, 24176.0, 13280.0)"
+script = "travelToMap(0, 0, 24421.0, 21088.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000004"
@@ -47,4 +48,4 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "c01dea55-0000-4000-8000-000000000003"
-position = [24656.0, 520.0, 13280.0]
+position = [24981.0, 450.0, 21088.0]

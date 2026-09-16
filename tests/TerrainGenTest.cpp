@@ -694,9 +694,11 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
               doctest::Approx(inland));
         CHECK(shape(lineX + 8000.0f, along, inland) ==
               doctest::Approx(inland));
-        // The erosion keep exists on the range and nowhere far away.
+        // The erosion keep exists on the range and nowhere far away
+        // (it follows the varied crest, so a saddle can dip to ~0.3
+        // of the profile).
         CHECK(mapGridRidgeFactor(controls, macro, spec, lineX, along,
-                                 inland) > 0.2f);
+                                 inland) > 0.12f);
         CHECK(mapGridRidgeFactor(controls, macro, spec, lineX + 8000.0f,
                                  along, inland) == doctest::Approx(0.0f));
         // Crest height VARIES along the line (peaks and saddles — the
