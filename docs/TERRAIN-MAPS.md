@@ -280,8 +280,17 @@ map », et `cooker border-report` (l'instrument du diagnostic F0) est
 retiré — la mesure vit dans le sweep de `bake-map`. Les bancs
 (`erosion-bench`, `water-solve`) et les tests par-tuile passent par
 **`bakeSoloTile`** : une carte 1×1 tranche — le pipeline de PRODUCTION
-à l'échelle banc. Reste : la vérification de fin de chantier. Doc
-utilisateur/moddeur : **`userdoc/maps.md`**.
+à l'échelle banc. Doc utilisateur/moddeur : **`userdoc/maps.md`**.
+
+**CHANTIER CLOS (2026-09-26).** Vérification de clôture : divergence
+des frontières internes 0,281/0,290 m (critère ≤ 2,5 m) ; session F6
+dev sans régression ; fermeture propre confirmée dev ; voyage par col
+validé en jeu (Col de l'Est, aller-retour). Le signalement d'origine —
+« falaises linéaires à pic, lac interrompu » — est mort à la racine :
+l'érosion est globale par carte, l'eau partagée, et le chemin fenêtré
+n'existe plus. Suite : chantier PAYSAGE (repasser la génération
+elle-même — le solve global lève le veto sur l'érosion par
+gouttelettes).
 
 | Capacité | Où |
 |---|---|
