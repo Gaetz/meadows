@@ -2545,6 +2545,17 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
             finalizeSandboxSpawn();
             warmupPlaceSpawn = false;
             warmupTarget = sandboxSpawn;
+            // A traveler's capsule was spawned on the FALLBACK height
+            // (the slices were not published yet): re-seat it on the
+            // baked ground — the 64 m fallback's error on a slope left
+            // it under the real terrain (the fall-through on arrival).
+            if (mode == SceneMode::Play && playerController.body()) {
+                playerController.spawnBody(
+                    *physics,
+                    sandboxSpawn + Vec3 { 0.0f, 0.25f, 0.0f });
+                followerController.repositionActiveFollowers(
+                    makeFollowerContext(), sandboxSpawn);
+            }
             // The relocation may have crossed toward lesser-baked
             // ground: bake THAT ring before building the scene.
             if (bakeStreamer) {

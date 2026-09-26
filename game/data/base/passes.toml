@@ -1,8 +1,9 @@
 # Mountain passes between bounded maps (chantier CARTES M4.2): each pass
 # is a pair of PERSISTENT trigger volumes (no cell — they must exist
 # whatever the streaming does) whose Lua asks travelToMap with an
-# arrival point on the FAR side of the crossing, 400 m past the twin
-# trigger so the arrival never bounces back.
+# arrival point on the FAR side of the crossing, ~60 m past the twin
+# trigger's outer edge: outside both boxes (no bounce — the capsule
+# is static under the veil) yet seconds from re-crossing.
 #
 # Col de l'Est — a WALKABLE saddle of the border range on line
 # x = 24576 (map (0,0) <-> map (1,0), hashed style Ridges): crossing
@@ -23,7 +24,7 @@ new = true
 [records.fields]
 editorId = "ColEstAller"
 halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(1, 0, 25381.0, 21088.0)"
+script = "travelToMap(1, 0, 25121.0, 21088.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000002"
@@ -40,7 +41,7 @@ new = true
 [records.fields]
 editorId = "ColEstRetour"
 halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(0, 0, 24421.0, 21088.0)"
+script = "travelToMap(0, 0, 24681.0, 21088.0)"
 
 [[records]]
 form = "c01dea55-0000-4000-8000-000000000004"
