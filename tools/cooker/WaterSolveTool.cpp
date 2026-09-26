@@ -36,7 +36,7 @@ int waterSolve(char** argv, int argc) {
     solve.seaLevel = params.macro.seaLevel;
     LOG_INFO("water-solve: baking tile ({}, {})...", tx, tz);
     core::TimePoint start = core::clockNow();
-    const TileBakeResult baked = bakeTile(params, tx, tz);
+    const TileBakeResult baked = bakeSoloTile(params, tx, tz);
     LOG_INFO("water-solve: bake {:.1f} s", core::secondsSince(start));
     const render::TerrainRegion& region = baked.region;
 

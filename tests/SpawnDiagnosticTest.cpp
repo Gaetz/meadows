@@ -50,7 +50,7 @@ TEST_CASE("spawn diagnostic" * doctest::skip()) {
     const i32 tx = static_cast<i32>(std::floor(start.x / params.tileSize));
     const i32 tz = static_cast<i32>(std::floor(start.z / params.tileSize));
     MESSAGE("spawn tile: (", tx, ", ", tz, ")");
-    const TileBakeResult baked = bakeTile(params, tx, tz);
+    const TileBakeResult baked = bakeSoloTile(params, tx, tz);
 
     // Baked ground at the spawn.
     render::TerrainParams tp;
@@ -148,8 +148,8 @@ TEST_CASE("spawn diagnostic 2" * doctest::skip()) {
     const f32 px = 2583.0f;
     const f32 pz = 60.0f;
 
-    const TileBakeResult a = bakeTile(params, 0, -1);
-    const TileBakeResult b = bakeTile(params, 0, 0);
+    const TileBakeResult a = bakeSoloTile(params, 0, -1);
+    const TileBakeResult b = bakeSoloTile(params, 0, 0);
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(
@@ -356,7 +356,7 @@ TEST_CASE("height diagnostic" * doctest::skip()) {
             static_cast<i32>(std::floor(c.x / params.tileSize));
         const i32 tz =
             static_cast<i32>(std::floor(c.z / params.tileSize));
-        const TileBakeResult result = bakeTile(params, tx, tz);
+        const TileBakeResult result = bakeSoloTile(params, tx, tz);
         f32 peak = -1.0e9f;
         size_t peakIdx = 0;
         for (size_t i = 0; i < result.region.heights.size(); ++i) {
@@ -499,7 +499,7 @@ TEST_CASE("coast diagnostic" * doctest::skip()) {
             static_cast<i32>(std::floor(top.x / params.tileSize));
         const i32 tz =
             static_cast<i32>(std::floor(top.z / params.tileSize));
-        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         const auto h = [&](f32 x, f32 z) {
             const auto& r = baked.region;
             const i32 col = static_cast<i32>(
@@ -544,7 +544,7 @@ TEST_CASE("erosion calibration" * doctest::skip()) {
     const f32 sea = params.macro.seaLevel;
 
     const auto sampleTile = [&](i32 tx, i32 tz) {
-        const TileBakeResult r = bakeTile(params, tx, tz);
+        const TileBakeResult r = bakeSoloTile(params, tx, tz);
         struct Bucket {
             f64 delta { 0.0 };
             f64 keep { 0.0 };
@@ -606,7 +606,7 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
     const f32 px = 8196.77f;
     const f32 pz = 230.072f;
 
-    const TileBakeResult b = bakeTile(params, 2, 0);
+    const TileBakeResult b = bakeSoloTile(params, 2, 0);
     render::TerrainParams tp;
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(
@@ -696,7 +696,7 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
 //   meadows-tests '-tc=erosion strength*' -ns
 TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
     const auto stats = [](const char* label, TileBakeParams params) {
-        const TileBakeResult r = bakeTile(params, -7, -3);
+        const TileBakeResult r = bakeSoloTile(params, -7, -3);
         vector<f32> above;
         const f32 sea = params.macro.seaLevel;
         f32 maxH = 0.0f;
@@ -785,7 +785,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
             if (!tiles.count(key)) {
                 MESSAGE("baking tile (", key.first, ", ", key.second, ")");
                 tiles.emplace(key,
-                              bakeTile(params, key.first, key.second));
+                              bakeSoloTile(params, key.first, key.second));
             }
         }
     }
@@ -1197,7 +1197,7 @@ TEST_CASE("family census diagnostic" * doctest::skip()) {
     ProceduralControlParams controlParams = params.controls;
     controlParams.seed = params.worldSeed;
     const ProceduralControls controls { controlParams };
-    const TileBakeResult baked = bakeTile(params, 2, 0);
+    const TileBakeResult baked = bakeSoloTile(params, 2, 0);
     const auto& r = baked.region;
     constexpr f32 kWindow = 250.0f;
     const u32 stride = static_cast<u32>(kWindow / r.texelSize);
@@ -1326,7 +1326,7 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
     for (const i32 tz : { -1, 0, 1 }) {
         MESSAGE("baking tile (2, ", tz, ")");
         base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(bakeTile(params, 2, tz).region));
+        std::make_shared<render::TerrainRegion>(bakeSoloTile(params, 2, tz).region));
     }
     render::TerrainParams tp;
     tp.base = base;
@@ -1592,7 +1592,7 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
     for (const auto [tx, tz] : { std::pair { 2, -1 }, { 2, 0 }, { 2, 1 },
                                  { 1, 0 }, { 3, 0 } }) {
         MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         for (const River& river : baked.rivers) {
             ++tierCount[glm::min<u32>(river.tier, 2)];
             fordCount += static_cast<u32>(river.fords.size());
@@ -1672,7 +1672,7 @@ TEST_CASE("river wetness diagnostic" * doctest::skip()) {
     params.worldSeed = 1337;
     for (const auto [tx, tz] : { std::pair { 2, 0 }, { 2, 1 } }) {
         MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         auto base = std::make_shared<render::TerrainBase>();
         base->regions.push_back(
         std::make_shared<render::TerrainRegion>(baked.region));
@@ -1851,7 +1851,7 @@ TEST_CASE("fleuve continuity diagnostic" * doctest::skip()) {
     };
     for (const auto& [tx, tz, fx, fz] : spots) {
         MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         u32 shown = 0;
         for (const River& river : baked.rivers) {
             f32 best = 1.0e30f;
@@ -1897,7 +1897,7 @@ TEST_CASE("analytic sea mismatch diagnostic" * doctest::skip()) {
     MESSAGE("baking tile (3, 0)");
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(bakeTile(params, 3, 0).region));
+        std::make_shared<render::TerrainRegion>(bakeSoloTile(params, 3, 0).region));
     const render::TerrainRegion& region = *base->regions.front();
     render::TerrainParams tp;
     tp.base = base;

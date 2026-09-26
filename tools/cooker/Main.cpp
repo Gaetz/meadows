@@ -28,7 +28,6 @@
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "BakeMapTool.hpp"
-#include "BorderReportTool.hpp"
 #include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
 #include "PreBakeTool.hpp"
@@ -68,11 +67,6 @@ int usage() {
         "     top-down PNG of the analytic sandbox macro (hypsometric\n"
         "     tints, hillshade, master rivers, center cross); carrier*\n"
         "     overrides the continental-carrier experiment knobs\n"
-        "  cooker border-report <gameDir> <tx> <tz> [x|z] [out.csv]\n"
-        "     bakes tile (tx,tz) and its +x (or +z) neighbour through\n"
-        "     the terrain cache and reports the border continuity:\n"
-        "     band height-divergence profile, lake-mask truncation at\n"
-        "     the owner rect, bed-carve asymmetry\n"
         "  cooker bake-map <gameDir> <mapX> <mapZ> [tilesPerSide=6]\n"
         "                  [--] [--export-plugin <name>]\n"
         "     bakes one bounded map (ONE global erosion, slices +\n"
@@ -414,9 +408,6 @@ int main(int argc, char** argv) {
     }
     if (command == "pre-bake" && (argc == 6 || argc == 7)) {
         return cooker::preBake(argv, argc);
-    }
-    if (command == "border-report" && argc >= 5 && argc <= 7) {
-        return cooker::borderReport(argv, argc);
     }
     if (command == "bake-map" && argc >= 5 && argc <= 9) {
         return cooker::bakeMapCmd(argv, argc);

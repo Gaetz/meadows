@@ -160,19 +160,16 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
 TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                           const std::atomic<bool>* cancel = nullptr);
 
-// `stage1At` must return the stage-1 of any tile in the 3x3
-// neighbourhood. The CENTER is mandatory (asserted; null returns an
-// empty result); a missing neighbour falls back to the center's sim,
-// which covers the window thanks to the apron.
-TileBakeResult bakeTileStage2(
-    const TileBakeParams& params, i32 tx, i32 tz,
-    const std::function<const TileStage1*(i32, i32)>& stage1At,
-    const std::atomic<bool>* cancel = nullptr);
-
-// Convenience: both stages, computing the 3x3 stage-1s inline (tests,
-// the editor tool). The streamer caches stage-1s instead.
-TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz,
-                        const std::atomic<bool>* cancel = nullptr);
+// ONE tile through the PRODUCTION (map) pipeline: a 1x1-slice map —
+// stage-1 with a basin-resolving apron, the shared map hydrology, one
+// slice finalize. Benches, oracles and tests bake through this so they
+// exercise exactly what ships. (The windowed per-tile stage-2 — 3x3
+// composite, per-tile hydrology, canonical basin resolution, anchor
+// ownership — died with the windowed streamer path, chantier CARTES
+// M1.5b, docs/TERRAIN-MAPS.md.)
+TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
+                            i32 tz,
+                            const std::atomic<bool>* cancel = nullptr);
 
 // --- Bounded-map path (chantier CARTES, docs/TERRAIN-MAPS.md). The
 // map is eroded ONCE (a map-sized stage-1); its hydrology is derived

@@ -334,8 +334,8 @@ TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
 
 TEST_CASE("tile bakes are deterministic") {
     const TileBakeParams params = testParams();
-    const TileBakeResult a = bakeTile(params, 3, -2);
-    const TileBakeResult b = bakeTile(params, 3, -2);
+    const TileBakeResult a = bakeSoloTile(params, 3, -2);
+    const TileBakeResult b = bakeSoloTile(params, 3, -2);
     CHECK(a.region.heights == b.region.heights); // bit-exact (cache!)
     CHECK(a.region.biome == b.region.biome);
     CHECK(a.lakes.size() == b.lakes.size());
@@ -358,8 +358,8 @@ TEST_CASE("tile bakes are deterministic") {
 
 TEST_CASE("adjacent tiles blend smoothly across their shared border") {
     const TileBakeParams params = testParams();
-    const TileBakeResult a = bakeTile(params, 0, 0);
-    const TileBakeResult b = bakeTile(params, 1, 0);
+    const TileBakeResult a = bakeSoloTile(params, 0, 0);
+    const TileBakeResult b = bakeSoloTile(params, 1, 0);
 
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(
@@ -453,7 +453,7 @@ TEST_CASE("biome erosion character: neutral is identity, borders blur") {
     CHECK(grids.capacityScale[east] == doctest::Approx(0.7f));
 }
 
-TEST_CASE("stage seam: stage-1 is deterministic, stage-2 composes it") {
+TEST_CASE("stage seam: stage-1 deterministic, the solo map bake too") {
     const TileBakeParams params = testParams();
     const TileStage1 s1a = bakeTileStage1(params, 1, 1);
     const TileStage1 s1b = bakeTileStage1(params, 1, 1);
@@ -461,42 +461,16 @@ TEST_CASE("stage seam: stage-1 is deterministic, stage-2 composes it") {
     CHECK(s1a.seaDist == s1b.seaDist);
     CHECK(s1a.biome == s1b.biome);
 
-    // Center-only stage-2 (every neighbour missing): the contract says
-    // the window falls back to the center's sim — valid output, and
-    // deterministic.
-    const auto centerOnly = [&](i32 qx, i32 qz) -> const TileStage1* {
-        return (qx == 1 && qz == 1) ? &s1a : nullptr;
-    };
-    const TileBakeResult lone = bakeTileStage2(params, 1, 1, centerOnly);
+    // The solo bake (a 1x1-slice map — THE production pipeline at
+    // bench scale): valid geometry, bit-exact determinism.
+    const TileBakeResult lone = bakeSoloTile(params, 1, 1);
     CHECK(lone.region.width > 2);
     CHECK(lone.region.heights.size() ==
           static_cast<size_t>(lone.region.width) * lone.region.height);
     CHECK(lone.region.originX ==
           doctest::Approx(params.tileSize - params.overlapMargin));
-    const TileBakeResult lone2 = bakeTileStage2(params, 1, 1, centerOnly);
+    const TileBakeResult lone2 = bakeSoloTile(params, 1, 1);
     CHECK(lone.region.heights == lone2.region.heights);
-
-    // Full neighbourhood: same call the streamer makes. The kept center
-    // heights come from the center stage-1 either way, so the terrain
-    // matches the center-only bake away from the water bands.
-    TileStage1 grid[3][3];
-    for (i32 dz = -1; dz <= 1; ++dz) {
-        for (i32 dx = -1; dx <= 1; ++dx) {
-            grid[dz + 1][dx + 1] =
-                bakeTileStage1(params, 1 + dx, 1 + dz);
-        }
-    }
-    const TileBakeResult full = bakeTileStage2(
-        params, 1, 1, [&](i32 qx, i32 qz) -> const TileStage1* {
-            const i32 dx = qx - 1;
-            const i32 dz = qz - 1;
-            if (dx < -1 || dx > 1 || dz < -1 || dz > 1) {
-                return nullptr;
-            }
-            return &grid[dz + 1][dx + 1];
-        });
-    CHECK(full.region.width == lone.region.width);
-    CHECK(full.region.originX == doctest::Approx(lone.region.originX));
 }
 
 // Hidden benchmark: full production-size tile (4 km, 1 km apron, 100
@@ -506,7 +480,7 @@ TEST_CASE("full tile bake benchmark" * doctest::skip()) {
     TileBakeParams params;
     params.worldSeed = 1337;
     const auto start = std::chrono::steady_clock::now();
-    const TileBakeResult r = bakeTile(params, 0, 0);
+    const TileBakeResult r = bakeSoloTile(params, 0, 0);
     const f64 seconds =
         std::chrono::duration<f64>(std::chrono::steady_clock::now() -
                                    start)
@@ -531,7 +505,7 @@ TEST_CASE("full tile bake benchmark" * doctest::skip()) {
 
 TEST_CASE("the sandbox fallback agrees with tiles at their rim") {
     const TileBakeParams params = testParams();
-    const TileBakeResult a = bakeTile(params, 0, 0);
+    const TileBakeResult a = bakeSoloTile(params, 0, 0);
     auto base = std::make_shared<render::TerrainBase>();
     base->regions.push_back(
         std::make_shared<render::TerrainRegion>(a.region));
@@ -568,8 +542,8 @@ TEST_CASE("border basins publish once: no stacked duplicate sheets") {
     // published by both (truncated differently, different spill
     // levels). With the canonical resolution, overlapping masks from
     // the two bakes must not happen.
-    const TileBakeResult a = bakeTile(params, 0, 0);
-    const TileBakeResult b = bakeTile(params, 1, 0);
+    const TileBakeResult a = bakeSoloTile(params, 0, 0);
+    const TileBakeResult b = bakeSoloTile(params, 1, 0);
 
     const auto covers = [](const Lake& lake, f32 x, f32 z) {
         if (x < lake.minX || x > lake.maxX || z < lake.minZ ||

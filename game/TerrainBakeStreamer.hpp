@@ -1,11 +1,8 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <filesystem>
 #include <functional>
-#include <mutex>
-#include <unordered_map>
 #include <unordered_set>
 
 #include "engine/core/ConcurrentQueue.hpp"
@@ -43,15 +40,13 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MapGridSpec& grid, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan);
 
-// Sandbox terrain streamer: bakes 4 km tiles around the focus on
-// workers, through the two-stage TileBake pipeline — stage 1 (terrain
-// only, per tile) is disk-cached and deduplicated across workers via
-// Stage1Registry; stage 2 derives the water from the composed 3x3
-// neighbourhood and finalizes the center tile. Finished tiles are
-// cached on disk keyed (worldSeed, tile, pipeline version) and handed
-// to the scene for publication into TerrainParams.base.
-// Same mailbox pattern as TerrainCollision: workers push, the frame
-// thread drains — the ECS world and the GPU never leave the main thread.
+// Bounded-map slice streamer (chantier CARTES; the windowed per-tile
+// bake path died in M1.5b): slices of the ACTIVE map are READ from the
+// map cache on workers and handed to the scene for publication into
+// TerrainParams.base; a request into an unbaked map defers the tile
+// and kicks ONE background game::bakeMap. Same mailbox pattern as
+// TerrainCollision: workers push, the frame thread drains — the ECS
+// world and the GPU never leave the main thread.
 class TerrainBakeStreamer {
 public:
     struct PublishedTile {
@@ -70,7 +65,6 @@ public:
     // active map rect are dropped (the M3.2 clamp — ringStatus counts
     // only in-rect tiles or the warmup gate never completes at a rim).
     struct MapStreamConfig {
-        bool enabled { false };
         i32 tilesPerSide { 6 };
         i32 mapX { 0 }; // the active map
         i32 mapZ { 0 };
@@ -95,14 +89,10 @@ public:
         return static_cast<u32>(published.size());
     }
     // Tiles requested but not yet handed to publish() — the loading
-    // gate holds on this (a first-boot stage-1 bake takes seconds).
+    // gate holds on this while the map bakes.
     u32 pendingCount() const {
         return static_cast<u32>(pending.size());
     }
-    // Unique stage-1 bakes completed (computed or cache-read) since
-    // startup — the loading gate's FINE progress signal: a tile hides
-    // up to nine of these, each seconds long on a cold cache.
-    u32 stage1Count() const;
 
     // Ring completeness around `focus`: how many tiles the prefetch
     // square needs there vs how many are published. The warmup state
@@ -114,14 +104,6 @@ public:
     };
     RingStatus ringStatus(const Vec3& focus) const;
     f32 tileSize() const { return params.tileSize; }
-    // Pre-bake service (cooker pre-bake): request every tile whose
-    // rect overlaps [minX,maxX]x[minZ,maxZ], then pump drain() until
-    // pendingCount() reaches zero. Cached tiles publish via the fast
-    // cache-read path — re-running over a warm cache is cheap.
-    void requestRect(f32 minX, f32 minZ, f32 maxX, f32 maxZ);
-    // Drain finished bakes only — update() without the focus-driven
-    // desired-set policy.
-    void drain(const std::function<void(PublishedTile&&)>& publish);
     // The scene evicted this tile's region: re-request it on return.
     void forgetTile(i32 tx, i32 tz) { published.erase(keyOf(tx, tz)); }
 
@@ -156,27 +138,7 @@ private:
     std::shared_ptr<core::ConcurrentQueue<PublishedTile>> built;
     std::unordered_set<u64> published;
     std::unordered_set<u64> pending;
-
-public:
-    // Stage-1 dedup across workers: adjacent tile jobs need overlapping
-    // 3x3 neighbourhoods — without this registry they RACED to compute
-    // the same stage-1s (9x the work, minutes of first-boot lag). One
-    // worker computes, the others wait on it; results stay in memory
-    // (bounded) and on disk.
-    struct Stage1Registry {
-        std::mutex mutex;
-        std::condition_variable ready;
-        std::unordered_map<u64,
-                           sptr<const render::terraingen::TileStage1>>
-            done;
-        std::unordered_set<u64> inflight;
-        std::atomic<u32> completed { 0 }; // monotone, for progress UIs
-    };
-
-private:
-    std::shared_ptr<Stage1Registry> stage1s {
-        std::make_shared<Stage1Registry>()
-    };
+    void drain(const std::function<void(PublishedTile&&)>& publish);
 };
 
 } // namespace game

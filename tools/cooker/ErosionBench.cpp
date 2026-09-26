@@ -67,7 +67,7 @@ int erosionBench(char** argv, int argc) {
         params.relaxGateLow = variant.relaxGateLow;
         params.relaxGateHigh = variant.relaxGateHigh;
         params.keepCrestFade = variant.crestFade;
-        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         const render::TerrainRegion& region = baked.region;
 
         // Numbers: delta vs reference, incision proxy (deviation from

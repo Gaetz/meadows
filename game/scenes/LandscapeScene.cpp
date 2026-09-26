@@ -1981,7 +1981,6 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     const render::terraingen::TileBakeParams bakeParams =
         makeMapBakeParams();
     TerrainBakeStreamer::MapStreamConfig mapCfg;
-    mapCfg.enabled = true;
     mapCfg.tilesPerSide = kMapTilesPerSide;
     mapCfg.mapX = mapX;
     mapCfg.mapZ = mapZ;
@@ -2513,24 +2512,18 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
     f32 progress = warmupProgress;
     switch (warmupPhase) {
     case WarmupPhase::BakeRing: {
-        // Weight 0.7 of the bar. Progress counts in stage-1 units (a
-        // tile hides up to nine bakes, seconds each on a cold cache) so
-        // the bar moves with every completed bake.
+        // Weight 0.7 of the bar: published slices over needed (the map
+        // bake's own slice progress rides bakeMap's log; here the ring
+        // completes slice by slice off the cache).
         bool complete = true;
         f32 ringFrac = 1.0f;
         if (bakeStreamer) {
             const auto ring = bakeStreamer->ringStatus(warmupTarget);
             complete = ring.published >= ring.needed;
             if (!complete) {
-                const u32 remaining = ring.needed - ring.published;
-                const i32 partial = glm::clamp(
-                    static_cast<i32>(bakeStreamer->stage1Count()) -
-                        static_cast<i32>(ring.published * 9u),
-                    0, static_cast<i32>(remaining * 9u));
                 ringFrac = glm::min(
-                    static_cast<f32>(ring.published * 11u +
-                                     static_cast<u32>(partial)) /
-                        static_cast<f32>(ring.needed * 11u),
+                    static_cast<f32>(ring.published) /
+                        static_cast<f32>(ring.needed),
                     0.97f);
             }
         }
@@ -2720,21 +2713,7 @@ EditorContext LandscapeScene::makeEditorContext() {
             forms,
             *levelEditor,
             &engine->getJobSystem(),
-            tuning.terrainSeed,
             flyCamera.camera.position,
-            [this](render::terraingen::TileBakeResult&& baked, i32 tx,
-                   i32 tz) {
-                TerrainBakeStreamer::PublishedTile tile;
-                tile.region = std::move(baked.region);
-                tile.lakes = std::move(baked.lakes);
-                tile.rivers = std::move(baked.rivers);
-                tile.tx = tx;
-                tile.tz = tz;
-                vector<TerrainBakeStreamer::PublishedTile> batch;
-                batch.push_back(std::move(tile));
-                publishBakedTiles(std::move(batch),
-                                  flyCamera.camera.position);
-            },
             makeMapBakeParams(),
             // The map section only makes sense over the sandbox map
             // world (the streamer's cache is the shared ground truth).

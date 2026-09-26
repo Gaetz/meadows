@@ -137,187 +137,6 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
     return static_cast<bool>(file);
 }
 
-namespace {
-
-// Stage-1 cache: the per-tile eroded coarse terrain the stage-2 water
-// pass composes across neighbourhoods. "TS16": spec + eroded + uplift
-// + deposit + seaDist + biome + gentle + calm + trunk.
-constexpr char kStage1Magic[4] = { 'T', 'S', '1', '6' };
-
-bool writeStage1File(const std::filesystem::path& path,
-                     const render::terraingen::TileStage1& s1) {
-    std::ofstream file { path, std::ios::binary | std::ios::trunc };
-    if (!file) {
-        return false;
-    }
-    const auto write = [&](const auto& value) {
-        file.write(reinterpret_cast<const char*>(&value), sizeof(value));
-    };
-    file.write(kStage1Magic, 4);
-    write(s1.sim.originX);
-    write(s1.sim.originZ);
-    write(s1.sim.texelSize);
-    write(s1.sim.n);
-    file.write(reinterpret_cast<const char*>(s1.eroded.data()),
-               static_cast<std::streamsize>(s1.eroded.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.uplift.data()),
-               static_cast<std::streamsize>(s1.uplift.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.deposit.data()),
-               static_cast<std::streamsize>(s1.deposit.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.seaDist.data()),
-               static_cast<std::streamsize>(s1.seaDist.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.biome.data()),
-               static_cast<std::streamsize>(s1.biome.size()));
-    file.write(reinterpret_cast<const char*>(s1.gentle.data()),
-               static_cast<std::streamsize>(s1.gentle.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.calm.data()),
-               static_cast<std::streamsize>(s1.calm.size() *
-                                            sizeof(f32)));
-    file.write(reinterpret_cast<const char*>(s1.trunk.data()),
-               static_cast<std::streamsize>(s1.trunk.size() *
-                                            sizeof(f32)));
-    return static_cast<bool>(file);
-}
-
-std::optional<render::terraingen::TileStage1> readStage1File(
-    const std::filesystem::path& path) {
-    std::ifstream file { path, std::ios::binary };
-    if (!file) {
-        return std::nullopt;
-    }
-    char magic[4] = {};
-    render::terraingen::TileStage1 s1;
-    const auto read = [&](auto& value) {
-        file.read(reinterpret_cast<char*>(&value), sizeof(value));
-    };
-    file.read(magic, 4);
-    read(s1.sim.originX);
-    read(s1.sim.originZ);
-    read(s1.sim.texelSize);
-    read(s1.sim.n);
-    if (!file || std::memcmp(magic, kStage1Magic, 4) != 0 ||
-        s1.sim.n < 2 || s1.sim.n > 8192) {
-        return std::nullopt;
-    }
-    const size_t cells = s1.sim.cells();
-    s1.eroded.resize(cells);
-    s1.uplift.resize(cells);
-    s1.deposit.resize(cells);
-    s1.seaDist.resize(cells);
-    s1.biome.resize(cells);
-    s1.gentle.resize(cells);
-    s1.calm.resize(cells);
-    s1.trunk.resize(cells);
-    file.read(reinterpret_cast<char*>(s1.eroded.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.uplift.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.deposit.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.seaDist.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.biome.data()),
-              static_cast<std::streamsize>(cells));
-    file.read(reinterpret_cast<char*>(s1.gentle.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.calm.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    file.read(reinterpret_cast<char*>(s1.trunk.data()),
-              static_cast<std::streamsize>(cells * sizeof(f32)));
-    if (!file) {
-        return std::nullopt;
-    }
-    return s1;
-}
-
-// Load-or-bake a stage-1 (disk-cache core, no dedup).
-render::terraingen::TileStage1 ensureStage1(
-    const std::filesystem::path& cacheDir,
-    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
-    const std::atomic<bool>* cancel, core::JobProbe* probeSink) {
-    const std::string stem =
-        "s1_" + std::to_string(tx) + "_" + std::to_string(tz) + "_v" +
-        std::to_string(render::terraingen::kStage1Version) + ".bin";
-    const auto path = cacheDir / stem;
-    std::error_code probe;
-    if (std::filesystem::exists(path, probe)) {
-        if (auto cached = readStage1File(path)) {
-            return std::move(*cached);
-        }
-        LOG_WARN("Terrain cache: rejected {} (corrupt), rebaking",
-                 path.string());
-    }
-    core::JobProbe::Scope probeScope { probeSink, "tileBake.stage1" };
-    render::terraingen::TileStage1 s1 =
-        render::terraingen::bakeTileStage1(params, tx, tz, cancel);
-    if (cancel && cancel->load(std::memory_order_relaxed)) {
-        return s1; // PARTIAL (shutdown) — never cache it to disk
-    }
-    if (!writeStage1File(path, s1)) {
-        LOG_WARN("Terrain cache: cannot write {}", path.string());
-    }
-    return s1;
-}
-
-// Registry front: one worker computes a given stage-1, concurrent
-// requesters WAIT for it instead of duplicating minutes of erosion.
-sptr<const render::terraingen::TileStage1> acquireStage1(
-    TerrainBakeStreamer::Stage1Registry& registry,
-    const std::filesystem::path& cacheDir,
-    const render::terraingen::TileBakeParams& params, i32 tx, i32 tz,
-    const std::atomic<bool>* cancel, core::JobProbe* probeSink) {
-    const u64 key = (static_cast<u64>(static_cast<u32>(tx)) << 32) |
-                    static_cast<u64>(static_cast<u32>(tz));
-    {
-        std::unique_lock lock { registry.mutex };
-        for (;;) {
-            const auto it = registry.done.find(key);
-            if (it != registry.done.end()) {
-                return it->second;
-            }
-            if (!registry.inflight.count(key)) {
-                break;
-            }
-            registry.ready.wait(lock);
-        }
-        registry.inflight.insert(key);
-    }
-    auto s1 = std::make_shared<render::terraingen::TileStage1>(
-        ensureStage1(cacheDir, params, tx, tz, cancel, probeSink));
-    if (cancel && cancel->load(std::memory_order_relaxed)) {
-        // Shutdown mid-bake: the stage-1 is PARTIAL. Release the
-        // inflight key and WAKE the waiters regardless — a worker
-        // parked on registry.ready with no computing owner would hang
-        // the JobSystem join forever — but never publish the partial
-        // into `done` (a later requester would compose bad terrain).
-        {
-            std::lock_guard lock { registry.mutex };
-            registry.inflight.erase(key);
-        }
-        registry.ready.notify_all();
-        return s1;
-    }
-    registry.completed.fetch_add(1, std::memory_order_relaxed);
-    {
-        std::lock_guard lock { registry.mutex };
-        // Bounded residency: the disk cache makes eviction cheap.
-        if (registry.done.size() > 12) {
-            registry.done.clear();
-        }
-        registry.done.emplace(key, s1);
-        registry.inflight.erase(key);
-    }
-    registry.ready.notify_all();
-    return s1;
-}
-
-} // namespace
-
 TerrainBakeStreamer::TerrainBakeStreamer(
     const render::terraingen::TileBakeParams& bakeParams,
     std::filesystem::path dir, core::JobSystem* jobSystem,
@@ -326,7 +145,7 @@ TerrainBakeStreamer::TerrainBakeStreamer(
       jobs { jobSystem }, map { mapConfig },
       built { std::make_shared<
           core::ConcurrentQueue<PublishedTile>>() } {
-    if (map.enabled && map.borders) {
+    if (map.borders) {
         params.mapGrid.valid = true;
         params.mapGrid.seed = params.worldSeed;
         params.mapGrid.mapSize =
@@ -341,15 +160,10 @@ TerrainBakeStreamer::TerrainBakeStreamer(
     }
 }
 
-u32 TerrainBakeStreamer::stage1Count() const {
-    return stage1s->completed.load(std::memory_order_relaxed);
-}
-
 void TerrainBakeStreamer::request(i32 tx, i32 tz) {
-    if (map.enabled) {
-        // Slices come from the map cache; a request into an unbaked
-        // map defers the tile and kicks ONE background map bake.
-        const i32 tps = map.tilesPerSide;
+    // Slices come from the map cache; a request into an unbaked map
+    // defers the tile and kicks ONE background map bake.
+    const i32 tps = map.tilesPerSide;
         const auto floorDiv = [](i32 a, i32 b) {
             return a >= 0 ? a / b : -((-a + b - 1) / b);
         };
@@ -421,123 +235,10 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
         } else {
             work();
         }
-        return;
-    }
-    pending.insert(keyOf(tx, tz));
-    const auto work = [params = params, cacheDir = cacheDir, tx, tz,
-                       queue = built, registry = stage1s,
-                       jobsRef = jobs] {
-        // Shutdown drains the job queue (a queued save must land) —
-        // an abandonable 20-40 s bake must NOT run behind a closed
-        // window: bail before the heavy stages. The tile simply
-        // rebakes next launch.
-        if (jobsRef && jobsRef->isStopping()) {
-            return;
-        }
-        // Cooperative cancellation INSIDE the long kernels too: the
-        // erosion passes poll this between iterations, so a bake
-        // already minutes deep still aborts within one iteration of
-        // the quit instead of running to completion.
-        const std::atomic<bool>* cancel =
-            jobsRef ? &jobsRef->stopFlag() : nullptr;
-        const std::string stem =
-            "tile_" + std::to_string(tx) + "_" + std::to_string(tz) +
-            "_v" +
-            std::to_string(render::terraingen::kTileBakeVersion);
-        const auto trgPath = cacheDir / (stem + ".trg");
-        const auto waterPath = cacheDir / (stem + ".twb");
-        PublishedTile tile;
-        tile.tx = tx;
-        tile.tz = tz;
-        // Probe existence first: a cache miss is the normal first-visit
-        // path, not a read error worth logging.
-        std::error_code probe;
-        const bool trgExists = std::filesystem::exists(trgPath, probe);
-        auto cached =
-            trgExists ? world::readTrgFile(trgPath) : std::nullopt;
-        if (trgExists && !cached) {
-            LOG_WARN("Terrain cache: rejected {} (corrupt), rebaking",
-                     trgPath.string());
-        }
-        if (cached &&
-            !readWaterFile(waterPath, tile.lakes, tile.rivers)) {
-            LOG_WARN("Terrain cache: rejected {} (water sidecar), "
-                     "rebaking",
-                     waterPath.string());
-            cached.reset();
-            tile.lakes.clear();
-            tile.rivers.clear();
-        }
-        if (cached) {
-            tile.region = std::move(*cached);
-            // Detail knobs are not in the asset: re-stamp the bake's
-            // (kRegionDetail* — the single definition in TileBake.hpp).
-            tile.region.detailAmplitude =
-                render::terraingen::kRegionDetailAmplitude;
-            tile.region.detailWavelength =
-                render::terraingen::kRegionDetailWavelength;
-            tile.region.detailOctaves =
-                render::terraingen::kRegionDetailOctaves;
-        } else {
-            // Two-stage bake: gather (dedup'd across workers) the 3x3
-            // stage-1 terrains, then derive the water from their
-            // COMPOSITE — neighbours agree in the shared bands by
-            // construction.
-            sptr<const render::terraingen::TileStage1> stage1s[3][3];
-            for (i32 dz = -1; dz <= 1; ++dz) {
-                for (i32 dx = -1; dx <= 1; ++dx) {
-                    if (jobsRef && jobsRef->isStopping()) {
-                        return; // mid-bake quit checkpoint
-                    }
-                    stage1s[dz + 1][dx + 1] = acquireStage1(
-                        *registry, cacheDir, params, tx + dx, tz + dz,
-                        cancel, jobsRef ? &jobsRef->probe() : nullptr);
-                }
-            }
-            if (jobsRef && jobsRef->isStopping()) {
-                return;
-            }
-            core::JobProbe::Scope probeScope {
-                jobsRef ? &jobsRef->probe() : nullptr,
-                "tileBake.finalize"
-            };
-            render::terraingen::TileBakeResult baked =
-                render::terraingen::bakeTileStage2(
-                    params, tx, tz,
-                    [&](i32 qx, i32 qz)
-                        -> const render::terraingen::TileStage1* {
-                        const i32 dx = qx - tx;
-                        const i32 dz = qz - tz;
-                        if (dx < -1 || dx > 1 || dz < -1 || dz > 1) {
-                            return nullptr;
-                        }
-                        return stage1s[dz + 1][dx + 1].get();
-                    },
-                    cancel);
-            if (jobsRef && jobsRef->isStopping()) {
-                return; // partial stage-2: never cache, never publish
-            }
-            tile.region = std::move(baked.region);
-            tile.lakes = std::move(baked.lakes);
-            tile.rivers = std::move(baked.rivers);
-            if (!world::writeTrgFile(trgPath, tile.region) ||
-                !writeWaterFile(waterPath, tile.lakes, tile.rivers)) {
-                LOG_WARN("Terrain cache: cannot write {}",
-                         trgPath.string());
-            }
-        }
-        queue->push(std::move(tile));
-    };
-    if (jobs) {
-        jobs->enqueue(work);
-    } else {
-        work();
-    }
 }
 
 void TerrainBakeStreamer::prefetchMap(i32 mapX, i32 mapZ) {
-    if (!map.enabled ||
-        mapBakedAndValid(cacheDir, mapX, mapZ, map.tilesPerSide)) {
+    if (mapBakedAndValid(cacheDir, mapX, mapZ, map.tilesPerSide)) {
         return;
     }
     if (mapBaking->exchange(true)) {
@@ -575,18 +276,16 @@ TerrainBakeStreamer::RingStatus TerrainBakeStreamer::ringStatus(
     RingStatus status;
     for (i32 tz = tz0; tz <= tz1; ++tz) {
         for (i32 tx = tx0; tx <= tx1; ++tx) {
-            if (map.enabled) {
-                // Only in-rect tiles count: beyond the rim nothing
-                // exists, and counting it would hold the warmup gate
-                // open forever near a map edge.
-                const i32 tps = map.tilesPerSide;
-                const auto floorDiv = [](i32 a, i32 b) {
-                    return a >= 0 ? a / b : -((-a + b - 1) / b);
-                };
-                if (floorDiv(tx, tps) != map.mapX ||
-                    floorDiv(tz, tps) != map.mapZ) {
-                    continue;
-                }
+            // Only in-rect tiles count: beyond the rim nothing
+            // exists, and counting it would hold the warmup gate
+            // open forever near a map edge.
+            const i32 tps = map.tilesPerSide;
+            const auto floorDiv = [](i32 a, i32 b) {
+                return a >= 0 ? a / b : -((-a + b - 1) / b);
+            };
+            if (floorDiv(tx, tps) != map.mapX ||
+                floorDiv(tz, tps) != map.mapZ) {
+                continue;
             }
             ++status.needed;
             if (published.count(keyOf(tx, tz))) {
@@ -653,7 +352,7 @@ void TerrainBakeStreamer::update(
     // Deferred map tiles: once the background map bake lands its
     // manifest, re-drive them through the read path (throttled — an
     // exists() per frame per tile would be waste).
-    if (map.enabled && !deferredForMap.empty() && !mapBaking->load()) {
+    if (!deferredForMap.empty() && !mapBaking->load()) {
         if (manifestCheckCountdown > 0) {
             --manifestCheckCountdown;
         } else {
@@ -673,24 +372,6 @@ void TerrainBakeStreamer::update(
     }
     // Drain the mailbox on the frame thread.
     drain(publish);
-}
-
-void TerrainBakeStreamer::requestRect(f32 minX, f32 minZ, f32 maxX,
-                                      f32 maxZ) {
-    const f32 t = params.tileSize;
-    const i32 tx0 = static_cast<i32>(std::floor(minX / t));
-    const i32 tx1 = static_cast<i32>(std::floor(maxX / t));
-    const i32 tz0 = static_cast<i32>(std::floor(minZ / t));
-    const i32 tz1 = static_cast<i32>(std::floor(maxZ / t));
-    for (i32 tz = tz0; tz <= tz1; ++tz) {
-        for (i32 tx = tx0; tx <= tx1; ++tx) {
-            const u64 key = keyOf(tx, tz);
-            if (published.count(key) || pending.count(key)) {
-                continue;
-            }
-            request(tx, tz);
-        }
-    }
 }
 
 void TerrainBakeStreamer::drain(

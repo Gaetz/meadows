@@ -270,9 +270,18 @@ le fallback analytique, l'overview et l'horizon sont d'accord partout.
 
 ## 9. Capacités livrées (état 2026-09-15) — où est chaque chose
 
-Le chantier M1-M5 est livré à l'exception de M1.5b (kill du chemin
-fenêtré, attend la validation dev de l'éditeur) et de la vérification
-de fin de chantier. Doc utilisateur/moddeur : **`userdoc/maps.md`**.
+Le chantier M1-M5 est livré, **M1.5b comprise** (2026-09-26) : le
+chemin fenêtré est MORT — le streamer est un lecteur de tranches +
+orchestrateur de `bakeMap` (plus de mode fenêtré, plus de cache
+stage-1/Stage1Registry), `bakeTileStage2`/`bakeTile` (composite 3×3,
+hydrologie par tuile, résolution canonique, ownership) sont supprimés,
+la section « region bake » de l'éditeur est remplacée par « Bounded
+map », et `cooker border-report` (l'instrument du diagnostic F0) est
+retiré — la mesure vit dans le sweep de `bake-map`. Les bancs
+(`erosion-bench`, `water-solve`) et les tests par-tuile passent par
+**`bakeSoloTile`** : une carte 1×1 tranche — le pipeline de PRODUCTION
+à l'échelle banc. Reste : la vérification de fin de chantier. Doc
+utilisateur/moddeur : **`userdoc/maps.md`**.
 
 | Capacité | Où |
 |---|---|
