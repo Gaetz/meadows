@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <variant>
+#include <vector>
 
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -275,5 +276,88 @@ TEST_CASE("script: a coroutine erroring on resume is dropped, not retried") {
     vm.startCoroutine("wait(0.5)\nerror('boom')", none, none);
     REQUIRE(vm.pendingCoroutines() == 1);
     vm.tickCoroutines(1.0f); // resume raises — logged and dropped
+    CHECK(vm.pendingCoroutines() == 0);
+}
+
+// --- World actions (chantier ESPRITS): the ability -> world seam ---------
+
+namespace {
+
+struct SpawnCall {
+    std::string kind;
+    f32 x, z, rate, radius, seconds;
+};
+
+} // namespace
+
+TEST_CASE("script: spirit.spawn from a coroutine reaches the bound callback") {
+    Vm vm;
+    std::vector<SpawnCall> calls;
+    vm.bindWorldActions(Vm::WorldActions {
+        [] { return std::optional<Vec3> { Vec3 { 10.0f, 2.0f, -5.0f } }; },
+        [&](const std::string& kind, f32 x, f32 z, f32 rate, f32 radius,
+            f32 seconds) {
+            calls.push_back({ kind, x, z, rate, radius, seconds });
+        },
+        nullptr,
+    });
+    ScriptContext ctx;
+    vm.startCoroutine(
+        "local p = aim()\n"
+        "if p then spirit.spawn('Water', p.x, p.z, 3.0, 4.0, 10.0) end",
+        ctx, ctx);
+    // The body runs to its first wait (none here) at start.
+    CHECK(vm.pendingCoroutines() == 0);
+    REQUIRE(calls.size() == 1);
+    CHECK(calls[0].kind == "Water");
+    CHECK(calls[0].x == 10.0f);
+    CHECK(calls[0].z == -5.0f);
+    CHECK(calls[0].rate == 3.0f);
+    CHECK(calls[0].radius == 4.0f);
+    CHECK(calls[0].seconds == 10.0f);
+}
+
+TEST_CASE("script: aim() is nil without a ground hit, so the script spawns nothing") {
+    Vm vm;
+    int spawns = 0;
+    vm.bindWorldActions(Vm::WorldActions {
+        [] { return std::optional<Vec3> {}; },
+        [&](const std::string&, f32, f32, f32, f32, f32) { ++spawns; },
+        nullptr,
+    });
+    ScriptContext ctx;
+    const RunResult r = vm.run(
+        "local p = aim()\n"
+        "if p then spirit.spawn('Water', p.x, p.z, 3, 4, 10) end\n"
+        "aimed = p and 1 or 0",
+        ctx);
+    CHECK(r.ok);
+    CHECK(spawns == 0);
+    CHECK(vm.getNumber("aimed") == 0.0);
+    // push_terrain without an earth handler is a logged no-op, not an error.
+    CHECK(vm.run("spirit.push_terrain(0, 0, 4, 1, 'raise')", ctx).ok);
+}
+
+TEST_CASE("script: wait(1) then spawn resumes on the tick") {
+    Vm vm;
+    int spawns = 0;
+    vm.bindWorldActions(Vm::WorldActions {
+        [] { return std::optional<Vec3> { Vec3 { 0.0f } }; },
+        [&](const std::string&, f32, f32, f32, f32, f32) { ++spawns; },
+        nullptr,
+    });
+    ScriptContext ctx;
+    vm.startCoroutine(
+        "local p = aim()\n"
+        "spirit.spawn('Water', p.x, p.z, 3, 2, 1)\n"
+        "wait(1.0)\n"
+        "spirit.spawn('Water', p.x + 2, p.z, 3, 2, 1)",
+        ctx, ctx);
+    CHECK(spawns == 1); // the first jet at start
+    CHECK(vm.pendingCoroutines() == 1);
+    vm.tickCoroutines(0.5f);
+    CHECK(spawns == 1);
+    vm.tickCoroutines(0.6f);
+    CHECK(spawns == 2); // the second jet after the wait
     CHECK(vm.pendingCoroutines() == 0);
 }

@@ -1,0 +1,318 @@
+# The nine spirits (chantier ESPRITS, docs/CHANTIER-ESPRITS.md): one
+# SpiritForm per spirit, the interaction rule table (SpiritRuleForm — the
+# actor is ALWAYS a spirit), the surface material classes the fields read,
+# and authored world sources (SpiritSourceForm — the same record a save
+# emits for a spring the player cast).
+#
+# Three triads, each a shifumi keyed to the resonance channels:
+#   Onyx (matter) > Amber (energy) > Garnet (spirit) > Onyx
+#   1: Vegetation (Tree) > Light (Moon) > Darkness (Black)
+#   2: Earth (Hammer, blunt) > Lightning (Blade, slashing) > Psy (Mirror, piercing)
+#   3: Water/cold > Fire > Wind (breath)
+# The shifumi is the default rule; records below refine it.
+
+[plugin]
+id = "5b1e1700-0000-4000-8000-0000000000ff"
+name = "true-adventurer-spirits"
+
+# --- Spirits ---------------------------------------------------------------
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000001"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritVegetation"
+name = "Vegetation"
+triad = 1
+channel = "onyx"
+fieldKind = "coverage"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000002"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritLight"
+name = "Light"
+triad = 1
+channel = "amber"
+fieldKind = "radiance"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000003"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritDarkness"
+name = "Darkness"
+triad = 1
+channel = "garnet"
+fieldKind = "radiance"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000004"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritEarth"
+name = "Earth"
+triad = 2
+channel = "onyx"
+fieldKind = "delta"
+damageType = "blunt"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000005"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritLightning"
+name = "Lightning"
+triad = 2
+channel = "amber"
+fieldKind = "conduction"
+damageType = "slashing"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000006"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritPsy"
+name = "Psy"
+triad = 2
+channel = "garnet"
+fieldKind = "activation"
+damageType = "piercing"
+
+# Water AND cold: the frozen state of water is the same spirit.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000007"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritWater"
+name = "Water"
+triad = 3
+channel = "onyx"
+fieldKind = "volume"
+cueSpawn = "Cue.Spirit.Water.Spawn"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000008"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritFire"
+name = "Fire"
+triad = 3
+channel = "amber"
+fieldKind = "coverage"
+spreadRate = 1.0
+ignitionPoints = 1.0
+spreadBudgetPerTick = 64
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000009"
+type = "SpiritForm"
+new = true
+[records.fields]
+editorId = "SpiritWind"
+name = "Wind"
+triad = 3
+channel = "garnet"
+fieldKind = "vector"
+
+# --- Surface material classes ------------------------------------------------
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000021"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialGrass"
+materialClass = "grass"
+flammability = 1.0
+fuel = 0.4
+moisture = 0.2
+hardness = 0.6
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000022"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialRock"
+materialClass = "rock"
+hardness = 3.0
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000023"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialSnow"
+materialClass = "snow"
+moisture = 1.0
+hardness = 0.3
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000024"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialSand"
+materialClass = "sand"
+hardness = 0.4
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000025"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialCliff"
+materialClass = "cliff"
+hardness = 4.0
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000026"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialWood"
+materialClass = "wood"
+flammability = 0.7
+fuel = 3.0
+moisture = 0.3
+hardness = 1.5
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000027"
+type = "SurfaceMaterialForm"
+new = true
+[records.fields]
+editorId = "MaterialBush"
+materialClass = "bush"
+flammability = 0.9
+fuel = 1.0
+moisture = 0.25
+hardness = 0.5
+
+# --- Rules (refining the shifumi; inert until each kernel exists) ------------
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000041"
+type = "SpiritRuleForm"
+new = true
+[records.fields]
+editorId = "RuleWaterExtinguishesFire"
+actor = "Water"
+target = "Fire"
+verb = "extinguish"
+rate = 1.0
+threshold = 0.02
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000042"
+type = "SpiritRuleForm"
+new = true
+[records.fields]
+editorId = "RuleWaterConductsLightning"
+actor = "Water"
+target = "Lightning"
+verb = "conduct"
+rate = 1.0
+threshold = 0.01
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000043"
+type = "SpiritRuleForm"
+new = true
+[records.fields]
+editorId = "RuleFireIgnitesGrass"
+actor = "Fire"
+target = "grass"
+verb = "ignite"
+rate = 1.0
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000044"
+type = "SpiritRuleForm"
+new = true
+[records.fields]
+editorId = "RuleWaterWetsGrass"
+actor = "Water"
+target = "grass"
+verb = "wet"
+rate = 1.0
+
+# --- The first spirit ability (E1.c): Q pours a spring where the eye
+# aims. Cost/cooldown are effects (§6); the script places the source
+# through the world actions bound on the Vm (aim, spirit.spawn).
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000061"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterCost"
+attribute = "essence"
+op = "add"
+magnitude = -15.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000062"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterCooldown"
+duration = "duration"
+durationSeconds = 8.0
+grantedTag = "Cooldown.SpiritWater"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000063"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWater"
+cost = "5b1e1700-0000-4000-8000-000000000061"
+cooldown = "5b1e1700-0000-4000-8000-000000000062"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+script = """
+local p = aim()
+if p then spirit.spawn("Water", p.x, p.z, 3.0, 4.0, 10.0) end
+"""
+
+# The splash at the spring's birth (Cue.Spirit.<Kind>.Spawn, emitted by
+# the scene when the source lands).
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000071"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "SpringBurst"
+shape = "cone"
+shapeRadius = 30.0
+burst = 40
+lifetime = 0.9
+lifetimeJitter = 0.3
+velocity = [0.0, 4.5, 0.0]
+velocityJitter = 1.5
+gravity = [0.0, -9.0, 0.0]
+sizeStart = 0.10
+sizeEnd = 0.03
+colorStart = [0.55, 0.75, 1.0, 0.9]
+colorEnd = [0.8, 0.9, 1.0, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000072"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritWaterSpawn"
+tag = "Cue.Spirit.Water.Spawn"
+particles = "5b1e1700-0000-4000-8000-000000000071"

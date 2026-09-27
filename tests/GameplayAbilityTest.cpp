@@ -152,3 +152,41 @@ TEST_CASE("ability: reactivates once the cooldown expires") {
     CHECK(baseValueOf(f.targetSet, attr("health")) == 40.0f); // two hits of 30
     CHECK(baseValueOf(f.casterSet, attr("energy")) == 60.0f); // two costs of 20
 }
+
+TEST_CASE("ability: the script runner fires once per committed activation, never on a refusal") {
+    Fixture f;
+    auto* form = const_cast<AbilityForm*>(&f.ability());
+    form->script = "spirit.spawn('Water', 0, 0, 3, 4, 10)";
+
+    int runs = 0;
+    str seen;
+    AbilityContext ctx { f.db, f.registry };
+    ctx.scriptRunner = [&](const AbilityForm& a) {
+        ++runs;
+        seen = a.script;
+    };
+    auto activate = [&] {
+        return tryActivate(f.ability(), f.casterSet, f.casterSystem,
+                           f.targetSet, f.targetSystem, ctx);
+    };
+
+    CHECK(activate());
+    CHECK(runs == 1);
+    CHECK(seen == form->script);
+    // The commit precedes the script: cost paid, cooldown up.
+    CHECK(baseValueOf(f.casterSet, attr("energy")) == 80.0f);
+
+    CHECK_FALSE(activate()); // on cooldown: refused, no script
+    CHECK(runs == 1);
+
+    tickEffects(f.casterSet, f.casterSystem, 5.0f, f.registry);
+    f.casterSystem.tags.add(*f.registry.find("Status.Stunned"), f.registry);
+    CHECK_FALSE(activate()); // blocked tag: refused, no script
+    CHECK(runs == 1);
+
+    // No script = no call, even with a runner wired.
+    f.casterSystem.tags.remove(*f.registry.find("Status.Stunned"), f.registry);
+    form->script.clear();
+    CHECK(activate());
+    CHECK(runs == 1);
+}

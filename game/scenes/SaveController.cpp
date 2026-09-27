@@ -53,6 +53,11 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
     const auto questRecords = quest::captureQuestLog(ctx.questLog);
     plugin.records.insert(plugin.records.end(), questRecords.begin(),
                           questRecords.end());
+    if (ctx.extraRecords) {
+        const auto extra = ctx.extraRecords();
+        plugin.records.insert(plugin.records.end(), extra.begin(),
+                              extra.end());
+    }
 
     gameplay::WorldStateForm state;
     state.gameSeconds = ctx.gameClock.gameSeconds;

@@ -59,6 +59,7 @@ add_executable(true-adventurer
     scenes/RideController.cpp
     scenes/SaveController.cpp
     scenes/SceneConsole.cpp
+    scenes/SpiritDirector.cpp
     scenes/SceneEditor.cpp
     scenes/StreamingController.cpp
     scenes/TerrainSculptTool.cpp

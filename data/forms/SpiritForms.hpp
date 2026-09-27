@@ -1,0 +1,102 @@
+#pragma once
+
+#include "data/forms/Form.hpp"
+
+// Chantier ESPRITS — the DATA side of the spirit framework (§5: every
+// definition below is an ordinary Form, layered by load order, patched
+// per field by mods). The kernels never see these; world/spirit/
+// SpiritRules compiles them into the POD table the fields tick with
+// (the Forms -> params mapping TerrainPatches does for HeightPatches).
+
+namespace data {
+
+class FormTypeRegistry;
+
+// One record per spirit — the definition of what the field does. The
+// triad/channel pair places it in the shifumi (see
+// engine/terrain/SpiritField.hpp); `contactEffect` is the ONLY path from
+// a world field to an actor (§2.9: an EffectForm with buildupType
+// ignition/glaciation/electrocution/mental/curse/bleed).
+struct SpiritForm : Form {
+    str name;      // "Water" | "Fire" | ... (matches SpiritKind by name)
+    i32 triad { 1 };
+    str channel;   // "onyx" | "amber" | "garnet"
+    str fieldKind; // "volume" | "coverage" | "vector" | "radiance" |
+                   // "conduction" | "activation" | "delta"
+    f32 decayPerSecond { 0.0f };     // coverage fade (heat loss, drying)
+    f32 spreadRate { 0.0f };         // coverage: damage/s to neighbours
+    f32 ignitionPoints { 1.0f };     // hitpoints a cell loses before it turns on
+    i32 spreadBudgetPerTick { 64 };  // never "the whole map burns"
+    core::Guid contactEffect;        // EffectForm applied to actors in the field
+    f32 contactPeriod { 0.5f };      // seconds between applications per actor
+    str damageType;                  // triad 2: "blunt" | "slashing" | "piercing"
+    str cueSpawn;                    // "Cue.Spirit.Water.Spawn"
+    str cueActive;
+    str cueExtinguish;
+
+    REFLECT_BEGIN(SpiritForm, Form)
+        REFLECT_FIELD(name)
+        REFLECT_FIELD(triad)
+        REFLECT_FIELD(channel)
+        REFLECT_FIELD(fieldKind)
+        REFLECT_FIELD(decayPerSecond)
+        REFLECT_FIELD(spreadRate)
+        REFLECT_FIELD(ignitionPoints)
+        REFLECT_FIELD(spreadBudgetPerTick)
+        REFLECT_FIELD(contactEffect)
+        REFLECT_FIELD(contactPeriod)
+        REFLECT_FIELD(damageType)
+        REFLECT_FIELD(cueSpawn)
+        REFLECT_FIELD(cueActive)
+        REFLECT_FIELD(cueExtinguish)
+    REFLECT_END()
+};
+
+// The rule table (the BotW chemistry rules): one record per (actor,
+// target, verb). `actor` MUST be a spirit — a material can never change
+// a material, every interaction routes through a spirit; the compiler
+// rejects anything else. `target` is a spirit name or a material class.
+// The triad shifumi is the DEFAULT rule (matter > energy > spirit >
+// matter, verb "suppress"); records refine or override it, and any pair
+// outside a triad interacts only if a record says so.
+struct SpiritRuleForm : Form {
+    str actor;
+    str target;
+    str verb; // extinguish|ignite|conduct|block|grow|evaporate|wet|
+              // freeze|push|erode|activate|suppress
+    f32 rate { 1.0f };
+    f32 threshold { 0.0f }; // e.g. water depth above which it applies
+
+    REFLECT_BEGIN(SpiritRuleForm, Form)
+        REFLECT_FIELD(actor)
+        REFLECT_FIELD(target)
+        REFLECT_FIELD(verb)
+        REFLECT_FIELD(rate)
+        REFLECT_FIELD(threshold)
+    REFLECT_END()
+};
+
+// The physical properties surfaces never had: one record per material
+// class ("grass", "rock", "snow", "sand", "cliff", "wood", "bush",
+// "metal"), read by the coverage kernels through the compiled table.
+struct SurfaceMaterialForm : Form {
+    str materialClass;
+    f32 flammability { 0.0f };
+    f32 fuel { 0.0f };
+    f32 moisture { 0.0f };
+    f32 conductivity { 0.0f };
+    f32 hardness { 1.0f }; // earth push divides by it
+
+    REFLECT_BEGIN(SurfaceMaterialForm, Form)
+        REFLECT_FIELD(materialClass)
+        REFLECT_FIELD(flammability)
+        REFLECT_FIELD(fuel)
+        REFLECT_FIELD(moisture)
+        REFLECT_FIELD(conductivity)
+        REFLECT_FIELD(hardness)
+    REFLECT_END()
+};
+
+void registerSpiritFormTypes(FormTypeRegistry& registry);
+
+} // namespace data

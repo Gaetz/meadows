@@ -161,6 +161,15 @@ public:
         std::function<vector<terraingen::WaterSource>(f32, f32, f32,
                                                       f32)>;
     void setSimSources(SimSourcesFn fn) { simSourcesFn = std::move(fn); }
+    // Gameplay-created sources (springs cast by the player, authored
+    // world springs): WORLD space, main-thread owned, replaced
+    // wholesale — the scene keeps the truth. Merged into the STEP job
+    // only, never into the pre-roll solver (a steady-state solve would
+    // eternalize a 10 s spring into a lake behind the curtain). The
+    // kernel drops sources outside the window by itself.
+    void setSimRuntimeSources(vector<terraingen::WaterSource> sources) {
+        simRuntimeSources = std::move(sources);
+    }
     // Terraforming hook: the sculpt overlay changed — the next step job
     // re-samples the window's ground and the water reacts live; the
     // cached windows hold pre-sculpt ground, drop them.
@@ -333,6 +342,7 @@ private:
     sptr<terrain::WaterSimState> simState;
     sptr<const terrain::WaterSimSnapshot> simSnap;
     vector<terraingen::WaterSource> simSrcCache;
+    vector<terraingen::WaterSource> simRuntimeSources; // gameplay springs
     bool simInFlight { false };
     bool simGroundDirty { false };
     bool simValid { false }; // snapshot uploaded and fresh

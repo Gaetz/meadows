@@ -992,3 +992,92 @@ TEST_CASE("water sim: kernel perf gate") {
     WARN(nsPerCellIter < 100.0);
 #endif
 }
+
+// --- Runtime (gameplay) springs — chantier ESPRITS E1.a --------------------
+
+TEST_CASE("water sim: a runtime spring pools above the publish threshold") {
+    // A cast spring in a gentle bowl (real ground always has a dip —
+    // on a mathematically flat plane the film spreads under the 0.03 m
+    // publish threshold): the pool must cross the threshold within a
+    // few seconds and extract as ONE connected wet patch with a mesh —
+    // a pour the player can SEE.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    WaterSimState state;
+    initWindow(state, spec, bowlHeight, -1000.0f);
+    const WaterSimParams params = closedParams();
+    const vector<WaterSource> spring { { 64.0f, 64.0f, 3.0f } };
+    stepWindow(state, params, spring, 120); // 4 s at dt 1/30
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+    const size_t center = 32u * spec.n + 32u;
+    CHECK(snap.depth[center] >= 0.03f);
+    u32 wet = 0;
+    for (const f32 d : snap.depth) {
+        wet += d > 0.0f ? 1u : 0u;
+    }
+    CHECK(wet >= 13);
+    CHECK(!snap.meshIndices.empty());
+}
+
+TEST_CASE("water sim: a negative discharge never drives depth below zero") {
+    // A sink (a future absorbing spirit) empties cells, never makes
+    // negative water: dry stays dry, a column drains monotonically.
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto flat = [](f32, f32) { return 500.0f; };
+    WaterSimState state;
+    initWindow(state, spec, flat, -1000.0f);
+    const WaterSimParams params = closedParams();
+    const vector<WaterSource> sink { { 64.0f, 64.0f, -5.0f } };
+    stepWindow(state, params, sink, 60);
+    for (const f32 d : state.depth) {
+        CHECK(std::isfinite(d));
+        CHECK(d >= 0.0f);
+    }
+    state.depth[32u * spec.n + 32u] = 4.0f;
+    f64 previous = totalVolume(state);
+    for (u32 i = 0; i < 20; ++i) {
+        stepWindow(state, params, sink, 10);
+        const f64 now = totalVolume(state);
+        CHECK(now <= previous + 1.0e-6);
+        CHECK(now >= 0.0);
+        previous = now;
+    }
+}
+
+TEST_CASE("water sim: a source outside the window is ignored") {
+    // The runtime-source lane hands the kernel WORLD-space springs
+    // without filtering: a spring whose disc misses the window must
+    // add nothing (the contract the gameplay lane relies on).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto flat = [](f32, f32) { return 500.0f; };
+    WaterSimState state;
+    initWindow(state, spec, flat, -1000.0f);
+    const WaterSimParams params = closedParams();
+    const vector<WaterSource> far { { -50.0f, -50.0f, 3.0f },
+                                    { 5000.0f, 5000.0f, 3.0f } };
+    const f64 before = totalVolume(state);
+    stepWindow(state, params, far, 100);
+    CHECK(totalVolume(state) == doctest::Approx(before));
+}
+
+TEST_CASE("water sim: a spring on a slope publishes a connected rill") {
+    // On tilted ground the spring runs off downhill; the published
+    // footprint must reach BELOW the source (a rill, not a dot).
+    const GridSpec spec = makeSpec(65, 2.0f);
+    const auto slope = [](f32 x, f32) { return 500.0f - x * 0.05f; };
+    WaterSimState state;
+    initWindow(state, spec, slope, -1000.0f);
+    WaterSimParams params = closedParams();
+    params.borderDrainPerSecond = 0.9f;
+    const vector<WaterSource> spring { { 40.0f, 64.0f, 3.0f } };
+    stepWindow(state, params, spring, 300);
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+    u32 downhill = 0;
+    for (u32 r = 0; r < spec.n; ++r) {
+        for (u32 c = 24; c < spec.n; ++c) { // x > 48 m: below the spring
+            downhill += snap.depth[static_cast<size_t>(r) * spec.n + c] > 0.0f ? 1u : 0u;
+        }
+    }
+    CHECK(downhill > 0);
+}

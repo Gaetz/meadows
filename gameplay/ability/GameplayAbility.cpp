@@ -107,6 +107,11 @@ bool tryActivate(const AbilityForm& ability,
             applyEffect(targetSet, targetSystem, *primary, ctx.tags);
         }
     }
+    // The Lua script (latent logic, world actions): only on a committed
+    // activation, only where the host wired a runner.
+    if (!ability.script.empty() && ctx.scriptRunner) {
+        ctx.scriptRunner(ability);
+    }
     // Usage event (skills-by-use + open quest vocabulary): fires only on a
     // COMMITTED activation, from call sites that opted into the channel.
     if (ctx.events) {

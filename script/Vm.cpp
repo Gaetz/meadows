@@ -334,6 +334,40 @@ void Vm::bindMapTravel(
             }));
 }
 
+void Vm::bindWorldActions(WorldActions actions) {
+    impl->lua.set_function(
+        "aim", [this, aim = actions.aim]() -> sol::object {
+            const std::optional<Vec3> at = aim ? aim() : std::nullopt;
+            if (!at) {
+                return sol::make_object(impl->lua, sol::lua_nil);
+            }
+            sol::table point = impl->lua.create_table();
+            point["x"] = at->x;
+            point["y"] = at->y;
+            point["z"] = at->z;
+            return point;
+        });
+    sol::table spirit = impl->lua.create_named_table("spirit");
+    spirit.set_function(
+        "spawn", [spawn = actions.spawnSource](const std::string& kind,
+                                               f32 x, f32 z, f32 rate,
+                                               f32 radius, f32 seconds) {
+            if (spawn) {
+                spawn(kind, x, z, rate, radius, seconds);
+            }
+        });
+    spirit.set_function(
+        "push_terrain",
+        [push = actions.pushTerrain](f32 x, f32 z, f32 radius, f32 amount,
+                                     const std::string& brush) {
+            if (push) {
+                push(x, z, radius, amount, brush);
+            } else {
+                LOG_WARN("spirit.push_terrain: no earth handler bound");
+            }
+        });
+}
+
 void Vm::bindEvents(gameplay::EventBus& bus) {
     sol::table events = impl->lua.create_named_table("events");
     events.set_function(

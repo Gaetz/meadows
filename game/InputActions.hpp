@@ -35,6 +35,7 @@ enum class InputAction : u8 {
     // becomes F / LB; a chord-modifier extension of Binding stays
     // possible later without touching callers.
     InteractAlt, // F / LB
+    SpiritCast,  // Q / RB — the spirit ability aimed at the ground
     Count
 };
 

@@ -13,6 +13,7 @@ void registerWorldFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<TriggerForm>();
     registry.registerFormType<DoorForm>();
     registry.registerFormType<TerrainPatchForm>();
+    registry.registerFormType<SpiritSourceForm>();
     registry.registerFormType<TerrainRegionForm>();
     registry.registerFormType<WaterMaterialForm>();
     registry.registerFormType<WaterBodyForm>();

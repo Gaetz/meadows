@@ -232,6 +232,38 @@ struct TerrainPatchForm : data::Form {
     REFLECT_END()
 };
 
+// A placed SPIRIT SOURCE (chantier ESPRITS): what an ability — or an
+// author — put in the world: a spring, a hearth, a gust... The field the
+// source drives is re-derived each tick and never stored; this record
+// IS the persistence (a save emits one per live source, a mod ships a
+// permanent one). Guids are minted at spawn and reused on every re-save.
+struct SpiritSourceForm : data::Form {
+    core::Guid worldspace; // owning map; null = the default overworld
+    str spirit;            // "Water" | "Fire" | ... (SpiritKind by name)
+    f32 x { 0.0f };
+    f32 z { 0.0f };
+    f32 dirX { 0.0f };
+    f32 dirZ { 0.0f };
+    f32 rate { 0.0f };
+    f32 radius { 0.0f };
+    // SIM-seconds left; < 0 = permanent (an authored world spring).
+    f32 remainingSeconds { -1.0f };
+    i32 sequence { 0 }; // mint order (fresh ids after a reload)
+
+    REFLECT_BEGIN(SpiritSourceForm, data::Form)
+        REFLECT_FIELD(worldspace)
+        REFLECT_FIELD(spirit)
+        REFLECT_FIELD(x)
+        REFLECT_FIELD(z)
+        REFLECT_FIELD(dirX)
+        REFLECT_FIELD(dirZ)
+        REFLECT_FIELD(rate)
+        REFLECT_FIELD(radius)
+        REFLECT_FIELD(remainingSeconds)
+        REFLECT_FIELD(sequence)
+    REFLECT_END()
+};
+
 // A baked terrain REGION: an absolute height grid (.trg asset) replacing
 // the procedural base inside its rectangle — the generated-terrain layer
 // under the sculpt deltas above. Geometry (origin/size/texel) lives in the

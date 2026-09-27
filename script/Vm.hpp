@@ -94,6 +94,24 @@ public:
     void bindMapTravel(
         std::function<void(i32, i32, f32, f32, bool)> travel);
 
+    // Chantier ESPRITS — the world actions an ability script may take.
+    // Every callback only QUEUES (the frame's safe point applies): a
+    // script runs mid-frame, often inside an ECS iteration.
+    struct WorldActions {
+        // Lua `aim()` -> {x, y, z} (the caster's aimed ground point) or nil.
+        std::function<std::optional<Vec3>()> aim;
+        // Lua `spirit.spawn(kind, x, z, rate, radius, seconds)`.
+        std::function<void(const std::string& kind, f32 x, f32 z, f32 rate,
+                           f32 radius, f32 seconds)>
+            spawnSource;
+        // Lua `spirit.push_terrain(x, z, radius, amount, brush)` — the
+        // earth brick; unset = the call is a logged no-op.
+        std::function<void(f32 x, f32 z, f32 radius, f32 amount,
+                           const std::string& brush)>
+            pushTerrain;
+    };
+    void bindWorldActions(WorldActions actions);
+
     // --- Latent ability execution: Lua coroutines + a central scheduler (§2.8) ---
 
     // Starts `code` as a coroutine with `self`/`target` bound. The script may

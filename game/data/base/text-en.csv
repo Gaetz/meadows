@@ -171,3 +171,6 @@ follower.contractOver,"{}'s contract has ended — he heads home."
 prompt.mount,[E] Ride {}
 prompt.mount.name,the mount
 mount.hint,Press E again to dismount.
+spirit.noGround,Nothing to pour on here.
+spirit.wetGround,The water is already there.
+spirit.refused,The spirit does not answer yet.

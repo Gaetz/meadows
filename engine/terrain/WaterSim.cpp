@@ -305,7 +305,11 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
                     const i32 r = row + dz;
                     if (c >= 0 && r >= 0 && c < n && r < n &&
                         terrain[at(c, r)] >= params.seaLevel) {
-                        depth[at(c, r)] += share;
+                        // Sink-safe: a negative discharge (a drain, an
+                        // absorbing spirit) empties the cell, never
+                        // drives it below dry.
+                        depth[at(c, r)] =
+                            glm::max(0.0f, depth[at(c, r)] + share);
                     }
                 }
             }

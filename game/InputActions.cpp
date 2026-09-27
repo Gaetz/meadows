@@ -39,6 +39,8 @@ ActionMap::ActionMap() {
         PadButton::Start);
     set(InputAction::InteractAlt, Key::F, MouseButton::Count,
         PadButton::LeftShoulder);
+    set(InputAction::SpiritCast, Key::Q, MouseButton::Count,
+        PadButton::RightShoulder);
 }
 
 bool ActionMap::down(const platform::Input& input,
@@ -105,6 +107,7 @@ std::string_view actionName(InputAction action) {
     case InputAction::Map:         return "map";
     case InputAction::Pause:       return "pause";
     case InputAction::InteractAlt: return "interactAlt";
+    case InputAction::SpiritCast:  return "spiritCast";
     case InputAction::Count:       break;
     }
     return "?";

@@ -672,6 +672,8 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
+    spiritWaterAbility =
+        data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWater");
     // The audio backend + the SoundForm resolver (idempotent on
     // re-enter: create() is a no-op once ready).
     if (!audioSystem.ready()) {
@@ -1013,6 +1015,9 @@ void LandscapeScene::setupWorldAndStreaming() {
                 loadedWorldState = form;
             });
     }
+    // Spirit sources come from the records — an authored spring and a
+    // saved one are the same SpiritSourceForm (chantier ESPRITS).
+    spiritDirector.build(forms);
     if (loadedWorldState) {
         gameClock.gameSeconds = loadedWorldState->gameSeconds;
         gameClock.timescale = loadedWorldState->timescale;
@@ -1464,6 +1469,14 @@ void LandscapeScene::update(f32 dt) {
             travelToMap(travel.mapX, travel.mapZ,
                         travel.hasArrival ? &travel.arrival : nullptr);
         }
+        applyPendingSpiritActions();
+        // Spirit sources live in SIM seconds: a spring pours rate x
+        // duration whatever the dev time scale. Re-push only on change.
+        if (sandboxActive &&
+            spiritDirector.tick(
+                dt * renderer.waterSystem().simConfig().timeScale)) {
+            pushRuntimeWaterSources();
+        }
     }
     {
         // Everything render() needs from the World is extracted HERE —
@@ -1674,6 +1687,12 @@ void LandscapeScene::update(f32 dt) {
         rideController.update(dt, makeRideContext());
     } else if ((mode == SceneMode::Play) && playerController.body()) {
         playerController.update(dt, makePlayerContext());
+        // Latent ability scripts (wait(t) between two jets): the
+        // scheduler advances here, outside any ECS iteration, and its
+        // world actions only queue for the safe point.
+        if (script::Vm* vm = sceneConsole.vm()) {
+            vm->tickCoroutines(dt);
+        }
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
         // mouselook. Spectator AND Edit look only while RMB -- or Alt+LMB,
@@ -2067,6 +2086,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     publishWaterBodies();
     interiorEscapes.clear();
     params.snowLine = activeSnowLine;
+    pushRuntimeWaterSources(); // this map's springs into the sim
     // The whole world changed: a world-sized event keeps the
     // contentTouchedSince contract (every bump records its rects).
     params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
@@ -3669,8 +3689,21 @@ SaveContext LandscapeScene::makeSaveContext() {
             });
         },
         [this](const str& msg) { interaction.say(msg, 3.0f); },
+        [this] { return spiritDirector.capture(); },
         &engine->getJobSystem(), // Serialize + write off the frame
     };
+}
+
+core::Guid LandscapeScene::activeWorldspaceGuid() const {
+    if (const data::Form* space = forms.get(activeWorldspace)) {
+        return space->id;
+    }
+    return {};
+}
+
+void LandscapeScene::pushRuntimeWaterSources() {
+    renderer.waterSystem().setSimRuntimeSources(
+        spiritDirector.waterSources(activeWorldspaceGuid()));
 }
 
 bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
@@ -3959,6 +3992,80 @@ void LandscapeScene::createConsole() {
             pendingMapTravel =
                 PendingMapTravel { mx, mz, hasArrival, Vec2 { x, z } };
         });
+    // Ability scripts act on the world through these (chantier
+    // ESPRITS): aim() reads the eye ray now, spirit.spawn queues.
+    sceneConsole.vm()->bindWorldActions(script::Vm::WorldActions {
+        [this] { return aimGround(); },
+        [this](const std::string& kindName, f32 x, f32 z, f32 rate,
+               f32 radius, f32 seconds) {
+            const auto kind = render::terrain::spiritFromName(kindName);
+            if (kind == render::terrain::SpiritKind::kCount) {
+                LOG_WARN("spirit.spawn: unknown spirit '{}'", kindName);
+                return;
+            }
+            pendingSpiritActions.push_back(
+                PendingSpiritAction { kind, x, z, rate, radius, seconds });
+        },
+        nullptr, // push_terrain arrives with the earth brick
+    });
+    // Chantier ESPRITS dev path (no ability, no Lua): place/list/clear
+    // spirit sources. `spirit spawn Water <x> <z> [rate] [radius] [s]`.
+    panel.addCommand("spirit", [this](const str& args) -> str {
+        std::istringstream in { args };
+        str verb;
+        in >> verb;
+        if (verb == "list") {
+            str out;
+            for (const auto& e : spiritDirector.list().entries()) {
+                const str life =
+                    e.source.remaining < 0.0f
+                        ? str { "permanent" }
+                        : std::to_string(
+                              static_cast<i32>(e.source.remaining)) +
+                              " s";
+                char line[160];
+                std::snprintf(line, sizeof(line),
+                              "%s (%.0f, %.0f) rate %.2f r %.1f %s\n",
+                              str { render::terrain::spiritName(
+                                        e.source.kind) }
+                                  .c_str(),
+                              e.source.x, e.source.z, e.source.rate,
+                              e.source.radius, life.c_str());
+                out += line;
+            }
+            return out.empty() ? str { "no spirit source" } : out;
+        }
+        if (verb == "clear") {
+            spiritDirector.clear();
+            pushRuntimeWaterSources();
+            return "spirit sources cleared";
+        }
+        if (verb != "spawn") {
+            return "usage: spirit spawn <Water|...> <x> <z> [rate] "
+                   "[radius] [seconds] | spirit list | spirit clear";
+        }
+        str kindName;
+        f32 x = 0.0f;
+        f32 z = 0.0f;
+        f32 rate = 3.0f;
+        f32 radius = 2.0f;
+        f32 seconds = 10.0f;
+        in >> kindName >> x >> z >> rate >> radius >> seconds;
+        const auto kind = render::terrain::spiritFromName(kindName);
+        if (kind == render::terrain::SpiritKind::kCount) {
+            return "unknown spirit '" + kindName + "'";
+        }
+        if (!sandboxActive) {
+            return "spirit sources need the sandbox map world";
+        }
+        const core::Guid id = spiritDirector.spawn(
+            kind, x, z, rate, radius, seconds, activeWorldspaceGuid());
+        pushRuntimeWaterSources();
+        return "spirit " + kindName + " placed at (" +
+               std::to_string(static_cast<i32>(x)) + ", " +
+               std::to_string(static_cast<i32>(z)) + ") id " +
+               id.toString();
+    });
     panel.addCommand("spawn", [this](const str& args) -> str {
         if (args.empty()) {
             return "usage: spawn <EditorId>";
@@ -4370,7 +4477,113 @@ PlayerContext LandscapeScene::makePlayerContext() {
             }
             return flow;
         },
+        [this] { castSpirit(); },
     };
+}
+
+// --- Spirits: the ability -> world seam (chantier ESPRITS) ------------
+
+std::optional<Vec3> LandscapeScene::aimGround() const {
+    if (!physics || !sandboxActive) {
+        return std::nullopt;
+    }
+    const phys::RayHit hit = physics->rayCast(
+        flyCamera.camera.position, flyCamera.camera.forward(), 64.0f);
+    if (!hit.hit) {
+        return std::nullopt;
+    }
+    // A hit more than a metre off the terrain surface is a prop (rock,
+    // trunk, wall): a spring needs the ground itself.
+    const f32 ground = render::terrain::height(renderer.terrainParams(),
+                                               hit.position.x,
+                                               hit.position.z);
+    if (std::abs(hit.position.y - ground) > 1.0f) {
+        return std::nullopt;
+    }
+    return hit.position;
+}
+
+script::ScriptContext LandscapeScene::playerScriptContext() {
+    script::ScriptContext ctx;
+    ctx.entity = playerEntity;
+    if (playerEntity.is_alive()) {
+        if (playerEntity.has<gameplay::AttributeSet>()) {
+            ctx.attributes = &playerEntity.get_mut<gameplay::AttributeSet>();
+        }
+        if (playerEntity.has<gameplay::AbilitySystem>()) {
+            ctx.abilitySystem =
+                &playerEntity.get_mut<gameplay::AbilitySystem>();
+        }
+    }
+    ctx.tags = &gameTags;
+    ctx.forms = &forms;
+    return ctx;
+}
+
+void LandscapeScene::castSpirit() {
+    if (mode != SceneMode::Play || !sandboxActive || !spiritWaterAbility ||
+        !playerEntity.is_alive() ||
+        !playerEntity.has<gameplay::AbilitySystem>()) {
+        return;
+    }
+    // Geometry first, before any cost is paid: tryActivate has no
+    // position. Water onto water would pour into a pinned lake (the pin
+    // swallows it) — refused rather than silently lost.
+    const std::optional<Vec3> at = aimGround();
+    if (!at) {
+        interaction.say(texts.get("spirit.noGround"), 1.5f);
+        return;
+    }
+    if (render::terrain::waterSurfaceQuery(makeWaterQuery(), at->x, at->z,
+                                           at->y)) {
+        interaction.say(texts.get("spirit.wetGround"), 1.5f);
+        return;
+    }
+    gameplay::AbilityContext ability { forms, gameTags };
+    ability.events = &eventBus;
+    ability.caster = playerEntity;
+    ability.scriptRunner = [this](const gameplay::AbilityForm& form) {
+        if (script::Vm* vm = sceneConsole.vm()) {
+            vm->startCoroutine(form.script, playerScriptContext(),
+                               playerScriptContext());
+        }
+    };
+    auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+    if (!gameplay::tryActivate(*spiritWaterAbility, set, system, set, system,
+                               ability)) {
+        interaction.say(texts.get("spirit.refused"), 1.5f);
+    }
+}
+
+void LandscapeScene::applyPendingSpiritActions() {
+    if (pendingSpiritActions.empty()) {
+        return;
+    }
+    bool changed = false;
+    while (!pendingSpiritActions.empty()) {
+        const PendingSpiritAction action = pendingSpiritActions.front();
+        pendingSpiritActions.pop_front();
+        if (!sandboxActive) {
+            continue;
+        }
+        spiritDirector.spawn(action.kind, action.x, action.z, action.rate,
+                             action.radius, action.seconds,
+                             activeWorldspaceGuid());
+        changed = true;
+        const Vec3 at { action.x,
+                        render::terrain::height(renderer.terrainParams(),
+                                                action.x, action.z),
+                        action.z };
+        fxDirector.cues().emit(
+            { "Cue.Spirit." +
+                  str { render::terrain::spiritName(action.kind) } +
+                  ".Spawn",
+              at, action.rate });
+    }
+    if (changed) {
+        pushRuntimeWaterSources();
+    }
 }
 
 render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {

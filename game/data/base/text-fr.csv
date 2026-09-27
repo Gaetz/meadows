@@ -172,3 +172,6 @@ follower.contractOver,Le contrat de {} est terminé — il rentre chez lui.
 prompt.mount,[E] Monter {}
 prompt.mount.name,la monture
 mount.hint,Appuyez encore sur E pour descendre.
+spirit.noGround,Rien sur quoi verser ici.
+spirit.wetGround,L'eau est déjà là.
+spirit.refused,L'esprit ne répond pas encore.

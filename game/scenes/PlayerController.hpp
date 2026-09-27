@@ -102,6 +102,10 @@ struct PlayerContext {
     // XZ current at a spot (rivers push, lakes/sea are still) — the
     // swim drift. Absent = no current (interiors, tests).
     std::function<Vec2(const Vec3&)> waterFlowAt;
+    // Q: the spirit ability aimed at the ground (chantier ESPRITS). The
+    // scene owns the aim, the pre-checks and the ability; the controller
+    // only forwards the press. Absent = no spirit (tests).
+    std::function<void()> castSpirit;
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene

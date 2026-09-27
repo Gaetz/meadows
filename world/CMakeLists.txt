@@ -24,6 +24,8 @@ add_library(meadows-world STATIC
     streaming/CellLoader.cpp
     streaming/CellStreamer.cpp
     terrain/BiomeMapBuilder.cpp
+    spirit/SpiritRules.cpp
+    spirit/SpiritSources.cpp
     terrain/MapRecords.cpp
     terrain/TerrainPatches.cpp
     terrain/TerrainRegions.cpp

@@ -5,6 +5,7 @@
 #include "data/forms/CoreForms.hpp"
 #include "data/forms/LandscapeForms.hpp"
 #include "data/forms/LocForms.hpp"
+#include "data/forms/SpiritForms.hpp"
 #include "data/forms/UiForms.hpp"
 #include "data/forms/VisualForms.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
@@ -31,6 +32,7 @@ void registerAllFormTypes(data::FormTypeRegistry& types) {
     data::registerLocFormTypes(types);
     data::registerLandscapeFormTypes(types);
     world::registerWorldFormTypes(types);
+    data::registerSpiritFormTypes(types); // chantier ESPRITS
     gameplay::registerGameplayFormTypes(types);
     gameplay::registerStatsFormTypes(types);
     gameplay::registerSkillFormTypes(types); // skills-by-use

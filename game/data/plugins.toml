@@ -50,6 +50,11 @@ file = "base/text-fr.toml"
 [[plugins]]
 file = "base/passes.toml"
 
+# The nine spirits (chantier ESPRITS): definitions, the interaction rule
+# table, surface material classes, authored world sources.
+[[plugins]]
+file = "base/spirits.toml"
+
 # 2D test-scene data (WorldDemoScene / CombatArena load it directly);
 # disabled in the 3D game stack — enable to inspect it in the Game DB.
 [[plugins]]

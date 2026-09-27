@@ -1558,3 +1558,30 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'mount.hint'
     text = 'Appuyez encore sur E pour descendre.'
+
+[[records]]
+form = 'cfe0a7db-4cef-4634-8f86-daa05d14b529'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.noGround'
+    text = 'Rien sur quoi verser ici.'
+
+[[records]]
+form = '291e2ebe-be88-494d-9e1f-5a919169ae4a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.wetGround'
+    text = "L'eau est déjà là."
+
+[[records]]
+form = '982fc2bd-5f4a-40af-8349-531b7a5c4ad0'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.refused'
+    text = "L'esprit ne répond pas encore."

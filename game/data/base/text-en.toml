@@ -1549,3 +1549,30 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'mount.hint'
     text = 'Press E again to dismount.'
+
+[[records]]
+form = '82b22201-c07a-4c5d-a658-78f1f642f459'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.noGround'
+    text = 'Nothing to pour on here.'
+
+[[records]]
+form = '6cfd0e2a-4c91-4589-8e35-0d92107072f4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.wetGround'
+    text = 'The water is already there.'
+
+[[records]]
+form = 'a1c0df59-4388-4183-bd2c-ef4a21cda6ec'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.refused'
+    text = 'The spirit does not answer yet.'

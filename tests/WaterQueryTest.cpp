@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "engine/terrain/WaterQuery.hpp"
+#include "engine/terrain/WaterSim.hpp"
 
 // R3 break-case suite (docs/WATER-RENDER.md): the unified gameplay
 // water sample must (1) let the SIM answer inside its trusted rect —
@@ -109,4 +110,46 @@ TEST_CASE("water query: a gallery under the column reads dry") {
     CHECK(!waterSurfaceQuery(q, 65.0f, 65.0f, 191.0f).has_value());
     // Far above the surface: dry too (nobody swims in the sky).
     CHECK(!waterSurfaceQuery(q, 65.0f, 65.0f, 215.0f).has_value());
+}
+
+TEST_CASE("water query: a spring pool answers the swim query") {
+    // Chantier ESPRITS E1.a: water a cast spring poured is ordinary
+    // simulated water — the sim-authoritative query sees it (swim,
+    // floaters, submersion) with no new plumbing.
+    render::terraingen::GridSpec spec;
+    spec.originX = 0.0f;
+    spec.originZ = 0.0f;
+    spec.texelSize = 2.0f;
+    spec.n = 65;
+    WaterSimState state;
+    // A gentle bowl: the pour collects instead of thinning out.
+    initWindow(
+        state, spec,
+        [](f32 x, f32 z) {
+            const f32 dx = (x - 64.0f) / 64.0f;
+            const f32 dz = (z - 64.0f) / 64.0f;
+            return 500.0f + 30.0f * (dx * dx + dz * dz);
+        },
+        -1000.0f);
+    WaterSimParams params;
+    params.rainRate = 0.0f;
+    params.evaporationRate = 0.0f;
+    params.borderDrainPerSecond = 0.0f;
+    params.seaLevel = -1000.0f;
+    params.marginCells = 8;
+    const vector<render::terraingen::WaterSource> spring {
+        { 64.0f, 64.0f, 3.0f }
+    };
+    stepWindow(state, params, spring, 120);
+    WaterSimSnapshot snap;
+    extractSnapshot(state, params, snap);
+    WaterQuery q { &snap, nullptr, -1000.0f };
+    const auto surface = waterSurfaceQuery(q, 64.0f, 64.0f, 500.5f);
+    REQUIRE(surface.has_value());
+    CHECK(*surface > 500.0f);
+    CHECK(*surface < 502.0f);
+    CHECK(!waterSurfaceQuery(q, 20.0f, 20.0f, 500.5f).has_value());
+    const Vec2 flow = waterFlowQuery(q, 64.0f, 64.0f, 500.5f);
+    CHECK(std::isfinite(flow.x));
+    CHECK(std::isfinite(flow.y));
 }

@@ -528,6 +528,13 @@ touching the corresponding systems.
 >    À lire avant de toucher `engine/rhi/`, `engine/render/` (dont
 >    `render::WorldRenderer`) ou `LandscapeScene`.
 >
+> 4. **`docs/CHANTIER-ESPRITS.md`** — le chantier en cours (2026-09-27) :
+>    la manipulation du monde par les **9 esprits** (trois triades en
+>    shifumi, sources placées `SpiritSourceForm`, règles BotW « un
+>    matériau ne change jamais un matériau », `AbilityForm.script` exécuté
+>    via `AbilityContext.scriptRunner` + `Vm::bindWorldActions`). À lire
+>    avant de toucher `world/spirit/`, `SpiritDirector` ou la sim d'eau.
+>
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.
 

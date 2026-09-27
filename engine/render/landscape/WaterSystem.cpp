@@ -351,6 +351,7 @@ void WaterSystem::destroy(rhi::Device& device) {
     simState.reset();
     simSnap.reset();
     simSrcCache.clear();
+    simRuntimeSources.clear();
     simCache.clear();
     simSettling = false;
     simHasLastCrumb = false;
@@ -1412,7 +1413,12 @@ void WaterSystem::updateSim(rhi::Device& device,
     }
     // Main owns the state here: honor a pending dump request.
     if (!simDumpPath.empty() && simState) {
-        if (terrain::dumpSimState(*simState, simCfg.params, simSrcCache,
+        // Boundary + runtime sources: the replay reproduces a cast
+        // spring exactly as the step job saw it.
+        vector<terraingen::WaterSource> dumpSources = simSrcCache;
+        dumpSources.insert(dumpSources.end(), simRuntimeSources.begin(),
+                           simRuntimeSources.end());
+        if (terrain::dumpSimState(*simState, simCfg.params, dumpSources,
                                   simDumpPath.c_str())) {
             LOG_INFO("Water sim: state dumped to {}", simDumpPath);
         }
@@ -1641,6 +1647,7 @@ void WaterSystem::updateSim(rhi::Device& device,
     jobs->enqueue([sharedRef = shared, params, state = simState,
                    simParams = simCfg.params, fn = simSourcesFn,
                    bodiesRef = bodies, sources = simSrcCache,
+                   runtime = simRuntimeSources,
                    gen = generation, epoch = simEpoch, dCol, dRow,
                    substeps, refreshGround,
                    crumbs = std::move(crumbs),
@@ -1696,7 +1703,13 @@ void WaterSystem::updateSim(rhi::Device& device,
         // calibrated baseline, so river supply ignores the sky.
         terrain::WaterSimParams stepParams = simParams;
         stepParams.rainRate *= 1.0f + 9.0f * rain;
-        terrain::stepWindow(*state, stepParams, sources, substeps);
+        // Runtime (gameplay) springs ride the step only: appended here,
+        // never stored in `sources` — that list becomes simSrcCache on
+        // a fresh scroll and would double them next job.
+        vector<terraingen::WaterSource> stepSources = sources;
+        stepSources.insert(stepSources.end(), runtime.begin(),
+                           runtime.end());
+        terrain::stepWindow(*state, stepParams, stepSources, substeps);
         auto snap = std::make_shared<terrain::WaterSimSnapshot>();
         const u32 puddleMode = puddles ? (rain >= 0.2f ? 2u : 1u) : 0u;
         terrain::extractSnapshot(*state, simParams, *snap, puddleMode);

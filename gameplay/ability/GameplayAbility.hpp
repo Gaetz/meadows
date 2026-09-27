@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "data/forms/Form.hpp"
 #include "data/forms/FormDatabase.hpp"
 #include "engine/ecs/World.hpp" // AbilityContext.caster (usage events)
@@ -78,6 +80,11 @@ struct AbilityContext {
     // don't care (tests, tools) leave both unset — zero behavior change.
     EventBus* events { nullptr };
     ecs::Entity caster {};
+    // Runs `ability.script` after a COMMITTED activation (cost paid,
+    // cooldown started, primary effect applied) — the host that owns the
+    // Lua Vm supplies it (gameplay/ cannot see script/). Null = the
+    // script is inert, as it was before the spirit chantier.
+    std::function<void(const AbilityForm&)> scriptRunner;
 };
 
 // Tries to activate `ability` from caster onto target (caster == target for a

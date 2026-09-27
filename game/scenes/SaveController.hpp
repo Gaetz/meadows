@@ -54,6 +54,9 @@ struct SaveContext {
     // persistent player) so performSave can capture each into the layer.
     std::function<void(const std::function<void(ecs::Entity)>&)> forEachLiveRef;
     std::function<void(const str&)> notify; // interaction.say(msg, 3s)
+    // Scene-level records rebuilt fresh per save, like the quest log
+    // (chantier ESPRITS: the placed spirit sources). Null = none.
+    std::function<vector<data::Record>()> extraRecords;
     // Where the serialize + file IO run. Null = synchronous on the
     // calling thread (headless tests, one-shot tools) — same code path,
     // the completion still lands in the pump.

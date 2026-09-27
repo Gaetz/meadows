@@ -2,6 +2,7 @@
 
 // Subsystem map: docs/AUDIT/U4-landscapescene.md
 
+#include <deque>
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
@@ -25,6 +26,7 @@
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/MapController.hpp"
+#include "game/scenes/SpiritDirector.hpp"
 #include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -88,6 +90,7 @@ struct AbilityForm;  // the shared melee attack — pointer only
 }
 namespace script {
 class Vm;
+struct ScriptContext;
 }
 
 namespace game {
@@ -411,6 +414,9 @@ private:
     const data::WeaponForm* banditWeapon { nullptr };
     const gameplay::AbilityForm* attackAbility { nullptr };
     const gameplay::AbilityForm* dodgeAbility { nullptr };
+    // The spirit ability behind Q (chantier ESPRITS): its Lua script
+    // places the source through the world actions bound on the Vm.
+    const gameplay::AbilityForm* spiritWaterAbility { nullptr };
     const gameplay::EffectForm* swimCostEffect { nullptr }; // D2b
     const gameplay::EffectForm* sneakCostEffect { nullptr }; // sneak
     const gameplay::EffectForm* bowDrawCostEffect { nullptr }; // drawn-bow drain
@@ -526,6 +532,34 @@ private:
         Vec2 arrival { 0.0f, 0.0f };
     };
     std::optional<PendingMapTravel> pendingMapTravel;
+    // Chantier ESPRITS: the placed spirit sources (springs...). Their
+    // lifetimes run in SIM seconds; the water kernel reads value copies.
+    SpiritDirector spiritDirector;
+    void pushRuntimeWaterSources();
+    core::Guid activeWorldspaceGuid() const;
+    // The ability -> world seam. A script's `spirit.spawn(...)` runs
+    // mid-frame (a coroutine resume, a trigger dispatch) so it only
+    // QUEUES here; the same safe point as pendingMapTravel applies.
+    struct PendingSpiritAction {
+        render::terrain::SpiritKind kind {};
+        f32 x { 0.0f };
+        f32 z { 0.0f };
+        f32 rate { 0.0f };
+        f32 radius { 0.0f };
+        f32 seconds { 0.0f };
+    };
+    std::deque<PendingSpiritAction> pendingSpiritActions;
+    void applyPendingSpiritActions();
+    // The aimed ground point: the eye ray against physics, rejected when
+    // the hit sits on a prop rather than the terrain. nullopt = nothing.
+    std::optional<Vec3> aimGround() const;
+    // Q in Play: the geometric pre-checks (aim, dry ground) then the
+    // ability activation — cost/cooldown are its effects (§6), its
+    // script places the source.
+    void castSpirit();
+    // `self` for the player's ability scripts (the trigger idiom, with
+    // the liveness handle so a coroutine survives archetype moves).
+    script::ScriptContext playerScriptContext();
     f32 mapPrefetchCooldown { 0.0f };
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.

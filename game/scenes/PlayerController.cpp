@@ -526,6 +526,10 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
             LOG_INFO("Sneak: no room to stand up here");
         }
     }
+    if (ctx.castSpirit &&
+        ctx.actions->pressed(input, InputAction::SpiritCast)) {
+        ctx.castSpirit();
+    }
     if (ctx.playerEntity.is_alive()) {
         gameplay::syncStateTag(
             ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),

@@ -10,6 +10,7 @@ add_library(meadows-data STATIC
     forms/FormDatabase.cpp
     forms/LandscapeForms.cpp
     forms/LocForms.cpp
+    forms/SpiritForms.cpp
     forms/UiForms.cpp
     forms/VisualForms.cpp
     plugins/BinaryFormat.cpp
