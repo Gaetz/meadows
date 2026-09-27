@@ -512,6 +512,27 @@ persistance du scorch = E3.d optionnelle. E3.c (suite) : contact →
 `buildupType = "ignition"` (Status.Ignited) joueur/PNJ, props en bois
 (`surfaceMaterial` → `disableReference`), scatter gaté par le masque.
 
+### Demandes dev après E3.b (2026-09-27) — à planifier
+- **Le rendu du feu et son éclairage** : « il faudrait travailler sur la
+  représentation du feu, un très beau rendu plus l'éclairage qui va
+  avec ». Recherche lancée (techniques stylisées : quads de flamme à bruit
+  + rampe + érosion alpha, flipbooks, liseré de braises entre brûlé et
+  intact, agrégation des cellules brûlantes en quelques lumières
+  clusterisées avec scintillement, distorsion de chaleur, fumée) → rapport
+  dans `docs/FIRE-RENDER.md`, briques à découper avec le dev (validation
+  visuelle, bascule A/B).
+- **Les arbres et les éléments** : aujourd'hui les arbres sont totalement
+  épargnés — les sphères d'un jet et une crue traversent les troncs (pas de
+  collision eau/arbre), et le feu les ignore (le scatter n'est pas une
+  entité). Cible : (a) l'eau rencontre les troncs (les sphères de jet
+  éclaboussent sur un tronc, la sim voit les gros troncs comme des
+  obstacles — Kellomäki, les corps bloquent l'eau) ; (b) **un arbre brûle
+  quand assez de cellules brûlantes l'entourent** : chaleur intégrée sur le
+  tronc depuis les cellules voisines (le `fuel`/`flammability` d'un
+  `SurfaceMaterialForm` bois), puis flammes sur le tronc et la canopée,
+  arbre charbonné/retiré au re-scatter (gaté par le masque, persistant via
+  la couverture E3.d). S'inscrit dans E3.c avec les props en bois.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

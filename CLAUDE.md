@@ -537,6 +537,9 @@ touching the corresponding systems.
 >    **`docs/SPELLS.md`** — le système de sortilèges (forme × élément +
 >    caractéristiques ; `SpellForm` enfant de l'`AbilityForm`, matrice
 >    `spellSupported`) : à lire avant d'ajouter un sort.
+>    **`docs/FIRE-RENDER.md`** — la référence du rendu du feu et de son
+>    éclairage (quads de flamme, liseré de braises, lumières agrégées,
+>    briques F1-F4) : à lire avant de toucher aux flammes ou au scorch.
 >
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.
