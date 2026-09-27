@@ -289,6 +289,43 @@ même EffectForm de coût à magnitude mise à l'échelle (§2.9 intact).
 - v2 (quand la carte aura ses overlays) : gués, tracé du cours ; plus tard
   froid/pureté quand ces esprits existeront.
 
+### E2.a — la Terre : pinceau extrait, bosse, creuser (2026-09-27)
+Cadre dev pour la Terre (2026-09-27 soir) : **Créer** = une bosse (ce qui
+est dessus est propulsé) ou, dans une autre version, tracer un mur ;
+**Détruire** = creuser en maintenant ; **Contrôler** = déplacer des objets
+liés à la terre (rochers ; l'intensité borne la taille contrôlable) ;
+**Comprendre** = les caractéristiques du terrain ; **Transformer** =
+changer la nature de la pierre (peindre de la pierre dure). Décision dev :
+la save emporte des assets (`.ter`) → E2.b.
+- `world/terrain/TerrainBrush` (headless, testé : raise+lower = zéro
+  bit-exact, falloff symétrique, arêtes de chunk partagées, publish
+  n'altère pas l'overlay publié, flatten contre la hauteur vive) :
+  `applyTerrainBrush(grids, published, chunkSize, params, centre, dt,
+  liveHeight)` + `publishBrushGrids`. `TerrainSculptTool` délègue
+  (comportement identique).
+- Scène : `Créer × Terre` → `applyEarthBump` (bosse instantanée de
+  `intensity` m ÷ dureté de la classe dominante du sol —
+  `SurfaceMaterialForm.hardness` via la table compilée —, publish commit,
+  cue `Cue.Spirit.Earth.Spawn` + shake ; **propulsion** : le joueur par
+  `CharacterBody::jump(√(2gh) × 1,5)`, les PNJ par un état aérien
+  cinématique nouveau `Npc.airHeight/airVelocity` — ils n'ont pas de corps
+  physique, ils sont collés au sol chaque frame — retombant sous gravité).
+  `Détruire × Terre` → `SpiritEarth` (creuser sous la visée tant que Q est
+  tenu : brush Lower `intensity` m/s ÷ dureté, preview à 20 Hz commit=false,
+  **commit une fois au relâché** — collisions, scatter, snap des cellules ;
+  upkeep 0,25 × coût/s ; cue `Cue.Spirit.Earth.Dig` toutes les 0,3 s).
+  L'eau réagit pendant la fouille (`notifySimGroundChanged` est dans la
+  closure de republish) : **creuser un canal devant une mare la draine, une
+  bosse devant une source fait un barrage** — la boucle From Dust.
+- Données : `SpellEarthBump` (create, 3 m, r 5, essence −8, cd 3 s),
+  `SpellEarthDig` (destroy, maintenu, 2 m/s, r 4, 12 s max, essence −6 puis
+  −1,5/s) ; matrice : Terre × Créer/Détruire × point.
+- Non fait ici (briques suivantes, questions au dev) : le mur (Créer v2),
+  Contrôler × Terre (rochers : il faut un corps mobile — les statiques Jolt
+  ne bougent pas — et `StaticForm.surfaceMaterial`), Comprendre × Terre,
+  Transformer × Terre (peindre la pierre : il n'existe pas de couche de
+  patches de matériaux, seulement de hauteurs), E2.b persistance.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

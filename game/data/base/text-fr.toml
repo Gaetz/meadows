@@ -1846,3 +1846,21 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'dir.NW'
     text = 'nord-ouest'
+
+[[records]]
+form = 'afb9167a-d1af-4faa-bb6e-decf254b7555'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthBump'
+    text = 'Bosse de terre'
+
+[[records]]
+form = 'bc6b750f-7d8b-4cb2-b493-f03ef26bb013'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthDig'
+    text = 'Creuser'

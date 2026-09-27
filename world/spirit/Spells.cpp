@@ -90,6 +90,15 @@ f32 launchSpeedForRange(f32 range, f32 gravity) {
 bool spellSupported(const SpellSpec& spec) {
     using render::terrain::SpiritKind;
     // The matrix grows one brick at a time (docs/SPELLS.md §4).
+    if (spec.element == SpiritKind::Earth) {
+        // The bump (create, instant) and the dig (destroy, channeled by
+        // nature) — both at the aimed ground.
+        if (spec.trajectory != SpellTrajectory::Point) {
+            return false;
+        }
+        return spec.verb == SpellVerb::Create ||
+               (spec.verb == SpellVerb::Destroy && spec.channeled);
+    }
     if (spec.element != SpiritKind::Water) {
         return false;
     }

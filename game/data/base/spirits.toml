@@ -650,3 +650,170 @@ new = true
 editorId = "CueSpiritWaterRead"
 tag = "Cue.Spirit.Water.Read"
 particles = "5b1e1700-0000-4000-8000-000000000074"
+
+# --- EARTH (docs/SPELLS.md, chantier ESPRITS E2.a) ---------------------
+# CREATE + EARTH: an instant mound of `intensity` metres (divided by the
+# ground's hardness) over `areaRadius`; what stands on it is thrown.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000091"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthBumpCost"
+attribute = "essence"
+op = "add"
+magnitude = -8.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000092"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthBumpCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritEarthBump"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000093"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthBump"
+cost = "5b1e1700-0000-4000-8000-000000000091"
+cooldown = "5b1e1700-0000-4000-8000-000000000092"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000094"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthBump"
+parent = "5b1e1700-0000-4000-8000-000000000093"
+name = "spell.earthBump"
+form = "create"
+element = "Earth"
+trajectory = "point"
+range = 72.0
+intensity = 3.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 5.0
+channeled = false
+
+# DESTROY + EARTH: dig `intensity` m/s (divided by hardness) under the aim
+# while Q is held, up to `duration` s; the ground is committed on release.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000095"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthDigCost"
+attribute = "essence"
+op = "add"
+magnitude = -6.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000096"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthDigCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritEarthDig"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000097"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthDig"
+cost = "5b1e1700-0000-4000-8000-000000000095"
+cooldown = "5b1e1700-0000-4000-8000-000000000096"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000098"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthDig"
+parent = "5b1e1700-0000-4000-8000-000000000097"
+name = "spell.earthDig"
+form = "destroy"
+element = "Earth"
+trajectory = "point"
+range = 72.0
+intensity = 2.0
+duration = 12.0
+areaShape = "disc"
+areaRadius = 4.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25
+
+# The dust of a mound rising / of the dig.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000078"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "DustBurst"
+shape = "cone"
+shapeRadius = 45.0
+burst = 60
+lifetime = 1.4
+lifetimeJitter = 0.5
+velocity = [0.0, 4.0, 0.0]
+velocityJitter = 2.5
+gravity = [0.0, -2.5, 0.0]
+sizeStart = 0.25
+sizeEnd = 0.9
+colorStart = [0.45, 0.36, 0.26, 0.7]
+colorEnd = [0.5, 0.42, 0.32, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000079"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "DigDust"
+shape = "cone"
+shapeRadius = 50.0
+burst = 12
+lifetime = 1.0
+lifetimeJitter = 0.3
+velocity = [0.0, 2.0, 0.0]
+velocityJitter = 1.2
+gravity = [0.0, -2.0, 0.0]
+sizeStart = 0.2
+sizeEnd = 0.6
+colorStart = [0.45, 0.36, 0.26, 0.6]
+colorEnd = [0.5, 0.42, 0.32, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000007a"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritEarthSpawn"
+tag = "Cue.Spirit.Earth.Spawn"
+particles = "5b1e1700-0000-4000-8000-000000000078"
+cameraShake = 0.35
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000007b"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritEarthDig"
+tag = "Cue.Spirit.Earth.Dig"
+particles = "5b1e1700-0000-4000-8000-000000000079"

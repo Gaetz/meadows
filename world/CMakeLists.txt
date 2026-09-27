@@ -31,6 +31,7 @@ add_library(meadows-world STATIC
     spirit/WaterReading.cpp
     spirit/SpiritSources.cpp
     terrain/MapRecords.cpp
+    terrain/TerrainBrush.cpp
     terrain/TerrainPatches.cpp
     terrain/TerrainRegions.cpp
     terrain/WaterBodiesBuilder.cpp

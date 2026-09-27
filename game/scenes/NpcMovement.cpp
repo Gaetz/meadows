@@ -114,6 +114,7 @@ bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     if (!groundNpc(ctx, transform.position)) {
         transform.position = before; // ledge: hold the edge, keep facing
     }
+        transform.position.y += npc.airHeight; // thrown: over the ground
     smoothYawToward(npc.yaw, std::atan2(dir.x, dir.z), 8.0f, dt);
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
@@ -134,6 +135,7 @@ void moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
     if (!groundNpc(ctx, transform.position)) {
         transform.position = before; // ledge: hold the edge, keep facing
     }
+        transform.position.y += npc.airHeight; // thrown: over the ground
     npc.yaw = faceYaw;
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));

@@ -99,6 +99,14 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     spec.trajectory = SpellTrajectory::Point;
     spec.element = SpiritKind::Fire;
     CHECK_FALSE(spellSupported(spec)); // fire waits for E3
+    spec.element = SpiritKind::Earth;
+    CHECK(spellSupported(spec)); // the bump
+    spec.verb = SpellVerb::Destroy;
+    CHECK_FALSE(spellSupported(spec)); // the dig is channeled by nature
+    spec.channeled = true;
+    CHECK(spellSupported(spec));
+    spec.channeled = false;
+    spec.verb = SpellVerb::Create;
     spec.element = SpiritKind::Water;
     spec.verb = SpellVerb::Destroy;
     CHECK(spellSupported(spec)); // a draining source

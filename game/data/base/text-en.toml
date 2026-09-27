@@ -1837,3 +1837,21 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'dir.NW'
     text = 'north-west'
+
+[[records]]
+form = 'e02326dc-c5a5-4375-a414-565200547047'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthBump'
+    text = 'Earth Mound'
+
+[[records]]
+form = '1d464aaa-25e0-4d05-87f4-16d750a4af63'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthDig'
+    text = 'Dig'

@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "engine/render/landscape/TerrainNoise.hpp" // terrain::height (thrown NPCs)
+
 #include "data/forms/CoreForms.hpp"       // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
 #include "engine/core/Log.hpp"            // the downed-edge trace
@@ -86,6 +88,22 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         Npc& npc = *npcPtr;
         auto& transform = npc.entity.get_mut<world::Transform>();
         f32 idleDecay = 10.0f;
+        // Thrown by an earth bump: the offset over the ground snap falls
+        // back under gravity (the movement re-adds it after grounding).
+        if (npc.airHeight > 0.0f || npc.airVelocity > 0.0f) {
+            npc.airVelocity -= 9.81f * dt;
+            npc.airHeight = glm::max(0.0f, npc.airHeight + npc.airVelocity * dt);
+            if (npc.airHeight <= 0.0f) {
+                npc.airVelocity = 0.0f;
+            }
+            if (!ctx.interiorMode) {
+                transform.position.y =
+                    render::terrain::height(ctx.terrainParams,
+                                            transform.position.x,
+                                            transform.position.z) +
+                    npc.airHeight;
+            }
+        }
 
         // NPCs run the full character pipeline too (effects, stagger, life
         // state) — that's where State.Dead comes from.

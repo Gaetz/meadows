@@ -102,7 +102,12 @@ refilled by the lake at its weir rate), `control` as `point`
 the aim; release drops it where you look), and `understand` as `point`
 (a reading of the aimed water — body, depth, current, volume — or, on
 dry ground, where the nearest water lies; `duration` is how long the
-block stays on the HUD). A spell outside that set is
+block stays on the HUD). For **Earth**: `create` as `point` raises an
+instant mound of `intensity` metres (divided by the ground's hardness, a
+`SurfaceMaterialForm` field) that throws whoever stands on it, and
+`destroy` as `point` (channeled) digs `intensity` metres per second under
+the aim while the key is held — water reacts live, so a mound in front of
+a spring dams it and a trench drains a pool. A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

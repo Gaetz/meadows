@@ -103,7 +103,11 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Détruire × Eau | — | ✅ **drain** : la même source, débit négatif (`SpellWaterDrain`, sphère 2 m, 3 s) | ⏳ | ⏳ |
 | Contrôler × Eau | — | ✅ **emprise** (maintenu par nature) : l'eau visée est aspirée dans un volume porté qui suit la visée, lâché au relâché (`SpellWaterHold`) | — | — |
 | Comprendre × Eau | — | ✅ **intelligo** : corps (lac/rivière/mer/source d'esprit/eau stagnante), profondeur, courant, volume (exact dans la fenêtre de sim, estimé sinon) ; sur du sec, l'eau la plus proche (`SpellWaterUnderstand`) | — | — |
-| Créer × Terre | — | ⏳ (E2 : `push_terrain`) | — | — |
+| Créer × Terre | — | ✅ **bosse** instantanée (`SpellEarthBump`, `intensity` m ÷ dureté du sol) qui propulse ce qui est dessus | — | — |
+| Détruire × Terre | — | ✅ **creuser** en maintenant (`SpellEarthDig`, `intensity` m/s ÷ dureté, commit au relâché) | — | — |
+| Contrôler × Terre | — | ⏳ rochers déplacés (intensité = taille max) | — | — |
+| Comprendre × Terre | — | ⏳ caractéristiques du terrain | — | — |
+| Transformer × Terre | — | ⏳ peindre la pierre (dureté) | — | — |
 | Créer × Feu | — | ⏳ (E3) | ⏳ | ⏳ |
 | Créer × Vent | — | — | ⏳ (E4) | — |
 | Détruire / Transformer / Contrôler / Comprendre × autres | ⏳ | ⏳ | ⏳ | ⏳ |

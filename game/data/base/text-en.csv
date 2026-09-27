@@ -203,3 +203,5 @@ dir.S,south
 dir.SW,south-west
 dir.W,west
 dir.NW,north-west
+spell.earthBump,Earth Mound
+spell.earthDig,Dig

@@ -63,94 +63,23 @@ void TerrainSculptTool::endStroke(const SculptContext& ctx) {
     publish(ctx, /*commit=*/true); // the permanent publish, once per stroke
 }
 
-render::HeightPatch& TerrainSculptTool::gridFor(const SculptContext& ctx,
-                                                i32 cx, i32 cz) {
-    const u64 key = render::HeightPatches::keyOf(cx, cz);
-    const auto it = grids.find(key);
-    if (it != grids.end()) {
-        return it->second;
-    }
-    // Seed from the published overlay when the chunk is already authored.
-    if (ctx.publishedPatches) {
-        if (const auto existing = ctx.publishedPatches->chunks.find(key);
-            existing != ctx.publishedPatches->chunks.end()) {
-            return grids.emplace(key, existing->second).first->second;
-        }
-    }
-    render::HeightPatch fresh;
-    fresh.samples = 65;
-    fresh.deltas.assign(65 * 65, 0.0f);
-    return grids.emplace(key, std::move(fresh)).first->second;
-}
-
 void TerrainSculptTool::applyBrush(const SculptContext& ctx, const Vec3& center,
                                    f32 dt) {
-    // One source of truth for the grid size (was a hand-mirrored 64.0f).
-    constexpr f32 kChunk = render::TerrainSystem::kChunkSize;
-    const i32 minCx =
-        static_cast<i32>(std::floor((center.x - brushRadius) / kChunk));
-    const i32 maxCx =
-        static_cast<i32>(std::floor((center.x + brushRadius) / kChunk));
-    const i32 minCz =
-        static_cast<i32>(std::floor((center.z - brushRadius) / kChunk));
-    const i32 maxCz =
-        static_cast<i32>(std::floor((center.z + brushRadius) / kChunk));
-    for (i32 cz = minCz; cz <= maxCz; ++cz) {
-        for (i32 cx = minCx; cx <= maxCx; ++cx) {
-            render::HeightPatch& grid = gridFor(ctx, cx, cz);
-            for (u32 row = 0; row < grid.samples; ++row) {
-                for (u32 col = 0; col < grid.samples; ++col) {
-                    const f32 x =
-                        static_cast<f32>(cx) * kChunk + static_cast<f32>(col);
-                    const f32 z =
-                        static_cast<f32>(cz) * kChunk + static_cast<f32>(row);
-                    const f32 dx = x - center.x;
-                    const f32 dz = z - center.z;
-                    const f32 dist = std::sqrt(dx * dx + dz * dz);
-                    if (dist >= brushRadius) {
-                        continue;
-                    }
-                    const f32 t = 1.0f - dist / brushRadius;
-                    const f32 falloff = t * t * (3.0f - 2.0f * t);
-                    f32& delta = grid.deltas[row * grid.samples + col];
-                    switch (brushKind) {
-                    case 0: // raise
-                        delta += brushStrength * falloff * dt;
-                        break;
-                    case 1: // lower
-                        delta -= brushStrength * falloff * dt;
-                        break;
-                    case 2: { // flatten toward the stroke-start height:
-                        // work against the LIVE height (base + published
-                        // patch); the working delta absorbs the gap.
-                        const f32 current =
-                            render::terrain::height(ctx.terrainParams, x, z);
-                        const f32 gap = flattenTarget - current;
-                        delta += gap * glm::min(2.5f * falloff * dt, 1.0f);
-                        break;
-                    }
-                    case 3: { // smooth: relax toward the neighbour average
-                        const u32 c0 = col > 0 ? col - 1 : col;
-                        const u32 c1 = glm::min(col + 1, grid.samples - 1);
-                        const u32 r0 = row > 0 ? row - 1 : row;
-                        const u32 r1 = glm::min(row + 1, grid.samples - 1);
-                        const f32 average =
-                            (grid.deltas[row * grid.samples + c0] +
-                             grid.deltas[row * grid.samples + c1] +
-                             grid.deltas[r0 * grid.samples + col] +
-                             grid.deltas[r1 * grid.samples + col]) *
-                            0.25f;
-                        delta += (average - delta) *
-                                 glm::min(4.0f * falloff * dt, 1.0f);
-                        break;
-                    }
-                    default:
-                        break;
-                    }
-                }
-            }
-        }
+    world::BrushParams brush;
+    switch (brushKind) {
+    case 1: brush.kind = world::BrushKind::Lower; break;
+    case 2: brush.kind = world::BrushKind::Flatten; break;
+    case 3: brush.kind = world::BrushKind::Smooth; break;
+    default: brush.kind = world::BrushKind::Raise; break;
     }
+    brush.radius = brushRadius;
+    brush.strength = brushStrength;
+    brush.flattenTarget = flattenTarget;
+    const render::TerrainParams& params = ctx.terrainParams;
+    world::applyTerrainBrush(
+        grids, ctx.publishedPatches, render::TerrainSystem::kChunkSize, brush,
+        { center.x, center.z }, dt,
+        [&params](f32 x, f32 z) { return render::terrain::height(params, x, z); });
 }
 
 void TerrainSculptTool::publish(const SculptContext& ctx, bool commit) {
@@ -159,18 +88,12 @@ void TerrainSculptTool::publish(const SculptContext& ctx, bool commit) {
     }
     // New immutable overlay = published chunks overridden by the working grids;
     // in-flight workers keep the old instance alive through their copied
-    // TerrainParams (shared_ptr). The scene swaps it in and rebuilds.
-    auto next = std::make_shared<render::HeightPatches>();
-    next->chunkSize = render::TerrainSystem::kChunkSize;
-    if (ctx.publishedPatches) {
-        next->chunks = ctx.publishedPatches->chunks;
-    }
+    // TerrainParams (shared_ptr). The scene swaps it in and rebuilds only
+    // the changed chunks.
     std::vector<u64> changed;
-    changed.reserve(grids.size());
-    for (const auto& [key, grid] : grids) {
-        next->chunks[key] = grid;
-        changed.push_back(key); // only these chunks need a rebuild
-    }
+    auto next = world::publishBrushGrids(grids, ctx.publishedPatches,
+                                         render::TerrainSystem::kChunkSize,
+                                         changed);
     ctx.republishTerrain(std::move(next), changed, commit);
 }
 

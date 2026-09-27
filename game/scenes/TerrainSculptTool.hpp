@@ -8,6 +8,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // render::TerrainParams, render::terrain::height
 #include "engine/terrain/HeightPatches.hpp"         // render::HeightPatch / HeightPatches
+#include "world/terrain/TerrainBrush.hpp"           // the headless brush
 
 namespace data {
 class FormDatabase;
@@ -40,10 +41,10 @@ struct SculptContext {
 };
 
 // Terrain sculpt, extracted from LandscapeScene.
-// Brushes edit WORKING grids; a stroke's release publishes a fresh
-// immutable HeightPatches (in-flight workers stay race-free). "Save terrain"
-// writes .ter files + TerrainPatchForm records into the mod. Owns all sculpt
-// state; the scene owns interaction (ray under cursor) and the publish effects.
+// The brush itself is world/terrain/TerrainBrush (shared with the earth
+// spirit); this tool owns the editor state, the stroke lifecycle and
+// "Save terrain" (.ter files + TerrainPatchForm records into the mod). The
+// scene owns interaction (ray under cursor) and the publish effects.
 class TerrainSculptTool {
 public:
     bool active() const { return mode; }
@@ -59,7 +60,6 @@ public:
     void endStroke(const SculptContext& ctx);
 
 private:
-    render::HeightPatch& gridFor(const SculptContext& ctx, i32 cx, i32 cz);
     void applyBrush(const SculptContext& ctx, const Vec3& center, f32 dt);
     void publish(const SculptContext& ctx, bool commit);
     void saveToMod(const SculptContext& ctx);
@@ -71,7 +71,7 @@ private:
     bool strokeActive { false };
     f32 flattenTarget { 0.0f }; // grabbed at stroke start
     f32 previewTimer { 0.0f };  // throttles the live-preview re-mesh (~20 Hz)
-    std::unordered_map<u64, render::HeightPatch> grids;
+    world::BrushGrids grids;
 };
 
 } // namespace game

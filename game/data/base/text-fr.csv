@@ -204,3 +204,5 @@ dir.S,sud
 dir.SW,sud-ouest
 dir.W,ouest
 dir.NW,nord-ouest
+spell.earthBump,Bosse de terre
+spell.earthDig,Creuser

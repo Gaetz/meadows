@@ -122,6 +122,10 @@ struct Npc {
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
+    // Thrown (an earth bump under the feet): a kinematic vertical
+    // offset over the ground snap, falling back under gravity.
+    f32 airHeight { 0.0f };
+    f32 airVelocity { 0.0f };
     // A fleeing fighter reached the interior's exit: the scene sweep
     // despawns him and may respawn him outside (LandscapeScene).
     bool escapedInterior { false };

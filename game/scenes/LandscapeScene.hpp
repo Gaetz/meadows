@@ -29,6 +29,7 @@
 #include "game/scenes/SpiritDirector.hpp"
 #include "world/spirit/Spells.hpp"
 #include "world/spirit/WaterReading.hpp"
+#include "world/terrain/TerrainBrush.hpp"
 #include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -553,7 +554,9 @@ private:
         // Source: placed at (x, z). Jet: streamed from the caster's
         // nozzle along the aim at `speed`. Hold: the control spell's
         // held volume, drawn at the aim while the key is held.
-        enum class Mode : u8 { Source, Jet, Hold };
+        // EarthBump: an instant mound at (x, z) that throws what stands
+        // on it. EarthDig: the ground lowered under the aim while held.
+        enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthDig };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
@@ -570,6 +573,28 @@ private:
     Vec3 spiritNozzle() const;
     // The stream is lumps launched at this cadence (seconds).
     static constexpr f32 kJetSphereInterval = 0.12f;
+    // Earth: the dig in progress (world/terrain/TerrainBrush working
+    // grids, previewed at ~20 Hz, committed once on release), and the
+    // bump. rate = metres per second lowered (dig) / metres raised (bump),
+    // divided by the ground's hardness (SurfaceMaterialForm).
+    struct SpiritEarth {
+        world::BrushGrids grids;
+        f32 rate { 0.0f };
+        f32 radius { 4.0f };
+        f32 remaining { 0.0f };
+        f32 previewTimer { 0.0f };
+        f32 cueTimer { 0.0f };
+        f32 costPeriod { 1.0f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        core::Guid ability;
+    };
+    std::optional<SpiritEarth> spiritEarth;
+    void applyEarthBump(const PendingSpiritAction& action);
+    void updateSpiritEarth(f32 dt);
+    void finishSpiritEarth(bool commit);
+    f32 groundHardnessAt(f32 x, f32 z) const;
+    static constexpr f32 kBumpLaunchScale = 1.5f; // x the free-fall speed from the mound's height
     // Understand x Water: the reading shown by the HUD for a while
     // (world/spirit/WaterReading, formatted here from the loc keys).
     vector<str> spiritReading; // one line per HUD slot (kReadingLines)
