@@ -4544,7 +4544,7 @@ std::optional<Vec3> LandscapeScene::aimGround() const {
         return std::nullopt;
     }
     const phys::RayHit hit = physics->rayCast(
-        flyCamera.camera.position, flyCamera.camera.forward(), 160.0f);
+        flyCamera.camera.position, flyCamera.camera.forward(), 320.0f);
     if (!hit.hit) {
         return std::nullopt;
     }
