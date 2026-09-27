@@ -102,7 +102,8 @@ bool spellSupported(const SpellSpec& spec) {
             return spec.trajectory == SpellTrajectory::Point && spec.channeled;
         case SpellVerb::Understand: // the ground reading
             return spec.trajectory == SpellTrajectory::Point;
-        case SpellVerb::Control:
+        case SpellVerb::Control: // a rock seized and carried, channeled
+            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
         case SpellVerb::Transform:
             break;
         }

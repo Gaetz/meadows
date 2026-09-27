@@ -1315,6 +1315,19 @@ void LandscapeScene::update(f32 dt) {
     if (physics && !simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "physics" };
         physics->tick(dt);
+        // Seized rocks: the entity follows its body (rolling, resting).
+        for (auto it = spiritRocks.begin(); it != spiritRocks.end();) {
+            if (!it->entity.is_alive()) {
+                physics->removeBody(it->body); // its cell unloaded
+                it = spiritRocks.erase(it);
+                continue;
+            }
+            const phys::PhysicsWorld::BodyPose pose = physics->bodyPose(it->body);
+            auto& transform = it->entity.get_mut<world::Transform>();
+            transform.position = pose.position;
+            transform.rotation = pose.rotation;
+            ++it;
+        }
         if (!interiorMode) { // interiors have no terrain to collide with
             const Vec3 focus =
                 (mode == SceneMode::Play) && playerController.body()
@@ -1703,6 +1716,7 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritHold(dt);
         updateSpiritEarth(dt);
         updateSpiritLine();
+        updateSpiritRocks(dt);
         updateSpiritReading(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
@@ -2107,6 +2121,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     releaseSpiritHold(false);
     finishSpiritEarth(false);
     spiritLine.reset();
+    releaseSpiritRocks();
     pushRuntimeWaterSources(); // this map's springs into the sim
     // The whole world changed: a world-sized event keeps the
     // contentTouchedSince contract (every bump records its rects).
@@ -4700,6 +4715,12 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
                 castGroundReading(*aimedAt, spell.duration, spell.channeled);
                 return;
             }
+            if (spell.verb == world::SpellVerb::Control) {
+                action.rate = spell.intensity; // the largest rock it lifts
+                action.radius = spell.areaRadius; // the reach around the aim
+                action.mode = PendingSpiritAction::Mode::EarthSeize;
+                break;
+            }
             action.rate = spell.intensity; // the sign lives in the mode
             action.mode = spell.verb == world::SpellVerb::Create
                               ? (spell.channeled
@@ -4750,6 +4771,10 @@ void LandscapeScene::applyPendingSpiritActions() {
         if (action.mode == PendingSpiritAction::Mode::EarthBump) {
             applyEarthBump(action);
             continue; // no water source involved
+        }
+        if (action.mode == PendingSpiritAction::Mode::EarthSeize) {
+            seizeRock(action);
+            continue;
         }
         if (action.mode == PendingSpiritAction::Mode::EarthDig ||
             action.mode == PendingSpiritAction::Mode::EarthBrush) {
@@ -5155,6 +5180,139 @@ void LandscapeScene::finishSpiritEarth(bool commit) {
                                          render::TerrainSystem::kChunkSize,
                                          changed);
     makeSculptContext().republishTerrain(std::move(next), changed, true);
+}
+
+void LandscapeScene::seizeRock(const PendingSpiritAction& action) {
+    // The nearest rock prop (StaticForm.surfaceMaterial "rock") within
+    // reach of the aim, no larger than the spell's intensity in metres
+    // (its bounding radius) — a static body handed to the spirit and
+    // re-created as a dynamic convex hull.
+    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
+    const Vec2 aim { action.x, action.z };
+    ecs::Entity best;
+    f32 bestDist = action.radius;
+    f32 bestRadius = 0.0f;
+    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
+                           const world::RefId& ref) {
+        const reflect::TypeInfo* type = forms.typeOf(ref.base);
+        if (!type || !type->isA(staticType.id) ||
+            !e.has<world::MeshRender>()) {
+            return;
+        }
+        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
+        if (!form || form->surfaceMaterial != "rock") {
+            return;
+        }
+        for (const SpiritRock& rock : spiritRocks) {
+            if (rock.entity == ecs::Entity { e }) {
+                return; // already ours (free or held)
+            }
+        }
+        const render::MeshCache::CpuMesh* cpu =
+            meshCache->cpuMesh(e.get<world::MeshRender>().model);
+        if (!cpu) {
+            return;
+        }
+        const Vec3 half = (cpu->boundsMax - cpu->boundsMin) * 0.5f *
+                          transform.scale;
+        const f32 radius = glm::max(half.x, glm::max(half.y, half.z));
+        if (radius > action.rate) {
+            return; // too big for this spell
+        }
+        const f32 dist = glm::distance(
+            Vec2 { transform.position.x, transform.position.z }, aim);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = ecs::Entity { e };
+            bestRadius = radius;
+        }
+    });
+    if (!best.is_alive()) {
+        interaction.say(texts.get("spirit.noRock"), 1.5f);
+        return;
+    }
+    const auto& transform = best.get<world::Transform>();
+    const render::MeshCache::CpuMesh* cpu =
+        meshCache->cpuMesh(best.get<world::MeshRender>().model);
+    const Vec3 extent = (cpu->boundsMax - cpu->boundsMin) * transform.scale;
+    const f32 mass = glm::max(extent.x * extent.y * extent.z, 0.05f) * 2000.0f;
+    const phys::BodyId body = physics->addDynamicConvex(
+        cpu->positions.data(), static_cast<u32>(cpu->positions.size()),
+        transform.position, transform.rotation, transform.scale, mass);
+    if (body == 0) {
+        return;
+    }
+    if (const phys::BodyId old = streaming.takeStaticCollider(best.id())) {
+        physics->removeBody(old);
+    }
+    physics->setKinematic(body, true);
+    SpiritRock rock;
+    rock.entity = best;
+    rock.body = body;
+    rock.held = true;
+    rock.radius = bestRadius;
+    rock.lastTarget = transform.position;
+    rock.costPeriod = action.costPeriod;
+    rock.upkeepScale = action.upkeepScale;
+    rock.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+    spiritRocks.push_back(rock);
+    fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig", transform.position, 1.0f });
+}
+
+void LandscapeScene::updateSpiritRocks(f32 dt) {
+    const bool held =
+        actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    for (SpiritRock& rock : spiritRocks) {
+        if (!rock.held || !rock.entity.is_alive()) {
+            continue;
+        }
+        bool release = !held || !playerEntity.is_alive();
+        if (!release) {
+            rock.costClock += dt;
+            if (rock.costClock >= rock.costPeriod) {
+                rock.costClock -= rock.costPeriod;
+                const auto* ability = forms.find<gameplay::AbilityForm>(rock.ability);
+                auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+                auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+                if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                         { forms, gameTags },
+                                                         rock.upkeepScale)) {
+                    interaction.say(texts.get("spirit.refused"), 1.5f);
+                    release = true;
+                }
+            }
+        }
+        if (release) {
+            // Let go: dynamic again, thrown with the carry velocity.
+            rock.held = false;
+            physics->setKinematic(rock.body, false);
+            const Vec3 velocity =
+                dt > 1e-4f ? (rock.lastTarget - rock.entity.get<world::Transform>().position) / dt
+                           : Vec3 { 0.0f };
+            physics->setLinearVelocity(rock.body, velocity);
+            continue;
+        }
+        // Carried over the aim (or ahead of the eye when nothing is aimed):
+        // the body is driven kinematically so it shoves what it meets.
+        const std::optional<Vec3> at = aimGround();
+        Vec3 target = at ? *at + Vec3 { 0.0f, 2.5f + rock.radius, 0.0f }
+                         : flyCamera.camera.position +
+                               flyCamera.camera.forward() * (6.0f + rock.radius);
+        const Vec3 previous = rock.lastTarget;
+        rock.lastTarget = target;
+        const Quat rotation = rock.entity.get<world::Transform>().rotation;
+        physics->moveKinematic(rock.body, target, rotation, dt);
+        (void)previous;
+    }
+}
+
+void LandscapeScene::releaseSpiritRocks() {
+    if (physics) {
+        for (const SpiritRock& rock : spiritRocks) {
+            physics->removeBody(rock.body);
+        }
+    }
+    spiritRocks.clear();
 }
 
 void LandscapeScene::updateSpiritLine() {

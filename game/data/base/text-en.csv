@@ -218,3 +218,5 @@ material.rock,Rocky
 material.cliff,Bare cliff
 material.snow,Snowy
 material.sand,Sandy
+spell.earthControl,Seize Rock
+spirit.noRock,No rock small enough within reach.

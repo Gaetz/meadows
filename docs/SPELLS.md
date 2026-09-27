@@ -106,7 +106,7 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Créer × Terre | — | ✅ **bosse** instantanée (`SpellEarthBump`) qui propulse ce qui est dessus ; ✅ **pinceau de pierre** maintenu (`SpellEarthPaint`, la crête suit la visée) | — | — |
 | Créer × Terre (`line`) | | ✅ **mur de pierre** (`SpellEarthWall`) : de l'appui au relâché, `intensity` m de haut, `areaRadius` de demi-largeur | | |
 | Détruire × Terre | — | ✅ **creuser** en maintenant (`SpellEarthDig`, `intensity` m/s ÷ dureté, commit au relâché) | — | — |
-| Contrôler × Terre | — | ⏳ E2.e : rochers à physique dynamique (intensité = taille max ; roulent, pèsent) | — | — |
+| Contrôler × Terre | — | ✅ **emprise de pierre** (`SpellEarthControl`, maintenu) : le rocher le plus proche de la visée dont le rayon ≤ `intensity` devient un corps dynamique porté au-dessus de la visée, relâché il vole et roule | — | — |
 | Comprendre × Terre | — | ✅ **intelligo** : sol + dureté, pente + altitude, humidité + climat, inflammabilité + moiteur (`SpellEarthUnderstand`, maintenu) | — | — |
 | Transformer × … | — | ⏳ **chantier TRANSFORMATIONS** (décision dev 2026-09-27) : eau → glace, peindre la pierre… quand les éléments auront leurs noyaux | — | — |
 | Créer × Feu | — | ⏳ (E3) | ⏳ | ⏳ |

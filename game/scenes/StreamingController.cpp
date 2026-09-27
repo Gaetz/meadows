@@ -25,6 +25,18 @@ void StreamingController::reset(phys::PhysicsWorld* physics) {
     }
     staticColliders.clear();
     nonCollidable.clear();
+    seized.clear();
+}
+
+phys::BodyId StreamingController::takeStaticCollider(u64 entityId) {
+    const auto it = staticColliders.find(entityId);
+    if (it == staticColliders.end()) {
+        return 0;
+    }
+    const phys::BodyId body = it->second;
+    staticColliders.erase(it);
+    seized.insert(entityId);
+    return body;
 }
 
 void StreamingController::updateStaticColliders(const StreamingContext& ctx) {
@@ -61,7 +73,8 @@ void StreamingController::updateStaticColliders(const StreamingContext& ctx) {
         [&](flecs::entity e, const world::Transform& transform,
             const world::RefId& ref, const world::MeshRender& mesh) {
             const u64 id = e.id();
-            if (staticColliders.contains(id) || nonCollidable.contains(id)) {
+            if (staticColliders.contains(id) || nonCollidable.contains(id) ||
+                seized.contains(id)) {
                 return;
             }
             // `collides` read through reflection: any base form declaring

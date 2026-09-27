@@ -176,3 +176,45 @@ TEST_CASE("sphere casts sweep into geometry a ray would miss") {
         { 2.0f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f, 0.5f);
     CHECK_FALSE(wide.hit);
 }
+
+TEST_CASE("a dynamic convex rock falls onto the floor, rests, and can be carried kinematically") {
+    phys::PhysicsWorld world;
+    world.addStaticBox({ 50.0f, 1.0f, 50.0f }, { 0.0f, -1.0f, 0.0f });
+    // A unit cube's corners: the hull is the cube.
+    const Vec3 corners[8] = { { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 },
+                              { -1, 1, -1 },  { -1, -1, 1 }, { 1, -1, 1 },
+                              { 1, 1, 1 },    { -1, 1, 1 } };
+    const phys::BodyId rock = world.addDynamicConvex(
+        corners, 8, { 0.0f, 5.0f, 0.0f }, { 1.0f, 0.0f, 0.0f, 0.0f },
+        { 0.5f, 0.5f, 0.5f }, 500.0f);
+    REQUIRE(rock != 0);
+    constexpr f32 dt = 1.0f / 60.0f;
+    for (int i = 0; i < 240; ++i) {
+        world.tick(dt);
+    }
+    // Rests on the floor: half a metre up (the scaled half extent).
+    phys::PhysicsWorld::BodyPose pose = world.bodyPose(rock);
+    CHECK(pose.position.y == doctest::Approx(0.5f).epsilon(0.1));
+
+    // Carried: kinematic, driven to a target in the air, gravity off.
+    world.setKinematic(rock, true);
+    const Vec3 target { 3.0f, 4.0f, 0.0f };
+    for (int i = 0; i < 60; ++i) {
+        world.moveKinematic(rock, target, { 1.0f, 0.0f, 0.0f, 0.0f }, dt);
+        world.tick(dt);
+    }
+    pose = world.bodyPose(rock);
+    CHECK(pose.position.x == doctest::Approx(3.0f).epsilon(0.05));
+    CHECK(pose.position.y == doctest::Approx(4.0f).epsilon(0.05));
+
+    // Released with a throw: dynamic again, flies then lands further on.
+    world.setKinematic(rock, false);
+    world.setLinearVelocity(rock, { 4.0f, 0.0f, 0.0f });
+    for (int i = 0; i < 300; ++i) {
+        world.tick(dt);
+    }
+    pose = world.bodyPose(rock);
+    CHECK(pose.position.x > 4.0f);
+    CHECK(pose.position.y == doctest::Approx(0.5f).epsilon(0.2));
+    world.removeBody(rock);
+}

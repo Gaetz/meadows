@@ -62,6 +62,10 @@ public:
     // Per frame: static bodies follow spawns + mesh residency (budgeted cook).
     void updateStaticColliders(const StreamingContext& ctx);
 
+    // Hands an entity's static body over to another owner (the earth
+    // spirit seizing a rock): erased here and never re-cooked; 0 if none.
+    phys::BodyId takeStaticCollider(u64 entityId);
+
     // onExit teardown: remove every owned static body (before the physics
     // world is destroyed) and drop the caches, so a re-enter starts clean.
     void reset(phys::PhysicsWorld* physics);
@@ -76,6 +80,7 @@ private:
     // (snapCellEntities clears it on any ring change).
     std::unordered_map<u64, phys::BodyId> staticColliders;
     std::unordered_set<u64> nonCollidable;
+    std::unordered_set<u64> seized; // bodies handed over (never re-cooked)
 };
 
 } // namespace game

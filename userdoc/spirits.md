@@ -107,7 +107,13 @@ instant mound of `intensity` metres (divided by the ground's hardness, a
 `SurfaceMaterialForm` field) that throws whoever stands on it, and
 `destroy` as `point` (channeled) digs `intensity` metres per second under
 the aim while the key is held — water reacts live, so a mound in front of
-a spring dams it and a trench drains a pool. A spell outside that set is
+a spring dams it and a trench drains a pool. `create` channeled is the
+stone brush (a ridge follows the aim), `create` as `line` a straight wall
+from the press spot to the release spot, `understand` reads the ground,
+and `control` (channeled) seizes the nearest rock prop no bigger than
+`intensity` metres — a `StaticForm` whose `surfaceMaterial` is `"rock"` —
+carries it over the aim and lets it fly and roll on release (a real
+physics body from then on). A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

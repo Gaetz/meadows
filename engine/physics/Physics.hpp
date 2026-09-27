@@ -67,6 +67,27 @@ public:
 
     void removeBody(BodyId body);
 
+    // --- Dynamic bodies (the earth spirit's controlled rocks) ---------
+    // A convex hull of the model's vertices (scale baked in) on the
+    // MOVING layer: gravity, friction, sleep — it rolls, rests and pushes
+    // what it meets. `mass` in kg. Returns 0 on failure.
+    BodyId addDynamicConvex(const Vec3* vertices, u32 vertexCount,
+                            const Vec3& position, const Quat& rotation,
+                            const Vec3& scale, f32 mass);
+    // Kinematic (held: driven to a target, moves through the world and
+    // shoves what it meets) vs dynamic (free: gravity, collisions).
+    void setKinematic(BodyId body, bool kinematic);
+    // Kinematic drive: reach `position`/`rotation` over `dt` seconds.
+    void moveKinematic(BodyId body, const Vec3& position,
+                       const Quat& rotation, f32 dt);
+    void setLinearVelocity(BodyId body, const Vec3& velocity);
+    struct BodyPose {
+        Vec3 position { 0.0f };
+        Quat rotation { 1.0f, 0.0f, 0.0f, 0.0f };
+        bool active { false }; // false once the body sleeps
+    };
+    BodyPose bodyPose(BodyId body) const;
+
     // First hit along a ray (interaction, camera, combat traces).
     RayHit rayCast(const Vec3& from, const Vec3& direction,
                    f32 maxDistance) const;

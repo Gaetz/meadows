@@ -108,6 +108,11 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     spec.trajectory = SpellTrajectory::Point;
     spec.verb = SpellVerb::Understand;
     CHECK(spellSupported(spec)); // the ground reading
+    spec.verb = SpellVerb::Control;
+    CHECK_FALSE(spellSupported(spec)); // seizing a rock is channeled
+    spec.channeled = true;
+    CHECK(spellSupported(spec));
+    spec.channeled = false;
     spec.verb = SpellVerb::Create;
     spec.verb = SpellVerb::Destroy;
     CHECK_FALSE(spellSupported(spec)); // the dig is channeled by nature

@@ -559,8 +559,10 @@ private:
         // EarthBrush: the ground raised (create) or lowered (destroy) under
         // the aim while held. EarthWall: a ridge from the press spot to the
         // release spot.
+        // EarthSeize: the nearest rock within `radius` of the aim, no
+        // bigger than `rate` metres, carried while held.
         enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
-                               EarthDig, EarthWall };
+                               EarthDig, EarthWall, EarthSeize };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
@@ -599,6 +601,24 @@ private:
     void updateSpiritEarth(f32 dt);
     void finishSpiritEarth(bool commit);
     f32 groundHardnessAt(f32 x, f32 z) const;
+    // Rocks the earth spirit seized: their static body became a dynamic
+    // convex hull (engine/physics), carried kinematically while held,
+    // free afterwards — the entity's Transform follows the body.
+    struct SpiritRock {
+        ecs::Entity entity;
+        phys::BodyId body { 0 };
+        bool held { false };
+        f32 radius { 1.0f };
+        Vec3 lastTarget { 0.0f };
+        f32 costPeriod { 1.0f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        core::Guid ability;
+    };
+    vector<SpiritRock> spiritRocks;
+    void seizeRock(const PendingSpiritAction& action);
+    void updateSpiritRocks(f32 dt);
+    void releaseSpiritRocks(); // map swap / exit: bodies go with the world
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

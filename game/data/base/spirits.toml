@@ -14,6 +14,7 @@
 [plugin]
 id = "5b1e1700-0000-4000-8000-0000000000ff"
 name = "true-adventurer-spirits"
+dependencies = ["7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f"] # adventure: the rock props
 
 # --- Spirits ---------------------------------------------------------------
 
@@ -976,3 +977,71 @@ areaRadius = 2.0
 channeled = true
 costPeriod = 1.0
 upkeepScale = 0.0
+
+# CONTROL + EARTH, channeled: seize the nearest rock within `areaRadius` of
+# the aim that is no bigger than `intensity` metres, carry it over the aim
+# while Q is held, let it go (it flies with the carry, then rolls).
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a5"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthControlCost"
+attribute = "essence"
+op = "add"
+magnitude = -8.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a6"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthControlCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritEarthControl"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a7"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthControl"
+cost = "5b1e1700-0000-4000-8000-0000000000a5"
+cooldown = "5b1e1700-0000-4000-8000-0000000000a6"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a8"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthControl"
+parent = "5b1e1700-0000-4000-8000-0000000000a7"
+name = "spell.earthControl"
+form = "control"
+element = "Earth"
+trajectory = "point"
+range = 216.0
+intensity = 3.0
+duration = 60.0
+areaShape = "disc"
+areaRadius = 8.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25
+
+# The rock props are made of rock (what the earth spirit may seize).
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c4"
+type = "StaticForm"
+[records.fields]
+surfaceMaterial = "rock"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c5"
+type = "StaticForm"
+[records.fields]
+surfaceMaterial = "rock"

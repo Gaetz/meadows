@@ -44,6 +44,9 @@ struct StaticForm : Form {
     // authored y is an offset above the terrain (props); false = authored
     // y is ABSOLUTE (building modules on a leveled pad).
     bool snapToGround { true };
+    // The SurfaceMaterialForm class this prop is made of ("rock",
+    // "wood"...; empty = inert): what the spirits may seize or burn.
+    str surfaceMaterial;
 
     REFLECT_BEGIN(StaticForm, Form)
         REFLECT_FIELD(displayName)
@@ -52,6 +55,7 @@ struct StaticForm : Form {
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(collides)
         REFLECT_FIELD(snapToGround)
+        REFLECT_FIELD(surfaceMaterial)
     REFLECT_END()
 };
 

@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
@@ -215,6 +216,76 @@ BodyId PhysicsWorld::addStaticMesh(const Vec3* vertices, u32 vertexCount,
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::DontActivate);
     return body.GetIndexAndSequenceNumber();
+}
+
+BodyId PhysicsWorld::addDynamicConvex(const Vec3* vertices, u32 vertexCount,
+                                      const Vec3& position,
+                                      const Quat& rotation, const Vec3& scale,
+                                      f32 mass) {
+    if (!vertices || vertexCount < 4) {
+        return 0;
+    }
+    JPH::Array<JPH::Vec3> points;
+    points.reserve(vertexCount);
+    for (u32 i = 0; i < vertexCount; ++i) {
+        points.push_back({ vertices[i].x * scale.x, vertices[i].y * scale.y,
+                           vertices[i].z * scale.z });
+    }
+    JPH::ConvexHullShapeSettings shape { points, 0.05f };
+    const JPH::ShapeSettings::ShapeResult result = shape.Create();
+    if (result.HasError()) {
+        LOG_ERROR("Physics: convex hull rejected: {}",
+                  result.GetError().c_str());
+        return 0;
+    }
+    JPH::BodyCreationSettings settings { result.Get(), toJph(position),
+                                         toJph(rotation),
+                                         JPH::EMotionType::Dynamic,
+                                         kLayerMoving };
+    settings.mOverrideMassProperties =
+        JPH::EOverrideMassProperties::CalculateInertia;
+    settings.mMassPropertiesOverride.mMass = glm::max(mass, 1.0f);
+    settings.mFriction = 0.7f;
+    settings.mRestitution = 0.05f;
+    settings.mLinearDamping = 0.1f;
+    settings.mAngularDamping = 0.3f;
+    const JPH::BodyID body =
+        pimpl->system.GetBodyInterface().CreateAndAddBody(
+            settings, JPH::EActivation::Activate);
+    return body.GetIndexAndSequenceNumber();
+}
+
+void PhysicsWorld::setKinematic(BodyId body, bool kinematic) {
+    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    pimpl->system.GetBodyInterface().SetMotionType(
+        id, kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic,
+        JPH::EActivation::Activate);
+}
+
+void PhysicsWorld::moveKinematic(BodyId body, const Vec3& position,
+                                 const Quat& rotation, f32 dt) {
+    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    pimpl->system.GetBodyInterface().MoveKinematic(
+        id, toJph(position), toJph(rotation), glm::max(dt, 1e-4f));
+}
+
+void PhysicsWorld::setLinearVelocity(BodyId body, const Vec3& velocity) {
+    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    pimpl->system.GetBodyInterface().SetLinearVelocity(id, toJph(velocity));
+}
+
+PhysicsWorld::BodyPose PhysicsWorld::bodyPose(BodyId body) const {
+    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    BodyPose pose;
+    const JPH::BodyInterface& bodies = pimpl->system.GetBodyInterface();
+    JPH::RVec3 position;
+    JPH::Quat rotation;
+    bodies.GetPositionAndRotation(id, position, rotation);
+    pose.position = toGlm(JPH::Vec3(position));
+    pose.rotation = { rotation.GetW(), rotation.GetX(), rotation.GetY(),
+                      rotation.GetZ() };
+    pose.active = bodies.IsActive(id);
+    return pose;
 }
 
 void PhysicsWorld::removeBody(BodyId body) {

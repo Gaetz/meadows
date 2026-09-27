@@ -1972,3 +1972,21 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'material.sand'
     text = 'Sandy'
+
+[[records]]
+form = '24cdc5a9-6c96-44a1-9c6a-f8c853aea7ca'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthControl'
+    text = 'Seize Rock'
+
+[[records]]
+form = '33b9a13f-e30c-484a-8fef-a36eb6113de9'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.noRock'
+    text = 'No rock small enough within reach.'

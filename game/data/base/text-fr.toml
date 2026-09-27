@@ -1981,3 +1981,21 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'material.sand'
     text = 'sableux'
+
+[[records]]
+form = 'be566ec1-27a4-490c-a013-e47e663af695'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthControl'
+    text = 'Emprise de pierre'
+
+[[records]]
+form = '23675a7e-7fe9-4b7c-aa01-a8cbc0edb8ae'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.noRock'
+    text = 'Aucun rocher assez petit à portée.'

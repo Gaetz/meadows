@@ -351,6 +351,38 @@ noyaux ; (4) Comprendre × Terre tout de suite.
 - Matrice Terre : Créer × point/line, Détruire × point maintenu,
   Comprendre × point ; Contrôler → E2.e (physique dynamique).
 
+### E2.e — Contrôler × Terre : les rochers à physique dynamique (2026-09-27)
+Première **physique dynamique** du moteur (le plan §4.1 la réservait à un
+chantier à part ; décision dev : « le rocher obéit à la physique, roule et
+pèse »).
+- Façade Jolt (`engine/physics`, pimpl intact) : `addDynamicConvex`
+  (enveloppe convexe des sommets du modèle, échelle cuite, layer MOVING,
+  masse ≈ volume × 2000 kg/m³, friction 0,7, sommeil), `setKinematic`
+  (Kinematic ↔ Dynamic), `moveKinematic` (le corps tenu est *conduit* :
+  il traverse le monde et pousse ce qu'il rencontre), `setLinearVelocity`,
+  `bodyPose`. Test headless : un cube convexe tombe et se pose, est porté
+  cinématiquement à une cible, relâché avec une vitesse il vole et se repose.
+- `StaticForm.surfaceMaterial` (APPEND ; « rock » sur MossyRock/PaintedRock
+  par patch dans `spirits.toml`, qui déclare sa dépendance à adventure) :
+  ce que l'esprit peut saisir (et plus tard brûler).
+- Scène : `seizeRock` = le rocher `rock` le plus proche à `areaRadius` de la
+  visée dont le **rayon englobant ≤ `intensity`** (« l'intensité borne la
+  taille »), son corps statique rendu par `StreamingController::
+  takeStaticCollider` (jamais re-cuit : ensemble `seized`), re-créé en
+  enveloppe convexe dynamique puis cinématique tant que Q est tenu — porté
+  2,5 m + rayon au-dessus de la visée (ou 6 m devant l'œil sans sol visé),
+  upkeep 0,25 × coût/s ; relâché = dynamique avec la vitesse du portage
+  (il vole, retombe, roule). Après le tick physique, chaque rocher saisi
+  copie la pose de son corps dans son `Transform` (rendu inchangé) ; à la
+  mort de l'entité (cellule déchargée) le corps part ; au swap de carte
+  tous partent.
+- Sort `SpellEarthControl` (control, point, maintenu, 3 m max, portée
+  216 m, reach 8 m, essence −8 puis −2/s).
+- Limites : le rocher déplacé n'est **pas encore persisté** (E2.b :
+  marqueur « déplacé » + position sauvée comme offset au sol pour rester
+  compatible avec le snap) ; un rocher qui roule sur le joueur ne le
+  pousse que par la résolution du `CharacterVirtual` (hors broadphase).
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le
