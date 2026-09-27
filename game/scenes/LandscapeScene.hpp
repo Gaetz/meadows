@@ -643,6 +643,10 @@ private:
     // (they are snapped to it every frame). Speed = the earth spirit's
     // lift curve (SpiritForm Earth).
     void updateGroundLift(f32 dt);
+    // The ground sampled last frame at the player's feet (that XZ, that
+    // height): the terrain rising THERE is the throw — walking uphill is
+    // not (the sample moves with the feet).
+    Vec3 playerLastGround { 0.0f, -1.0e9f, 0.0f };
     // Understand x Water: the reading shown by the HUD for a while
     // (world/spirit/WaterReading, formatted here from the loc keys).
     vector<str> spiritReading; // one line per HUD slot (kReadingLines)

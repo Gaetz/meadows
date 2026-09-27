@@ -5339,16 +5339,37 @@ void LandscapeScene::updateGroundLift(f32 dt) {
     }
     const auto& params = renderer.terrainParams();
     const SpiritDirector::EarthLift& lift = spiritDirector.earthLift();
-    constexpr f32 kMinDepth = 0.05f; // below: ordinary ground noise
+    constexpr f32 kMinRise = 0.02f; // below: ordinary ground noise
+    // How much the terrain rose at a remembered spot since last frame
+    // (the same XZ — the character's own walk never counts), or nothing
+    // on the first sighting / after a teleport.
+    const auto riseAt = [&](Vec3& last, f32 x, f32 z) {
+        f32 rise = 0.0f;
+        if (last.y > -1.0e8f) {
+            const f32 now = render::terrain::height(params, last.x, last.z);
+            rise = now - last.y;
+            if (rise >= 50.0f) {
+                rise = 0.0f;
+            }
+        }
+        last = { x, render::terrain::height(params, x, z), z };
+        return rise;
+    };
     if (phys::CharacterBody* body = playerController.body()) {
         const Vec3 feet = body->position();
-        const f32 ground = render::terrain::height(params, feet.x, feet.z);
-        const f32 depth = ground - feet.y;
-        if (depth > kMinDepth) {
-            body->setPosition({ feet.x, ground + 0.05f, feet.z });
-            body->jump(lift.speedFor(depth));
-            fxDirector.cues().emit(
-                { "Cue.Spirit.Earth.Dig", { feet.x, ground, feet.z }, depth });
+        const f32 rise = riseAt(playerLastGround, feet.x, feet.z);
+        // Sunk into the live ground (a brush preview: the collision only
+        // rebuilds on commit) counts as well.
+        const f32 depth = playerLastGround.y - feet.y;
+        const f32 amount = glm::max(rise, depth);
+        if (amount > kMinRise) {
+            if (depth > 0.0f) {
+                body->setPosition({ feet.x, playerLastGround.y + 0.05f, feet.z });
+            }
+            body->jump(lift.speedFor(amount));
+            fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig",
+                                     { feet.x, playerLastGround.y, feet.z },
+                                     amount });
         }
     }
     for (const auto& npc : npcDirector.npcs()) {
@@ -5357,11 +5378,8 @@ void LandscapeScene::updateGroundLift(f32 dt) {
             continue;
         }
         const Vec3& at = npc->entity.get<world::Transform>().position;
-        const f32 ground = render::terrain::height(params, at.x, at.z);
-        const f32 rise = ground - npc->lastGroundY;
-        npc->lastGroundY = ground;
-        // First sighting / a teleport: no throw from a stale value.
-        if (rise > kMinDepth && rise < 50.0f) {
+        const f32 rise = riseAt(npc->lastGround, at.x, at.z);
+        if (rise > kMinRise) {
             npc->airVelocity = glm::max(npc->airVelocity, lift.speedFor(rise));
             npc->airHeight = glm::max(npc->airHeight, 0.01f);
         }

@@ -47,9 +47,9 @@ public:
     // The earth spirit's lift (SpiritForm Earth): the speed a rising
     // ground throws a character with, from how deep it sank into it.
     struct EarthLift {
-        f32 quadratic { 1.5f };
+        f32 quadratic { 2.0f };
         f32 min { 1.5f };
-        f32 max { 18.0f };
+        f32 max { 25.0f };
         f32 speedFor(f32 depth) const {
             return glm::clamp(quadratic * depth * depth, min, max);
         }

@@ -1088,6 +1088,6 @@ count = 20
 form = "5b1e1700-0000-4000-8000-000000000004"
 type = "SpiritForm"
 [records.fields]
-liftQuadratic = 1.5
+liftQuadratic = 2.0
 liftMin = 1.5
-liftMax = 18.0
+liftMax = 25.0
