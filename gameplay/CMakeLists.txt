@@ -49,3 +49,10 @@ add_library(meadows-gameplay STATIC
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)
 
 meadows_set_warnings(meadows-gameplay)
+target_precompile_headers(meadows-gameplay PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <engine/core/Log.hpp> <engine/ecs/World.hpp>
+        <data/forms/FormDatabase.hpp> <data/forms/FormTypeRegistry.hpp>
+        <data/forms/FormQuery.hpp> <gameplay/ability/GameplayEffects.hpp>
+        <gameplay/ability/AbilitySystem.hpp>)

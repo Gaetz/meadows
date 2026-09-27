@@ -29,6 +29,13 @@ target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world
 # Same no-exceptions toml++ mode as meadows-data (parse_result error path).
 target_compile_definitions(meadows-runtime PRIVATE TOML_EXCEPTIONS=0)
 meadows_set_warnings(meadows-runtime)
+target_precompile_headers(meadows-runtime PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <engine/core/Log.hpp> <engine/ecs/World.hpp>
+        <data/forms/FormDatabase.hpp> <data/forms/CoreForms.hpp>
+        <data/forms/FormQuery.hpp> <gameplay/ability/AbilitySystem.hpp>
+        <world/scene/Components.hpp> <world/worldspace/WorldForms.hpp>)
 
 add_executable(true-adventurer
     main.cpp
@@ -91,6 +98,18 @@ target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
                       meadows-narrative meadows-script meadows-ui
                       meadows-audio imguizmo imgui-node-editor)
 meadows_set_warnings(true-adventurer)
+# The scene TUs pull the whole engine through their headers: this band is
+# what turns a 30 s scene compile into a header-cache hit.
+target_precompile_headers(true-adventurer PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <glm/gtc/quaternion.hpp> <imgui.h>
+        <engine/core/Log.hpp> <engine/ecs/World.hpp>
+        <engine/render/landscape/TerrainNoise.hpp>
+        <data/forms/FormDatabase.hpp> <data/forms/CoreForms.hpp>
+        <data/forms/FormQuery.hpp> <gameplay/ability/AbilitySystem.hpp>
+        <gameplay/ability/GameplayEffects.hpp>
+        <world/scene/Components.hpp> <world/worldspace/WorldForms.hpp>)
 
 # Game data (plugins + assets) and engine shaders ship next to the
 # executable — as a custom target the exe DEPENDS on, so it runs on EVERY
@@ -115,7 +134,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/assets-src/terrain)
                ${TERRAIN_MATERIALS_DIR}/terrain_height.mtex
         COMMAND $<TARGET_FILE:cooker> cook-terrain-materials
                 ${TERRAIN_MATERIALS_MANIFEST} ${TERRAIN_MATERIALS_DIR}
-        DEPENDS cooker ${TERRAIN_MATERIALS_MANIFEST}
+        DEPENDS ${TERRAIN_MATERIALS_MANIFEST}
                 ${TERRAIN_MATERIAL_SOURCES}
         COMMENT "Cooking terrain material arrays (.mtex)"
         VERBATIM
@@ -125,6 +144,10 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/assets-src/terrain)
                 ${TERRAIN_MATERIALS_DIR}/terrain_normal.mtex
                 ${TERRAIN_MATERIALS_DIR}/terrain_orm.mtex
                 ${TERRAIN_MATERIALS_DIR}/terrain_height.mtex)
+    # Order-only: the cooker must EXIST to cook, but a relinked cooker
+    # (every engine change) must not re-cook a minute of BC7 — only the
+    # manifest and the source maps above make the arrays stale.
+    add_dependencies(terrain-materials cooker)
 else()
     add_custom_target(terrain-materials)
 endif()

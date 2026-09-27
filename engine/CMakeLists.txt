@@ -77,6 +77,15 @@ target_compile_definitions(meadows PUBLIC
 )
 
 meadows_set_warnings(meadows)
+# Precompiled headers: the STL/glm/log band every TU pays for. Only headers
+# that are stable and macro-neutral belong here; the *_IMPLEMENTATION TUs
+# keep their own include order.
+target_precompile_headers(meadows PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <engine/core/Log.hpp> <engine/core/Jobs.hpp>)
+set_source_files_properties(assets/StbImpl.cpp assets/GltfMesh.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # meadows-render — the renderer + RHI, split out of the base lib (audit U9-3)
 # so the sim can be link-proven render-free (§2.10). Same sources, same flags:
@@ -163,6 +172,11 @@ target_compile_definitions(meadows-render PRIVATE
 )
 
 meadows_set_warnings(meadows-render)
+target_precompile_headers(meadows-render PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <engine/core/Log.hpp> <engine/core/Jobs.hpp> <engine/rhi/Device.hpp>
+        <engine/rhi/CommandBuffer.hpp> <engine/render/ShaderLibrary.hpp>)
 
 # meadows-physics — the Jolt seam (horizontal pass H3). A separate lib so
 # Jolt stays PRIVATE: consumers see only the phys:: facade (engine/physics/

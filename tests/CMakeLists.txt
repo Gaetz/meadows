@@ -149,6 +149,18 @@ target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
                       meadows-script meadows-narrative meadows-physics
                       meadows-audio doctest::doctest)
 meadows_set_warnings(meadows-tests)
+target_precompile_headers(meadows-tests PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <filesystem> <doctest/doctest.h>
+        <engine/core/Log.hpp> <engine/ecs/World.hpp>
+        <data/plugins/PluginLoader.hpp> <data/plugins/Resolver.hpp>
+        <data/forms/FormDatabase.hpp> <data/forms/FormTypeRegistry.hpp>
+        <data/forms/CoreForms.hpp> <gameplay/ability/AbilitySystem.hpp>
+        <gameplay/ability/GameplayEffects.hpp>
+        <world/scene/Components.hpp> <world/worldspace/WorldForms.hpp>)
+# Main.cpp defines DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN before the include.
+set_source_files_properties(Main.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 add_test(NAME meadows COMMAND meadows-tests)
 
 # The §2.10 link lock (audit U9-3): links the ENTIRE sim (whole-archive)

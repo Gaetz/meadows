@@ -42,3 +42,9 @@ add_library(meadows-world STATIC
 target_link_libraries(meadows-world PUBLIC meadows-data meadows-ecs meadows-gameplay)
 
 meadows_set_warnings(meadows-world)
+target_precompile_headers(meadows-world PRIVATE
+        <algorithm> <cmath> <cstdio> <cstring> <functional> <memory>
+        <optional> <string> <unordered_map> <vector> <glm/glm.hpp>
+        <engine/core/Log.hpp> <engine/ecs/World.hpp>
+        <data/forms/FormQuery.hpp> <world/worldspace/WorldForms.hpp>
+        <world/scene/Components.hpp>)
