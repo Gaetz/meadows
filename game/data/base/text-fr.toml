@@ -1864,3 +1864,120 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.earthDig'
     text = 'Creuser'
+
+[[records]]
+form = '5bfc9ded-7dd9-41ad-812c-45922dcea2fb'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthPaint'
+    text = 'Pinceau de pierre'
+
+[[records]]
+form = 'cb974783-2f80-449b-8514-ab5f6f113f1f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthWall'
+    text = 'Mur de pierre'
+
+[[records]]
+form = 'ec5840f5-e253-4b10-9eb9-3ffef7acce9a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthUnderstand'
+    text = 'Intelligo de la terre'
+
+[[records]]
+form = 'b5552a20-635b-45b8-bcc1-35038e7acba4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.title'
+    text = '~ Intelligo de la terre ~'
+
+[[records]]
+form = 'a281d65e-a328-4191-9b26-238e01e59a8e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.material'
+    text = 'Sol {}, dureté {}.'
+
+[[records]]
+form = 'cde85558-f684-4fb5-bf06-faa8fdb4cb15'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.relief'
+    text = 'Pente {}°, altitude {} m.'
+
+[[records]]
+form = '4e3ae633-02d6-4fd9-bf53-53c2b66e7e3f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.climate'
+    text = 'Humidité {} %, climat {}.'
+
+[[records]]
+form = '4a03f38b-a972-4fad-a72f-07498d051a6b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.fire'
+    text = 'Inflammabilité {} %, moiteur {} %.'
+
+[[records]]
+form = 'db7fa13a-4f6f-498e-b742-283da7dbc3f8'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.grass'
+    text = 'herbeux'
+
+[[records]]
+form = 'e02dd7b1-ca0d-4021-b827-2d2d39831ac8'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.rock'
+    text = 'rocheux'
+
+[[records]]
+form = '0f8bd3f4-0165-4577-8720-96a6d441e58c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.cliff'
+    text = 'de falaise nue'
+
+[[records]]
+form = 'a2b4160d-e254-495b-9095-0e96f1ec5bd2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.snow'
+    text = 'enneigé'
+
+[[records]]
+form = 'c892cb47-69e5-43e7-96eb-d954f59601df'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.sand'
+    text = 'sableux'

@@ -72,6 +72,8 @@ TEST_CASE("spells: every enumerated field is validated by name") {
     CHECK(error.find("unknown element") != str::npos);
 
     bad = waterSpring();
+    bad.trajectory = "line";
+    CHECK(compileSpell(bad, &error)->trajectory == SpellTrajectory::Line);
     bad.trajectory = "beam";
     CHECK_FALSE(compileSpell(bad, &error).has_value());
     CHECK(error.find("unknown trajectory") != str::npos);
@@ -101,6 +103,12 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     CHECK_FALSE(spellSupported(spec)); // fire waits for E3
     spec.element = SpiritKind::Earth;
     CHECK(spellSupported(spec)); // the bump
+    spec.trajectory = SpellTrajectory::Line;
+    CHECK(spellSupported(spec)); // the wall
+    spec.trajectory = SpellTrajectory::Point;
+    spec.verb = SpellVerb::Understand;
+    CHECK(spellSupported(spec)); // the ground reading
+    spec.verb = SpellVerb::Create;
     spec.verb = SpellVerb::Destroy;
     CHECK_FALSE(spellSupported(spec)); // the dig is channeled by nature
     spec.channeled = true;

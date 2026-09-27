@@ -206,3 +206,16 @@ dir.W,ouest
 dir.NW,nord-ouest
 spell.earthBump,Bosse de terre
 spell.earthDig,Creuser
+spell.earthPaint,Pinceau de pierre
+spell.earthWall,Mur de pierre
+spell.earthUnderstand,Intelligo de la terre
+ground.title,~ Intelligo de la terre ~
+ground.material,"Sol {}, dureté {}."
+ground.relief,"Pente {}°, altitude {} m."
+ground.climate,"Humidité {} %, climat {}."
+ground.fire,"Inflammabilité {} %, moiteur {} %."
+material.grass,herbeux
+material.rock,rocheux
+material.cliff,de falaise nue
+material.snow,enneigé
+material.sand,sableux

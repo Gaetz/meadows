@@ -556,7 +556,11 @@ private:
         // held volume, drawn at the aim while the key is held.
         // EarthBump: an instant mound at (x, z) that throws what stands
         // on it. EarthDig: the ground lowered under the aim while held.
-        enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthDig };
+        // EarthBrush: the ground raised (create) or lowered (destroy) under
+        // the aim while held. EarthWall: a ridge from the press spot to the
+        // release spot.
+        enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
+                               EarthDig, EarthWall };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
@@ -579,6 +583,7 @@ private:
     // divided by the ground's hardness (SurfaceMaterialForm).
     struct SpiritEarth {
         world::BrushGrids grids;
+        bool raise { false }; // the stone brush raises, the dig lowers
         f32 rate { 0.0f };
         f32 radius { 4.0f };
         f32 remaining { 0.0f };
@@ -594,6 +599,18 @@ private:
     void updateSpiritEarth(f32 dt);
     void finishSpiritEarth(bool commit);
     f32 groundHardnessAt(f32 x, f32 z) const;
+    // The wall gesture: the press spot, the release spot builds the ridge.
+    struct SpiritLine {
+        Vec3 start { 0.0f };
+        f32 height { 0.0f };
+        f32 halfWidth { 1.5f };
+    };
+    std::optional<SpiritLine> spiritLine;
+    void updateSpiritLine();
+    // Understand x Earth: the ground under the aim, same HUD block.
+    void castGroundReading(const Vec3& at, f32 seconds, bool live);
+    enum class ReadingKind : u8 { Water, Ground };
+    ReadingKind spiritReadingKind { ReadingKind::Water };
     static constexpr f32 kBumpLaunchScale = 1.5f; // x the free-fall speed from the mound's height
     // Understand x Water: the reading shown by the HUD for a while
     // (world/spirit/WaterReading, formatted here from the loc keys).

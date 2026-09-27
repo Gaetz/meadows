@@ -76,6 +76,7 @@ struct SpellForm : Form {
     //   point      at the aimed ground spot (within `range`)
     //   stream     a continuous arc from the hand along the aim (follows it)
     //   projectile one arc from the hand; the effect lands where it falls
+    //   line       from the spot aimed at the press to the one at release
     str trajectory { "point" };
     f32 range { 20.0f };      // metres — aim reach (point) or the ballistic
                               // reach at 45° (stream/projectile -> launch speed)

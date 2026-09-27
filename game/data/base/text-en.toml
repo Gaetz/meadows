@@ -1855,3 +1855,120 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.earthDig'
     text = 'Dig'
+
+[[records]]
+form = 'bbe7255c-23c1-4e23-9414-6a4b5887dccb'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthPaint'
+    text = 'Stone Brush'
+
+[[records]]
+form = '4e2ce93c-3847-4459-b50e-7e0cb630a144'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthWall'
+    text = 'Stone Wall'
+
+[[records]]
+form = 'a0edf93d-c41d-4e7d-b8c9-024bf584e5fd'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.earthUnderstand'
+    text = 'Earth Intelligo'
+
+[[records]]
+form = '084dd954-e759-463a-bee9-6ec5b70a6960'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.title'
+    text = '~ Earth intelligo ~'
+
+[[records]]
+form = '7cc07b11-fd0e-410c-aec6-e18479151b9c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.material'
+    text = '{} ground, hardness {}.'
+
+[[records]]
+form = '8f3c25a9-aacf-40a8-b082-10497400aef2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.relief'
+    text = 'Slope {}°, altitude {} m.'
+
+[[records]]
+form = '15fc169a-6f50-4b6f-864f-0464703006ef'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.climate'
+    text = 'Wetness {} %, climate {}.'
+
+[[records]]
+form = '526ec311-c202-48ee-837a-352494536f2e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ground.fire'
+    text = 'Flammability {} %, moisture {} %.'
+
+[[records]]
+form = 'd2db7783-a642-4e78-af79-9ffeb7ee2c06'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.grass'
+    text = 'Grassy'
+
+[[records]]
+form = 'd9c43ac2-1e9d-4b8a-8402-e44d026c646c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.rock'
+    text = 'Rocky'
+
+[[records]]
+form = '236a9693-50ad-48dd-9019-7c8e84875595'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.cliff'
+    text = 'Bare cliff'
+
+[[records]]
+form = 'b9abc0c8-e42b-4728-b7c1-3b4ac8b9e330'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.snow'
+    text = 'Snowy'
+
+[[records]]
+form = 'ee80d371-5dc7-4650-9404-dc0d1f129b3a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'material.sand'
+    text = 'Sandy'

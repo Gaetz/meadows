@@ -96,6 +96,47 @@ void applyTerrainBrush(BrushGrids& grids,
     }
 }
 
+void applyTerrainWall(BrushGrids& grids, const render::HeightPatches* published,
+                      f32 chunkSize, const Vec2& a, const Vec2& b,
+                      f32 halfWidth, f32 height) {
+    if (halfWidth <= 0.0f || chunkSize <= 0.0f || height == 0.0f) {
+        return;
+    }
+    const Vec2 lo = glm::min(a, b) - Vec2 { halfWidth };
+    const Vec2 hi = glm::max(a, b) + Vec2 { halfWidth };
+    const i32 minCx = static_cast<i32>(std::floor(lo.x / chunkSize));
+    const i32 maxCx = static_cast<i32>(std::floor(hi.x / chunkSize));
+    const i32 minCz = static_cast<i32>(std::floor(lo.y / chunkSize));
+    const i32 maxCz = static_cast<i32>(std::floor(hi.y / chunkSize));
+    const Vec2 ab = b - a;
+    const f32 len2 = glm::dot(ab, ab);
+    for (i32 cz = minCz; cz <= maxCz; ++cz) {
+        for (i32 cx = minCx; cx <= maxCx; ++cx) {
+            render::HeightPatch& grid = brushGridFor(grids, published, cx, cz);
+            const f32 step = chunkSize / static_cast<f32>(grid.samples - 1);
+            for (u32 row = 0; row < grid.samples; ++row) {
+                for (u32 col = 0; col < grid.samples; ++col) {
+                    const Vec2 p { static_cast<f32>(cx) * chunkSize +
+                                       static_cast<f32>(col) * step,
+                                   static_cast<f32>(cz) * chunkSize +
+                                       static_cast<f32>(row) * step };
+                    const f32 u = len2 > 1e-6f
+                                      ? glm::clamp(glm::dot(p - a, ab) / len2,
+                                                   0.0f, 1.0f)
+                                      : 0.0f;
+                    const f32 dist = glm::length(p - (a + ab * u));
+                    if (dist >= halfWidth) {
+                        continue;
+                    }
+                    const f32 t = 1.0f - dist / halfWidth;
+                    const f32 falloff = t * t * (3.0f - 2.0f * t);
+                    grid.deltas[row * grid.samples + col] += height * falloff;
+                }
+            }
+        }
+    }
+}
+
 std::shared_ptr<render::HeightPatches> publishBrushGrids(
     const BrushGrids& grids, const render::HeightPatches* published,
     f32 chunkSize, vector<u64>& changed) {

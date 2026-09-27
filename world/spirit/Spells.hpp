@@ -15,7 +15,9 @@
 namespace world {
 
 enum class SpellVerb : u8 { Create, Destroy, Transform, Control, Understand };
-enum class SpellTrajectory : u8 { Self, Point, Stream, Projectile };
+// Line: from the ground spot aimed when the key is pressed to the one
+// aimed when it is released (a wall drawn across the ground).
+enum class SpellTrajectory : u8 { Self, Point, Stream, Projectile, Line };
 enum class SpellArea : u8 { Disc, Ring };
 
 struct SpellSpec {

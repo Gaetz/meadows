@@ -326,6 +326,31 @@ la save emporte des assets (`.ter`) → E2.b.
   Transformer × Terre (peindre la pierre : il n'existe pas de couche de
   patches de matériaux, seulement de hauteurs), E2.b persistance.
 
+### E2.c / E2.d — Intelligo de la terre, Pinceau de pierre, Mur de pierre (2026-09-27)
+Décisions dev : (1) Contrôler × Terre = rochers avec **vraie physique**
+(intensité = taille max, le rocher roule et pèse) ; (2) **deux** sorts de
+mur : Pinceau de pierre (crête qui suit la visée en maintenant) et Mur de
+pierre (droit, de l'appui au relâché) ; (3) les **transformations**
+(Transformer × tout élément : eau → glace, peindre la pierre…) = un
+**chantier futur TRANSFORMATIONS**, à ouvrir quand les éléments auront leurs
+noyaux ; (4) Comprendre × Terre tout de suite.
+- **Trajectoire `line`** (`SpellTrajectory::Line`) : le sol visé à l'appui →
+  le sol visé au relâché (`SpiritLine`, `updateSpiritLine`).
+  `world::applyTerrainWall` (headless, testé : hauteur pleine le long de
+  l'axe sans accumulation, symétrie, extrémités rondes, segment dégénéré =
+  bosse) : falloff sur la distance perpendiculaire, une seule application.
+- **Pinceau de pierre** (`SpellEarthPaint`, create, point, maintenu) = le
+  même `SpiritEarth` que Creuser avec `raise = true` (2 m/s ÷ dureté, r 3).
+- **Mur de pierre** (`SpellEarthWall`, create, line, 4 m de haut ÷ dureté au
+  milieu, demi-largeur 1,5 m, essence −12, cd 4 s).
+- **Intelligo de la terre** (`SpellEarthUnderstand`, maintenu, upkeep 0) :
+  classe du sol (splat dominant) + dureté, pente + altitude, humidité de
+  biome + climat (`RegionFields`), inflammabilité + moiteur
+  (`SurfaceMaterialForm`) — même panneau HUD (`ReadingKind`), clés
+  `ground.*`/`material.*`.
+- Matrice Terre : Créer × point/line, Détruire × point maintenu,
+  Comprendre × point ; Contrôler → E2.e (physique dynamique).
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

@@ -817,3 +817,162 @@ new = true
 editorId = "CueSpiritEarthDig"
 tag = "Cue.Spirit.Earth.Dig"
 particles = "5b1e1700-0000-4000-8000-000000000079"
+
+# CREATE + EARTH, channeled: the stone brush — the ground rises under the
+# aim while Q is held (a ridge follows the sweep).
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000099"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthPaintCost"
+attribute = "essence"
+op = "add"
+magnitude = -6.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009a"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthPaintCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritEarthPaint"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009b"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthPaint"
+cost = "5b1e1700-0000-4000-8000-000000000099"
+cooldown = "5b1e1700-0000-4000-8000-00000000009a"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009c"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthPaint"
+parent = "5b1e1700-0000-4000-8000-00000000009b"
+name = "spell.earthPaint"
+form = "create"
+element = "Earth"
+trajectory = "point"
+range = 216.0
+intensity = 2.0
+duration = 12.0
+areaShape = "disc"
+areaRadius = 3.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25
+
+# CREATE + EARTH, line: the stone wall — press on the first spot, release
+# on the second: a ridge of `intensity` metres, `areaRadius` half wide.
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009d"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthWallCost"
+attribute = "essence"
+op = "add"
+magnitude = -12.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009e"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthWallCooldown"
+duration = "duration"
+durationSeconds = 4.0
+grantedTag = "Cooldown.SpiritEarthWall"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000009f"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthWall"
+cost = "5b1e1700-0000-4000-8000-00000000009d"
+cooldown = "5b1e1700-0000-4000-8000-00000000009e"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a0"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthWall"
+parent = "5b1e1700-0000-4000-8000-00000000009f"
+name = "spell.earthWall"
+form = "create"
+element = "Earth"
+trajectory = "line"
+range = 216.0
+intensity = 4.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 1.5
+channeled = false
+
+# UNDERSTAND + EARTH: the ground reading, held like the water one.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a1"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthUnderstandCost"
+attribute = "essence"
+op = "add"
+magnitude = -3.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a2"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthUnderstandCooldown"
+duration = "duration"
+durationSeconds = 1.0
+grantedTag = "Cooldown.SpiritEarthUnderstand"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a3"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritEarthUnderstand"
+cost = "5b1e1700-0000-4000-8000-0000000000a1"
+cooldown = "5b1e1700-0000-4000-8000-0000000000a2"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000a4"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellEarthUnderstand"
+parent = "5b1e1700-0000-4000-8000-0000000000a3"
+name = "spell.earthUnderstand"
+form = "understand"
+element = "Earth"
+trajectory = "point"
+range = 216.0
+intensity = 0.0
+duration = 8.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.0

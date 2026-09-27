@@ -18,6 +18,7 @@ std::optional<SpellTrajectory> parseSpellTrajectory(std::string_view name) {
     if (name == "point") return SpellTrajectory::Point;
     if (name == "stream") return SpellTrajectory::Stream;
     if (name == "projectile") return SpellTrajectory::Projectile;
+    if (name == "line") return SpellTrajectory::Line;
     return std::nullopt;
 }
 
@@ -91,13 +92,21 @@ bool spellSupported(const SpellSpec& spec) {
     using render::terrain::SpiritKind;
     // The matrix grows one brick at a time (docs/SPELLS.md §4).
     if (spec.element == SpiritKind::Earth) {
-        // The bump (create, instant) and the dig (destroy, channeled by
-        // nature) — both at the aimed ground.
-        if (spec.trajectory != SpellTrajectory::Point) {
-            return false;
+        switch (spec.verb) {
+        case SpellVerb::Create:
+            // The bump (point, instant), the stone brush (point, channeled)
+            // and the wall (line, press to release).
+            return spec.trajectory == SpellTrajectory::Point ||
+                   spec.trajectory == SpellTrajectory::Line;
+        case SpellVerb::Destroy: // the dig, channeled by nature
+            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
+        case SpellVerb::Understand: // the ground reading
+            return spec.trajectory == SpellTrajectory::Point;
+        case SpellVerb::Control:
+        case SpellVerb::Transform:
+            break;
         }
-        return spec.verb == SpellVerb::Create ||
-               (spec.verb == SpellVerb::Destroy && spec.channeled);
+        return false;
     }
     if (spec.element != SpiritKind::Water) {
         return false;

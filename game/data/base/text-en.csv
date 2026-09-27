@@ -205,3 +205,16 @@ dir.W,west
 dir.NW,north-west
 spell.earthBump,Earth Mound
 spell.earthDig,Dig
+spell.earthPaint,Stone Brush
+spell.earthWall,Stone Wall
+spell.earthUnderstand,Earth Intelligo
+ground.title,~ Earth intelligo ~
+ground.material,"{} ground, hardness {}."
+ground.relief,"Slope {}°, altitude {} m."
+ground.climate,"Wetness {} %, climate {}."
+ground.fire,"Flammability {} %, moisture {} %."
+material.grass,Grassy
+material.rock,Rocky
+material.cliff,Bare cliff
+material.snow,Snowy
+material.sand,Sandy

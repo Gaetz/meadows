@@ -1702,6 +1702,7 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritJets(dt);
         updateSpiritHold(dt);
         updateSpiritEarth(dt);
+        updateSpiritLine();
         updateSpiritReading(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
@@ -2105,6 +2106,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
     releaseSpiritHold(false);
     finishSpiritEarth(false);
+    spiritLine.reset();
     pushRuntimeWaterSources(); // this map's springs into the sim
     // The whole world changed: a world-sized event keeps the
     // contentTouchedSince contract (every bump records its rects).
@@ -4613,8 +4615,10 @@ void LandscapeScene::castSpirit() {
     // water onto water would pour into a pinned lake (the pin swallows
     // it) — refused rather than silently lost. A stream arcs from the
     // hand and lands wherever it lands; nothing to pre-check.
-    const bool aimed = spell ? spell->trajectory == world::SpellTrajectory::Point
-                             : spiritAbility->script.find("aim(") != str::npos;
+    const bool aimed =
+        spell ? spell->trajectory == world::SpellTrajectory::Point ||
+                    spell->trajectory == world::SpellTrajectory::Line
+              : spiritAbility->script.find("aim(") != str::npos;
     std::optional<Vec3> at;
     if (aimed) {
         at = aimGround();
@@ -4692,9 +4696,15 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         action.x = aimedAt->x;
         action.z = aimedAt->z;
         if (spell.element == render::terrain::SpiritKind::Earth) {
+            if (spell.verb == world::SpellVerb::Understand) {
+                castGroundReading(*aimedAt, spell.duration, spell.channeled);
+                return;
+            }
             action.rate = spell.intensity; // the sign lives in the mode
             action.mode = spell.verb == world::SpellVerb::Create
-                              ? PendingSpiritAction::Mode::EarthBump
+                              ? (spell.channeled
+                                     ? PendingSpiritAction::Mode::EarthBrush
+                                     : PendingSpiritAction::Mode::EarthBump)
                               : PendingSpiritAction::Mode::EarthDig;
             break;
         }
@@ -4712,6 +4722,13 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         action.speed = world::launchSpeedForRange(
             spell.range, world::SpiritJetList::kGravity);
         break;
+    case world::SpellTrajectory::Line:
+        if (!aimedAt) {
+            return;
+        }
+        // The press spot; the release builds the wall (updateSpiritLine).
+        spiritLine = SpiritLine { *aimedAt, spell.intensity, spell.areaRadius };
+        return;
     case world::SpellTrajectory::Self:
     case world::SpellTrajectory::Projectile:
         return; // not in the matrix yet (spellSupported gates the cast)
@@ -4734,9 +4751,11 @@ void LandscapeScene::applyPendingSpiritActions() {
             applyEarthBump(action);
             continue; // no water source involved
         }
-        if (action.mode == PendingSpiritAction::Mode::EarthDig) {
-            finishSpiritEarth(true); // one dig at a time
+        if (action.mode == PendingSpiritAction::Mode::EarthDig ||
+            action.mode == PendingSpiritAction::Mode::EarthBrush) {
+            finishSpiritEarth(true); // one stroke at a time
             SpiritEarth dig;
+            dig.raise = action.mode == PendingSpiritAction::Mode::EarthBrush;
             dig.rate = action.rate;
             dig.radius = action.radius;
             dig.remaining = action.seconds;
@@ -5091,7 +5110,7 @@ void LandscapeScene::updateSpiritEarth(f32 dt) {
         return;
     }
     world::BrushParams brush;
-    brush.kind = world::BrushKind::Lower;
+    brush.kind = dig.raise ? world::BrushKind::Raise : world::BrushKind::Lower;
     brush.radius = dig.radius;
     brush.strength = dig.rate / groundHardnessAt(at->x, at->z);
     world::applyTerrainBrush(dig.grids, heightPatches.get(),
@@ -5111,7 +5130,9 @@ void LandscapeScene::updateSpiritEarth(f32 dt) {
     dig.cueTimer += dt;
     if (dig.cueTimer >= 0.3f) {
         dig.cueTimer = 0.0f;
-        fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig", *at, dig.rate });
+        fxDirector.cues().emit(
+            { dig.raise ? "Cue.Spirit.Earth.Spawn" : "Cue.Spirit.Earth.Dig",
+              *at, dig.rate });
     }
 }
 
@@ -5136,6 +5157,95 @@ void LandscapeScene::finishSpiritEarth(bool commit) {
     makeSculptContext().republishTerrain(std::move(next), changed, true);
 }
 
+void LandscapeScene::updateSpiritLine() {
+    if (!spiritLine) {
+        return;
+    }
+    if (actionMap.down(engine->getInput(), InputAction::SpiritCast) &&
+        playerEntity.is_alive()) {
+        return; // still drawing
+    }
+    const SpiritLine line = *spiritLine;
+    spiritLine.reset();
+    const std::optional<Vec3> end = aimGround();
+    if (!end) {
+        return;
+    }
+    // The wall: `height` metres over the hardness of the ground at its
+    // middle, from the press spot to the release spot.
+    const Vec2 a { line.start.x, line.start.z };
+    const Vec2 b { end->x, end->z };
+    const Vec2 mid = (a + b) * 0.5f;
+    const f32 height = line.height / groundHardnessAt(mid.x, mid.y);
+    world::BrushGrids grids;
+    world::applyTerrainWall(grids, heightPatches.get(),
+                            render::TerrainSystem::kChunkSize, a, b,
+                            line.halfWidth, height);
+    vector<u64> changed;
+    auto next = world::publishBrushGrids(grids, heightPatches.get(),
+                                         render::TerrainSystem::kChunkSize,
+                                         changed);
+    makeSculptContext().republishTerrain(std::move(next), changed, true);
+    const Vec3 at { mid.x,
+                    render::terrain::height(renderer.terrainParams(), mid.x,
+                                            mid.y),
+                    mid.y };
+    fxDirector.cues().emit({ "Cue.Spirit.Earth.Spawn", at, height });
+}
+
+void LandscapeScene::castGroundReading(const Vec3& at, f32 seconds, bool live) {
+    const auto& params = renderer.terrainParams();
+    const f32 h = render::terrain::height(params, at.x, at.z);
+    const Vec3 n = render::terrain::normal(params, at.x, at.z);
+    const render::terrain::MaterialWeights w =
+        render::terrain::materialWeightsAt(params, at.x, at.z, h, n);
+    const render::terrain::RegionFields fields =
+        render::terrain::regionFieldsAt(params, at.x, at.z);
+    const char* cls = "grass";
+    f32 best = w.grass;
+    if (w.rock > best) { best = w.rock; cls = "rock"; }
+    if (w.cliff > best) { best = w.cliff; cls = "cliff"; }
+    if (w.snow > best) { best = w.snow; cls = "snow"; }
+    if (w.sand > best) { best = w.sand; cls = "sand"; }
+    const world::SpiritRuleTable& rules = spiritDirector.rules();
+    world::MaterialProps props;
+    if (const i32 index = rules.classIndex(cls);
+        index >= 0 && static_cast<size_t>(index) < rules.props.size()) {
+        props = rules.props[static_cast<size_t>(index)];
+    }
+    const f32 slopeDeg =
+        glm::degrees(std::acos(glm::clamp(n.y, -1.0f, 1.0f)));
+    const auto num = [](f32 v, i32 decimals) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
+                      static_cast<f64>(v));
+        return str { buf };
+    };
+    vector<str> lines;
+    lines.push_back(texts.get("ground.title"));
+    lines.push_back(texts.format("ground.material",
+                                 { texts.get(str { "material." } + cls),
+                                   num(props.hardness, 1) }));
+    lines.push_back(texts.format("ground.relief",
+                                 { num(slopeDeg, 0), num(h, 0) }));
+    lines.push_back(texts.format(
+        "ground.climate",
+        { num(glm::clamp(fields.biomeWetness, 0.0f, 1.0f) * 100.0f, 0),
+          num(fields.temperature, 1) }));
+    lines.push_back(texts.format(
+        "ground.fire", { num(props.flammability * 100.0f, 0),
+                         num(props.moisture * 100.0f, 0) }));
+    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
+    spiritReadingKind = ReadingKind::Ground;
+    spiritReading = std::move(lines);
+    spiritReading.resize(kReadingLines);
+    spiritReadingLive = live;
+    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
+    if (opening) {
+        fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig", at, 1.0f });
+    }
+}
+
 void LandscapeScene::updateSpiritReading(f32 dt) {
     if (spiritReadingLive) {
         // Held: re-read where the aim rests now (live current, volume);
@@ -5148,7 +5258,11 @@ void LandscapeScene::updateSpiritReading(f32 dt) {
             return;
         }
         if (const std::optional<Vec3> at = aimGround()) {
-            castWaterReading(*at, 0.0f, true);
+            if (spiritReadingKind == ReadingKind::Ground) {
+                castGroundReading(*at, 0.0f, true);
+            } else {
+                castWaterReading(*at, 0.0f, true);
+            }
         }
         return;
     }
@@ -5233,6 +5347,7 @@ void LandscapeScene::castWaterReading(const Vec3& at, f32 seconds, bool live) {
     }
     // The cue only when the reading opens, not on every live refresh.
     const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
+    spiritReadingKind = ReadingKind::Water;
     spiritReading = std::move(lines);
     spiritReading.resize(kReadingLines);
     spiritReadingLive = live;

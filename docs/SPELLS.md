@@ -42,7 +42,7 @@ nom d'esprit.
 |---|---|---|---|
 | Forme | `form` | une des cinq | le verbe |
 | Élément | `element` | un nom d'esprit | le sujet |
-| **Trajectoire** | `trajectory` | `self` \| `point` \| `stream` \| `projectile` | où l'effet se produit : sur le lanceur ; au point de sol visé ; en **flux** continu depuis la main le long de la visée (suit la visée) ; en **un** arc depuis la main, l'effet là où il retombe |
+| **Trajectoire** | `trajectory` | `self` \| `point` \| `stream` \| `projectile` \| `line` | où l'effet se produit : sur le lanceur ; au point de sol visé ; en **flux** continu depuis la main le long de la visée (suit la visée) ; en **un** arc depuis la main, l'effet là où il retombe ; en **ligne** du sol visé à l'appui au sol visé au relâché |
 | **Portée** | `range` | mètres | `point` : distance de visée maximale ; `stream`/`projectile` : portée balistique à 45° sur sol plat — la vitesse de lancement en découle (`v = √(g·portée)`, 20 m ⇒ 14 m/s) |
 | **Intensité** | `intensity` | unité de l'élément par seconde (eau : m³/s) | la puissance de l'effet |
 | **Durée** | `duration` | secondes (**secondes-sim** pour ce qui alimente une simulation) ; `-1` = permanent | combien de temps l'effet persiste |
@@ -103,11 +103,12 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Détruire × Eau | — | ✅ **drain** : la même source, débit négatif (`SpellWaterDrain`, sphère 2 m, 3 s) | ⏳ | ⏳ |
 | Contrôler × Eau | — | ✅ **emprise** (maintenu par nature) : l'eau visée est aspirée dans un volume porté qui suit la visée, lâché au relâché (`SpellWaterHold`) | — | — |
 | Comprendre × Eau | — | ✅ **intelligo** : corps (lac/rivière/mer/source d'esprit/eau stagnante), profondeur, courant, volume (exact dans la fenêtre de sim, estimé sinon) ; sur du sec, l'eau la plus proche (`SpellWaterUnderstand`) | — | — |
-| Créer × Terre | — | ✅ **bosse** instantanée (`SpellEarthBump`, `intensity` m ÷ dureté du sol) qui propulse ce qui est dessus | — | — |
+| Créer × Terre | — | ✅ **bosse** instantanée (`SpellEarthBump`) qui propulse ce qui est dessus ; ✅ **pinceau de pierre** maintenu (`SpellEarthPaint`, la crête suit la visée) | — | — |
+| Créer × Terre (`line`) | | ✅ **mur de pierre** (`SpellEarthWall`) : de l'appui au relâché, `intensity` m de haut, `areaRadius` de demi-largeur | | |
 | Détruire × Terre | — | ✅ **creuser** en maintenant (`SpellEarthDig`, `intensity` m/s ÷ dureté, commit au relâché) | — | — |
-| Contrôler × Terre | — | ⏳ rochers déplacés (intensité = taille max) | — | — |
-| Comprendre × Terre | — | ⏳ caractéristiques du terrain | — | — |
-| Transformer × Terre | — | ⏳ peindre la pierre (dureté) | — | — |
+| Contrôler × Terre | — | ⏳ E2.e : rochers à physique dynamique (intensité = taille max ; roulent, pèsent) | — | — |
+| Comprendre × Terre | — | ✅ **intelligo** : sol + dureté, pente + altitude, humidité + climat, inflammabilité + moiteur (`SpellEarthUnderstand`, maintenu) | — | — |
+| Transformer × … | — | ⏳ **chantier TRANSFORMATIONS** (décision dev 2026-09-27) : eau → glace, peindre la pierre… quand les éléments auront leurs noyaux | — | — |
 | Créer × Feu | — | ⏳ (E3) | ⏳ | ⏳ |
 | Créer × Vent | — | — | ⏳ (E4) | — |
 | Détruire / Transformer / Contrôler / Comprendre × autres | ⏳ | ⏳ | ⏳ | ⏳ |

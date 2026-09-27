@@ -120,3 +120,27 @@ TEST_CASE("terrain brush: flatten levels toward the target against the live heig
     applyTerrainBrush(none, nullptr, kChunk, brush, { 30.0f, 30.0f }, 1.0f);
     CHECK(brushDeltaAt(none, kChunk, 30, 30) == 0.0f);
 }
+
+TEST_CASE("terrain brush: a wall rises along its segment, flat on top, rounded at the ends") {
+    BrushGrids grids;
+    applyTerrainWall(grids, nullptr, kChunk, { 10.0f, 30.0f }, { 40.0f, 30.0f },
+                     2.0f, 3.0f);
+    // Full height all along the axis, no accumulation between samples.
+    for (i32 x = 10; x <= 40; x += 5) {
+        CHECK(brushDeltaAt(grids, kChunk, x, 30) == doctest::Approx(3.0f));
+    }
+    // Symmetric across the axis, zero at the half width.
+    CHECK(brushDeltaAt(grids, kChunk, 25, 29) == brushDeltaAt(grids, kChunk, 25, 31));
+    CHECK(brushDeltaAt(grids, kChunk, 25, 29) > 0.0f);
+    CHECK(brushDeltaAt(grids, kChunk, 25, 29) < 3.0f);
+    CHECK(brushDeltaAt(grids, kChunk, 25, 32) == 0.0f);
+    // Round caps: a metre past the end still rises, three metres past does not.
+    CHECK(brushDeltaAt(grids, kChunk, 41, 30) > 0.0f);
+    CHECK(brushDeltaAt(grids, kChunk, 43, 30) == 0.0f);
+    // A degenerate segment is a round bump of the half width.
+    BrushGrids dot;
+    applyTerrainWall(dot, nullptr, kChunk, { 20.0f, 20.0f }, { 20.0f, 20.0f },
+                     2.0f, 1.0f);
+    CHECK(brushDeltaAt(dot, kChunk, 20, 20) == doctest::Approx(1.0f));
+    CHECK(brushDeltaAt(dot, kChunk, 22, 20) == 0.0f);
+}
