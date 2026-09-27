@@ -415,8 +415,9 @@ private:
     const gameplay::AbilityForm* attackAbility { nullptr };
     const gameplay::AbilityForm* dodgeAbility { nullptr };
     // The spirit ability behind Q (chantier ESPRITS): its Lua script
-    // places the source through the world actions bound on the Vm.
-    const gameplay::AbilityForm* spiritWaterAbility { nullptr };
+    // acts through the world actions bound on the Vm. Selected by the
+    // console (`spirit cast <EditorId>`) until a spirit bar exists.
+    const gameplay::AbilityForm* spiritAbility { nullptr };
     const gameplay::EffectForm* swimCostEffect { nullptr }; // D2b
     const gameplay::EffectForm* sneakCostEffect { nullptr }; // sneak
     const gameplay::EffectForm* bowDrawCostEffect { nullptr }; // drawn-bow drain
@@ -547,9 +548,20 @@ private:
         f32 rate { 0.0f };
         f32 radius { 0.0f };
         f32 seconds { 0.0f };
+        // A jet streams from the caster's nozzle along the aim instead
+        // of landing at (x, z); `speed` is its launch speed.
+        bool jet { false };
+        f32 speed { 0.0f };
     };
     std::deque<PendingSpiritAction> pendingSpiritActions;
     void applyPendingSpiritActions();
+    // Jets follow the caster every frame: re-aim, re-land, steer their
+    // particle stream, feed the water kernel. Play mode only.
+    void updateSpiritJets(f32 dt);
+    void stopSpiritEmitters(const vector<u32>& emitters);
+    // The caster's nozzle (eye ray, hand-height offset).
+    Vec3 spiritNozzle() const;
+    f32 spiritImpactCueCooldown { 0.0f };
     // The aimed ground point: the eye ray against physics, rejected when
     // the hit sits on a prop rather than the terrain. nullopt = nothing.
     std::optional<Vec3> aimGround() const;

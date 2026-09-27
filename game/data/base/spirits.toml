@@ -316,3 +316,99 @@ new = true
 editorId = "CueSpiritWaterSpawn"
 tag = "Cue.Spirit.Water.Spawn"
 particles = "5b1e1700-0000-4000-8000-000000000071"
+
+# --- The jet (E1.d): Q streams water from the caster's hand along the
+# aim; the arc lands on the ground and the live water sim takes it from
+# there (world/spirit/SpiritJets). The stream itself is the spirit's
+# jetParticles ParticleForm, steered every frame.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000064"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterJetCost"
+attribute = "essence"
+op = "add"
+magnitude = -10.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000065"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterJetCooldown"
+duration = "duration"
+durationSeconds = 4.0
+grantedTag = "Cooldown.SpiritWaterJet"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000066"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterJet"
+cost = "5b1e1700-0000-4000-8000-000000000064"
+cooldown = "5b1e1700-0000-4000-8000-000000000065"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+script = """
+spirit.jet("Water", 14.0, 2.0, 2.0, 3.0)
+"""
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000073"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "WaterJetStream"
+shape = "point"
+burst = 0
+rate = 240.0
+duration = 3.0
+lifetime = 1.5
+lifetimeJitter = 0.0
+velocity = [0.0, 0.0, 0.0]
+velocityJitter = 0.5
+gravity = [0.0, -9.81, 0.0]
+sizeStart = 0.14
+sizeEnd = 0.10
+colorStart = [0.55, 0.75, 1.0, 0.85]
+colorEnd = [0.7, 0.85, 1.0, 0.6]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000074"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "JetSplash"
+shape = "cone"
+shapeRadius = 40.0
+burst = 14
+lifetime = 0.6
+lifetimeJitter = 0.2
+velocity = [0.0, 2.5, 0.0]
+velocityJitter = 1.0
+gravity = [0.0, -9.0, 0.0]
+sizeStart = 0.08
+sizeEnd = 0.03
+colorStart = [0.6, 0.8, 1.0, 0.8]
+colorEnd = [0.8, 0.9, 1.0, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000075"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritWaterJet"
+tag = "Cue.Spirit.Water.Jet"
+particles = "5b1e1700-0000-4000-8000-000000000074"
+
+# The Water spirit streams the jet ParticleForm.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000007"
+type = "SpiritForm"
+[records.fields]
+jetParticles = "5b1e1700-0000-4000-8000-000000000073"

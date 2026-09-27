@@ -127,6 +127,43 @@ Ténèbres→Curse, Lame→Bleed.
 - Décision §4.9 du plan à garder en tête : un script sans `wait` qui boucle
   bloque la frame (comme tout `run`) — garde de resume plus tard.
 
+### E1.d — le jet d'eau (demande dev, 2026-09-27)
+Retour dev après validation de la source : « tirer un jet d'eau depuis le
+personnage, simulé quand il tombe sur le sol ».
+- `world/spirit/SpiritJets` (headless) : `jetLanding(origin, velocity, g,
+  heightFn)` = l'arc balistique pas à pas (1/30 s) + une bissection au
+  franchissement du sol → point d'atterrissage + temps de vol ; nullopt au-delà
+  de 6 s (gouffre, rebord marin). `SpiritJetList` (cap 4, éviction du plus
+  ancien) : `aim()` re-vise les jets « suiveurs » à chaque frame (même vitesse,
+  buse et forward courants), `resolveLandings()`, `appendWaterSources()` = un
+  disque par jet d'eau atterri. Un jet est **transitoire** (le geste du
+  lanceur, comme une flèche en vol) : rien à sauver — l'eau de la sim ne l'est
+  jamais, seules les sources le sont.
+- `SpiritDirector` : `jetList()`, `tick()` rend les émetteurs des jets expirés,
+  `waterSources()` = sources placées + jets atterris ; `SpiritForm.jetParticles`
+  (APPEND, patché sur l'esprit Eau) = le ParticleForm du flux.
+- Présentation : UN émetteur continu par jet (`WaterJetStream`, 240 p/s),
+  `fx::ParticleSim::steerEmitter(id, velocity, lifetime)` (nouveau, engine/fx)
+  re-vise le flux chaque frame et borne la vie des gouttes au **temps de vol**
+  → le flux meurt au sol au lieu de le traverser ; `Cue.Spirit.Water.Jet`
+  (éclaboussure `JetSplash`) toutes les 0,25 s au point d'impact.
+- Scène : `PendingSpiritAction.jet/speed`, buse = œil + 0,45 m devant − 0,35 m
+  (une main, pas l'objectif) ; `updateSpiritJets(dt)` dans la branche Play
+  (aim → landings → steer → cue → push des sources chaque frame : une poignée
+  de disques copiés par valeur) ; les jets meurent au swap de carte.
+- Lua : `spirit.jet(kind, speed, rate, radius, seconds)`. Ability
+  `SpiritWaterJet` (essence −10 strict, cooldown 4 s) = `spirit.jet("Water",
+  14, 2, 2, 3)` : 3 s de flux à 2 m³/s qui suit la visée. **Q = le jet par
+  défaut** ; console `spirit cast SpiritWater` rend la source, `spirit cast
+  <EditorId>` choisit n'importe quelle ability tant qu'il n'y a pas de barre
+  d'esprits.
+- Tests : `SpiritJetsTest` (portée balistique exacte à 1 %, mur qui attrape
+  l'arc, gouffre = nullopt, buse enterrée, suiveur re-visé, disque d'eau,
+  expiration rendant les émetteurs, cap) ; `ScriptTest` `spirit.jet`.
+- Limites v1 : tap = 3 s de jet (pas de maintien/drain), le jet atterrit sur le
+  terrain seul (au-dessus d'un lac épinglé l'eau est avalée par le pin, comme
+  la source), pas de collision des gouttes avec les props.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

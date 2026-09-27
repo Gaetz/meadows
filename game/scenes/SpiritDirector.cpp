@@ -1,5 +1,7 @@
 #include "game/scenes/SpiritDirector.hpp"
 
+#include "data/forms/FormQuery.hpp"
+#include "data/forms/SpiritForms.hpp"
 #include "engine/core/Log.hpp"
 
 namespace game {
@@ -9,6 +11,13 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     for (const str& error : table.errors) {
         LOG_WARN("Spirits: {}", error);
     }
+    jetFx.fill(core::Guid {});
+    data::forEach<data::SpiritForm>(forms, [&](const data::SpiritForm& spirit) {
+        const auto kind = render::terrain::spiritFromName(spirit.name);
+        if (kind != render::terrain::SpiritKind::kCount) {
+            jetFx[static_cast<size_t>(kind)] = spirit.jetParticles;
+        }
+    });
     sources.apply(forms);
     if (!sources.entries().empty()) {
         LOG_INFO("Spirits: {} source(s) placed from the records",

@@ -74,6 +74,10 @@ public:
 
     // Follows a moving source (a torch bearer); unknown ids are ignored.
     void moveEmitter(u32 id, const Vec3& origin);
+    // Re-aims a stream (a spirit jet following the caster): the initial
+    // velocity and the per-particle lifetime of everything spawned from
+    // now on; live particles keep flying. Unknown ids are ignored.
+    void steerEmitter(u32 id, const Vec3& velocity, f32 lifetime);
     // Ends the emission early; live particles drain naturally.
     void stopEmitter(u32 id);
 

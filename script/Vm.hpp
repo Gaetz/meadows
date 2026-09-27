@@ -104,6 +104,11 @@ public:
         std::function<void(const std::string& kind, f32 x, f32 z, f32 rate,
                            f32 radius, f32 seconds)>
             spawnSource;
+        // Lua `spirit.jet(kind, speed, rate, radius, seconds)` — a stream
+        // from the caster along the aim, simulated where it lands.
+        std::function<void(const std::string& kind, f32 speed, f32 rate,
+                           f32 radius, f32 seconds)>
+            spawnJet;
         // Lua `spirit.push_terrain(x, z, radius, amount, brush)` — the
         // earth brick; unset = the call is a logged no-op.
         std::function<void(f32 x, f32 z, f32 radius, f32 amount,

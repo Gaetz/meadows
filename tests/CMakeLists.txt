@@ -93,6 +93,7 @@
     PrefabTest.cpp
     PluginLoaderTest.cpp
     QuestSaveTest.cpp
+    SpiritJetsTest.cpp
     SpiritSourcesTest.cpp
     QuestTest.cpp
     ReflectTest.cpp

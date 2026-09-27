@@ -672,8 +672,12 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
-    spiritWaterAbility =
-        data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWater");
+    spiritAbility =
+        data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWaterJet");
+    if (!spiritAbility) {
+        spiritAbility =
+            data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWater");
+    }
     // The audio backend + the SoundForm resolver (idempotent on
     // re-enter: create() is a no-op once ready).
     if (!audioSystem.ready()) {
@@ -1472,10 +1476,14 @@ void LandscapeScene::update(f32 dt) {
         applyPendingSpiritActions();
         // Spirit sources live in SIM seconds: a spring pours rate x
         // duration whatever the dev time scale. Re-push only on change.
-        if (sandboxActive &&
-            spiritDirector.tick(
-                dt * renderer.waterSystem().simConfig().timeScale)) {
-            pushRuntimeWaterSources();
+        if (sandboxActive) {
+            vector<u32> stopped;
+            if (spiritDirector.tick(
+                    dt * renderer.waterSystem().simConfig().timeScale,
+                    &stopped)) {
+                stopSpiritEmitters(stopped);
+                pushRuntimeWaterSources();
+            }
         }
     }
     {
@@ -1693,6 +1701,7 @@ void LandscapeScene::update(f32 dt) {
         if (script::Vm* vm = sceneConsole.vm()) {
             vm->tickCoroutines(dt);
         }
+        updateSpiritJets(dt);
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
         // mouselook. Spectator AND Edit look only while RMB -- or Alt+LMB,
@@ -2086,6 +2095,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     publishWaterBodies();
     interiorEscapes.clear();
     params.snowLine = activeSnowLine;
+    stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
     pushRuntimeWaterSources(); // this map's springs into the sim
     // The whole world changed: a world-sized event keeps the
     // contentTouchedSince contract (every bump records its rects).
@@ -4006,6 +4016,19 @@ void LandscapeScene::createConsole() {
             pendingSpiritActions.push_back(
                 PendingSpiritAction { kind, x, z, rate, radius, seconds });
         },
+        [this](const std::string& kindName, f32 speed, f32 rate, f32 radius,
+               f32 seconds) {
+            const auto kind = render::terrain::spiritFromName(kindName);
+            if (kind == render::terrain::SpiritKind::kCount) {
+                LOG_WARN("spirit.jet: unknown spirit '{}'", kindName);
+                return;
+            }
+            PendingSpiritAction action { kind, 0.0f, 0.0f, rate, radius,
+                                         seconds };
+            action.jet = true;
+            action.speed = speed;
+            pendingSpiritActions.push_back(action);
+        },
         nullptr, // push_terrain arrives with the earth brick
     });
     // Chantier ESPRITS dev path (no ability, no Lua): place/list/clear
@@ -4037,12 +4060,25 @@ void LandscapeScene::createConsole() {
         }
         if (verb == "clear") {
             spiritDirector.clear();
+            stopSpiritEmitters(spiritDirector.jetList().clear());
             pushRuntimeWaterSources();
             return "spirit sources cleared";
         }
+        if (verb == "cast") {
+            str editorId;
+            in >> editorId;
+            const auto* ability =
+                data::findByEditorId<gameplay::AbilityForm>(forms, editorId);
+            if (!ability) {
+                return "no AbilityForm named '" + editorId + "'";
+            }
+            spiritAbility = ability;
+            return "Q now casts " + editorId;
+        }
         if (verb != "spawn") {
             return "usage: spirit spawn <Water|...> <x> <z> [rate] "
-                   "[radius] [seconds] | spirit list | spirit clear";
+                   "[radius] [seconds] | spirit cast <AbilityEditorId> | "
+                   "spirit list | spirit clear";
         }
         str kindName;
         f32 x = 0.0f;
@@ -4521,23 +4557,27 @@ script::ScriptContext LandscapeScene::playerScriptContext() {
 }
 
 void LandscapeScene::castSpirit() {
-    if (mode != SceneMode::Play || !sandboxActive || !spiritWaterAbility ||
+    if (mode != SceneMode::Play || !sandboxActive || !spiritAbility ||
         !playerEntity.is_alive() ||
         !playerEntity.has<gameplay::AbilitySystem>()) {
         return;
     }
     // Geometry first, before any cost is paid: tryActivate has no
-    // position. Water onto water would pour into a pinned lake (the pin
-    // swallows it) — refused rather than silently lost.
-    const std::optional<Vec3> at = aimGround();
-    if (!at) {
-        interaction.say(texts.get("spirit.noGround"), 1.5f);
-        return;
-    }
-    if (render::terrain::waterSurfaceQuery(makeWaterQuery(), at->x, at->z,
-                                           at->y)) {
-        interaction.say(texts.get("spirit.wetGround"), 1.5f);
-        return;
+    // position. Only for AIMED scripts (they call aim()): water onto
+    // water would pour into a pinned lake (the pin swallows it) —
+    // refused rather than silently lost. A jet arcs from the hand and
+    // lands wherever it lands; nothing to pre-check.
+    if (spiritAbility->script.find("aim(") != str::npos) {
+        const std::optional<Vec3> at = aimGround();
+        if (!at) {
+            interaction.say(texts.get("spirit.noGround"), 1.5f);
+            return;
+        }
+        if (render::terrain::waterSurfaceQuery(makeWaterQuery(), at->x,
+                                               at->z, at->y)) {
+            interaction.say(texts.get("spirit.wetGround"), 1.5f);
+            return;
+        }
     }
     gameplay::AbilityContext ability { forms, gameTags };
     ability.events = &eventBus;
@@ -4550,7 +4590,7 @@ void LandscapeScene::castSpirit() {
     };
     auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
     auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-    if (!gameplay::tryActivate(*spiritWaterAbility, set, system, set, system,
+    if (!gameplay::tryActivate(*spiritAbility, set, system, set, system,
                                ability)) {
         interaction.say(texts.get("spirit.refused"), 1.5f);
     }
@@ -4565,6 +4605,37 @@ void LandscapeScene::applyPendingSpiritActions() {
         const PendingSpiritAction action = pendingSpiritActions.front();
         pendingSpiritActions.pop_front();
         if (!sandboxActive) {
+            continue;
+        }
+        if (action.jet) {
+            world::SpiritJet jet;
+            jet.kind = action.kind;
+            jet.origin = spiritNozzle();
+            jet.velocity = flyCamera.camera.forward() * action.speed;
+            jet.rate = action.rate;
+            jet.radius = action.radius;
+            jet.remaining = action.seconds;
+            // The visible stream: the spirit's jet ParticleForm, its
+            // duration bound to the gesture; the per-frame steer keeps
+            // the arc true to the aim.
+            const core::Guid& fxId = spiritDirector.jetParticles(action.kind);
+            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.velocity = jet.velocity;
+                params.gravity = { 0.0f, -world::SpiritJetList::kGravity,
+                                   0.0f };
+                params.duration = action.seconds;
+                const u32 seed =
+                    static_cast<u32>(static_cast<i32>(jet.origin.x * 73.0f)) ^
+                    (static_cast<u32>(static_cast<i32>(jet.origin.z * 179.0f))
+                     << 8) ^
+                    fxSim.count();
+                jet.emitter = fxSim.spawn(params, jet.origin, seed);
+            }
+            if (const u32 evicted = spiritDirector.jetList().start(jet)) {
+                fxSim.stopEmitter(evicted);
+            }
+            changed = true;
             continue;
         }
         spiritDirector.spawn(action.kind, action.x, action.z, action.rate,
@@ -4582,8 +4653,61 @@ void LandscapeScene::applyPendingSpiritActions() {
               at, action.rate });
     }
     if (changed) {
+        updateSpiritJets(0.0f);
         pushRuntimeWaterSources();
     }
+}
+
+Vec3 LandscapeScene::spiritNozzle() const {
+    // Below and ahead of the eye: the stream leaves a hand, not the
+    // lens, so it reads in first person without covering the view.
+    return flyCamera.camera.position + flyCamera.camera.forward() * 0.45f +
+           Vec3 { 0.0f, -0.35f, 0.0f };
+}
+
+void LandscapeScene::stopSpiritEmitters(const vector<u32>& emitters) {
+    for (const u32 id : emitters) {
+        if (id != 0) {
+            fxSim.stopEmitter(id);
+        }
+    }
+}
+
+void LandscapeScene::updateSpiritJets(f32 dt) {
+    world::SpiritJetList& jets = spiritDirector.jetList();
+    spiritImpactCueCooldown = glm::max(0.0f, spiritImpactCueCooldown - dt);
+    if (jets.empty()) {
+        return;
+    }
+    jets.aim(spiritNozzle(), flyCamera.camera.forward());
+    const auto& params = renderer.terrainParams();
+    jets.resolveLandings([&params](f32 x, f32 z) {
+        return render::terrain::height(params, x, z);
+    });
+    bool splash = false;
+    for (const world::SpiritJet& jet : jets.entries()) {
+        if (jet.emitter != 0) {
+            fxSim.moveEmitter(jet.emitter, jet.origin);
+            // Particles die where the arc lands: the stream ends at the
+            // ground instead of sinking through it.
+            fxSim.steerEmitter(jet.emitter, jet.velocity,
+                               jet.landing ? jet.landing->flightSeconds
+                                           : 2.0f);
+        }
+        if (jet.landing && spiritImpactCueCooldown <= 0.0f) {
+            fxDirector.cues().emit(
+                { "Cue.Spirit." +
+                      str { render::terrain::spiritName(jet.kind) } + ".Jet",
+                  jet.landing->point, jet.rate });
+            splash = true;
+        }
+    }
+    if (splash) {
+        spiritImpactCueCooldown = 0.25f;
+    }
+    // The landing spots move with the aim: the kernel gets them fresh
+    // every frame (a value copy of a handful of discs).
+    pushRuntimeWaterSources();
 }
 
 render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {

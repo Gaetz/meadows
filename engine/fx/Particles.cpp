@@ -109,6 +109,16 @@ void ParticleSim::moveEmitter(u32 id, const Vec3& origin) {
     }
 }
 
+void ParticleSim::steerEmitter(u32 id, const Vec3& velocity, f32 lifetime) {
+    for (Emitter& emitter : emitters) {
+        if (emitter.id == id) {
+            emitter.params.velocity = velocity;
+            emitter.params.lifetime = glm::max(lifetime, 0.05f);
+            return;
+        }
+    }
+}
+
 void ParticleSim::stopEmitter(u32 id) {
     emitters.erase(std::remove_if(emitters.begin(), emitters.end(),
                                   [&](const Emitter& emitter) {

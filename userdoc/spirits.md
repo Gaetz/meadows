@@ -86,6 +86,13 @@ if p then spirit.spawn("Water", p.x, p.z, 3.0, 4.0, 10.0) end
   the time scale), `-1` makes it permanent.
 - `wait(t)` — the script is a coroutine: two jets half a second apart is
   `spirit.spawn(...) wait(0.5) spirit.spawn(...)`.
+- `spirit.jet(kind, speed, rate, radius, seconds)` — a **stream** from
+  the caster's hand along the aim, at `speed` m/s: it follows the aim for
+  `seconds` and is simulated where its arc lands (a jet of water pools
+  and flows from the landing spot). Jets are gestures — never saved.
+  The default Q ability, `SpiritWaterJet`, is `spirit.jet("Water", 14.0,
+  2.0, 2.0, 3.0)`. The stream's look is the spirit's `jetParticles`
+  ParticleForm; the impact fires `Cue.Spirit.<Kind>.Jet`.
 - `spirit.push_terrain(x, z, radius, amount, brush)` — reserved for the
   earth spirit.
 
@@ -105,8 +112,9 @@ options screen, `spiritCast` in `settings.toml`).
 
 ```
 spirit spawn Water <x> <z> [rate] [radius] [seconds]
+spirit cast <AbilityEditorId>     # what Q casts: SpiritWaterJet (default) or SpiritWater
 spirit list
-spirit clear
+spirit clear                      # sources and jets
 ```
 
 The console path needs no ability and no script — handy to test a spot,

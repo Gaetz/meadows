@@ -361,3 +361,30 @@ TEST_CASE("script: wait(1) then spawn resumes on the tick") {
     CHECK(spawns == 2); // the second jet after the wait
     CHECK(vm.pendingCoroutines() == 0);
 }
+
+TEST_CASE("script: spirit.jet reaches the jet callback with its launch speed") {
+    Vm vm;
+    std::string kind;
+    f32 speed = 0.0f, rate = 0.0f, radius = 0.0f, seconds = 0.0f;
+    Vm::WorldActions actions;
+    actions.spawnJet = [&](const std::string& k, f32 sp, f32 r, f32 rad,
+                           f32 s) {
+        kind = k;
+        speed = sp;
+        rate = r;
+        radius = rad;
+        seconds = s;
+    };
+    vm.bindWorldActions(actions);
+    ScriptContext ctx;
+    CHECK(vm.run("spirit.jet('Water', 14.0, 2.0, 2.0, 3.0)", ctx).ok);
+    CHECK(kind == "Water");
+    CHECK(speed == 14.0f);
+    CHECK(rate == 2.0f);
+    CHECK(radius == 2.0f);
+    CHECK(seconds == 3.0f);
+    // Unbound = a silent no-op, never an error.
+    Vm bare;
+    bare.bindWorldActions(Vm::WorldActions {});
+    CHECK(bare.run("spirit.jet('Water', 1, 1, 1, 1)", ctx).ok);
+}

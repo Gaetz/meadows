@@ -357,6 +357,13 @@ void Vm::bindWorldActions(WorldActions actions) {
             }
         });
     spirit.set_function(
+        "jet", [jet = actions.spawnJet](const std::string& kind, f32 speed,
+                                        f32 rate, f32 radius, f32 seconds) {
+            if (jet) {
+                jet(kind, speed, rate, radius, seconds);
+            }
+        });
+    spirit.set_function(
         "push_terrain",
         [push = actions.pushTerrain](f32 x, f32 z, f32 radius, f32 amount,
                                      const std::string& brush) {

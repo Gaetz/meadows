@@ -33,6 +33,8 @@ struct SpiritForm : Form {
     str cueSpawn;                    // "Cue.Spirit.Water.Spawn"
     str cueActive;
     str cueExtinguish;
+    core::Guid jetParticles;         // ParticleForm streamed along a jet's
+                                     // arc (world/spirit/SpiritJets)
 
     REFLECT_BEGIN(SpiritForm, Form)
         REFLECT_FIELD(name)
@@ -49,6 +51,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(cueSpawn)
         REFLECT_FIELD(cueActive)
         REFLECT_FIELD(cueExtinguish)
+        REFLECT_FIELD(jetParticles)
     REFLECT_END()
 };
 
