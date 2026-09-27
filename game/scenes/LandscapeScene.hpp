@@ -567,7 +567,8 @@ private:
     void stopSpiritEmitters(const vector<u32>& emitters);
     // The caster's nozzle (eye ray, hand-height offset).
     Vec3 spiritNozzle() const;
-    f32 spiritImpactCueCooldown { 0.0f };
+    // The stream is lumps launched at this cadence (seconds).
+    static constexpr f32 kJetSphereInterval = 0.12f;
     // The control spell's held volume (world/spirit/SpiritJets
     // SpiritHold): drawn at the aim while Q is held, dropped on release.
     std::optional<world::SpiritHold> spiritHold;

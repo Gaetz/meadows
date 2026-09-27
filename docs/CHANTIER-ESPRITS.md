@@ -242,6 +242,19 @@ maillages relevés : tube 1,5 m, blob 8 m) et **coût de maintien ÷ 4** :
 payée à chaque `costPeriod`), `payAbilityCost(..., scale)` applique le
 même EffectForm de coût à magnitude mise à l'échelle (§2.9 intact).
 
+### Réglage dev 2 après E1.g (2026-09-27) : le jet en sphères, portée × 3
+- Le tube est retiré : le jet est un **chapelet de sphères d'eau** lancées
+  toutes les 0,12 s (`JetSphere`, `SpiritJetList::advanceSpheres`), chacune
+  avec la vitesse de la buse à SON lancement (balayer la visée laisse une
+  traînée, pas un saut), rayon = ∛(3·débit·intervalle/4π) (16 m³/s →
+  ~0,8 m), chacune **éclabousse là où elle tombe** (`Cue.Spirit.Water.Jet`
+  par atterrissage, plus de cadence de 0,25 s). Un jet expiré ne lance plus
+  rien et ne nourrit plus le noyau, mais reste jusqu'à ce que sa dernière
+  sphère touche le sol. Les particules restent en embruns.
+- `appendJetTube` reste disponible (testé) mais n'est plus utilisé.
+- **Portée × 3** : sorts `point` 72 m (rayon de visée physique 160 m), jet
+  60 m ⇒ 24 m/s à 45°.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

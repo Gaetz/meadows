@@ -1,6 +1,7 @@
 #include "world/spirit/SpiritJets.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace world {
 
@@ -71,14 +72,21 @@ bool SpiritJetList::tick(f32 simSeconds, vector<u32>* stopped) {
     }
     for (auto it = list.begin(); it != list.end();) {
         if (it->remaining <= 0.0f) {
+            // The gesture is over: stop the stream (emitter, kernel
+            // source — appendWaterSources skips a spent jet) but keep the
+            // jet while lumps are still falling; it leaves with the last.
             if (stopped && it->emitter != 0) {
                 stopped->push_back(it->emitter);
+                it->emitter = 0;
+                changed = true;
             }
-            it = list.erase(it);
-            changed = true;
-        } else {
-            ++it;
+            if (it->spheres.empty()) {
+                it = list.erase(it);
+                changed = true;
+                continue;
+            }
         }
+        ++it;
     }
     return changed;
 }
@@ -105,11 +113,51 @@ void SpiritJetList::resolveLandings(const GroundHeightFn& height) {
     }
 }
 
+void SpiritJetList::advanceSpheres(f32 dt, f32 interval, f32 gravity,
+                                   vector<Vec3>* landed) {
+    if (interval <= 0.0f) {
+        return;
+    }
+    for (SpiritJet& jet : list) {
+        for (JetSphere& sphere : jet.spheres) {
+            sphere.age += dt;
+        }
+        for (auto it = jet.spheres.begin(); it != jet.spheres.end();) {
+            if (it->age >= it->flightSeconds) {
+                if (landed) {
+                    it->age = it->flightSeconds; // the ground, not below it
+                    landed->push_back(it->at(gravity));
+                }
+                it = jet.spheres.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (jet.remaining <= 0.0f) {
+            continue; // an expiring jet lets its last lumps fall, launches none
+        }
+        jet.sphereClock += dt;
+        while (jet.sphereClock >= interval - 1e-4f) {
+            jet.sphereClock -= interval;
+            JetSphere sphere;
+            sphere.origin = jet.origin;
+            sphere.velocity = jet.velocity;
+            sphere.age = jet.sphereClock; // launched mid-frame: already flying
+            sphere.flightSeconds =
+                jet.landing ? jet.landing->flightSeconds : 2.0f;
+            const f32 volume = glm::max(jet.rate, 0.0f) * interval;
+            sphere.radius = glm::clamp(
+                std::cbrt(3.0f * volume / (4.0f * 3.1415927f)), 0.15f, 2.0f);
+            jet.spheres.push_back(sphere);
+        }
+    }
+}
+
 void SpiritJetList::appendWaterSources(
     vector<render::terraingen::WaterSource>& out) const {
     for (const SpiritJet& jet : list) {
         if (jet.kind != render::terrain::SpiritKind::Water || !jet.landing ||
-            jet.rate <= 0.0f) {
+            jet.rate <= 0.0f || jet.remaining <= 0.0f) {
             continue;
         }
         out.push_back({ jet.landing->point.x, jet.landing->point.z,

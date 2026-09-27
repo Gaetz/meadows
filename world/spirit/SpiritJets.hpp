@@ -32,6 +32,22 @@ std::optional<JetLanding> jetLanding(const Vec3& origin, const Vec3& velocity,
                                      f32 maxSeconds = 6.0f,
                                      f32 step = 1.0f / 30.0f);
 
+// One lump of the stream in flight: launched from the nozzle with the
+// jet's velocity of that instant, it flies its own arc and lands after
+// `flightSeconds` (the landing resolved at launch).
+struct JetSphere {
+    Vec3 origin { 0.0f };
+    Vec3 velocity { 0.0f };
+    f32 age { 0.0f };
+    f32 flightSeconds { 0.0f };
+    f32 radius { 0.3f };
+    Vec3 at(f32 gravity) const {
+        return Vec3 { origin.x + velocity.x * age,
+                      origin.y + velocity.y * age - 0.5f * gravity * age * age,
+                      origin.z + velocity.z * age };
+    }
+};
+
 struct SpiritJet {
     render::terrain::SpiritKind kind { render::terrain::SpiritKind::Water };
     Vec3 origin { 0.0f };   // the nozzle (hand / eye)
@@ -50,6 +66,10 @@ struct SpiritJet {
     u32 emitter { 0 };      // presentation handle (the scene's particle
                             // emitter), 0 = none
     std::optional<JetLanding> landing;
+    // The stream as lumps: launched every sphereInterval, each flying
+    // its own arc (a swept aim leaves a trail, not a jump).
+    vector<JetSphere> spheres;
+    f32 sphereClock { 0.0f };
 };
 
 // A HELD volume (the control spell): while the key is held the caster
@@ -93,6 +113,13 @@ public:
     void aim(const Vec3& origin, const Vec3& forward);
     // Recomputes every landing against the ground (call after aim).
     void resolveLandings(const GroundHeightFn& height);
+    // Launches a sphere per `interval` from each jet's current nozzle and
+    // velocity (radius from the volume it carries: rate x interval),
+    // ages every sphere by dt, drops the landed ones — their landing
+    // points go to `landed` (the scene splashes there). Call after
+    // resolveLandings (a launch takes the current flight time).
+    void advanceSpheres(f32 dt, f32 interval, f32 gravity,
+                        vector<Vec3>* landed = nullptr);
     // The kernel view: one disc per landed WATER jet.
     void appendWaterSources(vector<render::terraingen::WaterSource>& out) const;
 

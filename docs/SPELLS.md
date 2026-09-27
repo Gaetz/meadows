@@ -99,7 +99,7 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 
 | Forme × Élément | `self` | `point` | `stream` | `projectile` |
 |---|---|---|---|---|
-| Créer × Eau | — | ✅ **source** posée au sol visé (`SpellWaterSpring`) | ✅ **jet** depuis la main, suit la visée, maintenu (`SpellWaterStream`) | ⏳ |
+| Créer × Eau | — | ✅ **source** posée au sol visé (`SpellWaterSpring`) | ✅ **jet** depuis la main (sphères d'eau lancées à cadence, chacune éclabousse à l'impact), suit la visée, maintenu (`SpellWaterStream`) | ⏳ |
 | Détruire × Eau | — | ✅ **drain** : la même source, débit négatif (`SpellWaterDrain`, sphère 2 m, 3 s) | ⏳ | ⏳ |
 | Contrôler × Eau | — | ✅ **emprise** (maintenu par nature) : l'eau visée est aspirée dans un volume porté qui suit la visée, lâché au relâché (`SpellWaterHold`) | — | — |
 | Créer × Terre | — | ⏳ (E2 : `push_terrain`) | — | — |

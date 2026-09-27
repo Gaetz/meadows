@@ -144,3 +144,67 @@ TEST_CASE("spirit hold: draws only where the element is, caps at capacity, drops
     CHECK(hold.dropDischarge(2.0f) == doctest::Approx(30.0f));
     CHECK(hold.dropDischarge(0.0f) == 0.0f);
 }
+
+TEST_CASE("spirit jets: spheres launch on cadence, fly their own arc, land and splash") {
+    SpiritJetList jets;
+    SpiritJet jet;
+    jet.kind = SpiritKind::Water;
+    jet.origin = { 0.0f, 1.6f, 0.0f };
+    jet.velocity = { 10.0f, 5.0f, 0.0f };
+    jet.rate = 16.0f;
+    jet.remaining = 10.0f;
+    jets.start(jet);
+    jets.resolveLandings(flat);
+    const f32 flight = jets.entries()[0].landing->flightSeconds;
+    REQUIRE(flight > 0.5f);
+
+    // Half a second at 0.1 s cadence: five lumps in flight, none landed.
+    vector<Vec3> landed;
+    for (int i = 0; i < 5; ++i) {
+        jets.advanceSpheres(0.1f, 0.1f, kG, &landed);
+    }
+    CHECK(jets.entries()[0].spheres.size() == 5);
+    CHECK(landed.empty());
+    // Radius from the carried volume: 16 m³/s x 0.1 s = 1.6 m³ -> ~0.73 m.
+    CHECK(jets.entries()[0].spheres[0].radius == doctest::Approx(0.726f).epsilon(0.02));
+    // The oldest lump is the furthest along the arc.
+    const Vec3 a = jets.entries()[0].spheres[0].at(kG);
+    const Vec3 b = jets.entries()[0].spheres[4].at(kG);
+    CHECK(a.x > b.x);
+
+    // Re-aim: lumps already flying keep their own velocity.
+    jets.aim({ 0.0f, 1.6f, 0.0f }, { -1.0f, 0.0f, 0.0f });
+    jets.resolveLandings(flat);
+    jets.advanceSpheres(0.1f, 0.1f, kG, &landed);
+    CHECK(jets.entries()[0].spheres[0].velocity.x > 0.0f);
+    CHECK(jets.entries()[0].spheres.back().velocity.x < 0.0f);
+
+    // Past the flight time every early lump has landed on the ground,
+    // each reported once.
+    for (int i = 0; i < 40; ++i) {
+        jets.advanceSpheres(0.1f, 0.1f, kG, &landed);
+    }
+    CHECK(landed.size() >= 30);
+    for (const Vec3& p : landed) {
+        CHECK(p.y == doctest::Approx(0.0f).epsilon(0.05).scale(1.0f));
+    }
+
+    // An expired jet launches nothing more but stays until its last lump
+    // falls, its emitter handed back at once.
+    jets.entriesMut()[0].emitter = 5;
+    vector<u32> stopped;
+    CHECK(jets.tick(20.0f, &stopped));
+    REQUIRE(stopped.size() == 1);
+    CHECK(jets.entries().size() == 1);
+    vector<render::terraingen::WaterSource> sources;
+    jets.appendWaterSources(sources);
+    CHECK(sources.empty()); // a spent jet feeds the kernel no more
+    const size_t before = jets.entries()[0].spheres.size();
+    jets.advanceSpheres(0.1f, 0.1f, kG, &landed);
+    CHECK(jets.entries()[0].spheres.size() <= before);
+    for (int i = 0; i < 60; ++i) {
+        jets.advanceSpheres(0.1f, 0.1f, kG, &landed);
+    }
+    CHECK(jets.tick(0.0f, &stopped));
+    CHECK(jets.empty());
+}

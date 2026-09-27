@@ -4534,7 +4534,7 @@ std::optional<Vec3> LandscapeScene::aimGround() const {
         return std::nullopt;
     }
     const phys::RayHit hit = physics->rayCast(
-        flyCamera.camera.position, flyCamera.camera.forward(), 64.0f);
+        flyCamera.camera.position, flyCamera.camera.forward(), 160.0f);
     if (!hit.hit) {
         return std::nullopt;
     }
@@ -4919,20 +4919,21 @@ str LandscapeScene::currentSpellName() const {
 }
 
 void LandscapeScene::extractSpiritWater(render::RenderSnapshot& out) const {
-    // Jets: a tube along each arc, from the nozzle to the landing (or
-    // two seconds of fall into the void), its radius from the flow.
+    // Jets: the lumps in flight, one low-poly sphere each (a jet's
+    // spheres share one mesh instance).
     u64 id = 1;
     for (const world::SpiritJet& jet : spiritDirector.jetList().entries()) {
-        if (jet.kind != render::terrain::SpiritKind::Water) {
+        if (jet.kind != render::terrain::SpiritKind::Water ||
+            jet.spheres.empty()) {
             continue;
         }
         render::RenderSnapshot::WaterMeshInstance mesh;
         mesh.id = 0x5b1e0000u + id++;
-        const f32 seconds = jet.landing ? jet.landing->flightSeconds : 2.0f;
-        world::appendJetTube(mesh.triangles, jet.origin, jet.velocity,
-                             world::SpiritJetList::kGravity, seconds,
-                             world::jetRadius(jet.rate,
-                                              glm::length(jet.velocity)));
+        for (const world::JetSphere& sphere : jet.spheres) {
+            world::appendBlob(mesh.triangles,
+                              sphere.at(world::SpiritJetList::kGravity),
+                              sphere.radius, 5, 8, 0.9f);
+        }
         out.waterMeshes.push_back(std::move(mesh));
     }
     // The carried volume: a blob whose size IS the volume, floating over
@@ -4968,7 +4969,6 @@ void LandscapeScene::stopSpiritEmitters(const vector<u32>& emitters) {
 
 void LandscapeScene::updateSpiritJets(f32 dt) {
     world::SpiritJetList& jets = spiritDirector.jetList();
-    spiritImpactCueCooldown = glm::max(0.0f, spiritImpactCueCooldown - dt);
     if (jets.empty()) {
         return;
     }
@@ -5008,7 +5008,6 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
     jets.resolveLandings([&params](f32 x, f32 z) {
         return render::terrain::height(params, x, z);
     });
-    bool splash = false;
     for (const world::SpiritJet& jet : jets.entries()) {
         if (jet.emitter != 0) {
             fxSim.moveEmitter(jet.emitter, jet.origin);
@@ -5018,16 +5017,14 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
                                jet.landing ? jet.landing->flightSeconds
                                            : 2.0f);
         }
-        if (jet.landing && spiritImpactCueCooldown <= 0.0f) {
-            fxDirector.cues().emit(
-                { "Cue.Spirit." +
-                      str { render::terrain::spiritName(jet.kind) } + ".Jet",
-                  jet.landing->point, jet.rate });
-            splash = true;
-        }
     }
-    if (splash) {
-        spiritImpactCueCooldown = 0.25f;
+    // The stream's lumps: every landing is a splash where THAT lump
+    // fell — the arrival reads as water hitting ground, not as a rate.
+    vector<Vec3> landed;
+    jets.advanceSpheres(dt, kJetSphereInterval, world::SpiritJetList::kGravity,
+                        &landed);
+    for (const Vec3& at : landed) {
+        fxDirector.cues().emit({ "Cue.Spirit.Water.Jet", at, 1.0f });
     }
     // The landing spots move with the aim: the kernel gets them fresh
     // every frame (a value copy of a handful of discs).
