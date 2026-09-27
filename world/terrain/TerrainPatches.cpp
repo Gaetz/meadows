@@ -1,5 +1,8 @@
 #include "world/terrain/TerrainPatches.hpp"
 
+#include <algorithm>
+#include <cstdio>
+
 #include <cstring>
 #include <fstream>
 
@@ -89,6 +92,84 @@ sptr<const render::HeightPatches> buildHeightPatches(
                 std::move(*grid));
         });
     return patches;
+}
+
+namespace {
+
+core::Guid chunkGuid(const char* prefix, u64 chunkKey) {
+    char text[40];
+    std::snprintf(text, sizeof(text), "%s%012llx", prefix,
+                  static_cast<unsigned long long>(chunkKey & 0xFFFFFFFFFFFFull));
+    return *core::Guid::fromString(text);
+}
+
+} // namespace
+
+core::Guid saveTerrainAssetGuid(u64 chunkKey) {
+    return chunkGuid(kSaveTerrainAssetPrefix, chunkKey);
+}
+
+bool isSaveTerrainAsset(const core::Guid& asset) {
+    return asset.toString().rfind(kSaveTerrainAssetPrefix, 0) == 0;
+}
+
+void stageTerrainPatchRecords(const render::HeightPatches& patches,
+                              const vector<u64>& chunks,
+                              const data::FormDatabase& forms,
+                              const core::Guid& worldspace,
+                              const std::filesystem::path& dir,
+                              const str& assetPrefix,
+                              vector<data::Record>& records,
+                              vector<data::AssetEntry>& assets) {
+    std::error_code errc;
+    std::filesystem::create_directories(dir, errc);
+    const reflect::TypeInfo& type = TerrainPatchForm::staticTypeInfo();
+    const reflect::FieldInfo* assetField = type.findField("asset");
+    const reflect::FieldInfo* worldspaceField = type.findField("worldspace");
+    const reflect::FieldInfo* chunkXField = type.findField("chunkX");
+    const reflect::FieldInfo* chunkZField = type.findField("chunkZ");
+    // Deterministic order (§8): sorted chunk keys.
+    vector<u64> sorted = chunks;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+    for (const u64 key : sorted) {
+        const auto it = patches.chunks.find(key);
+        if (it == patches.chunks.end()) {
+            continue;
+        }
+        const i32 cx = static_cast<i32>(key >> 32);
+        const i32 cz = static_cast<i32>(key & 0xffffffffu);
+        char name[64];
+        std::snprintf(name, sizeof(name), "patch_%d_%d.ter", cx, cz);
+        if (!writeTerFile(dir / name, it->second)) {
+            continue;
+        }
+        const core::Guid assetGuid = saveTerrainAssetGuid(key);
+        assets.push_back({ assetGuid, assetPrefix + "/" + name });
+        // The chunk's record: patch the authored one, else create.
+        core::Guid existing;
+        forEach<TerrainPatchForm>(forms, [&](const TerrainPatchForm& form) {
+            if (form.chunkX == cx && form.chunkZ == cz &&
+                (form.worldspace == worldspace || !form.worldspace.isValid())) {
+                existing = form.id;
+            }
+        });
+        data::Record record;
+        record.typeId = type.id;
+        if (existing.isValid()) {
+            record.formId = existing;
+            record.creates = false;
+        } else {
+            record.formId = chunkGuid(kSaveTerrainRecordPrefix, key);
+            record.creates = true;
+            record.fields.emplace(worldspaceField->id,
+                                  reflect::Value { worldspace });
+            record.fields.emplace(chunkXField->id, reflect::Value { cx });
+            record.fields.emplace(chunkZField->id, reflect::Value { cz });
+        }
+        record.fields.emplace(assetField->id, reflect::Value { assetGuid });
+        records.push_back(std::move(record));
+    }
 }
 
 } // namespace world

@@ -91,13 +91,29 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
     }
 
     // Position/rotation: actors only (see header note — capturing a
-    // ground-snapped item/static Y would double the offset on reload).
+    // ground-snapped item/static Y would double the offset on reload)...
     if (entity.has<world::ActorMarker>() &&
         entity.has<world::Transform>()) {
         const auto& transform = entity.get<world::Transform>();
         if (transform.position != reference->position) {
             record.fields.emplace(type.findField("position")->id,
                                   reflect::Value { transform.position });
+        }
+        if (transform.rotation != reference->rotation) {
+            record.fields.emplace(type.findField("rotation")->id,
+                                  reflect::Value { transform.rotation });
+        }
+    }
+    // ...and props a spirit displaced (a seized rock): Y goes in as the
+    // offset over the ground, which is what the snap adds back.
+    if (entity.has<world::Displaced>() && entity.has<world::Transform>()) {
+        const auto& transform = entity.get<world::Transform>();
+        const Vec3 snapped { transform.position.x,
+                             entity.get<world::Displaced>().groundOffsetY,
+                             transform.position.z };
+        if (snapped != reference->position) {
+            record.fields.emplace(type.findField("position")->id,
+                                  reflect::Value { snapped });
         }
         if (transform.rotation != reference->rotation) {
             record.fields.emplace(type.findField("rotation")->id,

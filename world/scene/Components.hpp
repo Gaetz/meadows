@@ -103,6 +103,18 @@ struct MeshRender {
     REFLECT_END()
 };
 
+// A prop a spirit MOVED (a seized rock): the save captures its live
+// position/rotation — unlike ordinary statics, whose ground-snapped Y
+// would double on reload — with Y stored as the offset over the ground so
+// the snap restores it (StreamingController::snapCellEntities).
+struct Displaced {
+    f32 groundOffsetY { 0.0f };
+
+    REFLECT_BEGIN(Displaced, void)
+        REFLECT_FIELD(groundOffsetY)
+    REFLECT_END()
+};
+
 // A placed local light (interiors, torches), seeded from LightForm.
 struct LightSource {
     Vec3 color { 1.0f, 0.9f, 0.7f };

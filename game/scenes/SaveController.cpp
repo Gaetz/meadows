@@ -58,6 +58,9 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
         plugin.records.insert(plugin.records.end(), extra.begin(),
                               extra.end());
     }
+    if (ctx.stageAssets) {
+        ctx.stageAssets(slot, plugin.records, plugin.assets);
+    }
 
     gameplay::WorldStateForm state;
     state.gameSeconds = ctx.gameClock.gameSeconds;

@@ -151,3 +151,76 @@ asset = "80000000-0000-4000-8000-0000000000aa"
           doctest::Approx(render::terrain::height(params, 96.0f, 350.0f) +
                           2.5f));
 }
+
+#include "data/plugins/TomlWriter.hpp"
+
+TEST_CASE("the save stages the reshaped chunks as .ter assets + records, and a reload rebuilds them") {
+    // Chantier ESPRITS E2.b: the first save carrying assets.
+    data::FormTypeRegistry types;
+    world::registerWorldFormTypes(types);
+    const core::Guid map =
+        *core::Guid::fromString("aa000000-0000-4000-8000-000000000001");
+    auto overlay = std::make_shared<render::HeightPatches>();
+    overlay->chunks[render::HeightPatches::keyOf(3, -2)] = flatPatch(65, 2.5f);
+    overlay->chunks[render::HeightPatches::keyOf(7, 7)] = flatPatch(65, -1.0f);
+    overlay->chunks[render::HeightPatches::keyOf(0, 0)] = flatPatch(65, 9.0f); // untouched
+
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "meadows-save-terrain-test";
+    std::filesystem::remove_all(root);
+    data::FormDatabase base; // nothing authored: every chunk is created
+    vector<data::Record> records;
+    vector<data::AssetEntry> assets;
+    world::stageTerrainPatchRecords(
+        *overlay,
+        { render::HeightPatches::keyOf(7, 7), render::HeightPatches::keyOf(3, -2) },
+        base, map, root / "slot" / "terrain", "slot/terrain", records, assets);
+    REQUIRE(records.size() == 2);
+    REQUIRE(assets.size() == 2);
+    CHECK(records[0].creates);
+    CHECK(world::isSaveTerrainAsset(assets[0].id));
+    CHECK(std::filesystem::exists(root / "slot" / "terrain" / "patch_7_7.ter"));
+    CHECK(std::filesystem::exists(root / "slot" / "terrain" / "patch_3_-2.ter"));
+    // Deterministic per-chunk ids, whatever the listing order.
+    const core::Guid idA = world::saveTerrainAssetGuid(render::HeightPatches::keyOf(3, -2));
+    const core::Guid idB = world::saveTerrainAssetGuid(render::HeightPatches::keyOf(7, 7));
+    const bool idsMatch = (assets[0].id == idA && assets[1].id == idB) ||
+                          (assets[0].id == idB && assets[1].id == idA);
+    CHECK(idsMatch);
+
+    // Reload: the save plugin (records + assets, baseDir = the saves dir)
+    // resolves and the overlay rebuilds the two chunks, not the third.
+    data::Plugin save;
+    save.name = "slot";
+    save.records = records;
+    save.assets = assets;
+    const str toml = data::writePluginToml(save, types);
+    auto reparsed = data::parsePluginToml(toml, types, "slot");
+    REQUIRE(reparsed.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*reparsed }, types, db);
+    assets::AssetDatabase assetDb;
+    for (const data::AssetEntry& entry : reparsed->assets) {
+        assetDb.add(entry.id, root, entry.path);
+    }
+    const auto rebuilt = world::buildHeightPatches(db, assetDb, 64.0f);
+    REQUIRE(rebuilt);
+    CHECK(rebuilt->chunks.size() == 2);
+    CHECK(rebuilt->chunks.at(render::HeightPatches::keyOf(7, 7)).deltas[0] == -1.0f);
+    CHECK(rebuilt->chunks.at(render::HeightPatches::keyOf(3, -2)).deltas[100] == 2.5f);
+    CHECK_FALSE(rebuilt->chunks.contains(render::HeightPatches::keyOf(0, 0)));
+
+    // An authored chunk gets a PATCH of its record, not a duplicate.
+    vector<data::Record> again;
+    vector<data::AssetEntry> againAssets;
+    world::stageTerrainPatchRecords(*overlay,
+                                    { render::HeightPatches::keyOf(7, 7) }, db,
+                                    map, root / "slot" / "terrain",
+                                    "slot/terrain", again, againAssets);
+    REQUIRE(again.size() == 1);
+    CHECK_FALSE(again[0].creates);
+    const bool patchesKnown = again[0].formId == records[0].formId ||
+                              again[0].formId == records[1].formId;
+    CHECK(patchesKnown);
+    std::filesystem::remove_all(root);
+}

@@ -57,6 +57,13 @@ struct SaveContext {
     // Scene-level records rebuilt fresh per save, like the quest log
     // (chantier ESPRITS: the placed spirit sources). Null = none.
     std::function<vector<data::Record>()> extraRecords;
+    // Files the save carries (chantier ESPRITS E2.b: the .ter grids of
+    // the chunks the spirits reshaped): writes them under the slot's
+    // folder and appends their records + asset entries. Runs on the frame
+    // before the serialization leaves it. Null = none.
+    std::function<void(const str& slot, vector<data::Record>& records,
+                       vector<data::AssetEntry>& assets)>
+        stageAssets;
     // Where the serialize + file IO run. Null = synchronous on the
     // calling thread (headless tests, one-shot tools) — same code path,
     // the completion still lands in the pump.

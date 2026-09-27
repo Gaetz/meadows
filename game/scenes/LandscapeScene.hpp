@@ -3,6 +3,7 @@
 // Subsystem map: docs/AUDIT/U4-landscapescene.md
 
 #include <deque>
+#include <unordered_set>
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
@@ -616,6 +617,10 @@ private:
         core::Guid ability;
     };
     vector<SpiritRock> spiritRocks;
+    // Chunks whose ground the spirits (or a Play-mode stroke) reshaped —
+    // the save writes their .ter (E2.b); seeded on load from the save's
+    // own TerrainPatchForm records so a re-save keeps them.
+    std::unordered_set<u64> spellTouchedChunks;
     void seizeRock(const PendingSpiritAction& action);
     void updateSpiritRocks(f32 dt);
     void releaseSpiritRocks(); // map swap / exit: bodies go with the world

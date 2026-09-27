@@ -1,5 +1,9 @@
 [← Back to the hub](README.md)
 
+> Since the spirits chantier a save can carry **files**: the terrain the
+> player reshaped is written as `.ter` grids under `saves/<slot>/terrain/`
+> and listed in the save plugin's `[assets]` table, like any mod asset.
+
 # Save games
 
 **A save is an ordinary plugin.** No custom binary blob, no parallel

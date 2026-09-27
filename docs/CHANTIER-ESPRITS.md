@@ -383,6 +383,28 @@ pèse »).
   compatible avec le snap) ; un rocher qui roule sur le joueur ne le
   pousse que par la résolution du `CharacterVirtual` (hors broadphase).
 
+### E2.b — la save emporte le terrain reshapé et les rochers déplacés (2026-09-27)
+Décision dev : oui à la save avec assets.
+- `world::stageTerrainPatchRecords` (headless, testé en aller-retour
+  plugin TOML → resolve → `buildHeightPatches`) : pour chaque chunk touché,
+  un `.ter` sous `saves/<slot>/terrain/patch_x_z.ter`, une `AssetEntry`
+  (guid déterministe par chunk dans l'espace `7e88a112-…`) et un record
+  `TerrainPatchForm` — **patch** de `asset` si le chunk est déjà autoré
+  (une base/un mod), `creates` sous `7e88a111-…` sinon. §5 tel quel : la save
+  est un plugin de plus, ses assets layerent par guid.
+- `SaveContext.stageAssets` : appelé sur la frame avant que la sérialisation
+  ne la quitte ; la scène y verse `spellTouchedChunks` (tout commit de
+  `republishTerrain` : sorts ET strokes de sculpt), **re-semé au chargement**
+  depuis les `TerrainPatchForm` dont l'asset est dans l'espace save — une
+  re-save re-porte les chunks d'avant (le plugin save est réécrit entier).
+- **Rochers déplacés** : composant réfléchi `world::Displaced { groundOffsetY }`
+  posé à la saisie et tenu à jour après chaque tick physique ; `captureReference`
+  écrit position (y = l'offset au sol, ce que le snap rajoute) et rotation.
+  Au rechargement le rocher est un statique à sa nouvelle pose.
+- Limites : les `.ter` d'un slot ne sont pas nettoyés quand un chunk redevient
+  vierge (il reste dans la liste : delta nul) ; taille ~17 Ko/chunk (question
+  §4.2 du plan, plafond/compression à décider quand ça pèsera).
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

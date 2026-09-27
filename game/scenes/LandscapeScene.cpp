@@ -220,6 +220,15 @@ void LandscapeScene::bootstrapData() {
     // consumer (chunk workers, scatter, collision, snaps) is patched at
     // once. Retire the previous overlay instead of freeing it (workers).
     heightPatches = world::buildHeightPatches(forms, assetDb);
+    // The save's own terrain records: a re-save must carry them again.
+    spellTouchedChunks.clear();
+    data::forEach<world::TerrainPatchForm>(
+        forms, [&](const world::TerrainPatchForm& form) {
+            if (world::isSaveTerrainAsset(form.asset)) {
+                spellTouchedChunks.insert(
+                    render::HeightPatches::keyOf(form.chunkX, form.chunkZ));
+            }
+        });
     if (!heightPatches->chunks.empty()) {
         LOG_INFO("{} authored terrain patch(es)",
                  heightPatches->chunks.size());
@@ -1326,6 +1335,12 @@ void LandscapeScene::update(f32 dt) {
             auto& transform = it->entity.get_mut<world::Transform>();
             transform.position = pose.position;
             transform.rotation = pose.rotation;
+            if (it->entity.has<world::Displaced>()) {
+                it->entity.get_mut<world::Displaced>().groundOffsetY =
+                    pose.position.y -
+                    render::terrain::height(renderer.terrainParams(),
+                                            pose.position.x, pose.position.z);
+            }
             ++it;
         }
         if (!interiorMode) { // interiors have no terrain to collide with
@@ -2743,6 +2758,7 @@ SculptContext LandscapeScene::makeSculptContext() {
             // committed one, grass/veg re-scatter onto the new heights, and
             // collision / cell snap rebuild.
             heightPatches = next;
+            spellTouchedChunks.insert(changed.begin(), changed.end());
             renderer.sculptScatterQueue().insert(renderer.sculptScatterQueue().end(),
                                        changed.begin(), changed.end());
             renderer.invalidateOcclusion();
@@ -3735,6 +3751,21 @@ SaveContext LandscapeScene::makeSaveContext() {
         },
         [this](const str& msg) { interaction.say(msg, 3.0f); },
         [this] { return spiritDirector.capture(); },
+        // The reshaped ground rides with the save: saves/<slot>/terrain/.
+        [this](const str& slot, vector<data::Record>& records,
+               vector<data::AssetEntry>& assets) {
+            if (!heightPatches || spellTouchedChunks.empty()) {
+                return;
+            }
+            const std::filesystem::path dir =
+                savePath(slot).parent_path() / slot / "terrain";
+            const vector<u64> chunks(spellTouchedChunks.begin(),
+                                     spellTouchedChunks.end());
+            world::stageTerrainPatchRecords(*heightPatches, chunks, forms,
+                                            activeWorldspaceGuid(), dir,
+                                            slot + "/terrain", records,
+                                            assets);
+        },
         &engine->getJobSystem(), // Serialize + write off the frame
     };
 }
@@ -5246,6 +5277,10 @@ void LandscapeScene::seizeRock(const PendingSpiritAction& action) {
         physics->removeBody(old);
     }
     physics->setKinematic(body, true);
+    best.set<world::Displaced>({ transform.position.y -
+                                 render::terrain::height(renderer.terrainParams(),
+                                                         transform.position.x,
+                                                         transform.position.z) });
     SpiritRock rock;
     rock.entity = best;
     rock.body = body;
