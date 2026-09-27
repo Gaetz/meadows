@@ -44,6 +44,17 @@ public:
     const core::Guid& holdParticles(render::terrain::SpiritKind kind) const {
         return holdFx[static_cast<size_t>(kind)];
     }
+    // The earth spirit's lift (SpiritForm Earth): the speed a rising
+    // ground throws a character with, from how deep it sank into it.
+    struct EarthLift {
+        f32 quadratic { 1.5f };
+        f32 min { 1.5f };
+        f32 max { 18.0f };
+        f32 speedFor(f32 depth) const {
+            return glm::clamp(quadratic * depth * depth, min, max);
+        }
+    };
+    const EarthLift& earthLift() const { return lift; }
     // The control spell's draw: one extra (draining) kernel source while
     // a hold draws water, none otherwise.
     void setHoldSource(std::optional<render::terraingen::WaterSource> src) {
@@ -76,6 +87,7 @@ private:
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         holdFx {};
     std::optional<render::terraingen::WaterSource> holdSource;
+    EarthLift lift;
 };
 
 } // namespace game

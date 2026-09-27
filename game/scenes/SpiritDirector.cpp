@@ -19,6 +19,11 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             jetFx[static_cast<size_t>(kind)] = spirit.jetParticles;
             holdFx[static_cast<size_t>(kind)] = spirit.holdParticles;
         }
+        if (kind == render::terrain::SpiritKind::Earth) {
+            lift.quadratic = spirit.liftQuadratic;
+            lift.min = spirit.liftMin;
+            lift.max = spirit.liftMax;
+        }
     });
     holdSource.reset();
     sources.apply(forms);

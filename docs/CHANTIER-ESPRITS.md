@@ -405,6 +405,21 @@ Décision dev : oui à la save avec assets.
   vierge (il reste dans la liste : delta nul) ; taille ~17 Ko/chunk (question
   §4.2 du plan, plafond/compression à décider quand ça pèsera).
 
+### Retour dev E2 : « le sol qui monte nous traverse » → la poussée du sol (2026-09-27)
+Pendant un stroke seul le visuel monte (la collision ne se reconstruit
+qu'au relâché) : la capsule reste sur l'ancien sol, dans la terre. Remplacé
+la propulsion explicite de la bosse par un mécanisme général,
+`updateGroundLift` : chaque frame en Play, si le sol **vivant** (overlay de
+preview compris) est au-dessus des pieds du joueur de `depth` > 5 cm, la
+capsule est sortie du sol (`CharacterBody::setPosition`, nouveau) et lancée
+à `v = liftQuadratic × depth²` borné à [`liftMin`, `liftMax`] — champs du
+**SpiritForm Terre** (1,5 / 1,5 / 18 m/s) : un stroke de pinceau (quelques cm
+par frame) fait sautiller au minimum, une bosse de 3 m lance à ~13,5 m/s,
+un mur est plafonné. Les PNJ (collés au sol chaque frame) partent de la
+**montée du sol sous leurs pieds** depuis la frame précédente
+(`Npc.lastGroundY`), même courbe. Le gameplay émergent voulu par le dev :
+se propulser avec sa propre terre.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

@@ -469,6 +469,10 @@ Vec3 CharacterBody::position() const {
              static_cast<f32>(p.GetZ()) };
 }
 
+void CharacterBody::setPosition(const Vec3& feet) {
+    pimpl->character->SetPosition(toJph(feet));
+}
+
 bool CharacterBody::onGround() const {
     return pimpl->character->GetGroundState() ==
            JPH::CharacterVirtual::EGroundState::OnGround;

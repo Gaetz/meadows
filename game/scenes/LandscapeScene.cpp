@@ -1732,6 +1732,7 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritEarth(dt);
         updateSpiritLine();
         updateSpiritRocks(dt);
+        updateGroundLift(dt);
         updateSpiritReading(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
@@ -5093,28 +5094,9 @@ void LandscapeScene::applyEarthBump(const PendingSpiritAction& action) {
     if (height <= 0.0f) {
         return;
     }
-    // What stands on it is thrown: the free-fall speed from the mound's
-    // height, scaled — the player through its capsule, NPCs through the
-    // kinematic air offset.
-    const f32 launch = std::sqrt(2.0f * 9.81f * height) * kBumpLaunchScale;
+    // What stands on it is thrown by updateGroundLift (the ground rose
+    // into it), like any rising ground.
     const Vec2 center { action.x, action.z };
-    if (phys::CharacterBody* body = playerController.body()) {
-        const Vec3 feet = body->position();
-        if (glm::distance(Vec2 { feet.x, feet.z }, center) <= action.radius) {
-            body->jump(launch);
-        }
-    }
-    for (const auto& npc : npcDirector.npcs()) {
-        if (!npc->entity.is_alive() || npc->dead ||
-            !npc->entity.has<world::Transform>()) {
-            continue;
-        }
-        const Vec3& at = npc->entity.get<world::Transform>().position;
-        if (glm::distance(Vec2 { at.x, at.z }, center) <= action.radius) {
-            npc->airVelocity = launch;
-            npc->airHeight = glm::max(npc->airHeight, 0.01f);
-        }
-    }
     world::BrushGrids grids;
     world::BrushParams brush;
     brush.kind = world::BrushKind::Raise;
@@ -5348,6 +5330,42 @@ void LandscapeScene::releaseSpiritRocks() {
         }
     }
     spiritRocks.clear();
+}
+
+void LandscapeScene::updateGroundLift(f32 dt) {
+    (void)dt;
+    if (interiorMode || !sandboxActive) {
+        return;
+    }
+    const auto& params = renderer.terrainParams();
+    const SpiritDirector::EarthLift& lift = spiritDirector.earthLift();
+    constexpr f32 kMinDepth = 0.05f; // below: ordinary ground noise
+    if (phys::CharacterBody* body = playerController.body()) {
+        const Vec3 feet = body->position();
+        const f32 ground = render::terrain::height(params, feet.x, feet.z);
+        const f32 depth = ground - feet.y;
+        if (depth > kMinDepth) {
+            body->setPosition({ feet.x, ground + 0.05f, feet.z });
+            body->jump(lift.speedFor(depth));
+            fxDirector.cues().emit(
+                { "Cue.Spirit.Earth.Dig", { feet.x, ground, feet.z }, depth });
+        }
+    }
+    for (const auto& npc : npcDirector.npcs()) {
+        if (!npc->entity.is_alive() || npc->dead ||
+            !npc->entity.has<world::Transform>()) {
+            continue;
+        }
+        const Vec3& at = npc->entity.get<world::Transform>().position;
+        const f32 ground = render::terrain::height(params, at.x, at.z);
+        const f32 rise = ground - npc->lastGroundY;
+        npc->lastGroundY = ground;
+        // First sighting / a teleport: no throw from a stale value.
+        if (rise > kMinDepth && rise < 50.0f) {
+            npc->airVelocity = glm::max(npc->airVelocity, lift.speedFor(rise));
+            npc->airHeight = glm::max(npc->airHeight, 0.01f);
+        }
+    }
 }
 
 void LandscapeScene::updateSpiritLine() {

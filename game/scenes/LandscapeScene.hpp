@@ -636,7 +636,13 @@ private:
     void castGroundReading(const Vec3& at, f32 seconds, bool live);
     enum class ReadingKind : u8 { Water, Ground };
     ReadingKind spiritReadingKind { ReadingKind::Water };
-    static constexpr f32 kBumpLaunchScale = 1.5f; // x the free-fall speed from the mound's height
+    // Ground rising into characters (brush stroke, mound, wall) throws
+    // them: the player from how deep its feet sank under the LIVE terrain
+    // (the preview overlay counts — collision only rebuilds on commit),
+    // NPCs from how much the ground under them rose since last frame
+    // (they are snapped to it every frame). Speed = the earth spirit's
+    // lift curve (SpiritForm Earth).
+    void updateGroundLift(f32 dt);
     // Understand x Water: the reading shown by the HUD for a while
     // (world/spirit/WaterReading, formatted here from the loc keys).
     vector<str> spiritReading; // one line per HUD slot (kReadingLines)

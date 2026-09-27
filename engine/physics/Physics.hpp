@@ -135,6 +135,9 @@ public:
     bool isCrouched() const;
 
     Vec3 position() const; // feet position
+    // Teleports the feet (a rising ground lifting the character out of
+    // the terrain): no sweep, the next move() resolves from there.
+    void setPosition(const Vec3& feet);
     bool onGround() const;
 
 private:

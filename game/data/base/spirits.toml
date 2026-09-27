@@ -1079,3 +1079,15 @@ new = true
 parent = "2b5e7d10-0000-4000-8000-0000000000a0"   # Player
 item = "5b1e1700-0000-4000-8000-0000000000b2"     # EssencePotion
 count = 20
+
+# The earth spirit's lift: ground rising into a character throws it up,
+# speed = liftQuadratic x depth² m/s, clamped — a brush stroke (a few cm
+# per frame) hops it at liftMin, a 3 m mound throws it at ~13.5 m/s, a
+# 4 m wall is capped at liftMax.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000004"
+type = "SpiritForm"
+[records.fields]
+liftQuadratic = 1.5
+liftMin = 1.5
+liftMax = 18.0

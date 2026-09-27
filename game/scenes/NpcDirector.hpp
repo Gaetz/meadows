@@ -126,6 +126,7 @@ struct Npc {
     // offset over the ground snap, falling back under gravity.
     f32 airHeight { 0.0f };
     f32 airVelocity { 0.0f };
+    f32 lastGroundY { -1.0e9f }; // the ground rising under the feet throws
     // A fleeing fighter reached the interior's exit: the scene sweep
     // despawns him and may respawn him outside (LandscapeScene).
     bool escapedInterior { false };
