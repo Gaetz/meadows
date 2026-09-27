@@ -1576,3 +1576,12 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spirit.refused'
     text = 'The spirit does not answer yet.'
+
+[[records]]
+form = 'fc6fe5c7-6676-4baf-becc-db977c677cc8'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spirit.tooFar'
+    text = 'Too far.'

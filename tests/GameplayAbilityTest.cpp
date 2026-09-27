@@ -190,3 +190,22 @@ TEST_CASE("ability: the script runner fires once per committed activation, never
     CHECK(activate());
     CHECK(runs == 1);
 }
+
+TEST_CASE("ability: payAbilityCost re-pays the cost without re-activating") {
+    Fixture f("essence", "strict");
+    setBaseValue(f.casterSet, attr("essence"), 50.0f);
+    initializeCurrent(f.casterSystem, f.casterSet);
+    AbilityContext ctx { f.db, f.registry };
+
+    CHECK(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx));
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 30.0f);
+    // No cooldown, no effect: only the cost moved.
+    CHECK_FALSE(f.casterSystem.tags.has(*f.registry.find("Cooldown.Slash")));
+    CHECK(baseValueOf(f.targetSet, attr("health")) == 100.0f);
+
+    CHECK(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx));
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 10.0f);
+    // Strict: 10 < 20 -> refused, untouched.
+    CHECK_FALSE(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx));
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 10.0f);
+}

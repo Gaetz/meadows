@@ -40,6 +40,12 @@ struct SpiritJet {
     f32 radius { 2.0f };    // metres at the landing spot
     f32 remaining { 0.0f }; // SIM seconds (rate x duration is invariant)
     bool followsCaster { true }; // re-aimed every frame from the caster
+    // A channeled jet lives while its key is held (the scene ends it on
+    // release) and re-pays its ability cost every costPeriod seconds.
+    bool channeled { false };
+    f32 costPeriod { 1.0f };
+    f32 costClock { 0.0f };
+    core::Guid ability;     // the AbilityForm whose cost the upkeep re-pays
     u32 emitter { 0 };      // presentation handle (the scene's particle
                             // emitter), 0 = none
     std::optional<JetLanding> landing;
@@ -65,6 +71,7 @@ public:
     void appendWaterSources(vector<render::terraingen::WaterSource>& out) const;
 
     const vector<SpiritJet>& entries() const { return list; }
+    vector<SpiritJet>& entriesMut() { return list; } // channel upkeep
     bool empty() const { return list.empty(); }
     vector<u32> clear(); // returns the emitter handles to stop
 

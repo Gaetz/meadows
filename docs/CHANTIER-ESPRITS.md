@@ -164,6 +164,31 @@ personnage, simulé quand il tombe sur le sol ».
   terrain seul (au-dessus d'un lac épinglé l'eau est avalée par le pin, comme
   la source), pas de collision des gouttes avec les props.
 
+### E1.e — les sortilèges systématisés (cadre dev, 2026-09-27)
+Cadre posé par le dev après le jet : **cinq formes** (créer, détruire,
+transformer, contrôler, comprendre) × **un élément**, plus des
+caractéristiques (portée, trajectoire, intensité, durée, zone, maintien).
+Référence : **`docs/SPELLS.md`**.
+- `SpellForm` (data, `SpiritForms.hpp`) = **enfant** de l'`AbilityForm`
+  (pattern `parent`, comme ConditionForm) : l'ability reste l'activation
+  (coût/cooldown/tags/skill, §6), le sort est l'effet sur le monde. Sans
+  enfant, l'ability reste scriptée (Lua = soupape).
+- `world/spirit/Spells` : `compileSpell` (validation par nom + bornes),
+  `spellSupported` = **la matrice** (v1 : Créer × Eau en `point` et
+  `stream`), `launchSpeedForRange` (portée à 45° → vitesse).
+- Scène : `castSpirit` résout l'enfant, refuse hors matrice AVANT de payer,
+  pré-checks (`point` : sol visé, ≤ portée — toast `spirit.tooFar` —, sol
+  sec), `tryActivate`, `executeSpell` → file `pendingSpiritActions`.
+  **Maintien** : un jet `channeled` vit tant que Q est tenu, repaye le coût
+  toutes les `costPeriod` s via `gameplay::payAbilityCost` (nouveau, le
+  même canAfford/applyEffect que tryActivate), s'arrête au relâché ou faute
+  d'essence.
+- Données : les deux sorts réécrits en `SpellForm` (`SpellWaterSpring`,
+  `SpellWaterStream` maintenu 6 s max, −10/s) ; les scripts Lua des deux
+  abilities retirés.
+- Tests : `SpellsTest` (compilation, validation champ par champ, matrice,
+  portée → vitesse, enfant de l'ability) + `payAbilityCost`.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

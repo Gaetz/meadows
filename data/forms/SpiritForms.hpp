@@ -55,6 +55,49 @@ struct SpiritForm : Form {
     REFLECT_END()
 };
 
+// A SPELL: what an activated ability does to the world, as data —
+// docs/SPELLS.md. Child record of the AbilityForm that gates it (cost,
+// cooldown, tags, skill stay on the ability, §6): the ability is the
+// activation, the spell is the effect. One FORM (verb) applied to one
+// ELEMENT (spirit), qualified by the characteristics below. The generic
+// caster (world/spirit/Spells + the scene) executes the supported
+// (form, element, trajectory) cells; `AbilityForm.script` remains the
+// escape hatch for anything the matrix does not cover yet.
+struct SpellForm : Form {
+    core::Guid parent;        // the AbilityForm this spell belongs to
+    str form { "create" };    // create | destroy | transform | control | understand
+    str element { "Water" };  // a spirit name (SpiritKind)
+    // Where the effect goes:
+    //   self       on the caster
+    //   point      at the aimed ground spot (within `range`)
+    //   stream     a continuous arc from the hand along the aim (follows it)
+    //   projectile one arc from the hand; the effect lands where it falls
+    str trajectory { "point" };
+    f32 range { 20.0f };      // metres — aim reach (point) or the ballistic
+                              // reach at 45° (stream/projectile -> launch speed)
+    f32 intensity { 1.0f };   // element units per second (water: m³/s)
+    f32 duration { 1.0f };    // seconds the effect persists; -1 = permanent
+    str areaShape { "disc" }; // disc | ring (the wide-spring seven taps)
+    f32 areaRadius { 2.0f };  // metres
+    bool channeled { false }; // hold the key to sustain; released = it ends
+    f32 costPeriod { 1.0f };  // channeled: the ability cost is paid again
+                              // every costPeriod seconds (unaffordable = ends)
+
+    REFLECT_BEGIN(SpellForm, Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(form)
+        REFLECT_FIELD(element)
+        REFLECT_FIELD(trajectory)
+        REFLECT_FIELD(range)
+        REFLECT_FIELD(intensity)
+        REFLECT_FIELD(duration)
+        REFLECT_FIELD(areaShape)
+        REFLECT_FIELD(areaRadius)
+        REFLECT_FIELD(channeled)
+        REFLECT_FIELD(costPeriod)
+    REFLECT_END()
+};
+
 // The rule table (the BotW chemistry rules): one record per (actor,
 // target, verb). `actor` MUST be a spirit — a material can never change
 // a material, every interaction routes through a spirit; the compiler

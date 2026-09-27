@@ -27,6 +27,7 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/MapController.hpp"
 #include "game/scenes/SpiritDirector.hpp"
+#include "world/spirit/Spells.hpp"
 #include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -552,6 +553,8 @@ private:
         // of landing at (x, z); `speed` is its launch speed.
         bool jet { false };
         f32 speed { 0.0f };
+        bool channeled { false };
+        f32 costPeriod { 1.0f };
     };
     std::deque<PendingSpiritAction> pendingSpiritActions;
     void applyPendingSpiritActions();
@@ -569,6 +572,10 @@ private:
     // ability activation — cost/cooldown are its effects (§6), its
     // script places the source.
     void castSpirit();
+    // A compiled SpellForm (docs/SPELLS.md) into world actions; `aimedAt`
+    // is the pre-checked ground spot for point spells.
+    void executeSpell(const world::SpellSpec& spell,
+                      const std::optional<Vec3>& aimedAt);
     // `self` for the player's ability scripts (the trigger idiom, with
     // the liveness handle so a coroutine survives archetype moves).
     script::ScriptContext playerScriptContext();

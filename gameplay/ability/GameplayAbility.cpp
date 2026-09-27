@@ -126,4 +126,19 @@ bool tryActivate(const AbilityForm& ability,
     return true;
 }
 
+bool payAbilityCost(const AbilityForm& ability, AttributeSet& casterSet,
+                    AbilitySystem& casterSystem, const AbilityContext& ctx) {
+    const EffectForm* cost =
+        ability.cost.isValid() ? ctx.forms.find<EffectForm>(ability.cost)
+                               : nullptr;
+    if (!cost) {
+        return true;
+    }
+    if (!canAfford(casterSystem, *cost, ability.costPolicy)) {
+        return false;
+    }
+    applyEffect(casterSet, casterSystem, *cost, ctx.tags);
+    return true;
+}
+
 } // namespace gameplay

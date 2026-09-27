@@ -96,4 +96,10 @@ bool tryActivate(const AbilityForm& ability,
                  AttributeSet& targetSet, AbilitySystem& targetSystem,
                  const AbilityContext& ctx);
 
+// Pays the ability's cost again without re-activating (a channeled
+// spell's upkeep): false, and nothing paid, when the caster cannot afford
+// it under the ability's costPolicy. An ability without a cost is free.
+bool payAbilityCost(const AbilityForm& ability, AttributeSet& casterSet,
+                    AbilitySystem& casterSystem, const AbilityContext& ctx);
+
 } // namespace gameplay

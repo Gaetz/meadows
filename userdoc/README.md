@@ -20,7 +20,7 @@ is just the first plugin in the list.
 | [Effects & abilities](effects-and-abilities.md) | Spells, buffs, poisons, diseases, abilities — pure data, no code |
 | [World, levels & prefabs](world-and-levels.md) | Worldspaces, cells, placed references, markers, triggers, prefabs |
 | [Bounded maps](maps.md) | The world as a graph of 24 km maps: borders, cols, map-to-map travel, shipping a map as a mod |
-| [Spirits](spirits.md) | The nine world-shaping spirits: triads, rules, placed sources, the ability script (`aim()`, `spirit.spawn`) |
+| [Spirits & spells](spirits.md) | The nine world-shaping spirits and the spell model: a form applied to an element (`SpellForm`), placed sources, jets, the script escape hatch |
 | [NPC schedules & furniture](schedules-and-furniture.md) | Daily routines, AI packages, beds/chairs/workstations |
 | [Quests, dialogue events & the journal](quests.md) | Quest records, event-driven tasks, gating dialogue, vendors & crime |
 | [Localization](localization.md) | Translating the game (or your mod) — a language pack is a plugin |

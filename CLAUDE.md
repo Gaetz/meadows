@@ -534,6 +534,9 @@ touching the corresponding systems.
 >    matériau ne change jamais un matériau », `AbilityForm.script` exécuté
 >    via `AbilityContext.scriptRunner` + `Vm::bindWorldActions`). À lire
 >    avant de toucher `world/spirit/`, `SpiritDirector` ou la sim d'eau.
+>    **`docs/SPELLS.md`** — le système de sortilèges (forme × élément +
+>    caractéristiques ; `SpellForm` enfant de l'`AbilityForm`, matrice
+>    `spellSupported`) : à lire avant d'ajouter un sort.
 >
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.

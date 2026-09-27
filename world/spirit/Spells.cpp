@@ -1,0 +1,96 @@
+#include "world/spirit/Spells.hpp"
+
+#include <cmath>
+
+namespace world {
+
+std::optional<SpellVerb> parseSpellVerb(std::string_view name) {
+    if (name == "create") return SpellVerb::Create;
+    if (name == "destroy") return SpellVerb::Destroy;
+    if (name == "transform") return SpellVerb::Transform;
+    if (name == "control") return SpellVerb::Control;
+    if (name == "understand") return SpellVerb::Understand;
+    return std::nullopt;
+}
+
+std::optional<SpellTrajectory> parseSpellTrajectory(std::string_view name) {
+    if (name == "self") return SpellTrajectory::Self;
+    if (name == "point") return SpellTrajectory::Point;
+    if (name == "stream") return SpellTrajectory::Stream;
+    if (name == "projectile") return SpellTrajectory::Projectile;
+    return std::nullopt;
+}
+
+std::optional<SpellArea> parseSpellArea(std::string_view name) {
+    if (name == "disc") return SpellArea::Disc;
+    if (name == "ring") return SpellArea::Ring;
+    return std::nullopt;
+}
+
+std::optional<SpellSpec> compileSpell(const data::SpellForm& form,
+                                      str* error) {
+    auto fail = [&](const str& what) -> std::optional<SpellSpec> {
+        if (error) {
+            *error = "spell '" + form.editorId + "': " + what;
+        }
+        return std::nullopt;
+    };
+    SpellSpec spec;
+    const auto verb = parseSpellVerb(form.form);
+    if (!verb) {
+        return fail("unknown form '" + form.form + "'");
+    }
+    spec.verb = *verb;
+    spec.element = render::terrain::spiritFromName(form.element);
+    if (spec.element == render::terrain::SpiritKind::kCount) {
+        return fail("unknown element '" + form.element + "'");
+    }
+    const auto trajectory = parseSpellTrajectory(form.trajectory);
+    if (!trajectory) {
+        return fail("unknown trajectory '" + form.trajectory + "'");
+    }
+    spec.trajectory = *trajectory;
+    const auto area = parseSpellArea(form.areaShape);
+    if (!area) {
+        return fail("unknown areaShape '" + form.areaShape + "'");
+    }
+    spec.area = *area;
+    if (form.range <= 0.0f) {
+        return fail("range must be positive");
+    }
+    if (form.intensity < 0.0f) {
+        return fail("intensity must not be negative");
+    }
+    if (form.duration == 0.0f || form.duration < -1.0f) {
+        return fail("duration must be positive or -1 (permanent)");
+    }
+    if (form.areaRadius <= 0.0f) {
+        return fail("areaRadius must be positive");
+    }
+    if (form.channeled && form.costPeriod <= 0.0f) {
+        return fail("costPeriod must be positive on a channeled spell");
+    }
+    spec.range = form.range;
+    spec.intensity = form.intensity;
+    spec.duration = form.duration;
+    spec.areaRadius = form.areaRadius;
+    spec.channeled = form.channeled;
+    spec.costPeriod = form.costPeriod;
+    return spec;
+}
+
+f32 launchSpeedForRange(f32 range, f32 gravity) {
+    return std::sqrt(glm::max(range, 0.0f) * gravity);
+}
+
+bool spellSupported(const SpellSpec& spec) {
+    using render::terrain::SpiritKind;
+    // The matrix grows one brick at a time (docs/SPELLS.md §4).
+    if (spec.verb == SpellVerb::Create && spec.element == SpiritKind::Water) {
+        return spec.trajectory == SpellTrajectory::Point ||
+               spec.trajectory == SpellTrajectory::Stream;
+    }
+    return false;
+}
+
+} // namespace world

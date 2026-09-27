@@ -55,51 +55,67 @@ of water.
 All of these live in `game/data/base/spirits.toml`; a mod patches or adds
 them like any other form ([How plugins work](plugins.md)).
 
-## Casting a spirit: the ability's script
+## Spells: a form applied to an element
 
-A spirit power is an ordinary `AbilityForm` — cost and cooldown are
-effects — whose `script` places the source. The script sees two world
-actions:
+A spirit power is a **spell**: one *form* (verb) applied to one *element*
+(spirit), with its characteristics. Two records make a spell:
+
+- an **`AbilityForm`** — the *activation*: cost and cooldown (effects),
+  required/blocked tags, conditions, the skill it trains;
+- a **`SpellForm`** — the *effect on the world*, a **child** of the
+  ability (`parent` = the ability's guid).
+
+| Field | Values | Meaning |
+|---|---|---|
+| `form` | `create` `destroy` `transform` `control` `understand` | the verb |
+| `element` | a spirit name (`Water`, `Fire`…) | the subject |
+| `trajectory` | `self` `point` `stream` `projectile` | on the caster / at the aimed ground / a continuous arc from the hand that follows the aim / one arc, the effect where it lands |
+| `range` | metres | aim reach (`point`); ballistic reach at 45° for `stream`/`projectile` (20 m ⇒ 14 m/s) |
+| `intensity` | element units per second (water: m³/s) | how strong |
+| `duration` | seconds (`-1` = permanent) | how long the effect persists (simulation seconds) |
+| `areaShape` + `areaRadius` | `disc` \| `ring`, metres | the footprint at the effect point |
+| `channeled` + `costPeriod` | bool, seconds | hold the key to sustain; the cost is paid again every `costPeriod`; release ends it |
 
 ```toml
-[[records]]
-form = "5b1e1700-0000-4000-8000-000000000063"
-type = "AbilityForm"
+[[records]]                                   # CREATE + WATER at the aimed spot
+form = "5b1e1700-0000-4000-8000-000000000081"
+type = "SpellForm"
 new = true
 [records.fields]
-editorId = "SpiritWater"
-cost = "5b1e1700-0000-4000-8000-000000000061"     # essence -15, strict
-cooldown = "5b1e1700-0000-4000-8000-000000000062" # 8 s, Cooldown.SpiritWater
-costPolicy = "strict"
-blockedTag = "State.Exhausted"
-script = """
-local p = aim()                      -- the aimed ground point {x, y, z}, or nil
-if p then spirit.spawn("Water", p.x, p.z, 3.0, 4.0, 10.0) end
-"""
+editorId = "SpellWaterSpring"
+parent = "5b1e1700-0000-4000-8000-000000000063"   # the SpiritWater ability
+form = "create"
+element = "Water"
+trajectory = "point"
+range = 24.0
+intensity = 3.0
+duration = 10.0
+areaShape = "disc"
+areaRadius = 4.0
 ```
 
-- `aim()` — where the player looks, on the terrain (a rock or a wall is
-  not ground). `nil` when nothing is aimed.
-- `spirit.spawn(kind, x, z, rate, radius, seconds)` — places a source.
-  `rate` is in the spirit's own unit (m³/s for water), `seconds` runs in
-  **simulation** time (a 10-second spring pours the same volume whatever
-  the time scale), `-1` makes it permanent.
-- `wait(t)` — the script is a coroutine: two jets half a second apart is
-  `spirit.spawn(...) wait(0.5) spirit.spawn(...)`.
-- `spirit.jet(kind, speed, rate, radius, seconds)` — a **stream** from
-  the caster's hand along the aim, at `speed` m/s: it follows the aim for
-  `seconds` and is simulated where its arc lands (a jet of water pools
-  and flows from the landing spot). Jets are gestures — never saved.
-  The default Q ability, `SpiritWaterJet`, is `spirit.jet("Water", 14.0,
-  2.0, 2.0, 3.0)`. The stream's look is the spirit's `jetParticles`
-  ParticleForm; the impact fires `Cue.Spirit.<Kind>.Jet`.
-- `spirit.push_terrain(x, z, radius, amount, brush)` — reserved for the
-  earth spirit.
+Only some (form, element, trajectory) cells are implemented so far —
+today **create × Water** as `point` (a spring) and `stream` (a jet from
+the hand). A spell outside that set is refused before any cost is paid.
+The base game ships `SpellWaterSpring` (Q after `spirit cast SpiritWater`)
+and `SpellWaterStream` (the default Q: hold to keep streaming, essence
+drains every second).
 
-The script runs **only after the activation commits** (cost paid, cooldown
-up). The game refuses the cast *before* paying when nothing is aimed or
-the ground is already under water (a spring poured into a lake would be
-swallowed).
+The game refuses a `point` cast *before* paying when nothing is aimed,
+the spot is beyond `range`, or the ground is already under water (a
+spring poured into a lake would be swallowed).
+
+### The script escape hatch
+
+An ability **without** a `SpellForm` child runs its Lua `script` on
+activation instead — for anything the spell matrix does not cover yet:
+
+- `aim()` — the aimed ground point `{x, y, z}`, or `nil`;
+- `spirit.spawn(kind, x, z, rate, radius, seconds)` — places a source
+  (`seconds` in simulation time, `-1` permanent);
+- `spirit.jet(kind, speed, rate, radius, seconds)` — a stream from the
+  hand along the aim, simulated where it lands;
+- `wait(t)` — the script is a coroutine.
 
 At most **16** sources exist at once; the oldest is evicted. The spring's
 water is the live water simulation: it flows downhill, pools, can be swum,

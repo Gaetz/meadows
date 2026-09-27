@@ -281,10 +281,25 @@ cost = "5b1e1700-0000-4000-8000-000000000061"
 cooldown = "5b1e1700-0000-4000-8000-000000000062"
 costPolicy = "strict"
 blockedTag = "State.Exhausted"
-script = """
-local p = aim()
-if p then spirit.spawn("Water", p.x, p.z, 3.0, 4.0, 10.0) end
-"""
+
+# CREATE + WATER at a point (docs/SPELLS.md): a spring of 3 m³/s for 10 s
+# on the aimed ground, within 24 m. The SpellForm is the ability's child.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000081"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWaterSpring"
+parent = "5b1e1700-0000-4000-8000-000000000063"
+form = "create"
+element = "Water"
+trajectory = "point"
+range = 24.0
+intensity = 3.0
+duration = 10.0
+areaShape = "disc"
+areaRadius = 4.0
+channeled = false
 
 # The splash at the spring's birth (Cue.Spirit.<Kind>.Spawn, emitted by
 # the scene when the source lands).
@@ -352,9 +367,27 @@ cost = "5b1e1700-0000-4000-8000-000000000064"
 cooldown = "5b1e1700-0000-4000-8000-000000000065"
 costPolicy = "strict"
 blockedTag = "State.Exhausted"
-script = """
-spirit.jet("Water", 14.0, 2.0, 2.0, 3.0)
-"""
+
+# CREATE + WATER as a stream: 2 m³/s from the hand, ~20 m reach at 45°,
+# CHANNELED — held Q sustains it (up to 6 s), the cost is re-paid every
+# second, releasing ends it.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000082"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWaterStream"
+parent = "5b1e1700-0000-4000-8000-000000000066"
+form = "create"
+element = "Water"
+trajectory = "stream"
+range = 20.0
+intensity = 2.0
+duration = 6.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = true
+costPeriod = 1.0
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000073"

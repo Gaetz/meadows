@@ -4562,15 +4562,49 @@ void LandscapeScene::castSpirit() {
         !playerEntity.has<gameplay::AbilitySystem>()) {
         return;
     }
+    // The ability's spell (docs/SPELLS.md): its first SpellForm child.
+    // No child = a scripted ability (the escape hatch).
+    const data::SpellForm* spellForm = nullptr;
+    data::childrenOf<data::SpellForm>(
+        forms, spiritAbility->id, [&](const data::SpellForm& s) {
+            if (!spellForm) {
+                spellForm = &s;
+            }
+        });
+    std::optional<world::SpellSpec> spell;
+    if (spellForm) {
+        str error;
+        spell = world::compileSpell(*spellForm, &error);
+        if (!spell) {
+            LOG_WARN("Spell: {}", error);
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            return;
+        }
+        if (!world::spellSupported(*spell)) {
+            LOG_WARN("Spell '{}': (form, element, trajectory) not implemented "
+                     "by the generic caster yet — give the ability a script",
+                     spellForm->editorId);
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            return;
+        }
+    }
     // Geometry first, before any cost is paid: tryActivate has no
-    // position. Only for AIMED scripts (they call aim()): water onto
-    // water would pour into a pinned lake (the pin swallows it) —
-    // refused rather than silently lost. A jet arcs from the hand and
-    // lands wherever it lands; nothing to pre-check.
-    if (spiritAbility->script.find("aim(") != str::npos) {
-        const std::optional<Vec3> at = aimGround();
+    // position. Only AIMED casts (a point spell, a script calling aim()):
+    // water onto water would pour into a pinned lake (the pin swallows
+    // it) — refused rather than silently lost. A stream arcs from the
+    // hand and lands wherever it lands; nothing to pre-check.
+    const bool aimed = spell ? spell->trajectory == world::SpellTrajectory::Point
+                             : spiritAbility->script.find("aim(") != str::npos;
+    std::optional<Vec3> at;
+    if (aimed) {
+        at = aimGround();
         if (!at) {
             interaction.say(texts.get("spirit.noGround"), 1.5f);
+            return;
+        }
+        if (spell &&
+            glm::distance(*at, flyCamera.camera.position) > spell->range) {
+            interaction.say(texts.get("spirit.tooFar"), 1.5f);
             return;
         }
         if (render::terrain::waterSurfaceQuery(makeWaterQuery(), at->x,
@@ -4593,7 +4627,52 @@ void LandscapeScene::castSpirit() {
     if (!gameplay::tryActivate(*spiritAbility, set, system, set, system,
                                ability)) {
         interaction.say(texts.get("spirit.refused"), 1.5f);
+        return;
     }
+    if (spell) {
+        executeSpell(*spell, at);
+    }
+}
+
+void LandscapeScene::executeSpell(const world::SpellSpec& spell,
+                                  const std::optional<Vec3>& aimedAt) {
+    // Create + <element>: the effect is a placed source (point) or a
+    // streamed jet (stream). The area shape picks the kernel footprint:
+    // a disc is the kernel's own ~4 m disc, a ring the wide seven-tap
+    // spring (world/spirit/SpiritSources).
+    const f32 radius = spell.area == world::SpellArea::Ring
+                           ? glm::max(spell.areaRadius,
+                                      world::kSpellDiscMaxRadius + 0.01f)
+                           : glm::min(spell.areaRadius,
+                                      world::kSpellDiscMaxRadius);
+    const f32 seconds = spell.duration < 0.0f ? 1.0e9f : spell.duration;
+    PendingSpiritAction action;
+    action.kind = spell.element;
+    action.rate = spell.intensity;
+    action.radius = radius;
+    action.seconds = spell.duration < 0.0f && !spell.channeled
+                         ? -1.0f // a permanent placed source
+                         : seconds;
+    switch (spell.trajectory) {
+    case world::SpellTrajectory::Point:
+        if (!aimedAt) {
+            return;
+        }
+        action.x = aimedAt->x;
+        action.z = aimedAt->z;
+        break;
+    case world::SpellTrajectory::Stream:
+        action.jet = true;
+        action.speed = world::launchSpeedForRange(
+            spell.range, world::SpiritJetList::kGravity);
+        action.channeled = spell.channeled;
+        action.costPeriod = spell.costPeriod;
+        break;
+    case world::SpellTrajectory::Self:
+    case world::SpellTrajectory::Projectile:
+        return; // not in the matrix yet (spellSupported gates the cast)
+    }
+    pendingSpiritActions.push_back(action);
 }
 
 void LandscapeScene::applyPendingSpiritActions() {
@@ -4615,6 +4694,9 @@ void LandscapeScene::applyPendingSpiritActions() {
             jet.rate = action.rate;
             jet.radius = action.radius;
             jet.remaining = action.seconds;
+            jet.channeled = action.channeled;
+            jet.costPeriod = action.costPeriod;
+            jet.ability = spiritAbility ? spiritAbility->id : core::Guid {};
             // The visible stream: the spirit's jet ParticleForm, its
             // duration bound to the gesture; the per-frame steer keeps
             // the arc true to the aim.
@@ -4678,6 +4760,37 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
     spiritImpactCueCooldown = glm::max(0.0f, spiritImpactCueCooldown - dt);
     if (jets.empty()) {
         return;
+    }
+    // Channeled jets live while the key is held and re-pay their
+    // ability's cost every costPeriod (§2.9: through the cost effect);
+    // release or an unaffordable upkeep ends them (the tick expires
+    // remaining == 0 and hands the emitter back).
+    const bool held =
+        actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    for (world::SpiritJet& jet : jets.entriesMut()) {
+        if (!jet.channeled || jet.remaining <= 0.0f) {
+            continue;
+        }
+        if (!held || !playerEntity.is_alive()) {
+            jet.remaining = 0.0f;
+            continue;
+        }
+        jet.costClock += dt;
+        if (jet.costClock < jet.costPeriod) {
+            continue;
+        }
+        jet.costClock -= jet.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(jet.ability);
+        if (!ability) {
+            continue;
+        }
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (!gameplay::payAbilityCost(*ability, set, system,
+                                      { forms, gameTags })) {
+            jet.remaining = 0.0f;
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+        }
     }
     jets.aim(spiritNozzle(), flyCamera.camera.forward());
     const auto& params = renderer.terrainParams();

@@ -8,6 +8,7 @@ void registerSpiritFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<SpiritForm>();
     registry.registerFormType<SpiritRuleForm>();
     registry.registerFormType<SurfaceMaterialForm>();
+    registry.registerFormType<SpellForm>();
 }
 
 } // namespace data
