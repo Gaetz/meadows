@@ -1045,3 +1045,37 @@ form = "2b5e7d10-0000-4000-8000-0000000000c5"
 type = "StaticForm"
 [records.fields]
 surfaceMaterial = "rock"
+
+# --- Dev kit: essence potions, so the spells can be tested at will --------
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000b1"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "EssencePotionEffect"
+attribute = "essence"
+op = "add"
+magnitude = 50.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000b2"
+type = "ConsumableForm"
+new = true
+[records.fields]
+editorId = "EssencePotion"
+displayName = "Potion d'essence"
+category = "treatment"
+effect = "5b1e1700-0000-4000-8000-0000000000b1"
+weight = 0.3
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+goldValue = 25
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000b3"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000a0"   # Player
+item = "5b1e1700-0000-4000-8000-0000000000b2"     # EssencePotion
+count = 20
