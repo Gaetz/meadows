@@ -113,7 +113,16 @@ from the press spot to the release spot, `understand` reads the ground,
 and `control` (channeled) seizes the nearest rock prop no bigger than
 `intensity` metres — a `StaticForm` whose `surfaceMaterial` is `"rock"` —
 carries it over the aim and lets it fly and roll on release (a real
-physics body from then on). A spell outside that set is
+physics body from then on). For **Fire**: `create` as `point` is the
+spark — `intensity` heat dealt to every fire-field cell within
+`areaRadius` of the aimed spot; a cell ignites once its heat reaches the
+spirit's `ignitionPoints`, then burns its ground's `fuel` seconds (a
+`SurfaceMaterialForm` field, blended over the splat under it) while
+dealing `spreadRate` heat per second to its eight neighbours, damped by
+their `moisture`; bare rock, sand and snow carry no fuel, standing water
+puts a burning cell out and keeps it out. Burnt ground stays charred and
+its grass is gone; the field lives in a 512 m window around the camera
+and is not saved. A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

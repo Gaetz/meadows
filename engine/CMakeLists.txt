@@ -110,6 +110,7 @@ add_library(meadows-render STATIC
     render/landscape/SplatTextures.cpp
     render/landscape/TerrainLightMap.cpp
     render/landscape/TerrainShadeMap.cpp
+    render/landscape/FireScorchMap.cpp
     render/landscape/TerrainNoise.cpp
     render/landscape/TerrainSystem.cpp
     render/landscape/TreeGenerator.cpp

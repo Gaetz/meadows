@@ -109,6 +109,12 @@ bool spellSupported(const SpellSpec& spec) {
         }
         return false;
     }
+    if (spec.element == SpiritKind::Fire) {
+        // The spark: heat dealt to the cells under the aim, the field
+        // spreads it (world/spirit/SpiritFire).
+        return spec.verb == SpellVerb::Create &&
+               spec.trajectory == SpellTrajectory::Point;
+    }
     if (spec.element != SpiritKind::Water) {
         return false;
     }

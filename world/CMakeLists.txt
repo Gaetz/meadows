@@ -26,6 +26,7 @@ add_library(meadows-world STATIC
     terrain/BiomeMapBuilder.cpp
     spirit/SpiritRules.cpp
     spirit/SpiritJets.cpp
+    spirit/SpiritFire.cpp
     spirit/Spells.cpp
     spirit/SpiritWaterMesh.cpp
     spirit/WaterReading.cpp

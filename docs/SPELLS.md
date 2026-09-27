@@ -109,7 +109,7 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Contrôler × Terre | — | ✅ **emprise de pierre** (`SpellEarthControl`, maintenu) : le rocher le plus proche de la visée dont le rayon ≤ `intensity` devient un corps dynamique porté au-dessus de la visée, relâché il vole et roule | — | — |
 | Comprendre × Terre | — | ✅ **intelligo** : sol + dureté, pente + altitude, humidité + climat, inflammabilité + moiteur (`SpellEarthUnderstand`, maintenu) | — | — |
 | Transformer × … | — | ⏳ **chantier TRANSFORMATIONS** (décision dev 2026-09-27) : eau → glace, peindre la pierre… quand les éléments auront leurs noyaux | — | — |
-| Créer × Feu | — | ⏳ (E3) | ⏳ | ⏳ |
+| Créer × Feu | — | ✅ **étincelle** (`SpellFireIgnite`) : `intensity` de chaleur déversée sur les cellules du champ de feu à `areaRadius` du point visé ; le champ propage sur l'herbe, s'arrête à la roche et à l'eau (E3.b) | ⏳ | ⏳ |
 | Créer × Vent | — | — | ⏳ (E4) | — |
 | Détruire / Transformer / Contrôler / Comprendre × autres | ⏳ | ⏳ | ⏳ | ⏳ |
 

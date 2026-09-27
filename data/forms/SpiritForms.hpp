@@ -40,6 +40,9 @@ struct SpiritForm : Form {
     // Earth: ground rising INTO a character throws it up — launch speed
     // = liftQuadratic x depth², clamped to [liftMin, liftMax] m/s (a brush
     // stroke hops it gently, a mound throws it high, a wall is capped).
+    core::Guid fieldParticles;       // ParticleForm of an ACTIVE field cell
+                                     // (flames on a burning cell), placed
+                                     // by the scene under an emitter budget
     f32 liftQuadratic { 2.0f };
     f32 liftMin { 1.5f };
     f32 liftMax { 25.0f };
@@ -61,6 +64,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(cueExtinguish)
         REFLECT_FIELD(jetParticles)
         REFLECT_FIELD(holdParticles)
+        REFLECT_FIELD(fieldParticles)
         REFLECT_FIELD(liftQuadratic)
         REFLECT_FIELD(liftMin)
         REFLECT_FIELD(liftMax)

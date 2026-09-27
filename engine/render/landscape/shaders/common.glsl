@@ -164,4 +164,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // entry xy = origin, z = 1/span (0 = empty), w free. Ordered
     // oldest -> NEWEST.
     vec4 uWaterSimFrozen[4];
+    // Fire scorch mask: xy = window origin, z = 1/texel, w = cells per
+    // side (0 = nothing burnt). See firescorch.glsl.
+    vec4 uFireScorchInfo;
 };

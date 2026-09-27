@@ -113,6 +113,9 @@ fieldKind = "coverage"
 spreadRate = 1.0
 ignitionPoints = 1.0
 spreadBudgetPerTick = 64
+decayPerSecond = 0.5
+cueSpawn = "Cue.Spirit.Fire.Spawn"
+fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000009"
@@ -135,7 +138,7 @@ new = true
 editorId = "MaterialGrass"
 materialClass = "grass"
 flammability = 1.0
-fuel = 0.4
+fuel = 8.0
 moisture = 0.2
 hardness = 0.6
 
@@ -1091,3 +1094,107 @@ type = "SpiritForm"
 liftQuadratic = 2.0
 liftMin = 1.5
 liftMax = 25.0
+
+# --- E3: Create x Fire, the spark -------------------------------------------
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c0"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "FlameTongue"
+shape = "sphere"
+shapeRadius = 0.7
+burst = 0
+rate = 14.0
+duration = 1.0
+lifetime = 0.8
+lifetimeJitter = 0.3
+velocity = [0.0, 2.2, 0.0]
+velocityJitter = 0.5
+gravity = [0.0, 1.5, 0.0]
+sizeStart = 0.45
+sizeEnd = 0.08
+colorStart = [1.0, 0.62, 0.18, 0.95]
+colorEnd = [0.5, 0.08, 0.02, 0.0]
+blend = "additive"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c1"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "SparkBurst"
+shape = "cone"
+shapeRadius = 25.0
+burst = 60
+lifetime = 0.7
+lifetimeJitter = 0.3
+velocity = [0.0, 5.0, 0.0]
+velocityJitter = 2.5
+gravity = [0.0, -4.0, 0.0]
+sizeStart = 0.12
+sizeEnd = 0.02
+colorStart = [1.0, 0.7, 0.25, 1.0]
+colorEnd = [1.0, 0.2, 0.05, 0.0]
+blend = "additive"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c2"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritFireSpawn"
+tag = "Cue.Spirit.Fire.Spawn"
+particles = "5b1e1700-0000-4000-8000-0000000000c1"
+cameraShake = 0.1
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c3"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireIgniteCost"
+attribute = "essence"
+op = "add"
+magnitude = -8.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c4"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireIgniteCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritFireIgnite"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c5"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireIgnite"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000c4"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c6"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireIgnite"
+parent = "5b1e1700-0000-4000-8000-0000000000c5"
+name = "spell.fireIgnite"
+form = "create"
+element = "Fire"
+trajectory = "point"
+range = 180.0
+intensity = 2.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 2.5
+channeled = false

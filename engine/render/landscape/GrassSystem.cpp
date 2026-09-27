@@ -483,7 +483,7 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     bladeIndexCount = static_cast<u32>(std::size(kBladeIndices));
 
     shaders.load(kGrassShader, { { "FrameUbo", 0 } },
-                 { { "uShadowMap", 1 } });
+                 { { "uShadowMap", 1 }, { "uFireScorch", 10 } });
     buildPipeline(device, shaders);
 }
 

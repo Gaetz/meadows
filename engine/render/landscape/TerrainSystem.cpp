@@ -200,7 +200,8 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSplatHeight", 3 },
                    { "uTerrainShade0", 4 },
                    { "uTerrainShade1", 5 },
-                   { "uSplatNormal", 8 } });
+                   { "uSplatNormal", 8 },
+                   { "uFireScorch", 10 } });
     buildPipeline(device, shaders);
     shaders.load(kTerrainCasterShader, { { "ShadowUbo", 1 } });
     buildCasterPipeline(device, shaders);

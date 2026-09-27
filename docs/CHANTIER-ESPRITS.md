@@ -451,13 +451,66 @@ vent (ratio > 1,5, plus loin sous le vent), bande de roche infranchissable
 + sol saturé qui ne prend jamais, mare qui éteint en un tick et garde
 éteint puis rend dormant en séchant, budget d'ignition plafonné, brûlé de
 part en part + scorch + deux runs bit-exacts + scroll.
-E3.b (suite) : le job esprits (une voie « un job en vol » distincte de
-l'eau), `FuelFn` sur `materialWeightsAt` + `regionFieldsAt` +
-`SurfaceMaterialForm`, `WetFn` sur le snapshot d'eau, masque de scorch
-comme texture centrée caméra (l'idiome de la pool map de WaterSystem)
-échantillonnée par terrain.frag et grass.frag, émetteurs de flammes en
-LOD, sort Créer × Feu. E3.c : contact → `buildupType = "ignition"`,
-props en bois.
+
+### E3.b — la voie job du feu, le masque de scorch, l'étincelle (2026-09-27)
+**Headless (`world/spirit/SpiritFire`)** : `FireWindow` (fenêtre 512 m @
+2 m centrée caméra, comme la sim d'eau ; scroll par cellules entières dès
+que la caméra s'écarte de 64 m du centre — la portée d'un cast (180 m)
+reste couverte), `groundPropsFrom(rules)` + `fuelFromWeights` (le
+combustible d'une cellule = la moyenne pondérée des `SurfaceMaterialForm`
+des cinq classes de splat herbe/roche/falaise/neige/sable, la moiteur
+relevée par la `wetness` bakée de la région), et `runFireJob` — LE corps
+du job : init ou scroll de la grille, étincelles, N pas, `fireScorch`,
+`fireBurningCenters`, `active` = quelque chose brûle encore. Tests
+`SpiritFireTest` (fenêtre + scroll, mélange, job de bout en bout + scroll
+qui garde la cellule brûlante + fenêtre inactive).
+**Le directeur (`SpiritDirector::updateFire`)** : la deuxième voie « un
+job en vol », distincte de l'eau, même discipline Phase 5 — la grille est
+DÉPLACÉE dans le job et revient avec le résultat ; le worker reçoit des
+copies : un `TerrainParams` partagé par les deux échantillonneurs, les
+props des matériaux, le snapshot d'eau (`sptr` immuable) + les corps
+bakés, `seaLevel`. `FuelFn` = `height` + `normal` + `regionFieldsAt` +
+`materialWeightsAt` → `fuelFromWeights` ; `WetFn` = `waterSurfaceQuery`
+(sim si affichée, sinon bakée) > 3 cm au-dessus du sol. Cadence : le feu
+doit 0,1 s de sim par pas, jusqu'à 5 pas par job ; **la voie est oisive
+(aucun job) tant que rien ne brûle et qu'aucune étincelle n'attend**, et
+le redevient quand le dernier foyer s'éteint (le scorch reste). Époque
+incrémentée au changement de carte : un job en vol atterrit périmé et
+tombe. Réglages du `SpiritForm` Feu : `spreadRate`, `ignitionPoints`,
+`spreadBudgetPerTick`, `decayPerSecond` (→ `heatDecay`), et le nouveau
+champ `fieldParticles` (le ParticleForm d'une cellule ACTIVE).
+**Le rendu (`engine/render/landscape/FireScorchMap`)** : l'idiome de la
+pool map — une texture R16F n×n par job atterri (1×1 à zéro sinon),
+bind group au **slot 8** (le replay Vulkan passe de 8 à 12 slots ; GL
+ignore l'index), unité 10 (`firescorch.glsl`, libre dans les includes de
+terrain.frag et grass.frag), `uFireScorchInfo` ajouté EN FIN de
+`FrameUniforms` (2160 → 2176, static_asserts + miroir common.glsl) :
+{origine, 1/texel, n}. terrain.frag charbonne l'albédo (mix 0,92 vers
+un brun-noir) avant l'éclairage ; grass.frag brunit les brins puis les
+`discard` au-delà de 0,55 de scorch — l'herbe disparaît derrière le
+front. Purge des .obj hors `_deps` + rebuild des deux configs (le type
+partagé a changé de taille — leçon Phase 5).
+**La scène** : `updateSpiritFire` après le tick des sources (secondes de
+sim) → upload du masque quand un job atterrit, puis les **flammes** :
+parmi les cellules brûlantes, les 24 plus proches de la caméra à moins
+de 160 m gardent/reçoivent un émetteur `FlameTongue` (durée infinie,
+coupé quand la cellule s'éteint ou sort du budget) — le « hair
+transplant » de Far Cry 2. `resetSpiritFire` au changement de carte et
+au `spirit clear` de la console.
+**Le sort** : `SpellFireIgnite` (Créer × Feu, `point`, portée 180 m,
+`intensity` 2 = la chaleur déversée, disque 2,5 m, essence −8, cooldown
+2 s) → `PendingSpiritAction::Mode::FireIgnite` → `SpiritDirector::ignite`
++ cue `Cue.Spirit.Fire.Spawn` (gerbe d'étincelles additive). Matrice :
+Feu → Créer × point. La pré-vérification « sol mouillé » d'un Créer
+refuse déjà l'étincelle sur l'eau. Données : herbe `fuel` 0,4 → 8 s de
+flammes par cellule (le noyau brûle 1 fuel/s) ; `spreadRate` 1 ×
+(1 − moiteur 0,2) = 0,8 chaleur/s → une voisine prend en ~1,25 s : un
+front de ~1,6 m/s sur l'herbe, lisible.
+**Restes** : le vent du champ (`FireParams.wind`) attend E4 ; la pluie
+n'humidifie pas encore le combustible (seule la `wetness` bakée) ;
+persistance du scorch = E3.d optionnelle. E3.c (suite) : contact →
+`buildupType = "ignition"` (Status.Ignited) joueur/PNJ, props en bois
+(`surfaceMaterial` → `disableReference`), scatter gaté par le masque.
 
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;

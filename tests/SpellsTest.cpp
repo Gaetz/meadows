@@ -100,7 +100,12 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     CHECK_FALSE(spellSupported(spec)); // one-shot arcs wait for their brick
     spec.trajectory = SpellTrajectory::Point;
     spec.element = SpiritKind::Fire;
-    CHECK_FALSE(spellSupported(spec)); // fire waits for E3
+    CHECK(spellSupported(spec)); // the spark
+    spec.trajectory = SpellTrajectory::Stream;
+    CHECK_FALSE(spellSupported(spec)); // a flame jet waits for its brick
+    spec.trajectory = SpellTrajectory::Point;
+    spec.element = SpiritKind::Wind;
+    CHECK_FALSE(spellSupported(spec)); // wind waits for E4
     spec.element = SpiritKind::Earth;
     CHECK(spellSupported(spec)); // the bump
     spec.trajectory = SpellTrajectory::Line;

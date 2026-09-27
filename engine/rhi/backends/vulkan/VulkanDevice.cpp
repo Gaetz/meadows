@@ -1174,7 +1174,7 @@ private:
     // light, 5 key shadow, 6 GI apply) — a slot beyond this array is
     // silently NEVER replayed, which unbinds its descriptors on every
     // pipeline change (the invisible-GI bug).
-    array<BindGroupHandle, 8> boundGroups_ {};
+    array<BindGroupHandle, 12> boundGroups_ {};
     u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
     // Scratch for pushGroup/bindMissingDummies — both run on the per-draw
     // hot path, so the capacity is kept across calls instead of paying a

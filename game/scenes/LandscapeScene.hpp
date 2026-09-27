@@ -562,8 +562,10 @@ private:
         // release spot.
         // EarthSeize: the nearest rock within `radius` of the aim, no
         // bigger than `rate` metres, carried while held.
+        // FireIgnite: `rate` heat dealt to the fire field's cells within
+        // `radius` of (x, z) — the field spreads it.
         enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
-                               EarthDig, EarthWall, EarthSeize };
+                               EarthDig, EarthWall, EarthSeize, FireIgnite };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
@@ -624,6 +626,19 @@ private:
     void seizeRock(const PendingSpiritAction& action);
     void updateSpiritRocks(f32 dt);
     void releaseSpiritRocks(); // map swap / exit: bodies go with the world
+    // The fire lane (SpiritDirector::updateFire): the per-frame job kick,
+    // the scorch mask upload when a job lands, and the flame emitters
+    // re-placed on the burning cells nearest the camera under a budget
+    // (the Far Cry 2 "hair transplant").
+    void updateSpiritFire(f32 simSeconds);
+    void resetSpiritFire(); // map swap / exit: window, mask and flames go
+    struct FlameEmitter {
+        Vec2 at { 0.0f }; // the cell center (exact: matched by equality)
+        u32 emitter { 0 };
+    };
+    vector<FlameEmitter> flameEmitters;
+    static constexpr u32 kMaxFlames = 24;
+    static constexpr f32 kFlameReach = 160.0f;
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

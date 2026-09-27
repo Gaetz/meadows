@@ -1990,3 +1990,12 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spirit.noRock'
     text = 'No rock small enough within reach.'
+
+[[records]]
+form = 'f2c4b44f-e9a8-4e2d-9506-bd41ba317252'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireIgnite'
+    text = 'Spark'

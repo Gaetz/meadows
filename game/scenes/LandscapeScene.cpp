@@ -1501,13 +1501,13 @@ void LandscapeScene::update(f32 dt) {
         // Spirit sources live in SIM seconds: a spring pours rate x
         // duration whatever the dev time scale. Re-push only on change.
         if (sandboxActive) {
+            const f32 simDt = dt * renderer.waterSystem().simConfig().timeScale;
             vector<u32> stopped;
-            if (spiritDirector.tick(
-                    dt * renderer.waterSystem().simConfig().timeScale,
-                    &stopped)) {
+            if (spiritDirector.tick(simDt, &stopped)) {
                 stopSpiritEmitters(stopped);
                 pushRuntimeWaterSources();
             }
+            updateSpiritFire(simDt);
         }
     }
     {
@@ -2133,6 +2133,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     interiorEscapes.clear();
     params.snowLine = activeSnowLine;
     stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
+    resetSpiritFire();
     releaseSpiritHold(false);
     finishSpiritEarth(false);
     spiritLine.reset();
@@ -4131,6 +4132,7 @@ void LandscapeScene::createConsole() {
             stopSpiritEmitters(spiritDirector.jetList().clear());
             releaseSpiritHold(false);
             finishSpiritEarth(true);
+            resetSpiritFire();
             pushRuntimeWaterSources();
             return "spirit sources cleared";
         }
@@ -4762,6 +4764,11 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
                               : PendingSpiritAction::Mode::EarthDig;
             break;
         }
+        if (spell.element == render::terrain::SpiritKind::Fire) {
+            action.rate = spell.intensity; // heat dealt to each cell
+            action.mode = PendingSpiritAction::Mode::FireIgnite;
+            break;
+        }
         if (spell.verb == world::SpellVerb::Understand) {
             castWaterReading(*aimedAt, spell.duration,
                              spell.channeled); // no world action
@@ -4799,6 +4806,16 @@ void LandscapeScene::applyPendingSpiritActions() {
         const PendingSpiritAction action = pendingSpiritActions.front();
         pendingSpiritActions.pop_front();
         if (!sandboxActive) {
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::FireIgnite) {
+            spiritDirector.ignite(action.x, action.z, action.radius,
+                                  action.rate);
+            const Vec3 at { action.x,
+                            render::terrain::height(renderer.terrainParams(),
+                                                    action.x, action.z),
+                            action.z };
+            fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, action.rate });
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::EarthBump) {
@@ -5400,6 +5417,99 @@ void LandscapeScene::throwActorsOnGroundRise(
             npc->airHeight = glm::max(npc->airHeight, 0.01f);
         }
     }
+}
+
+void LandscapeScene::updateSpiritFire(f32 simSeconds) {
+    if (spiritDirector.fireIdle()) {
+        return;
+    }
+    const render::WaterSystem& water = renderer.waterSystem();
+    SpiritDirector::FireFrame frame;
+    frame.params = &renderer.terrainParams();
+    frame.water = (water.simIsValid() && !water.simIsSettling())
+                      ? water.simSnapshot()
+                      : nullptr;
+    frame.bodies = waterBodies;
+    frame.seaLevel = renderer.terrainParams().seaLevel;
+    const Vec3 cam = flyCamera.camera.position;
+    frame.focus = { cam.x, cam.z };
+    if (!spiritDirector.updateFire(engine->getJobSystem(), frame, simSeconds)) {
+        return;
+    }
+    // A job landed: the mask and the flames follow it.
+    const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
+    renderer.fireScorchMap().upload(engine->getDevice(),
+                                    spiritDirector.fireScorch(), spec.n,
+                                    { spec.originX, spec.originZ },
+                                    spec.texelSize);
+    // Wanted flames: the burning cells nearest the camera, under budget.
+    vector<Vec2> wanted;
+    for (const Vec2& at : spiritDirector.fireBurning()) {
+        const f32 dx = at.x - cam.x;
+        const f32 dz = at.y - cam.z;
+        if (dx * dx + dz * dz <= kFlameReach * kFlameReach) {
+            wanted.push_back(at);
+        }
+    }
+    std::stable_sort(wanted.begin(), wanted.end(),
+                     [&](const Vec2& a, const Vec2& b) {
+                         const f32 da = (a.x - cam.x) * (a.x - cam.x) +
+                                        (a.y - cam.z) * (a.y - cam.z);
+                         const f32 db = (b.x - cam.x) * (b.x - cam.x) +
+                                        (b.y - cam.z) * (b.y - cam.z);
+                         return da < db;
+                     });
+    if (wanted.size() > kMaxFlames) {
+        wanted.resize(kMaxFlames);
+    }
+    // Keep the emitters still wanted, stop the others, light the new.
+    vector<FlameEmitter> kept;
+    for (const FlameEmitter& flame : flameEmitters) {
+        const auto it = std::find_if(wanted.begin(), wanted.end(),
+                                     [&](const Vec2& at) {
+                                         return std::abs(at.x - flame.at.x) < 0.01f &&
+                                                std::abs(at.y - flame.at.y) < 0.01f;
+                                     });
+        if (it != wanted.end()) {
+            kept.push_back(flame);
+            wanted.erase(it);
+        } else if (flame.emitter != 0) {
+            fxSim.stopEmitter(flame.emitter);
+        }
+    }
+    const core::Guid& fxId =
+        spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire);
+    const auto* form = forms.find<data::ParticleForm>(fxId);
+    for (const Vec2& at : wanted) {
+        FlameEmitter flame { at, 0 };
+        if (form) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+            params.duration = 1.0e9f; // stopped when the cell stops burning
+            const Vec3 pos { at.x,
+                             render::terrain::height(renderer.terrainParams(),
+                                                     at.x, at.y) +
+                                 0.15f,
+                             at.y };
+            const u32 seed =
+                static_cast<u32>(static_cast<i32>(pos.x * 73.0f)) ^
+                (static_cast<u32>(static_cast<i32>(pos.z * 179.0f)) << 8) ^
+                fxSim.count();
+            flame.emitter = fxSim.spawn(params, pos, seed);
+        }
+        kept.push_back(flame);
+    }
+    flameEmitters = std::move(kept);
+}
+
+void LandscapeScene::resetSpiritFire() {
+    for (const FlameEmitter& flame : flameEmitters) {
+        if (flame.emitter != 0) {
+            fxSim.stopEmitter(flame.emitter);
+        }
+    }
+    flameEmitters.clear();
+    spiritDirector.resetFire();
+    renderer.fireScorchMap().clear(engine->getDevice());
 }
 
 void LandscapeScene::updateSpiritLine() {

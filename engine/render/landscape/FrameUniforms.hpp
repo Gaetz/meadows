@@ -226,6 +226,9 @@ struct FrameUniforms {
     // w free. Array order is oldest -> NEWEST (the shader resolves
     // overlaps by recency).
     Vec4 waterSimFrozen[4] {};
+    // Fire scorch mask (FireScorchMap::info): xy = window origin,
+    // z = 1/texel, w = cells per side (0 = nothing burnt).
+    Vec4 fireScorchInfo {};
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -309,7 +312,8 @@ static_assert(offsetof(FrameUniforms, surfSheenInfo) == 2048);
 static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 2064);
 static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 2080);
 static_assert(offsetof(FrameUniforms, waterSimFrozen) == 2096);
-static_assert(sizeof(FrameUniforms) == 2160,
+static_assert(offsetof(FrameUniforms, fireScorchInfo) == 2160);
+static_assert(sizeof(FrameUniforms) == 2176,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

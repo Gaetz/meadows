@@ -21,6 +21,7 @@
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
+#include "engine/render/landscape/FireScorchMap.hpp"
 #include "engine/render/landscape/TerrainShadeMap.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
@@ -211,6 +212,8 @@ public:
     render::VegetationSystem& vegetationSystem() { return vegetation; }
     render::WaterSystem& waterSystem() { return water; }
     const render::WaterSystem& waterSystem() const { return water; }
+    // The fire field's render mask (fed by the scene's fire lane).
+    render::FireScorchMap& fireScorchMap() { return fireScorch; }
     void requestRegenerate() { regenerateRequested = true; }
     // Variant meshes only (scatter/instances stay) — the tree builder's
     // regen trigger, applied at render()'s safe point.
@@ -479,6 +482,7 @@ private:
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;
+    render::FireScorchMap fireScorch;
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     // Worker-baked valley data for the ground-mist raymarch (§3.5).

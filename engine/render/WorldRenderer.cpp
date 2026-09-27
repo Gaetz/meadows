@@ -157,6 +157,7 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
         heightField.create(jobs);
         terrainLightMap.create(device, jobs);
         terrainShadeMap.create(device, jobs);
+        fireScorch.create(device);
         farTerrain.create(device, *shaders, jobs);
         if (cfg.postFx) {
             mistMap.create(device, jobs);
@@ -405,6 +406,7 @@ void WorldRenderer::destroy(rhi::Device& device) {
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device);
     terrainShadeMap.destroy(device);
+    fireScorch.destroy(device);
     farTerrain.destroy(device);
     mistMap.destroy(device);
     noiseVolume.destroy(device);
@@ -1481,6 +1483,9 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
         if (terrainShadeMap.bindGroup().id != 0) {
             frame.cmd.setBindGroup(7, terrainShadeMap.bindGroup());
         }
+        if (fireScorch.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(8, fireScorch.bindGroup());
+        }
         // Occlusion applies to the main view only: the set is built for
         // the real camera, not the mirrored one (the grass ring is too
         // close to ever be ridge-occluded — frustum only). CPU horizon
@@ -1655,6 +1660,9 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
         }
         if (terrainShadeMap.bindGroup().id != 0) {
             frame.cmd.setBindGroup(7, terrainShadeMap.bindGroup());
+        }
+        if (fireScorch.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(8, fireScorch.bindGroup());
         }
         if (cfg.terrain) {
             terrain.draw(frame.cmd, reflectionBindGroup,
@@ -2308,6 +2316,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .waterSimTuneInfo = water.simTuneInfo(),
         .waterSimFrozen = water.simFrozenInfo(),
         .terrainShadeMapInfo = terrainShadeMap.info(),
+        .fireScorchInfo = fireScorch.info(),
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;

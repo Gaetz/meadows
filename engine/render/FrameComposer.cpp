@@ -218,6 +218,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         resolved.waterSimFrozen[k] = in.waterSimFrozen[k];
     }
     resolved.terrainShadeMapInfo = in.terrainShadeMapInfo;
+    resolved.fireScorchInfo = in.fireScorchInfo;
     // Volumetric sky clouds ride RESOLVED only: the reflection pass has
     // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
     // stays 0 in base and applyClouds draws there).

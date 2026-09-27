@@ -30,6 +30,7 @@ layout(binding = 9) uniform sampler2DArray uSplatOrm;
 #include "terrain_weights.glsl"
 #include "terrain_blend.glsl"
 #include "terrain_zones.glsl"
+#include "firescorch.glsl"
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
@@ -530,6 +531,10 @@ void main() {
                    pomSelfShadow;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
+    // Burnt ground (the fire field): charred, the splat's hue fading
+    // under it; the mask's bilinear filter softens the cell edges.
+    float scorch = fireScorchAt(vWorldPos.xz);
+    albedo = mix(albedo, vec3(0.045, 0.038, 0.032), scorch * 0.92);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     // Per-material AO shapes the AMBIENT only: crevices deepen in the
     // shade, the stylized sun term keeps its flat readability.

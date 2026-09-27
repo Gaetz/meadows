@@ -96,6 +96,7 @@
     QuestSaveTest.cpp
     SpellsTest.cpp
     SpiritJetsTest.cpp
+    SpiritFireTest.cpp
     SpiritWaterMeshTest.cpp
     TerrainBrushTest.cpp
     WaterReadingTest.cpp

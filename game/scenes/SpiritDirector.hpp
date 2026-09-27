@@ -1,21 +1,31 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
+#include "engine/core/ConcurrentQueue.hpp"
+#include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/terrain/SpiritField.hpp"
+#include "engine/terrain/WaterBodies.hpp"
+#include "engine/terrain/WaterSim.hpp"
 #include "engine/terrain/generation/WaterSolve.hpp"
+#include "world/spirit/SpiritFire.hpp"
 #include "world/spirit/SpiritJets.hpp"
 #include "world/spirit/SpiritRules.hpp"
 #include "world/spirit/SpiritSources.hpp"
 
+namespace core {
+class JobSystem;
+}
+
 namespace game {
 
 // The scene-side owner of the spirit framework (chantier ESPRITS): the
-// placed sources, the transient jets, the compiled rule table, and — from
-// the fire brick on — the one spirit job in flight. Main thread only; the
-// water kernel gets VALUE copies of the sources at its own job enqueue.
+// placed sources, the transient jets, the compiled rule table, and the
+// fire lane — the one spirit job in flight, distinct from the water's.
+// Main thread only; the kernels get VALUE copies at their own enqueue.
 class SpiritDirector {
 public:
     void build(const data::FormDatabase& forms); // rules + authored/saved sources
@@ -43,6 +53,10 @@ public:
     }
     const core::Guid& holdParticles(render::terrain::SpiritKind kind) const {
         return holdFx[static_cast<size_t>(kind)];
+    }
+    // The ParticleForm of one ACTIVE cell of the field (flames).
+    const core::Guid& fieldParticles(render::terrain::SpiritKind kind) const {
+        return fieldFx[static_cast<size_t>(kind)];
     }
     // The earth spirit's lift (SpiritForm Earth): the speed a rising
     // ground throws a character with, from how deep it sank into it.
@@ -76,6 +90,36 @@ public:
     const world::SpiritSourceList& list() const { return sources; }
     const world::SpiritRuleTable& rules() const { return table; }
 
+    // --- The fire lane (world/spirit/SpiritFire) ------------------------
+    // A camera window of the fire field stepped at 10 Hz on a worker, one
+    // job in flight; the window follows the focus (scroll), the mask and
+    // the burning centers are what the last landed job published. Idle
+    // (no job at all) until a spark, and again once nothing burns.
+    struct FireFrame {
+        const render::TerrainParams* params { nullptr };
+        // The live sim snapshot when the display shows it, else null:
+        // the baked bodies answer (the WaterQuery contract).
+        sptr<const render::terrain::WaterSimSnapshot> water;
+        sptr<const render::WaterBodies> bodies;
+        f32 seaLevel { -1.0e6f };
+        Vec2 focus { 0.0f }; // camera XZ
+    };
+    // Heat dealt to every cell within `radius` of (x, z) by the next job.
+    void ignite(f32 x, f32 z, f32 radius, f32 heat);
+    // Once per frame after the safe point. True when a job landed this
+    // frame (fireScorch / fireBurning are fresh).
+    bool updateFire(core::JobSystem& jobs, const FireFrame& frame,
+                    f32 simSeconds);
+    void resetFire(); // map swap / exit: the window is dropped
+    bool fireIdle() const {
+        return !fireGrid && !fireInFlight && fireIgnitions.empty();
+    }
+    const vector<u8>& fireScorch() const { return fireMask; }
+    const render::terraingen::GridSpec& fireSpec() const { return fireMaskSpec; }
+    const vector<Vec2>& fireBurning() const { return fireCenters; }
+    const render::terrain::FireStats& fireStats() const { return lastFireStats; }
+    f32 fireLastMs() const { return fireMs; }
+
 private:
     world::SpiritSourceList sources;
     world::SpiritJetList jets;
@@ -86,8 +130,30 @@ private:
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         holdFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        fieldFx {};
     std::optional<render::terraingen::WaterSource> holdSource;
     EarthLift lift;
+
+    struct FireShared {
+        core::ConcurrentQueue<world::FireJobOutput> done;
+    };
+    sptr<FireShared> fireShared { std::make_shared<FireShared>() };
+    std::unique_ptr<render::terrain::FireGrid> fireGrid; // null while in flight
+    bool fireInFlight { false };
+    bool fireActive { false };
+    u32 fireEpoch { 0 };
+    f32 fireAccum { 0.0f }; // sim seconds owed to the 10 Hz step
+    vector<world::FireIgnition> fireIgnitions;
+    render::terrain::FireParams fireParams;
+    world::GroundProps groundProps {};
+    vector<u8> fireMask;
+    render::terraingen::GridSpec fireMaskSpec;
+    vector<Vec2> fireCenters;
+    render::terrain::FireStats lastFireStats;
+    f32 fireMs { 0.0f };
+    static constexpr u32 kMaxStepsPerJob = 5;
 };
 
 } // namespace game

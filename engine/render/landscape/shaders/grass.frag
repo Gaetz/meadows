@@ -9,6 +9,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "locallights.glsl"
 #include "terrainlight.glsl"
 #include "gi.glsl"
+#include "firescorch.glsl"
 
 // The Quick_Grass lighting
 // model on our frame machinery (shadows, clouds, terrain light map,
@@ -41,6 +42,13 @@ void main() {
     float middle = 1.0 - uGrassBladeInfo.z * (1.0 - acrossEdge) *
                              (1.0 - acrossEdge);
     albedo *= mix(middle, 1.0, vLodOut);
+    // The fire field: blades char as their cell burns and are gone once
+    // it is mostly consumed.
+    float scorch = fireScorchAt(vWorldPos.xz);
+    if (scorch > 0.55) {
+        discard;
+    }
+    albedo = mix(albedo, vec3(0.10, 0.07, 0.04), scorch * 1.6);
 
     // Root occlusion (density AO, easeIn^2 up) — kept GENTLE so near
     // blades hold the ground's color down to the carpet. Eases out with

@@ -1999,3 +1999,12 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spirit.noRock'
     text = 'Aucun rocher assez petit à portée.'
+
+[[records]]
+form = '3d673729-bd76-446c-9aca-5a0474a26a1d'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireIgnite'
+    text = 'Étincelle'

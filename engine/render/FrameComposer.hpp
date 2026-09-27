@@ -162,6 +162,8 @@ struct FrameComposerInputs {
     std::array<Vec4, 4> waterSimFrozen {};
     // Region shading maps (TerrainShadeMap::info()).
     Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Fire scorch mask (FireScorchMap::info()).
+    Vec4 fireScorchInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // The volumetric fog's reach (froxel far AND cluster grid far — the two
