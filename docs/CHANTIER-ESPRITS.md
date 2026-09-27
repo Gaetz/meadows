@@ -425,6 +425,40 @@ publish à 20 Hz) fait sautiller au minimum, une bosse de 3 m lance à 18 m/s,
 un mur est plafonné. Indépendant de l'ordre dans la frame et de la
 collision ; améliorable au seul endroit qui compte.
 
+### E3.a — le noyau feu, headless (2026-09-27)
+`engine/terrain/FireField` (à côté de WaterSim, même fenêtre 2 m
+`GridSpec`) : par cellule chaleur, combustible restant / initial,
+inflammabilité, moiteur, état {dormant, brûle, brûlé, mouillé} ;
+**combustible paresseux** (`FuelFn` appelée la première fois qu'une cellule
+compte — une fenêtre ne coûte rien tant que le feu ne la touche pas).
+`fireStep` en trois passes déterministes : (1) l'eau d'abord (`WetFn` :
+une cellule sous l'eau perd sa chaleur, une brûlante est éteinte, un
+mouillé redevient dormant quand l'eau part — le shifumi Eau > Flamme),
+(2) chaque cellule brûlante déverse `spreadRate × ((1 − 0,75·w) +
+0,75·w·max(0, vent·dir)) × inflammabilité × (1 − moiteur) × dt` sur ses
+8 voisines (w = force du vent 0..1 ; dans un scratch : l'ordre de visite
+est sans effet) — le front sous le vent est un **cône** (les chaînes
+diagonales l'élargissent), pas une ellipse : le test vérifie la portée
+sous le vent (> 2× contre le vent), pas un rapport d'axes, (3) ignition à
+`ignitionPoints` sous `spreadBudgetPerTick` (le surplus garde sa chaleur et
+s'allume au tick suivant — jamais « toute la carte brûle », Far Cry 2),
+brûler consomme `burnRate` × dt de combustible → brûlé, la chaleur d'une
+cellule non alimentée décroît. `fireScorch` = masque u8 (brûlé = 255,
+brûlant = part consommée), `fireBurningCenters` = les N plus riches en
+combustible (le budget d'émetteurs, le « hair transplant »),
+`fireScrollWindow` bit-exact. Tests : disque sans vent, ellipse sous le
+vent (ratio > 1,5, plus loin sous le vent), bande de roche infranchissable
++ sol saturé qui ne prend jamais, mare qui éteint en un tick et garde
+éteint puis rend dormant en séchant, budget d'ignition plafonné, brûlé de
+part en part + scorch + deux runs bit-exacts + scroll.
+E3.b (suite) : le job esprits (une voie « un job en vol » distincte de
+l'eau), `FuelFn` sur `materialWeightsAt` + `regionFieldsAt` +
+`SurfaceMaterialForm`, `WetFn` sur le snapshot d'eau, masque de scorch
+comme texture centrée caméra (l'idiome de la pool map de WaterSystem)
+échantillonnée par terrain.frag et grass.frag, émetteurs de flammes en
+LOD, sort Créer × Feu. E3.c : contact → `buildupType = "ignition"`,
+props en bois.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

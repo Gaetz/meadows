@@ -72,6 +72,7 @@
     FloatersTest.cpp
     RiverGeometryTest.cpp
     WaterSolveTest.cpp
+    FireFieldTest.cpp
     WaterSimTest.cpp
     WaterQueryTest.cpp
     AuthoringTest.cpp
