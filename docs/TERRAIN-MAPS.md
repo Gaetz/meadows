@@ -292,6 +292,14 @@ n'existe plus. Suite : chantier PAYSAGE (repasser la génération
 elle-même — le solve global lève le veto sur l'érosion par
 gouttelettes).
 
+**À faire dans PAYSAGE (demande dev 2026-09-27, chantier ESPRITS)** : le
+scatter doit spawner des **objets interactifs** — les rochers (et plus
+tard troncs, buissons) semés par le terrain sont aujourd'hui de simples
+instances de rendu + boîtes de collision, pas des entités : l'emprise de
+pierre ne saisit que les `StaticForm` placés (`surfaceMaterial = "rock"`).
+Il faut qu'une instance de scatter devienne une référence (spawn + corps
+dynamique + persistance) à la demande — à la saisie, au feu, à l'impact.
+
 | Capacité | Où |
 |---|---|
 | Bake de carte (érosion globale + hydrologie UNE fois + tranches) | `game/MapBaker` (`bakeMap`, `extractMapHydrology`), tranches par `bakeMapSlice` (TileBake) |
