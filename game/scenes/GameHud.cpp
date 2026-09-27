@@ -134,6 +134,17 @@ void GameHud::updateHudModel(const HudContext& ctx) {
     ctx.ui.setBool("hud", "spellVisible",
                    ctx.playMode && !ctx.spellName.empty());
     ctx.ui.setString("hud", "spellName", ctx.spellName);
+    ctx.ui.setBool("hud", "readingVisible",
+                   ctx.playMode && !ctx.readingLines.empty());
+    for (u32 i = 0; i < 6; ++i) {
+        const str line = i < ctx.readingLines.size() ? ctx.readingLines[i]
+                                                     : str {};
+        ctx.ui.setString("hud", "reading" + std::to_string(i), line);
+        if (i > 0) {
+            ctx.ui.setBool("hud", "readingHas" + std::to_string(i),
+                           !line.empty());
+        }
+    }
     // The bow-draw gauge, bottom center while drawing.
     ctx.ui.setBool("hud", "chargeVisible", ctx.bowCharge >= 0.0f);
     ctx.ui.setNumber("hud", "chargePct",

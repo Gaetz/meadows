@@ -586,3 +586,67 @@ form = "5b1e1700-0000-4000-8000-000000000007"
 type = "SpiritForm"
 [records.fields]
 holdParticles = "5b1e1700-0000-4000-8000-000000000076"
+
+# --- UNDERSTAND + WATER (docs/SPELLS.md): a reading of the aimed water —
+# body, depth, current, volume — or, on dry ground, where the nearest
+# water lies. No world action; `duration` is how long the block stays.
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006d"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterUnderstandCost"
+attribute = "essence"
+op = "add"
+magnitude = -3.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006e"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterUnderstandCooldown"
+duration = "duration"
+durationSeconds = 1.0
+grantedTag = "Cooldown.SpiritWaterUnderstand"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006f"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterUnderstand"
+cost = "5b1e1700-0000-4000-8000-00000000006d"
+cooldown = "5b1e1700-0000-4000-8000-00000000006e"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000085"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWaterUnderstand"
+parent = "5b1e1700-0000-4000-8000-00000000006f"
+name = "spell.waterUnderstand"
+form = "understand"
+element = "Water"
+trajectory = "point"
+range = 72.0
+intensity = 0.0
+duration = 8.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.0
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000077"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritWaterRead"
+tag = "Cue.Spirit.Water.Read"
+particles = "5b1e1700-0000-4000-8000-000000000074"

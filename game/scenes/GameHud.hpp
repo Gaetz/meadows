@@ -73,6 +73,9 @@ struct HudContext {
     f32 hudStatPointsScale;
     // The current spell's name (draft spell bar) — empty = no spell.
     str spellName;
+    // Understand x Water: the reading block, one line per slot (the
+    // first is the title); empty = hidden.
+    vector<str> readingLines;
 };
 
 // The RmlUi presenter extracted from LandscapeScene: every

@@ -1621,3 +1621,219 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.waterHold'
     text = 'Hold Water'
+
+[[records]]
+form = '0ffaa575-67b9-4dd0-a4b3-7fbea988e951'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterUnderstand'
+    text = 'Water Intelligo'
+
+[[records]]
+form = '2eca82bb-27e5-4da1-bac4-28064307ba91'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.title'
+    text = '~ Water intelligo ~'
+
+[[records]]
+form = '22bd4699-761e-4ecb-a2a7-984c0d862552'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.dry'
+    text = 'No water here.'
+
+[[records]]
+form = '30040c14-303a-419c-b157-0abf973314aa'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.nearest'
+    text = 'Nearest water: {} m to the {}.'
+
+[[records]]
+form = 'd964e0a6-f49d-413b-a98d-efdacf839150'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.noNearest'
+    text = 'No water within {} m.'
+
+[[records]]
+form = 'ca7d3319-aece-4836-afd3-0da55c9daef6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.sea'
+    text = 'The sea.'
+
+[[records]]
+form = '137f9649-fdc3-4459-a1bb-516cb249a9f2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.lake'
+    text = 'A lake at {} m ({} ha).'
+
+[[records]]
+form = '897a7979-26d5-41c8-be26-a6e4fbd0df99'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.river'
+    text = 'A river, {} m wide, {} m³/s.'
+
+[[records]]
+form = '88401b61-c931-460e-99aa-7a0bfcd53795'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.spirit'
+    text = 'A spirit spring ({} s left).'
+
+[[records]]
+form = '26462be0-a403-478a-8cb4-4c3b9eb1c181'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.spiritPermanent'
+    text = 'A permanent spirit spring.'
+
+[[records]]
+form = '7e85eddd-8708-4115-95ce-f98d357401f8'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.body.pool'
+    text = 'Standing water.'
+
+[[records]]
+form = '1bf3ff61-c464-46a5-ae6e-69c9d3116ba6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.depth'
+    text = 'Depth {} m.'
+
+[[records]]
+form = 'c20a8f78-2f2d-4ad4-8339-359caeb0aa9f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.flow'
+    text = 'Current {} m/s toward the {}.'
+
+[[records]]
+form = '3b765c21-4a70-4222-95ba-b257e641815c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.still'
+    text = 'Still water.'
+
+[[records]]
+form = '3a2c5bba-f6a7-44d8-9594-f291f24969cb'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.volume'
+    text = 'Volume {} m³.'
+
+[[records]]
+form = 'f78d8684-2b77-405f-8f33-a1a357e315f2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'reading.volumeApprox'
+    text = 'Volume about {} m³.'
+
+[[records]]
+form = 'e072b985-6c36-49fc-a1b1-d249b4546855'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.N'
+    text = 'north'
+
+[[records]]
+form = '6fb7826f-35b8-45d8-8fd3-9511de36a4dc'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.NE'
+    text = 'north-east'
+
+[[records]]
+form = '13416044-4fca-4028-9dd7-112dc95f91a1'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.E'
+    text = 'east'
+
+[[records]]
+form = '76983d1e-ae31-44de-9492-300d40186fff'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.SE'
+    text = 'south-east'
+
+[[records]]
+form = '9af6dafb-df2c-4c93-b2ab-30bf83efbe87'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.S'
+    text = 'south'
+
+[[records]]
+form = '46109008-e297-460f-a4e8-edfea72148c0'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.SW'
+    text = 'south-west'
+
+[[records]]
+form = '773edb65-e295-4816-8d2c-66138cdcd8e2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.W'
+    text = 'west'
+
+[[records]]
+form = '75bbd992-8377-44cc-b473-564c5b2ec72c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'dir.NW'
+    text = 'north-west'

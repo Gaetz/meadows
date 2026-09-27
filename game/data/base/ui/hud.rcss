@@ -83,6 +83,31 @@ body {
 	width: 50%;
 }
 
+/* The water reading (Understand x Water): a block right of the
+   crosshair, its lines pre-formatted by the scene. */
+#reading {
+	position: absolute;
+	left: 56%;
+	top: 36%;
+	width: 440dp;
+	padding: 14dp 18dp;
+	color: #f0ede4;
+	background-color: #000000a0;
+	border-radius: 8dp;
+}
+#reading .rtitle {
+	display: block;
+	font-size: 20dp;
+	color: #c9c5bb;
+	letter-spacing: 1dp;
+	margin-bottom: 8dp;
+}
+#reading .rline {
+	display: block;
+	font-size: 18dp;
+	margin-top: 6dp;
+}
+
 /* The spell line sits just above the four vitals (4 x 22dp + 16dp). */
 #spell {
 	position: absolute;

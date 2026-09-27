@@ -97,9 +97,12 @@ areaRadius = 4.0
 Only some (form, element, trajectory) cells are implemented so far —
 today, for **Water**: `create` as `point` (a spring) and `stream` (a jet
 from the hand), `destroy` as `point` (a drain — on a lake the hole is
-refilled by the lake at its weir rate), and `control` as `point`
+refilled by the lake at its weir rate), `control` as `point`
 (channeled: the aimed water is drawn into a floating volume that follows
-the aim; release drops it where you look). A spell outside that set is
+the aim; release drops it where you look), and `understand` as `point`
+(a reading of the aimed water — body, depth, current, volume — or, on
+dry ground, where the nearest water lies; `duration` is how long the
+block stays on the HUD). A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

@@ -180,3 +180,27 @@ spell.waterSpring,Source d'eau
 spell.waterStream,Jet d'eau
 spell.waterDrain,Assèchement
 spell.waterHold,Emprise d'eau
+spell.waterUnderstand,Intelligo de l'eau
+reading.title,~ Intelligo de l'eau ~
+reading.dry,Pas d'eau ici.
+reading.nearest,Eau la plus proche : {} m vers le {}.
+reading.noNearest,Aucune eau à moins de {} m.
+reading.body.sea,La mer.
+reading.body.lake,Un lac à {} m d'altitude ({} ha).
+reading.body.river,"Une rivière, {} m de large, {} m³/s."
+reading.body.spirit,Une source d'esprit ({} s restantes).
+reading.body.spiritPermanent,Une source d'esprit permanente.
+reading.body.pool,De l'eau stagnante.
+reading.depth,Profondeur {} m.
+reading.flow,Courant {} m/s vers le {}.
+reading.still,Eau calme.
+reading.volume,Volume {} m³.
+reading.volumeApprox,Volume environ {} m³.
+dir.N,nord
+dir.NE,nord-est
+dir.E,est
+dir.SE,sud-est
+dir.S,sud
+dir.SW,sud-ouest
+dir.W,ouest
+dir.NW,nord-ouest

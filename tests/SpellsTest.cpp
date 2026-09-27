@@ -106,6 +106,8 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     CHECK_FALSE(spellSupported(spec)); // control is channeled by nature
     spec.channeled = true;
     CHECK(spellSupported(spec));
+    spec.verb = SpellVerb::Understand;
+    CHECK(spellSupported(spec)); // the reading
     spec.verb = SpellVerb::Transform;
     CHECK_FALSE(spellSupported(spec));
 }

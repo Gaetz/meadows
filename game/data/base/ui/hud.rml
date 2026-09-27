@@ -27,6 +27,15 @@
 	     malus locked; a lighter fill = a bonus past the default max. -->
 	<!-- Draft spell line (the wheel cycles the spell book). -->
 	<div id="spell" data-if="spellVisible">{{ spellName }}</div>
+	<!-- Understand x Water: the reading block, right of center. -->
+	<div id="reading" data-if="readingVisible">
+		<div class="rtitle">{{ reading0 }}</div>
+		<div class="rline" data-if="readingHas1">{{ reading1 }}</div>
+		<div class="rline" data-if="readingHas2">{{ reading2 }}</div>
+		<div class="rline" data-if="readingHas3">{{ reading3 }}</div>
+		<div class="rline" data-if="readingHas4">{{ reading4 }}</div>
+		<div class="rline" data-if="readingHas5">{{ reading5 }}</div>
+	</div>
 	<div id="vitals">
 		<div class="stat">
 			<div class="bar health" data-style-width="healthBarPct + '%'">

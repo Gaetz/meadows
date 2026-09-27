@@ -255,6 +255,40 @@ même EffectForm de coût à magnitude mise à l'échelle (§2.9 intact).
 - **Portée × 3** : sorts `point` 72 m (rayon de visée physique 160 m), jet
   60 m ⇒ 24 m/s à 45°.
 
+### E1.h — Comprendre × Eau, l'intelligo (2026-09-27)
+- `world/spirit/WaterReading` (headless, testé) : `readWater(inputs, x, z,
+  sol)` lit **les sources que le gameplay croit déjà** — `WaterQuery`
+  (surface, profondeur, courant), les corps cuits (lac par masque + niveau,
+  rivière par distance à la polyligne et demi-largeur interpolée, mer sous
+  le niveau), les sources d'esprit (disque couvrant la visée →
+  « source d'esprit, N s restantes »). **Volume** : flood 4-connexe des
+  cellules mouillées du snapshot depuis la visée, × 4 m² — *exact* si le
+  flood n'a pas touché la marge de la fenêtre, sinon *estimation* = niveau
+  du lac − sol sur le masque cuit (sous-échantillonné à ≤ 4096 prises) ; la
+  mer n'a pas de volume. **Visée sèche** : l'eau la plus proche (cellules
+  mouillées de la sim, bornes des lacs, nœuds des rivières) dans
+  `searchRadius` (512 m), direction + distance ; `compassCode` (x = est,
+  −z = nord = le yaw 0 de la caméra).
+- Scène : `executeSpell` → `castWaterReading(at, duration, live)` (aucune
+  action monde, pas de file), lignes formatées depuis les clés
+  `reading.*`/`dir.*` (EN/FR) dans un panneau HUD `#reading` (440 dp, une
+  ligne par slot `reading0..5` — RmlUi ne rend pas les `
+` d'une chaîne
+  liée ; retour dev : « fenêtre toute fine, illisible »), cue
+  `Cue.Spirit.Water.Read` à l'ouverture. **Maintenu** (retour dev) : le sort
+  est `channeled` (upkeep 0) — tant que Q est tenu la lecture suit la visée
+  et se rafraîchit chaque frame (courant, volume vivants), relâcher la
+  ferme ; un sort non maintenu resterait `duration` s.
+- Données : `SpiritWaterUnderstand` (essence −3, cooldown 1 s) +
+  `SpellWaterUnderstand` (understand × Water, point, 72 m, 8 s d'affichage)
+  ; matrice : Comprendre × Eau × point.
+- Tests `WaterReadingTest` : mare simulée (Pool, volume exact = Σ profondeur
+  × 4), visée sèche → eau la plus proche à l'est, lac cuit (volume estimé
+  = niveau − sol × aire), rivière (largeur, débit), source d'esprit, mer,
+  rose des vents.
+- v2 (quand la carte aura ses overlays) : gués, tracé du cours ; plus tard
+  froid/pureté quand ces esprits existeront.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

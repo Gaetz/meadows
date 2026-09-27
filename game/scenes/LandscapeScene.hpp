@@ -28,6 +28,7 @@
 #include "game/scenes/MapController.hpp"
 #include "game/scenes/SpiritDirector.hpp"
 #include "world/spirit/Spells.hpp"
+#include "world/spirit/WaterReading.hpp"
 #include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -569,6 +570,16 @@ private:
     Vec3 spiritNozzle() const;
     // The stream is lumps launched at this cadence (seconds).
     static constexpr f32 kJetSphereInterval = 0.12f;
+    // Understand x Water: the reading shown by the HUD for a while
+    // (world/spirit/WaterReading, formatted here from the loc keys).
+    vector<str> spiritReading; // one line per HUD slot (kReadingLines)
+    f32 spiritReadingSeconds { 0.0f };
+    // A channeled reading follows the aim while Q is held and closes on
+    // release (the timed one just fades).
+    bool spiritReadingLive { false };
+    static constexpr u32 kReadingLines = 6;
+    void castWaterReading(const Vec3& at, f32 seconds, bool live);
+    void updateSpiritReading(f32 dt);
     // The control spell's held volume (world/spirit/SpiritJets
     // SpiritHold): drawn at the aim while Q is held, dropped on release.
     std::optional<world::SpiritHold> spiritHold;

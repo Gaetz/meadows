@@ -1701,6 +1701,7 @@ void LandscapeScene::update(f32 dt) {
         }
         updateSpiritJets(dt);
         updateSpiritHold(dt);
+        updateSpiritReading(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
         if (const f32 wheel = engine->getInput().wheelDelta();
@@ -3221,9 +3222,12 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "postureMalusLeft", "postureMalusPct" },
           .strings = { "healthText", "energyText", "essenceText",
                        "postureText", "clock", "prompt", "talk",
-                       "spellName" },
+                       "spellName", "reading0", "reading1", "reading2",
+                       "reading3", "reading4", "reading5" },
           .bools = { "promptVisible", "talkVisible", "chargeVisible",
-                     "spellVisible" },
+                     "spellVisible", "readingVisible", "readingHas1",
+                     "readingHas2", "readingHas3", "readingHas4",
+                     "readingHas5" },
           .rows = true }); // Nameplates over hostile/hurt NPCs
     // The party frame — one row per ACTIVE follower (name +
     // health), its own model (a document allows one rows array per model).
@@ -3646,6 +3650,9 @@ HudContext LandscapeScene::makeHudContext() {
         playerController.bowCharge(), // The draw gauge
         statsTuning.hudStatPointsScale, // vitals-bar scale
         currentSpellName(), // the spell line over the vitals
+        spiritReadingSeconds > 0.0f || spiritReadingLive
+            ? spiritReading
+            : vector<str> {},
     };
 }
 
@@ -4681,6 +4688,11 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         }
         action.x = aimedAt->x;
         action.z = aimedAt->z;
+        if (spell.verb == world::SpellVerb::Understand) {
+            castWaterReading(*aimedAt, spell.duration,
+                             spell.channeled); // no world action
+            return;
+        }
         if (spell.verb == world::SpellVerb::Control) {
             action.mode = PendingSpiritAction::Mode::Hold;
         }
@@ -4949,6 +4961,112 @@ void LandscapeScene::extractSpiritWater(render::RenderSnapshot& out) const {
                                    0.0f };
         world::appendBlob(mesh.triangles, center, radius);
         out.waterMeshes.push_back(std::move(mesh));
+    }
+}
+
+void LandscapeScene::updateSpiritReading(f32 dt) {
+    if (spiritReadingLive) {
+        // Held: re-read where the aim rests now (live current, volume);
+        // released: gone.
+        if (!actionMap.down(engine->getInput(), InputAction::SpiritCast) ||
+            !playerEntity.is_alive()) {
+            spiritReadingLive = false;
+            spiritReadingSeconds = 0.0f;
+            spiritReading.clear();
+            return;
+        }
+        if (const std::optional<Vec3> at = aimGround()) {
+            castWaterReading(*at, 0.0f, true);
+        }
+        return;
+    }
+    spiritReadingSeconds = glm::max(0.0f, spiritReadingSeconds - dt);
+    if (spiritReadingSeconds <= 0.0f) {
+        spiritReading.clear();
+    }
+}
+
+void LandscapeScene::castWaterReading(const Vec3& at, f32 seconds, bool live) {
+    const render::terrain::WaterQuery query = makeWaterQuery();
+    world::WaterReadingInputs in;
+    in.query = &query;
+    in.sources = &spiritDirector.list();
+    in.worldspace = activeWorldspaceGuid();
+    const auto& params = renderer.terrainParams();
+    in.ground = [&params](f32 x, f32 z) {
+        return render::terrain::height(params, x, z);
+    };
+    const world::WaterReading r = world::readWater(in, at.x, at.z, at.y);
+
+    const auto num = [](f32 v, i32 decimals) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
+                      static_cast<f64>(v));
+        return str { buf };
+    };
+    const auto dir = [&](const Vec2& d) {
+        return texts.get(str { "dir." } + world::compassCode(d));
+    };
+    vector<str> lines;
+    lines.push_back(texts.get("reading.title"));
+    if (!r.water) {
+        lines.push_back(texts.get("reading.dry"));
+        if (r.nearestFound) {
+            lines.push_back(texts.format(
+                "reading.nearest",
+                { num(r.nearestDistance, 0), dir(r.nearestDir) }));
+        } else {
+            lines.push_back(
+                texts.format("reading.noNearest", num(in.searchRadius, 0)));
+        }
+    } else {
+        switch (r.body) {
+        case world::WaterReading::Body::Sea:
+            lines.push_back(texts.get("reading.body.sea"));
+            break;
+        case world::WaterReading::Body::Lake:
+            lines.push_back(texts.format(
+                "reading.body.lake",
+                { num(r.lakeLevel, 0), num(r.lakeArea / 10000.0f, 1) }));
+            break;
+        case world::WaterReading::Body::River:
+            lines.push_back(texts.format(
+                "reading.body.river",
+                { num(r.riverWidth, 0), num(r.riverDischarge, 1) }));
+            break;
+        case world::WaterReading::Body::Spirit:
+            lines.push_back(r.spiritRemaining < 0.0f
+                                ? texts.get("reading.body.spiritPermanent")
+                                : texts.format("reading.body.spirit",
+                                               num(r.spiritRemaining, 0)));
+            break;
+        case world::WaterReading::Body::Pool:
+        case world::WaterReading::Body::None:
+            lines.push_back(texts.get("reading.body.pool"));
+            break;
+        }
+        lines.push_back(texts.format("reading.depth", num(r.depth, 1)));
+        const f32 speed = glm::length(r.flow);
+        if (speed > 0.05f) {
+            lines.push_back(texts.format("reading.flow",
+                                         { num(speed, 1), dir(r.flow) }));
+        } else {
+            lines.push_back(texts.get("reading.still"));
+        }
+        if (r.volumeKnown) {
+            lines.push_back(texts.format(
+                r.volumeExact ? "reading.volume" : "reading.volumeApprox",
+                num(r.volume, 0)));
+        }
+    }
+    // The cue only when the reading opens, not on every live refresh.
+    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
+    spiritReading = std::move(lines);
+    spiritReading.resize(kReadingLines);
+    spiritReadingLive = live;
+    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
+    if (opening) {
+        fxDirector.cues().emit({ "Cue.Spirit.Water.Read", at, 1.0f });
     }
 }
 

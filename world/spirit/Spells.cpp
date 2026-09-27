@@ -101,8 +101,9 @@ bool spellSupported(const SpellSpec& spec) {
         return spec.trajectory == SpellTrajectory::Point;
     case SpellVerb::Control: // the held volume — channeled by nature
         return spec.trajectory == SpellTrajectory::Point && spec.channeled;
+    case SpellVerb::Understand: // a reading at the aim, no world action
+        return spec.trajectory == SpellTrajectory::Point;
     case SpellVerb::Transform:
-    case SpellVerb::Understand:
         break;
     }
     return false;
