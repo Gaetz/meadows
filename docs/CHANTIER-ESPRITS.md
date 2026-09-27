@@ -407,18 +407,23 @@ Décision dev : oui à la save avec assets.
 
 ### Retour dev E2 : « le sol qui monte nous traverse » → la poussée du sol (2026-09-27)
 Pendant un stroke seul le visuel monte (la collision ne se reconstruit
-qu'au relâché) : la capsule reste sur l'ancien sol, dans la terre. Remplacé
-la propulsion explicite de la bosse par un mécanisme général,
-`updateGroundLift` : chaque frame en Play, si le sol **vivant** (overlay de
-preview compris) est au-dessus des pieds du joueur de `depth` > 5 cm, la
-capsule est sortie du sol (`CharacterBody::setPosition`, nouveau) et lancée
-à `v = liftQuadratic × depth²` borné à [`liftMin`, `liftMax`] — champs du
-**SpiritForm Terre** (1,5 / 1,5 / 18 m/s) : un stroke de pinceau (quelques cm
-par frame) fait sautiller au minimum, une bosse de 3 m lance à ~13,5 m/s,
-un mur est plafonné. Les PNJ (collés au sol chaque frame) partent de la
-**montée du sol sous leurs pieds** depuis la frame précédente
-(`Npc.lastGroundY`), même courbe. Le gameplay émergent voulu par le dev :
-se propulser avec sa propre terre.
+qu'au relâché) : la capsule restait sur l'ancien sol, dans la terre. Deux
+premières versions par frame (pénétration, puis montée au point mémorisé)
+ont été jetées : la bosse — appliquée au point sûr, collision reconstruite,
+un tick physique passé — n'était jamais vue, et un cas particulier pour elle
+aurait cassé la cohérence (retour dev : « un système cohérent et
+améliorable, pas un truc spécifique pour la bosse »). La version retenue :
+**`throwActorsOnGroundRise` dans l'unique entonnoir `republishTerrain`** —
+tout changement de sol (bosse, pinceau, mur, creuser, preview ET outil de
+sculpt) y échantillonne le sol sous chaque acteur des chunks modifiés avant
+le swap de l'overlay, swappe, ré-échantillonne : la montée passe par la
+courbe de l'esprit Terre, `v = liftQuadratic × montée²` bornée à
+[`liftMin`, `liftMax`] (SpiritForm Terre : 2,0 / 1,5 / 25 m/s). Le joueur
+est sorti du sol (`CharacterBody::setPosition`, nouveau) puis `jump(v)` ;
+les PNJ prennent `airVelocity`. Un stroke de pinceau (quelques cm par
+publish à 20 Hz) fait sautiller au minimum, une bosse de 3 m lance à 18 m/s,
+un mur est plafonné. Indépendant de l'ordre dans la frame et de la
+collision ; améliorable au seul endroit qui compte.
 
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;

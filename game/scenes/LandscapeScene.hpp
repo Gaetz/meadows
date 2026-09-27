@@ -636,17 +636,14 @@ private:
     void castGroundReading(const Vec3& at, f32 seconds, bool live);
     enum class ReadingKind : u8 { Water, Ground };
     ReadingKind spiritReadingKind { ReadingKind::Water };
-    // Ground rising into characters (brush stroke, mound, wall) throws
-    // them: the player from how deep its feet sank under the LIVE terrain
-    // (the preview overlay counts — collision only rebuilds on commit),
-    // NPCs from how much the ground under them rose since last frame
-    // (they are snapped to it every frame). Speed = the earth spirit's
-    // lift curve (SpiritForm Earth).
-    void updateGroundLift(f32 dt);
-    // The ground sampled last frame at the player's feet (that XZ, that
-    // height): the terrain rising THERE is the throw — walking uphill is
-    // not (the sample moves with the feet).
-    Vec3 playerLastGround { 0.0f, -1.0e9f, 0.0f };
+    // Ground rising into characters throws them (the earth spirit's lift
+    // curve, SpiritForm Earth). ONE mechanism at the ONE place the ground
+    // changes — the republishTerrain funnel: every actor standing in a
+    // changed chunk is sampled before and after the overlay swap; the
+    // rise is the throw. Spells, previews and the sculpt tool alike.
+    void throwActorsOnGroundRise(
+        const std::function<void()>& swapOverlay,
+        const std::vector<u64>& changedChunks);
     // Understand x Water: the reading shown by the HUD for a while
     // (world/spirit/WaterReading, formatted here from the loc keys).
     vector<str> spiritReading; // one line per HUD slot (kReadingLines)

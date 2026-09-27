@@ -1732,7 +1732,6 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritEarth(dt);
         updateSpiritLine();
         updateSpiritRocks(dt);
-        updateGroundLift(dt);
         updateSpiritReading(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
@@ -2744,8 +2743,10 @@ SculptContext LandscapeScene::makeSculptContext() {
             // Show the new heights immediately: swap the live overlay and queue
             // a terrain re-mesh of just the changed chunks (deferred to the
             // safe point in render(), seamless swap). This runs every preview
-            // frame during a stroke.
-            renderer.terrainParams().patches = next;
+            // frame during a stroke. Whoever stands where the ground rises
+            // is thrown by the swap itself.
+            throwActorsOnGroundRise(
+                [&] { renderer.terrainParams().patches = next; }, changed);
             renderer.sculptRemeshQueue().insert(renderer.sculptRemeshQueue().end(), changed.begin(),
                                      changed.end());
             // The live water sim re-samples its ground on the next
@@ -5094,8 +5095,8 @@ void LandscapeScene::applyEarthBump(const PendingSpiritAction& action) {
     if (height <= 0.0f) {
         return;
     }
-    // What stands on it is thrown by updateGroundLift (the ground rose
-    // into it), like any rising ground.
+    // What stands on it is thrown by the republish funnel
+    // (throwActorsOnGroundRise), like any rising ground.
     const Vec2 center { action.x, action.z };
     world::BrushGrids grids;
     world::BrushParams brush;
@@ -5332,53 +5333,68 @@ void LandscapeScene::releaseSpiritRocks() {
     spiritRocks.clear();
 }
 
-void LandscapeScene::updateGroundLift(f32 dt) {
-    (void)dt;
-    if (interiorMode || !sandboxActive) {
-        return;
-    }
+void LandscapeScene::throwActorsOnGroundRise(
+    const std::function<void()>& swapOverlay,
+    const std::vector<u64>& changedChunks) {
     const auto& params = renderer.terrainParams();
-    const SpiritDirector::EarthLift& lift = spiritDirector.earthLift();
-    constexpr f32 kMinRise = 0.02f; // below: ordinary ground noise
-    // How much the terrain rose at a remembered spot since last frame
-    // (the same XZ — the character's own walk never counts), or nothing
-    // on the first sighting / after a teleport.
-    const auto riseAt = [&](Vec3& last, f32 x, f32 z) {
-        f32 rise = 0.0f;
-        if (last.y > -1.0e8f) {
-            const f32 now = render::terrain::height(params, last.x, last.z);
-            rise = now - last.y;
-            if (rise >= 50.0f) {
-                rise = 0.0f;
-            }
-        }
-        last = { x, render::terrain::height(params, x, z), z };
-        return rise;
+    const auto inChanged = [&](f32 x, f32 z) {
+        const f32 chunk = render::TerrainSystem::kChunkSize;
+        const u64 key = render::HeightPatches::keyOf(
+            static_cast<i32>(std::floor(x / chunk)),
+            static_cast<i32>(std::floor(z / chunk)));
+        return std::find(changedChunks.begin(), changedChunks.end(), key) !=
+               changedChunks.end();
     };
-    if (phys::CharacterBody* body = playerController.body()) {
+    // Sample the ground under every actor of the changed chunks BEFORE.
+    phys::CharacterBody* body =
+        (mode == SceneMode::Play && !interiorMode) ? playerController.body()
+                                                   : nullptr;
+    f32 playerBefore = 0.0f;
+    if (body) {
         const Vec3 feet = body->position();
-        const f32 rise = riseAt(playerLastGround, feet.x, feet.z);
-        // Sunk into the live ground (a brush preview: the collision only
-        // rebuilds on commit) counts as well.
-        const f32 depth = playerLastGround.y - feet.y;
-        const f32 amount = glm::max(rise, depth);
-        if (amount > kMinRise) {
-            if (depth > 0.0f) {
-                body->setPosition({ feet.x, playerLastGround.y + 0.05f, feet.z });
-            }
-            body->jump(lift.speedFor(amount));
-            fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig",
-                                     { feet.x, playerLastGround.y, feet.z },
-                                     amount });
+        if (inChanged(feet.x, feet.z)) {
+            playerBefore = render::terrain::height(params, feet.x, feet.z);
+        } else {
+            body = nullptr;
         }
     }
-    for (const auto& npc : npcDirector.npcs()) {
-        if (!npc->entity.is_alive() || npc->dead ||
-            !npc->entity.has<world::Transform>()) {
-            continue;
+    vector<std::pair<Npc*, f32>> npcsBefore;
+    if (!interiorMode) {
+        for (const auto& npc : npcDirector.npcs()) {
+            if (!npc->entity.is_alive() || npc->dead ||
+                !npc->entity.has<world::Transform>()) {
+                continue;
+            }
+            const Vec3& at = npc->entity.get<world::Transform>().position;
+            if (inChanged(at.x, at.z)) {
+                npcsBefore.emplace_back(
+                    npc.get(), render::terrain::height(params, at.x, at.z));
+            }
         }
+    }
+    swapOverlay();
+    // ...and AFTER: the rise is the throw (the earth spirit's curve).
+    const SpiritDirector::EarthLift& lift = spiritDirector.earthLift();
+    constexpr f32 kMinRise = 0.02f;
+    if (body) {
+        const Vec3 feet = body->position();
+        const f32 after = render::terrain::height(params, feet.x, feet.z);
+        const f32 rise = after - playerBefore;
+        if (rise > kMinRise) {
+            // Out of the ground first (a preview has no collision yet).
+            if (feet.y < after) {
+                body->setPosition({ feet.x, after + 0.05f, feet.z });
+            }
+            body->jump(lift.speedFor(rise));
+            LOG_INFO("Ground lift: +{:.2f} m under the player -> {:.1f} m/s",
+                     rise, lift.speedFor(rise));
+            fxDirector.cues().emit(
+                { "Cue.Spirit.Earth.Dig", { feet.x, after, feet.z }, rise });
+        }
+    }
+    for (auto& [npc, before] : npcsBefore) {
         const Vec3& at = npc->entity.get<world::Transform>().position;
-        const f32 rise = riseAt(npc->lastGround, at.x, at.z);
+        const f32 rise = render::terrain::height(params, at.x, at.z) - before;
         if (rise > kMinRise) {
             npc->airVelocity = glm::max(npc->airVelocity, lift.speedFor(rise));
             npc->airHeight = glm::max(npc->airHeight, 0.01f);
