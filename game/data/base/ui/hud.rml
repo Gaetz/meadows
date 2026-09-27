@@ -25,6 +25,8 @@
 	     stat's THEORETICAL max (1000 = the whole container = half the
 	     screen); fill = current; a darker slice = capacity a resonance
 	     malus locked; a lighter fill = a bonus past the default max. -->
+	<!-- Draft spell line (the wheel cycles the spell book). -->
+	<div id="spell" data-if="spellVisible">{{ spellName }}</div>
 	<div id="vitals">
 		<div class="stat">
 			<div class="bar health" data-style-width="healthBarPct + '%'">

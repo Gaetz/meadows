@@ -549,9 +549,11 @@ private:
         f32 rate { 0.0f };
         f32 radius { 0.0f };
         f32 seconds { 0.0f };
-        // A jet streams from the caster's nozzle along the aim instead
-        // of landing at (x, z); `speed` is its launch speed.
-        bool jet { false };
+        // Source: placed at (x, z). Jet: streamed from the caster's
+        // nozzle along the aim at `speed`. Hold: the control spell's
+        // held volume, drawn at the aim while the key is held.
+        enum class Mode : u8 { Source, Jet, Hold };
+        Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
         f32 costPeriod { 1.0f };
@@ -565,6 +567,17 @@ private:
     // The caster's nozzle (eye ray, hand-height offset).
     Vec3 spiritNozzle() const;
     f32 spiritImpactCueCooldown { 0.0f };
+    // The control spell's held volume (world/spirit/SpiritJets
+    // SpiritHold): drawn at the aim while Q is held, dropped on release.
+    std::optional<world::SpiritHold> spiritHold;
+    void updateSpiritHold(f32 dt);
+    void releaseSpiritHold(bool drop);
+    // The spell book (draft UI): every ability carrying a SpellForm, in
+    // editorId order; the wheel cycles it, the HUD names the current one.
+    vector<const gameplay::AbilityForm*> spellBook;
+    void buildSpellBook();
+    void cycleSpell(i32 direction);
+    str currentSpellName() const;
     // The aimed ground point: the eye ray against physics, rejected when
     // the hit sits on a prop rather than the terrain. nullopt = nothing.
     std::optional<Vec3> aimGround() const;

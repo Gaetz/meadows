@@ -126,3 +126,21 @@ TEST_CASE("spirit jets: the cap evicts the oldest and clear hands every emitter 
     CHECK(handles.back() == 99);
     CHECK(jets.empty());
 }
+
+TEST_CASE("spirit hold: draws only where the element is, caps at capacity, drops it all") {
+    SpiritHold hold;
+    hold.rate = 6.0f;
+    hold.maxVolume = 60.0f; // 6 m³/s x 10 s
+    CHECK(hold.absorb(0.5f, false)); // dry aim: nothing drawn
+    CHECK(hold.volume == 0.0f);
+    CHECK(hold.absorb(0.5f, true));
+    CHECK(hold.volume == doctest::Approx(3.0f));
+    for (int i = 0; i < 100; ++i) {
+        hold.absorb(0.5f, true);
+    }
+    CHECK(hold.volume == doctest::Approx(60.0f));
+    CHECK_FALSE(hold.absorb(0.5f, true)); // full
+    CHECK(hold.dropDischarge(1.0f) == doctest::Approx(60.0f));
+    CHECK(hold.dropDischarge(2.0f) == doctest::Approx(30.0f));
+    CHECK(hold.dropDischarge(0.0f) == 0.0f);
+}

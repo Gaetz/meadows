@@ -30,14 +30,20 @@ void pinSea(const WaterSimState& state, vector<f32>& depth,
 // absorb and supply. The supply is bounded on the way OUT instead
 // (reservoirOutflow in updatePipes), so holding the level here stays
 // safe.
-void applyPins(const WaterSimState& state, vector<f32>& depth) {
+// `released` (optional, one byte per cell): cells a DRAINING source is
+// emptying this step — the pin lets go there, so a spirit can dig a hole
+// in a lake; the neighbours refill it at the weir rate, never instantly.
+void applyPins(const WaterSimState& state, vector<f32>& depth,
+               const vector<u8>* released = nullptr) {
     const size_t cells = state.spec.cells();
     if (state.pinned.size() != cells) {
         return;
     }
+    const bool hasReleased = released && released->size() == cells;
     for (size_t i = 0; i < cells; ++i) {
         const f32 level = state.pinned[i];
-        if (level > kWaterInfoDry + 1.0f) {
+        if (level > kWaterInfoDry + 1.0f &&
+            !(hasReleased && (*released)[i] != 0)) {
             depth[i] = glm::max(0.0f, level - state.terrain[i]);
         }
     }
@@ -132,6 +138,36 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         return static_cast<size_t>(row) * spec.n +
                static_cast<size_t>(col);
     };
+    // The cells a DRAINING source (negative discharge) empties: the pin
+    // releases them for the step (a spirit removing lake water must see
+    // a hole, not an instantly refilled surface). Inflows never release
+    // — the river entry sources sit on pinned ribbons on purpose.
+    vector<u8> released;
+    for (const WaterSource& source : sources) {
+        if (source.discharge >= 0.0f) {
+            continue;
+        }
+        const i32 col = static_cast<i32>(
+            std::lround((source.x - spec.originX) / texel));
+        const i32 row = static_cast<i32>(
+            std::lround((source.z - spec.originZ) / texel));
+        for (i32 dz = -2; dz <= 2; ++dz) {
+            for (i32 dx = -2; dx <= 2; ++dx) {
+                if (dx * dx + dz * dz > 4) {
+                    continue;
+                }
+                const i32 c = col + dx;
+                const i32 r = row + dz;
+                if (c >= 0 && r >= 0 && c < n && r < n) {
+                    if (released.empty()) {
+                        released.assign(cells, 0);
+                    }
+                    released[at(c, r)] = 1;
+                }
+            }
+        }
+    }
+    const vector<u8>* releasedPtr = released.empty() ? nullptr : &released;
 
     for (u32 step = 0; step < substeps; ++step) {
         for (size_t i = 0; i < cells; ++i) {
@@ -265,8 +301,9 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         }
         std::swap(depth, next);
         pinSea(state, depth, params.seaLevel);
-        applyPins(state, depth);
-        // After the pin (a pinned source cell swallows its discharge).
+        applyPins(state, depth, releasedPtr);
+        // After the pin (a pinned source cell swallows its discharge;
+        // a draining one has released its disc above).
         // Spread over a small DISC: dumped into one 2 m cell, a 45
         // m³/s source out-raced the capped outflow and dug a ~6 m
         // standing spike — a growing dark spot at every river entry

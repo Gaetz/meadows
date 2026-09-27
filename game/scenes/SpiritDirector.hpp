@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include "data/forms/FormDatabase.hpp"
 #include "engine/terrain/SpiritField.hpp"
@@ -40,6 +41,14 @@ public:
     const core::Guid& jetParticles(render::terrain::SpiritKind kind) const {
         return jetFx[static_cast<size_t>(kind)];
     }
+    const core::Guid& holdParticles(render::terrain::SpiritKind kind) const {
+        return holdFx[static_cast<size_t>(kind)];
+    }
+    // The control spell's draw: one extra (draining) kernel source while
+    // a hold draws water, none otherwise.
+    void setHoldSource(std::optional<render::terraingen::WaterSource> src) {
+        holdSource = std::move(src);
+    }
 
     // The kernel view of one map: placed springs + every landed jet.
     vector<render::terraingen::WaterSource> waterSources(
@@ -47,6 +56,9 @@ public:
         vector<render::terraingen::WaterSource> out =
             sources.waterSourcesFor(world::WorldspaceFilter { worldspace });
         jets.appendWaterSources(out);
+        if (holdSource) {
+            out.push_back(*holdSource);
+        }
         return out;
     }
     vector<data::Record> capture() const { return sources.capture(); }
@@ -60,6 +72,10 @@ private:
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         jetFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        holdFx {};
+    std::optional<render::terraingen::WaterSource> holdSource;
 };
 
 } // namespace game

@@ -35,6 +35,8 @@ struct SpiritForm : Form {
     str cueExtinguish;
     core::Guid jetParticles;         // ParticleForm streamed along a jet's
                                      // arc (world/spirit/SpiritJets)
+    core::Guid holdParticles;        // ParticleForm of a held volume (the
+                                     // control spell's floating blob)
 
     REFLECT_BEGIN(SpiritForm, Form)
         REFLECT_FIELD(name)
@@ -52,6 +54,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(cueActive)
         REFLECT_FIELD(cueExtinguish)
         REFLECT_FIELD(jetParticles)
+        REFLECT_FIELD(holdParticles)
     REFLECT_END()
 };
 
@@ -65,6 +68,7 @@ struct SpiritForm : Form {
 // escape hatch for anything the matrix does not cover yet.
 struct SpellForm : Form {
     core::Guid parent;        // the AbilityForm this spell belongs to
+    str name;                 // LocStringForm key shown by the HUD
     str form { "create" };    // create | destroy | transform | control | understand
     str element { "Water" };  // a spirit name (SpiritKind)
     // Where the effect goes:
@@ -85,6 +89,7 @@ struct SpellForm : Form {
 
     REFLECT_BEGIN(SpellForm, Form)
         REFLECT_FIELD(parent)
+        REFLECT_FIELD(name)
         REFLECT_FIELD(form)
         REFLECT_FIELD(element)
         REFLECT_FIELD(trajectory)

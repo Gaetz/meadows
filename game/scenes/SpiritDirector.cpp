@@ -12,12 +12,15 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
         LOG_WARN("Spirits: {}", error);
     }
     jetFx.fill(core::Guid {});
+    holdFx.fill(core::Guid {});
     data::forEach<data::SpiritForm>(forms, [&](const data::SpiritForm& spirit) {
         const auto kind = render::terrain::spiritFromName(spirit.name);
         if (kind != render::terrain::SpiritKind::kCount) {
             jetFx[static_cast<size_t>(kind)] = spirit.jetParticles;
+            holdFx[static_cast<size_t>(kind)] = spirit.holdParticles;
         }
     });
+    holdSource.reset();
     sources.apply(forms);
     if (!sources.entries().empty()) {
         LOG_INFO("Spirits: {} source(s) placed from the records",

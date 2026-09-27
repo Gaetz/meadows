@@ -130,6 +130,10 @@ void GameHud::updateHudModel(const HudContext& ctx) {
                          text(vitals.essence, maxEssence));
         ctx.ui.setString("hud", "postureText", text(posture, maxPosture));
     }
+    // The spell line over the vitals (draft): the wheel cycles it.
+    ctx.ui.setBool("hud", "spellVisible",
+                   ctx.playMode && !ctx.spellName.empty());
+    ctx.ui.setString("hud", "spellName", ctx.spellName);
     // The bow-draw gauge, bottom center while drawing.
     ctx.ui.setBool("hud", "chargeVisible", ctx.bowCharge >= 0.0f);
     ctx.ui.setNumber("hud", "chargePct",

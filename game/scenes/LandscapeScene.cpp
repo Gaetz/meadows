@@ -672,12 +672,7 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
-    spiritAbility =
-        data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWaterJet");
-    if (!spiritAbility) {
-        spiritAbility =
-            data::findByEditorId<gameplay::AbilityForm>(forms, "SpiritWater");
-    }
+    buildSpellBook();
     // The audio backend + the SoundForm resolver (idempotent on
     // re-enter: create() is a no-op once ready).
     if (!audioSystem.ready()) {
@@ -1702,6 +1697,13 @@ void LandscapeScene::update(f32 dt) {
             vm->tickCoroutines(dt);
         }
         updateSpiritJets(dt);
+        updateSpiritHold(dt);
+        // The wheel cycles the spell book (draft UI, no screen open —
+        // a modal owns the wheel through the UI system).
+        if (const f32 wheel = engine->getInput().wheelDelta();
+            wheel != 0.0f && !screenStack.modalOpen()) {
+            cycleSpell(wheel > 0.0f ? -1 : 1);
+        }
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
         // mouselook. Spectator AND Edit look only while RMB -- or Alt+LMB,
@@ -2096,6 +2098,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     interiorEscapes.clear();
     params.snowLine = activeSnowLine;
     stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
+    releaseSpiritHold(false);
     pushRuntimeWaterSources(); // this map's springs into the sim
     // The whole world changed: a world-sized event keeps the
     // contentTouchedSince contract (every bump records its rects).
@@ -3214,8 +3217,10 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "postureBarPct", "postureFillPct", "postureBonusPct",
                        "postureMalusLeft", "postureMalusPct" },
           .strings = { "healthText", "energyText", "essenceText",
-                       "postureText", "clock", "prompt", "talk" },
-          .bools = { "promptVisible", "talkVisible", "chargeVisible" },
+                       "postureText", "clock", "prompt", "talk",
+                       "spellName" },
+          .bools = { "promptVisible", "talkVisible", "chargeVisible",
+                     "spellVisible" },
           .rows = true }); // Nameplates over hostile/hurt NPCs
     // The party frame — one row per ACTIVE follower (name +
     // health), its own model (a document allows one rows array per model).
@@ -3637,6 +3642,7 @@ HudContext LandscapeScene::makeHudContext() {
         screenStack,
         playerController.bowCharge(), // The draw gauge
         statsTuning.hudStatPointsScale, // vitals-bar scale
+        currentSpellName(), // the spell line over the vitals
     };
 }
 
@@ -4025,7 +4031,7 @@ void LandscapeScene::createConsole() {
             }
             PendingSpiritAction action { kind, 0.0f, 0.0f, rate, radius,
                                          seconds };
-            action.jet = true;
+            action.mode = PendingSpiritAction::Mode::Jet;
             action.speed = speed;
             pendingSpiritActions.push_back(action);
         },
@@ -4061,6 +4067,7 @@ void LandscapeScene::createConsole() {
         if (verb == "clear") {
             spiritDirector.clear();
             stopSpiritEmitters(spiritDirector.jetList().clear());
+            releaseSpiritHold(false);
             pushRuntimeWaterSources();
             return "spirit sources cleared";
         }
@@ -4073,7 +4080,7 @@ void LandscapeScene::createConsole() {
                 return "no AbilityForm named '" + editorId + "'";
             }
             spiritAbility = ability;
-            return "Q now casts " + editorId;
+            return "Q now casts " + editorId + " (" + currentSpellName() + ")";
         }
         if (verb != "spawn") {
             return "usage: spirit spawn <Water|...> <x> <z> [rate] "
@@ -4607,11 +4614,16 @@ void LandscapeScene::castSpirit() {
             interaction.say(texts.get("spirit.tooFar"), 1.5f);
             return;
         }
-        if (render::terrain::waterSurfaceQuery(makeWaterQuery(), at->x,
-                                               at->z, at->y)) {
+        // Only a CREATE pours: destroy/control want the water there.
+        const bool creates = !spell || spell->verb == world::SpellVerb::Create;
+        if (creates && render::terrain::waterSurfaceQuery(makeWaterQuery(),
+                                                          at->x, at->z, at->y)) {
             interaction.say(texts.get("spirit.wetGround"), 1.5f);
             return;
         }
+    }
+    if (spell && spell->verb == world::SpellVerb::Control && spiritHold) {
+        return; // one held volume at a time
     }
     gameplay::AbilityContext ability { forms, gameTags };
     ability.events = &eventBus;
@@ -4648,11 +4660,16 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
     const f32 seconds = spell.duration < 0.0f ? 1.0e9f : spell.duration;
     PendingSpiritAction action;
     action.kind = spell.element;
-    action.rate = spell.intensity;
+    // Destroy = the same source, draining (the kernel bounds at dry and
+    // releases the lake pin under it).
+    action.rate = spell.verb == world::SpellVerb::Destroy ? -spell.intensity
+                                                          : spell.intensity;
     action.radius = radius;
     action.seconds = spell.duration < 0.0f && !spell.channeled
                          ? -1.0f // a permanent placed source
                          : seconds;
+    action.channeled = spell.channeled;
+    action.costPeriod = spell.costPeriod;
     switch (spell.trajectory) {
     case world::SpellTrajectory::Point:
         if (!aimedAt) {
@@ -4660,13 +4677,14 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         }
         action.x = aimedAt->x;
         action.z = aimedAt->z;
+        if (spell.verb == world::SpellVerb::Control) {
+            action.mode = PendingSpiritAction::Mode::Hold;
+        }
         break;
     case world::SpellTrajectory::Stream:
-        action.jet = true;
+        action.mode = PendingSpiritAction::Mode::Jet;
         action.speed = world::launchSpeedForRange(
             spell.range, world::SpiritJetList::kGravity);
-        action.channeled = spell.channeled;
-        action.costPeriod = spell.costPeriod;
         break;
     case world::SpellTrajectory::Self:
     case world::SpellTrajectory::Projectile:
@@ -4686,7 +4704,35 @@ void LandscapeScene::applyPendingSpiritActions() {
         if (!sandboxActive) {
             continue;
         }
-        if (action.jet) {
+        if (action.mode == PendingSpiritAction::Mode::Hold) {
+            world::SpiritHold hold;
+            hold.kind = action.kind;
+            hold.rate = action.rate;
+            hold.radius = action.radius;
+            hold.maxVolume = action.rate * action.seconds;
+            hold.costPeriod = action.costPeriod;
+            hold.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+            hold.aim = Vec3 { action.x,
+                              render::terrain::height(renderer.terrainParams(),
+                                                      action.x, action.z),
+                              action.z };
+            const core::Guid& fxId = spiritDirector.holdParticles(action.kind);
+            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f; // stopped by the release
+                const Vec3 blob = *hold.aim + Vec3 { 0.0f, 2.5f, 0.0f };
+                const u32 seed =
+                    static_cast<u32>(static_cast<i32>(blob.x * 73.0f)) ^
+                    (static_cast<u32>(static_cast<i32>(blob.z * 179.0f)) << 8) ^
+                    fxSim.count();
+                hold.emitter = fxSim.spawn(params, blob, seed);
+            }
+            releaseSpiritHold(false);
+            spiritHold = hold;
+            changed = true;
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::Jet) {
             world::SpiritJet jet;
             jet.kind = action.kind;
             jet.origin = spiritNozzle();
@@ -4738,6 +4784,131 @@ void LandscapeScene::applyPendingSpiritActions() {
         updateSpiritJets(0.0f);
         pushRuntimeWaterSources();
     }
+}
+
+void LandscapeScene::updateSpiritHold(f32 dt) {
+    if (!spiritHold) {
+        return;
+    }
+    world::SpiritHold& hold = *spiritHold;
+    const bool held =
+        actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive()) {
+        releaseSpiritHold(true); // dropped where the aim is
+        return;
+    }
+    // Upkeep: the ability's cost again every costPeriod (§2.9).
+    hold.costClock += dt;
+    if (hold.costClock >= hold.costPeriod) {
+        hold.costClock -= hold.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(hold.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags })) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            releaseSpiritHold(true);
+            return;
+        }
+    }
+    // Draw where the aim rests: water present there = the hold fills
+    // and a draining source works the kernel (the pin lets go under it).
+    hold.aim = aimGround();
+    std::optional<render::terraingen::WaterSource> draw;
+    if (hold.aim) {
+        const std::optional<f32> surface = render::terrain::waterSurfaceQuery(
+            makeWaterQuery(), hold.aim->x, hold.aim->z, hold.aim->y);
+        const bool present = surface && *surface - hold.aim->y > 0.02f;
+        if (hold.absorb(dt, present) && present) {
+            draw = render::terraingen::WaterSource { hold.aim->x, hold.aim->z,
+                                                     -hold.rate };
+        }
+        if (hold.emitter != 0) {
+            fxSim.moveEmitter(hold.emitter,
+                              *hold.aim + Vec3 { 0.0f, 2.5f, 0.0f });
+        }
+    }
+    spiritDirector.setHoldSource(draw);
+    pushRuntimeWaterSources();
+}
+
+void LandscapeScene::releaseSpiritHold(bool drop) {
+    if (!spiritHold) {
+        return;
+    }
+    world::SpiritHold hold = *spiritHold;
+    spiritHold.reset();
+    if (hold.emitter != 0) {
+        fxSim.stopEmitter(hold.emitter);
+    }
+    spiritDirector.setHoldSource(std::nullopt);
+    // The carried volume falls where the aim is: a one-second source
+    // (the same placed-source path, cue included).
+    constexpr f32 kDropSeconds = 1.0f;
+    if (drop && hold.volume > 0.0f && hold.aim && sandboxActive) {
+        PendingSpiritAction action;
+        action.kind = hold.kind;
+        action.x = hold.aim->x;
+        action.z = hold.aim->z;
+        action.rate = hold.dropDischarge(kDropSeconds);
+        action.radius = hold.radius;
+        action.seconds = kDropSeconds;
+        pendingSpiritActions.push_back(action);
+    }
+    pushRuntimeWaterSources();
+}
+
+void LandscapeScene::buildSpellBook() {
+    spellBook.clear();
+    data::forEach<data::SpellForm>(forms, [&](const data::SpellForm& spell) {
+        const auto* ability =
+            forms.find<gameplay::AbilityForm>(spell.parent);
+        if (ability && std::find(spellBook.begin(), spellBook.end(),
+                                 ability) == spellBook.end()) {
+            spellBook.push_back(ability);
+        }
+    });
+    std::sort(spellBook.begin(), spellBook.end(),
+              [](const gameplay::AbilityForm* a,
+                 const gameplay::AbilityForm* b) {
+                  return a->editorId < b->editorId;
+              });
+    spiritAbility = nullptr;
+    for (const gameplay::AbilityForm* ability : spellBook) {
+        if (ability->editorId == "SpiritWaterJet") {
+            spiritAbility = ability;
+        }
+    }
+    if (!spiritAbility && !spellBook.empty()) {
+        spiritAbility = spellBook.front();
+    }
+}
+
+void LandscapeScene::cycleSpell(i32 direction) {
+    if (spellBook.empty()) {
+        return;
+    }
+    const auto it = std::find(spellBook.begin(), spellBook.end(), spiritAbility);
+    const i32 count = static_cast<i32>(spellBook.size());
+    const i32 current =
+        it == spellBook.end() ? 0 : static_cast<i32>(it - spellBook.begin());
+    spiritAbility = spellBook[static_cast<size_t>(
+        ((current + direction) % count + count) % count)];
+}
+
+str LandscapeScene::currentSpellName() const {
+    if (!spiritAbility) {
+        return {};
+    }
+    str name;
+    data::childrenOf<data::SpellForm>(
+        forms, spiritAbility->id, [&](const data::SpellForm& spell) {
+            if (name.empty()) {
+                name = spell.name.empty() ? spell.editorId
+                                          : texts.get(spell.name);
+            }
+        });
+    return name.empty() ? spiritAbility->editorId : name;
 }
 
 Vec3 LandscapeScene::spiritNozzle() const {

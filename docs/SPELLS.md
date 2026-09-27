@@ -100,6 +100,8 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Forme × Élément | `self` | `point` | `stream` | `projectile` |
 |---|---|---|---|---|
 | Créer × Eau | — | ✅ **source** posée au sol visé (`SpellWaterSpring`) | ✅ **jet** depuis la main, suit la visée, maintenu (`SpellWaterStream`) | ⏳ |
+| Détruire × Eau | — | ✅ **drain** : la même source, débit négatif (`SpellWaterDrain`, sphère 2 m, 3 s) | ⏳ | ⏳ |
+| Contrôler × Eau | — | ✅ **emprise** (maintenu par nature) : l'eau visée est aspirée dans un volume porté qui suit la visée, lâché au relâché (`SpellWaterHold`) | — | — |
 | Créer × Terre | — | ⏳ (E2 : `push_terrain`) | — | — |
 | Créer × Feu | — | ⏳ (E3) | ⏳ | ⏳ |
 | Créer × Vent | — | — | ⏳ (E4) | — |
@@ -125,6 +127,34 @@ l'auteur du sort sait qu'il lui faut un script ou attendre la brique.
    `intensity`, la vie de `duration`, le maintien de `channeled`.
 5. Tout passe par la file `pendingSpiritActions` et le point sûr de la
    frame (jamais d'action monde au milieu d'une itération ECS).
+
+### Détruire × Eau et le pin des lacs (règle noyau)
+
+Un lac cuit est **épinglé** : la sim tient sa surface au niveau (refill
+instantané). Une source posée dessus est avalée. Pour qu'un drain se voie,
+le noyau applique une règle sans changement de format : **une source à
+débit négatif relâche le pin sur son disque** (13 cellules) pendant son
+step — le trou se creuse, et les cellules voisines, toujours épinglées, le
+re-remplissent au **débit de déversoir** (`reservoirOutflow`, 2 m³/s par
+cellule), jamais instantanément. Un débit d'entrée ne relâche jamais rien
+(les sources de rivière sont sur des rubans épinglés à dessein). D'où
+l'intensité de 40 m³/s du drain : au-dessus des ~24 m³/s que la couronne
+peut rendre. Sur l'eau **runtime** (mares de sources/jets), aucun pin : le
+drain vide simplement.
+
+### Contrôler × Eau : le volume porté (`SpiritHold`)
+
+Tant que Q est tenu : la visée (n'importe quel sol, mouillé ou non) est
+le point d'aspiration — s'il y a de l'eau (> 2 cm), une source drainante
+de `intensity` y travaille et le volume porté se remplit à ce débit
+(le noyau ne rend pas ce qu'il a retiré : on compte le débit tant que
+l'eau est présente), jusqu'à `intensity × duration` m³ ; le blob de
+particules (`SpiritForm.holdParticles`) flotte 2,5 m au-dessus de la
+visée et la suit ; le coût est repayé toutes les `costPeriod` s. Au
+relâché (ou faute d'essence, ou à la mort), le volume porté **tombe à la
+visée** : une source d'une seconde (`volume / 1 s`) — sur un lac
+épinglé il est avalé, sur un sol sec il fait une mare. Un seul volume
+porté à la fois ; il meurt au changement de carte.
 
 ### Maintien (`channeled`)
 
@@ -192,9 +222,12 @@ channeled = true
 costPeriod = 1.0
 ```
 
-En jeu : **Q** lance l'ability courante (`SpiritWaterJet` par défaut) ;
-console `spirit cast <EditorId>` pour en choisir une autre tant qu'il n'y
-a pas de barre de sorts.
+En jeu : **Q** lance le sort courant ; la **molette** fait tourner le
+**livre de sorts** (toute ability portant un `SpellForm`, par editorId :
+`SpiritWater`, `SpiritWaterDrain`, `SpiritWaterHold`, `SpiritWaterJet` —
+défaut `SpiritWaterJet`) et une ligne brouillon au-dessus des barres de
+statut affiche le nom du sort (`SpellForm.name` = clé LocString) ;
+console `spirit cast <EditorId>` reste possible.
 
 ---
 

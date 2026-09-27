@@ -189,6 +189,28 @@ Référence : **`docs/SPELLS.md`**.
 - Tests : `SpellsTest` (compilation, validation champ par champ, matrice,
   portée → vitesse, enfant de l'ability) + `payAbilityCost`.
 
+### E1.f — livre de sorts, Détruire × Eau, Contrôler × Eau (demande dev, 2026-09-27)
+- **UI brouillon** : `SpellForm.name` (clé LocString) affiché au-dessus des
+  barres de statut (`#spell` dans `hud.rml`/`hud.rcss`, modèle `spellName`/
+  `spellVisible`, `HudContext.spellName`) ; la **molette** cycle le livre
+  (`buildSpellBook` : abilities portant un SpellForm, triées par editorId ;
+  hors modale). Toujours pas de barre : c'est un brouillon.
+- **Détruire × Eau** (`SpellWaterDrain`, sphère 2 m, 3 s, 40 m³/s) = la même
+  source à débit négatif. **Règle noyau (WaterSim)** : une source négative
+  relâche le pin sur son disque pendant le step (`applyPins(..., released)`),
+  un débit d'entrée jamais — le trou dans un lac se voit et se re-remplit au
+  déversoir. Test « a draining source releases the pin on its disc, an
+  inflow is swallowed ». Aucun changement de format WSD.
+- **Contrôler × Eau** (`SpellWaterHold`, maintenu, 6 m³/s, 10 s de capacité) =
+  `world::SpiritHold` (aspire à la visée si l'eau est là, blob flottant
+  `holdParticles`, relâché = source d'une seconde à la visée) ;
+  `SpiritDirector::setHoldSource` (la source drainante de l'emprise dans la
+  vue noyau). Le pré-check « sol sec » ne vaut que pour Créer.
+- Doc : `docs/SPELLS.md` §4 (matrice, règle du pin, l'emprise).
+- À valider : le trou dans un lac (40 m³/s contre ~24 rendus par la
+  couronne : à régler en data), la lisibilité du blob, le relâché sur sol
+  sec = une mare de `volume` m³.
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

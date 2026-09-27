@@ -100,6 +100,12 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     CHECK_FALSE(spellSupported(spec)); // fire waits for E3
     spec.element = SpiritKind::Water;
     spec.verb = SpellVerb::Destroy;
+    CHECK(spellSupported(spec)); // a draining source
+    spec.verb = SpellVerb::Control;
+    CHECK_FALSE(spellSupported(spec)); // control is channeled by nature
+    spec.channeled = true;
+    CHECK(spellSupported(spec));
+    spec.verb = SpellVerb::Transform;
     CHECK_FALSE(spellSupported(spec));
 }
 

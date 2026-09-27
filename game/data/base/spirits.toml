@@ -290,6 +290,7 @@ type = "SpellForm"
 new = true
 [records.fields]
 editorId = "SpellWaterSpring"
+name = "spell.waterSpring"
 parent = "5b1e1700-0000-4000-8000-000000000063"
 form = "create"
 element = "Water"
@@ -377,6 +378,7 @@ type = "SpellForm"
 new = true
 [records.fields]
 editorId = "SpellWaterStream"
+name = "spell.waterStream"
 parent = "5b1e1700-0000-4000-8000-000000000066"
 form = "create"
 element = "Water"
@@ -445,3 +447,140 @@ form = "5b1e1700-0000-4000-8000-000000000007"
 type = "SpiritForm"
 [records.fields]
 jetParticles = "5b1e1700-0000-4000-8000-000000000073"
+
+# --- DESTROY + WATER (docs/SPELLS.md): a draining sphere of 2 m at the
+# aimed spot for 3 s. The kernel bounds at dry and releases a lake's pin
+# under the drain, so the hole is visible and the lake refills it at its
+# weir rate.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000067"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterDrainCost"
+attribute = "essence"
+op = "add"
+magnitude = -10.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000068"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterDrainCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritWaterDrain"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000069"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterDrain"
+cost = "5b1e1700-0000-4000-8000-000000000067"
+cooldown = "5b1e1700-0000-4000-8000-000000000068"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000083"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWaterDrain"
+parent = "5b1e1700-0000-4000-8000-000000000069"
+name = "spell.waterDrain"
+form = "destroy"
+element = "Water"
+trajectory = "point"
+range = 24.0
+intensity = 40.0
+duration = 3.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = false
+
+# --- CONTROL + WATER: the held volume. While Q is held the aimed water
+# is drawn (6 m³/s, up to 10 s worth) into a floating volume that follows
+# the aim; releasing drops it where the aim rests, over one second.
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006a"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterHoldCost"
+attribute = "essence"
+op = "add"
+magnitude = -5.0
+duration = "instant"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006b"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterHoldCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritWaterHold"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-00000000006c"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWaterHold"
+cost = "5b1e1700-0000-4000-8000-00000000006a"
+cooldown = "5b1e1700-0000-4000-8000-00000000006b"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000084"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWaterHold"
+parent = "5b1e1700-0000-4000-8000-00000000006c"
+name = "spell.waterHold"
+form = "control"
+element = "Water"
+trajectory = "point"
+range = 24.0
+intensity = 6.0
+duration = 10.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = true
+costPeriod = 1.0
+
+# The floating held volume: a slow shimmering sphere, no gravity.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000076"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "WaterHoldBlob"
+shape = "sphere"
+shapeRadius = 1.2
+burst = 0
+rate = 160.0
+duration = 1.0
+lifetime = 0.8
+lifetimeJitter = 0.3
+velocity = [0.0, 0.3, 0.0]
+velocityJitter = 0.6
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.16
+sizeEnd = 0.08
+colorStart = [0.5, 0.72, 1.0, 0.8]
+colorEnd = [0.7, 0.85, 1.0, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000007"
+type = "SpiritForm"
+[records.fields]
+holdParticles = "5b1e1700-0000-4000-8000-000000000076"

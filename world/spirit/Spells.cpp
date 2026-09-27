@@ -86,9 +86,20 @@ f32 launchSpeedForRange(f32 range, f32 gravity) {
 bool spellSupported(const SpellSpec& spec) {
     using render::terrain::SpiritKind;
     // The matrix grows one brick at a time (docs/SPELLS.md §4).
-    if (spec.verb == SpellVerb::Create && spec.element == SpiritKind::Water) {
+    if (spec.element != SpiritKind::Water) {
+        return false;
+    }
+    switch (spec.verb) {
+    case SpellVerb::Create:
         return spec.trajectory == SpellTrajectory::Point ||
                spec.trajectory == SpellTrajectory::Stream;
+    case SpellVerb::Destroy: // a draining source (the kernel releases the pin)
+        return spec.trajectory == SpellTrajectory::Point;
+    case SpellVerb::Control: // the held volume — channeled by nature
+        return spec.trajectory == SpellTrajectory::Point && spec.channeled;
+    case SpellVerb::Transform:
+    case SpellVerb::Understand:
+        break;
     }
     return false;
 }

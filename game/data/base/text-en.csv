@@ -175,3 +175,7 @@ spirit.noGround,Nothing to pour on here.
 spirit.wetGround,The water is already there.
 spirit.refused,The spirit does not answer yet.
 spirit.tooFar,Too far.
+spell.waterSpring,Spring of Water
+spell.waterStream,Stream of Water
+spell.waterDrain,Drain Water
+spell.waterHold,Hold Water

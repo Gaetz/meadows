@@ -1585,3 +1585,39 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spirit.tooFar'
     text = 'Too far.'
+
+[[records]]
+form = '3e4edb31-55e5-4c61-975b-2bf4b9bdd059'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterSpring'
+    text = 'Spring of Water'
+
+[[records]]
+form = '3ac480a1-e591-4cc2-83f7-c6c938e3a439'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterStream'
+    text = 'Stream of Water'
+
+[[records]]
+form = '70bbf69a-5ed3-4660-86e5-441d75aa3b92'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterDrain'
+    text = 'Drain Water'
+
+[[records]]
+form = '830dbcf0-f5ec-4428-b8cf-ed3961a30c52'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterHold'
+    text = 'Hold Water'

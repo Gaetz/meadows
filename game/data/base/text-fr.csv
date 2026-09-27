@@ -176,3 +176,7 @@ spirit.noGround,Rien sur quoi verser ici.
 spirit.wetGround,L'eau est déjà là.
 spirit.refused,L'esprit ne répond pas encore.
 spirit.tooFar,Trop loin.
+spell.waterSpring,Source d'eau
+spell.waterStream,Jet d'eau
+spell.waterDrain,Assèchement
+spell.waterHold,Emprise d'eau

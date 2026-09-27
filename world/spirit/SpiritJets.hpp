@@ -51,6 +51,30 @@ struct SpiritJet {
     std::optional<JetLanding> landing;
 };
 
+// A HELD volume (the control spell): while the key is held the caster
+// draws the element out of the world at the aim and carries it as a
+// floating volume; releasing drops it where the aim is. Transient like
+// a jet. The kernel does not report what it removed, so the volume is
+// accounted from the draw rate while the element is present at the aim.
+struct SpiritHold {
+    render::terrain::SpiritKind kind { render::terrain::SpiritKind::Water };
+    f32 rate { 0.0f };       // element units drawn per second (water: m³/s)
+    f32 radius { 2.0f };     // metres of the draw / drop footprint
+    f32 volume { 0.0f };     // carried so far
+    f32 maxVolume { 0.0f };  // rate x duration: the spell's capacity
+    f32 costPeriod { 1.0f };
+    f32 costClock { 0.0f };
+    core::Guid ability;      // upkeep re-pays this ability's cost
+    u32 emitter { 0 };       // the floating blob's particle emitter
+    std::optional<Vec3> aim; // where it draws / where it will drop
+
+    // Accounts one frame of drawing; `present` = the element sits at
+    // the aim. True while the hold still has capacity to draw.
+    bool absorb(f32 dt, bool present);
+    // The discharge that drops the carried volume over `seconds`.
+    f32 dropDischarge(f32 seconds) const;
+};
+
 class SpiritJetList {
 public:
     static constexpr size_t kMaxJets = 4;

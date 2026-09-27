@@ -71,6 +71,8 @@ struct HudContext {
     // Vitals-bar scale — stat points per 1% of the bar container
     // (StatsTuningForm.hudStatPointsScale, filled by the scene).
     f32 hudStatPointsScale;
+    // The current spell's name (draft spell bar) — empty = no spell.
+    str spellName;
 };
 
 // The RmlUi presenter extracted from LandscapeScene: every

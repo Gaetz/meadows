@@ -95,11 +95,16 @@ areaRadius = 4.0
 ```
 
 Only some (form, element, trajectory) cells are implemented so far —
-today **create × Water** as `point` (a spring) and `stream` (a jet from
-the hand). A spell outside that set is refused before any cost is paid.
-The base game ships `SpellWaterSpring` (Q after `spirit cast SpiritWater`)
-and `SpellWaterStream` (the default Q: hold to keep streaming, essence
-drains every second).
+today, for **Water**: `create` as `point` (a spring) and `stream` (a jet
+from the hand), `destroy` as `point` (a drain — on a lake the hole is
+refilled by the lake at its weir rate), and `control` as `point`
+(channeled: the aimed water is drawn into a floating volume that follows
+the aim; release drops it where you look). A spell outside that set is
+refused before any cost is paid. The base game ships `SpellWaterSpring`,
+`SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
+and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every
+ability that carries a `SpellForm`); the current spell's `name` (a
+LocString key) shows above the status bars.
 
 The game refuses a `point` cast *before* paying when nothing is aimed,
 the spot is beyond `range`, or the ground is already under water (a

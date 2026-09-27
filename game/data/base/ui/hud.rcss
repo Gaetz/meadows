@@ -83,6 +83,16 @@ body {
 	width: 50%;
 }
 
+/* The spell line sits just above the four vitals (4 x 22dp + 16dp). */
+#spell {
+	position: absolute;
+	left: 82dp;
+	bottom: 112dp;
+	font-size: 15dp;
+	color: #c9c5bb;
+	letter-spacing: 1dp;
+}
+
 /* Explicit heights: the bars' absolute segments don't grow the layout
    (RmlUi), so each .stat block sizes itself. The vitals share the
    overlay-bar look (the loading bars): thin rounded track on

@@ -1594,3 +1594,39 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spirit.tooFar'
     text = 'Trop loin.'
+
+[[records]]
+form = '1879a573-a4a1-42f9-8748-39cadf151ddb'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterSpring'
+    text = "Source d'eau"
+
+[[records]]
+form = '7ffdba73-a045-43cb-92ed-9eda3f262b69'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterStream'
+    text = "Jet d'eau"
+
+[[records]]
+form = 'bc2b4781-766d-43d5-98d3-93e36f84e441'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterDrain'
+    text = 'Assèchement'
+
+[[records]]
+form = 'b922a3d7-068d-4365-98a2-328fa86fefe4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.waterHold'
+    text = "Emprise d'eau"

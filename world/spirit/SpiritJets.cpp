@@ -43,6 +43,17 @@ std::optional<JetLanding> jetLanding(const Vec3& origin, const Vec3& velocity,
     return std::nullopt;
 }
 
+bool SpiritHold::absorb(f32 dt, bool present) {
+    if (present && rate > 0.0f) {
+        volume = glm::min(maxVolume, volume + rate * glm::max(dt, 0.0f));
+    }
+    return volume < maxVolume;
+}
+
+f32 SpiritHold::dropDischarge(f32 seconds) const {
+    return seconds > 0.0f ? volume / seconds : 0.0f;
+}
+
 u32 SpiritJetList::start(SpiritJet jet) {
     u32 evicted = 0;
     if (list.size() >= kMaxJets) {

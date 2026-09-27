@@ -1081,3 +1081,39 @@ TEST_CASE("water sim: a spring on a slope publishes a connected rill") {
     }
     CHECK(downhill > 0);
 }
+
+TEST_CASE("water sim: a draining source releases the pin on its disc, an inflow is swallowed") {
+    const GridSpec spec = makeSpec(65, 2.0f);
+    WaterSimState state;
+    initWindow(state, spec, bowlHeight, -1000.0f);
+    // Pin a lake over the bowl: every cell whose floor is under the level.
+    const f32 level = kBowlFloor + 4.0f;
+    state.pinned.assign(spec.cells(), kWaterInfoDry);
+    for (size_t i = 0; i < spec.cells(); ++i) {
+        if (state.terrain[i] < level) {
+            state.pinned[i] = level;
+        }
+    }
+    const WaterSimParams params = closedParams();
+    stepWindow(state, params, {}, 10);
+    const size_t center = 32 * spec.n + 32;
+    const f32 full = level - state.terrain[center];
+    CHECK(state.depth[center] == doctest::Approx(full));
+
+    // A spring on the pinned surface: swallowed, the level holds (the
+    // last substep's injection lands after the pin — a centimetre).
+    stepWindow(state, params, { { 64.0f, 64.0f, 30.0f } }, 200);
+    CHECK(state.depth[center] == doctest::Approx(full).epsilon(0.01));
+
+    // A drain: the disc dips below the level (the pin let go there)...
+    stepWindow(state, params, { { 64.0f, 64.0f, -30.0f } }, 200);
+    CHECK(state.depth[center] < full - 0.05f);
+    // ...while a lake cell outside the disc (8 cells east, still under
+    // the level) holds.
+    const size_t far = 32 * spec.n + 40;
+    REQUIRE(state.pinned[far] > kWaterInfoDry + 1.0f);
+    CHECK(state.depth[far] == doctest::Approx(level - state.terrain[far]));
+    // Gone, the pin refills the hole.
+    stepWindow(state, params, {}, 10);
+    CHECK(state.depth[center] == doctest::Approx(full));
+}
