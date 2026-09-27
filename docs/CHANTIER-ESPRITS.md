@@ -211,6 +211,29 @@ Référence : **`docs/SPELLS.md`**.
   couronne : à régler en data), la lisibilité du blob, le relâché sur sol
   sec = une mare de `volume` m³.
 
+### E1.g — l'eau des gestes en vrais volumes (demande dev, 2026-09-27)
+« Créer de réels volumes d'eau quand on les déplace ou qu'on les projette. »
+- `RenderSnapshot::WaterMeshInstance` : des soupes de triangles monde
+  construites CPU chaque frame ; `WorldRenderer::drawWaterVolumes` les
+  dessine avec **le pipeline des volumes d'eau placés** (même shader
+  `watervolume`, alpha, depth test sans write) via un vertex buffer
+  dynamique par id, mark/swept comme les quads. UBO élargi à 2 vec4
+  (append) : `uWaterMeshInfo.x = 1` → le fragment prend la **normale
+  géométrique** (`dFdx/dFdy`, facettes low-poly) au lieu de la nappe plate,
+  alpha 0,8-0,95.
+- `world/spirit/SpiritWaterMesh` (headless, testé) : `appendJetTube` (tube à
+  6 faces le long de l'arc, rayon = √(débit/vitesse/π) → 2 m³/s à 14 m/s
+  ≈ 21 cm, évasé ×1,4 vers la chute) ; `appendBlob` (sphère UV aplatie
+  0,85, rayon = ∛(3V/4π) → 60 m³ ≈ 2,4 m). `LandscapeScene::
+  extractSpiritWater` à l'extract (Phase 5 : le renderer ne lit que le
+  snapshot).
+- Les particules restent en **embruns** (jet 70/s au lieu de 240, blob
+  40/s au lieu de 160) + l'éclaboussure d'impact.
+- Ce que « réel » ne veut PAS dire ici : ni collision ni nage dans le blob
+  ou le jet (l'eau simulée reste celle du sol) ; pas de réfraction
+  (le shader des volumes n'en a pas) ; le tube ne se casse pas en gouttes.
+- **Rendu = validation visuelle dev avant commit.**
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

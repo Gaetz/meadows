@@ -92,6 +92,18 @@ struct RenderSnapshot {
     vector<SceneLight> lights;       // the N nearest, for the lights UBO
     vector<SceneLight> shadowLights; // every castsShadow light (key shadow)
     vector<WaterVolumeInstance> waterVolumes;
+    // Transient water bodies built on the CPU each frame — a spirit's
+    // carried blob, a streamed jet's arc (world/spirit/SpiritWaterMesh):
+    // world-space triangle soups drawn with the placed-volume water
+    // look. Hundreds of triangles at most; the renderer keeps a dynamic
+    // vertex buffer per id, mark/swept like the volume quads.
+    struct WaterMeshInstance {
+        u64 id { 0 };
+        vector<Vec3> triangles; // 3 vertices per triangle, world space
+        Vec3 tint { 0.10f, 0.30f, 0.34f };
+        f32 chop { 0.8f };
+    };
+    vector<WaterMeshInstance> waterMeshes;
 
     // Skinned NPCs: the pose is COPIED (self-owning packet, no
     // pointer into the director's Npc structs). vertices/indices are

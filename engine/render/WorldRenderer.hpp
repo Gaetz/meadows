@@ -558,6 +558,18 @@ private:
         rhi::UniqueBindGroup group {};
     };
     vector<WaterQuad> waterQuads;
+    // Transient water meshes (snapshot.waterMeshes): the same pipeline
+    // and look, a dynamic vertex buffer rewritten every frame.
+    struct WaterMeshSlot {
+        u64 id { 0 };
+        bool seen { false };
+        rhi::UniqueBuffer vertices {};
+        u64 capacityBytes { 0 };
+        u32 vertexCount { 0 };
+        rhi::UniqueBuffer ubo {};
+        rhi::UniqueBindGroup group {};
+    };
+    vector<WaterMeshSlot> waterMeshSlots;
     rhi::UniquePipeline waterVolumePipeline;
     u64 waterVolumeShaderGeneration { 0 };
     // Procedural rain streaks + the top-down

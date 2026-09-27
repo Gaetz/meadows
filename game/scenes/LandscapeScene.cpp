@@ -87,6 +87,7 @@
 #include "gameplay/stats/Skills.hpp" // skills-by-use wiring
 #include "game/WeaponMeshes.hpp" // the procedural sword
 #include "script/Vm.hpp"
+#include "world/spirit/SpiritWaterMesh.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Floaters.hpp"
 #include "world/scene/KillZ.hpp"
@@ -1489,6 +1490,8 @@ void LandscapeScene::update(f32 dt) {
         snapshot.lights.clear();
         snapshot.shadowLights.clear();
         snapshot.waterVolumes.clear();
+        snapshot.waterMeshes.clear();
+        extractSpiritWater(snapshot);
         extractMeshes(world, snapshot);
         resolveMeshMaterials(forms, snapshot);
         // Frustum-aware selection (docs/RENDERING.md §5 B1): visible far
@@ -4909,6 +4912,39 @@ str LandscapeScene::currentSpellName() const {
             }
         });
     return name.empty() ? spiritAbility->editorId : name;
+}
+
+void LandscapeScene::extractSpiritWater(render::RenderSnapshot& out) const {
+    // Jets: a tube along each arc, from the nozzle to the landing (or
+    // two seconds of fall into the void), its radius from the flow.
+    u64 id = 1;
+    for (const world::SpiritJet& jet : spiritDirector.jetList().entries()) {
+        if (jet.kind != render::terrain::SpiritKind::Water) {
+            continue;
+        }
+        render::RenderSnapshot::WaterMeshInstance mesh;
+        mesh.id = 0x5b1e0000u + id++;
+        const f32 seconds = jet.landing ? jet.landing->flightSeconds : 2.0f;
+        world::appendJetTube(mesh.triangles, jet.origin, jet.velocity,
+                             world::SpiritJetList::kGravity, seconds,
+                             world::jetRadius(jet.rate,
+                                              glm::length(jet.velocity)));
+        out.waterMeshes.push_back(std::move(mesh));
+    }
+    // The carried volume: a blob whose size IS the volume, floating over
+    // the aim with a slow bob.
+    if (spiritHold && spiritHold->aim &&
+        spiritHold->kind == render::terrain::SpiritKind::Water) {
+        render::RenderSnapshot::WaterMeshInstance mesh;
+        mesh.id = 0x5b1e0000u + 0x100u;
+        const f32 radius = world::blobRadius(spiritHold->volume);
+        const Vec3 center = *spiritHold->aim +
+                            Vec3 { 0.0f, 2.5f + radius * 0.5f +
+                                             0.15f * std::sin(timeSeconds * 2.0f),
+                                   0.0f };
+        world::appendBlob(mesh.triangles, center, radius);
+        out.waterMeshes.push_back(std::move(mesh));
+    }
 }
 
 Vec3 LandscapeScene::spiritNozzle() const {

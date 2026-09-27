@@ -955,7 +955,23 @@ void WorldRenderer::drawWaterVolumes(
     for (WaterQuad& quad : waterQuads) {
         quad.seen = false;
     }
+    for (WaterMeshSlot& slot : waterMeshSlots) {
+        slot.seen = false;
+    }
     bool any = false;
+    const auto bindPipeline = [&] {
+        if (!any) {
+            frame.cmd.setPipeline(waterVolumePipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            any = true;
+        }
+    };
+    // The per-draw UBO: tint + chop, then the mesh flag (a transient
+    // body shades with its geometric normal, a quad with the flat one).
+    struct VolumeUbo {
+        Vec4 tint;
+        Vec4 meshInfo;
+    };
     for (const render::WaterVolumeInstance& volume : snapshot.waterVolumes) {
         WaterQuad* slot = nullptr;
         for (WaterQuad& quad : waterQuads) {
@@ -985,19 +1001,16 @@ void WorldRenderer::drawWaterVolumes(
                 verts) };
             slot->ubo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
-                  .size = sizeof(Vec4),
+                  .size = sizeof(VolumeUbo),
                   .dynamic = true },
                 nullptr) };
             slot->group = { frame.device, frame.device.createBindGroup(
                 { .entries = { { .binding = 1, .buffer = slot->ubo } } }) };
-            const Vec4 tint { volume.tint, volume.chop };
-            frame.device.updateBuffer(slot->ubo, &tint, sizeof(tint), 0);
+            const VolumeUbo ubo { Vec4 { volume.tint, volume.chop },
+                                  Vec4 { 0.0f } };
+            frame.device.updateBuffer(slot->ubo, &ubo, sizeof(ubo), 0);
         }
-        if (!any) {
-            frame.cmd.setPipeline(waterVolumePipeline);
-            frame.cmd.setBindGroup(0, frameBindGroup);
-            any = true;
-        }
+        bindPipeline();
         frame.cmd.setBindGroup(1, slot->group);
         frame.cmd.setVertexBuffer(0, slot->vertices);
         frame.cmd.draw(6);
@@ -1005,6 +1018,61 @@ void WorldRenderer::drawWaterVolumes(
     for (auto it = waterQuads.begin(); it != waterQuads.end();) {
         if (!it->seen) {
             it = waterQuads.erase(it); // Unique members self-free
+        } else {
+            ++it;
+        }
+    }
+    for (const render::RenderSnapshot::WaterMeshInstance& mesh :
+         snapshot.waterMeshes) {
+        if (mesh.triangles.size() < 3) {
+            continue;
+        }
+        WaterMeshSlot* slot = nullptr;
+        for (WaterMeshSlot& candidate : waterMeshSlots) {
+            if (candidate.id == mesh.id) {
+                slot = &candidate;
+                break;
+            }
+        }
+        if (!slot) {
+            waterMeshSlots.push_back({ mesh.id });
+            slot = &waterMeshSlots.back();
+        }
+        slot->seen = true;
+        const u64 bytes = mesh.triangles.size() * sizeof(Vec3);
+        if (slot->vertices.id() == 0 || slot->capacityBytes < bytes) {
+            // Grow geometrically: a jet's segment count is stable, a
+            // blob's too — this fires once or twice per gesture.
+            slot->capacityBytes = glm::max(bytes * 2, u64 { 4096 });
+            slot->vertices = { frame.device, frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = slot->capacityBytes,
+                  .dynamic = true },
+                nullptr) };
+        }
+        frame.device.updateBuffer(slot->vertices, mesh.triangles.data(),
+                                  bytes, 0);
+        slot->vertexCount = static_cast<u32>(mesh.triangles.size());
+        if (slot->ubo.id() == 0) {
+            slot->ubo = { frame.device, frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  .size = sizeof(VolumeUbo),
+                  .dynamic = true },
+                nullptr) };
+            slot->group = { frame.device, frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->ubo } } }) };
+        }
+        const VolumeUbo ubo { Vec4 { mesh.tint, mesh.chop },
+                              Vec4 { 1.0f, 0.0f, 0.0f, 0.0f } };
+        frame.device.updateBuffer(slot->ubo, &ubo, sizeof(ubo), 0);
+        bindPipeline();
+        frame.cmd.setBindGroup(1, slot->group);
+        frame.cmd.setVertexBuffer(0, slot->vertices);
+        frame.cmd.draw(slot->vertexCount);
+    }
+    for (auto it = waterMeshSlots.begin(); it != waterMeshSlots.end();) {
+        if (!it->seen) {
+            it = waterMeshSlots.erase(it);
         } else {
             ++it;
         }

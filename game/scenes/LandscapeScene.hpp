@@ -578,6 +578,9 @@ private:
     void buildSpellBook();
     void cycleSpell(i32 direction);
     str currentSpellName() const;
+    // The gestures' water as geometry (jet tubes, the carried blob) into
+    // the snapshot — drawn with the placed-volume water look.
+    void extractSpiritWater(render::RenderSnapshot& out) const;
     // The aimed ground point: the eye ray against physics, rejected when
     // the hit sits on a prop rather than the terrain. nullopt = nothing.
     std::optional<Vec3> aimGround() const;
