@@ -208,4 +208,10 @@ TEST_CASE("ability: payAbilityCost re-pays the cost without re-activating") {
     // Strict: 10 < 20 -> refused, untouched.
     CHECK_FALSE(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx));
     CHECK(baseValueOf(f.casterSet, attr("essence")) == 10.0f);
+    // A quarter upkeep (5) is affordable and pays exactly that.
+    CHECK(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx, 0.25f));
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 5.0f);
+    // A zero scale is free.
+    CHECK(payAbilityCost(f.ability(), f.casterSet, f.casterSystem, ctx, 0.0f));
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 5.0f);
 }

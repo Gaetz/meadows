@@ -66,9 +66,9 @@ TEST_CASE("spirit water mesh: radii follow flow and volume, clamped to what read
     // 2 m³/s at 14 m/s: area 0.143 m² -> r ~ 0.21 m.
     CHECK(jetRadius(2.0f, 14.0f) == doctest::Approx(0.213f).epsilon(0.01));
     CHECK(jetRadius(0.0f, 14.0f) == 0.08f);   // floor: still visible
-    CHECK(jetRadius(1000.0f, 1.0f) == 0.6f);  // ceiling
+    CHECK(jetRadius(1000.0f, 1.0f) == 1.5f);  // ceiling
     // 60 m³ -> r = cbrt(3V / 4 pi) ~ 2.43 m.
     CHECK(blobRadius(60.0f) == doctest::Approx(2.43f).epsilon(0.01));
     CHECK(blobRadius(0.0f) == 0.25f);
-    CHECK(blobRadius(1.0e6f) == 3.0f);
+    CHECK(blobRadius(1.0e6f) == 8.0f);
 }

@@ -234,6 +234,14 @@ Référence : **`docs/SPELLS.md`**.
   (le shader des volumes n'en a pas) ; le tube ne se casse pas en gouttes.
 - **Rendu = validation visuelle dev avant commit.**
 
+### Réglage dev après validation d'E1.g (2026-09-27)
+« Pas assez impressionnant » : **intensités × 8** (source 24 m³/s, jet
+16, drain 320, emprise 48 — capacité 480 m³ ; plafonds de rayon des
+maillages relevés : tube 1,5 m, blob 8 m) et **coût de maintien ÷ 4** :
+`SpellForm.upkeepScale` (défaut 0,25, la fraction du coût d'activation
+payée à chaque `costPeriod`), `payAbilityCost(..., scale)` applique le
+même EffectForm de coût à magnitude mise à l'échelle (§2.9 intact).
+
 **Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
 pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
 l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le

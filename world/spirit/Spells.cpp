@@ -70,12 +70,16 @@ std::optional<SpellSpec> compileSpell(const data::SpellForm& form,
     if (form.channeled && form.costPeriod <= 0.0f) {
         return fail("costPeriod must be positive on a channeled spell");
     }
+    if (form.upkeepScale < 0.0f) {
+        return fail("upkeepScale must not be negative");
+    }
     spec.range = form.range;
     spec.intensity = form.intensity;
     spec.duration = form.duration;
     spec.areaRadius = form.areaRadius;
     spec.channeled = form.channeled;
     spec.costPeriod = form.costPeriod;
+    spec.upkeepScale = form.upkeepScale;
     return spec;
 }
 

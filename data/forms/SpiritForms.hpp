@@ -86,6 +86,8 @@ struct SpellForm : Form {
     bool channeled { false }; // hold the key to sustain; released = it ends
     f32 costPeriod { 1.0f };  // channeled: the ability cost is paid again
                               // every costPeriod seconds (unaffordable = ends)
+    f32 upkeepScale { 0.25f }; // channeled: the fraction of the activation
+                               // cost each upkeep pays
 
     REFLECT_BEGIN(SpellForm, Form)
         REFLECT_FIELD(parent)
@@ -100,6 +102,7 @@ struct SpellForm : Form {
         REFLECT_FIELD(areaRadius)
         REFLECT_FIELD(channeled)
         REFLECT_FIELD(costPeriod)
+        REFLECT_FIELD(upkeepScale)
     REFLECT_END()
 };
 

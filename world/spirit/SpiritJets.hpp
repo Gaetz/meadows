@@ -45,6 +45,7 @@ struct SpiritJet {
     bool channeled { false };
     f32 costPeriod { 1.0f };
     f32 costClock { 0.0f };
+    f32 upkeepScale { 0.25f }; // fraction of the activation cost per upkeep
     core::Guid ability;     // the AbilityForm whose cost the upkeep re-pays
     u32 emitter { 0 };      // presentation handle (the scene's particle
                             // emitter), 0 = none
@@ -64,6 +65,7 @@ struct SpiritHold {
     f32 maxVolume { 0.0f };  // rate x duration: the spell's capacity
     f32 costPeriod { 1.0f };
     f32 costClock { 0.0f };
+    f32 upkeepScale { 0.25f };
     core::Guid ability;      // upkeep re-pays this ability's cost
     u32 emitter { 0 };       // the floating blob's particle emitter
     std::optional<Vec3> aim; // where it draws / where it will drop

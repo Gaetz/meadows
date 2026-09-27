@@ -557,6 +557,7 @@ private:
         f32 speed { 0.0f };
         bool channeled { false };
         f32 costPeriod { 1.0f };
+        f32 upkeepScale { 0.25f };
     };
     std::deque<PendingSpiritAction> pendingSpiritActions;
     void applyPendingSpiritActions();

@@ -45,6 +45,7 @@ TEST_CASE("spells: a valid record compiles into its spec") {
     CHECK(spec->duration == 10.0f);
     CHECK(spec->areaRadius == 4.0f);
     CHECK_FALSE(spec->channeled);
+    CHECK(spec->upkeepScale == 0.25f);
     CHECK(spellSupported(*spec));
 
     data::SpellForm stream = waterSpring();

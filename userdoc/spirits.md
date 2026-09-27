@@ -74,7 +74,7 @@ A spirit power is a **spell**: one *form* (verb) applied to one *element*
 | `intensity` | element units per second (water: m³/s) | how strong |
 | `duration` | seconds (`-1` = permanent) | how long the effect persists (simulation seconds) |
 | `areaShape` + `areaRadius` | `disc` \| `ring`, metres | the footprint at the effect point |
-| `channeled` + `costPeriod` | bool, seconds | hold the key to sustain; the cost is paid again every `costPeriod`; release ends it |
+| `channeled` + `costPeriod` + `upkeepScale` | bool, seconds, fraction | hold the key to sustain; every `costPeriod` seconds `upkeepScale` × the activation cost is paid again (default 0.25); release ends it |
 
 ```toml
 [[records]]                                   # CREATE + WATER at the aimed spot

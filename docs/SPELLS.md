@@ -47,7 +47,7 @@ nom d'esprit.
 | **Intensité** | `intensity` | unité de l'élément par seconde (eau : m³/s) | la puissance de l'effet |
 | **Durée** | `duration` | secondes (**secondes-sim** pour ce qui alimente une simulation) ; `-1` = permanent | combien de temps l'effet persiste |
 | **Zone** | `areaShape` + `areaRadius` | `disc` \| `ring`, mètres | l'empreinte au point d'effet — v1 : un disque = le disque propre du noyau d'eau (~4 m), un anneau = la « large source » à sept prises pour un rayon > 4 m |
-| **Maintien** | `channeled` + `costPeriod` | bool, secondes | maintenu = le sort vit tant que la touche est tenue ; le coût de l'ability est **repayé** toutes les `costPeriod` s (§2.9 : par l'effet de coût) ; relâcher, ou ne plus pouvoir payer, l'arrête |
+| **Maintien** | `channeled` + `costPeriod` + `upkeepScale` | bool, secondes, fraction | maintenu = le sort vit tant que la touche est tenue ; toutes les `costPeriod` s, `upkeepScale` × le coût de l'ability est **repayé** (§2.9 : le même effet de coût, magnitude mise à l'échelle ; défaut 0,25) ; relâcher, ou ne plus pouvoir payer, l'arrête |
 
 Ce qui reste **sur l'ability** (§6 du CLAUDE.md), pas sur le sort : le
 **coût** (un EffectForm), le **cooldown** (un EffectForm à tag), les

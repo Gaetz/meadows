@@ -29,6 +29,7 @@ struct SpellSpec {
     f32 areaRadius { 2.0f };
     bool channeled { false };
     f32 costPeriod { 1.0f };
+    f32 upkeepScale { 0.25f };
 };
 
 std::optional<SpellVerb> parseSpellVerb(std::string_view name);

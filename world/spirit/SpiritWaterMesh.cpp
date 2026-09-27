@@ -14,12 +14,12 @@ constexpr f32 kTwoPi = 6.2831853f;
 
 f32 jetRadius(f32 intensity, f32 speed) {
     const f32 area = glm::max(intensity, 0.0f) / glm::max(speed, 0.1f);
-    return glm::clamp(std::sqrt(area / 3.1415927f), 0.08f, 0.6f);
+    return glm::clamp(std::sqrt(area / 3.1415927f), 0.08f, 1.5f);
 }
 
 f32 blobRadius(f32 volume) {
     const f32 r = std::cbrt(3.0f * glm::max(volume, 0.0f) / (4.0f * 3.1415927f));
-    return glm::clamp(r, 0.25f, 3.0f);
+    return glm::clamp(r, 0.25f, 8.0f);
 }
 
 void appendJetTube(vector<Vec3>& out, const Vec3& origin,

@@ -127,17 +127,21 @@ bool tryActivate(const AbilityForm& ability,
 }
 
 bool payAbilityCost(const AbilityForm& ability, AttributeSet& casterSet,
-                    AbilitySystem& casterSystem, const AbilityContext& ctx) {
+                    AbilitySystem& casterSystem, const AbilityContext& ctx,
+                    f32 scale) {
     const EffectForm* cost =
         ability.cost.isValid() ? ctx.forms.find<EffectForm>(ability.cost)
                                : nullptr;
-    if (!cost) {
+    if (!cost || scale <= 0.0f) {
         return true;
     }
-    if (!canAfford(casterSystem, *cost, ability.costPolicy)) {
+    // The same effect, its magnitude scaled: still the pipeline (§2.9).
+    EffectForm scaled = *cost;
+    scaled.magnitude *= scale;
+    if (!canAfford(casterSystem, scaled, ability.costPolicy)) {
         return false;
     }
-    applyEffect(casterSet, casterSystem, *cost, ctx.tags);
+    applyEffect(casterSet, casterSystem, scaled, ctx.tags);
     return true;
 }
 

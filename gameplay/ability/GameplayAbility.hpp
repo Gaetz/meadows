@@ -97,9 +97,11 @@ bool tryActivate(const AbilityForm& ability,
                  const AbilityContext& ctx);
 
 // Pays the ability's cost again without re-activating (a channeled
-// spell's upkeep): false, and nothing paid, when the caster cannot afford
-// it under the ability's costPolicy. An ability without a cost is free.
+// spell's upkeep), scaled by `scale` (an upkeep is a fraction of the
+// activation): false, and nothing paid, when the caster cannot afford it
+// under the ability's costPolicy. An ability without a cost is free.
 bool payAbilityCost(const AbilityForm& ability, AttributeSet& casterSet,
-                    AbilitySystem& casterSystem, const AbilityContext& ctx);
+                    AbilitySystem& casterSystem, const AbilityContext& ctx,
+                    f32 scale = 1.0f);
 
 } // namespace gameplay

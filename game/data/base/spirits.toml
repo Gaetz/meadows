@@ -296,7 +296,7 @@ form = "create"
 element = "Water"
 trajectory = "point"
 range = 24.0
-intensity = 3.0
+intensity = 24.0
 duration = 10.0
 areaShape = "disc"
 areaRadius = 4.0
@@ -384,12 +384,13 @@ form = "create"
 element = "Water"
 trajectory = "stream"
 range = 20.0
-intensity = 2.0
+intensity = 16.0
 duration = 6.0
 areaShape = "disc"
 areaRadius = 2.0
 channeled = true
 costPeriod = 1.0
+upkeepScale = 0.25
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000073"
@@ -496,7 +497,7 @@ form = "destroy"
 element = "Water"
 trajectory = "point"
 range = 24.0
-intensity = 40.0
+intensity = 320.0
 duration = 3.0
 areaShape = "disc"
 areaRadius = 2.0
@@ -549,12 +550,13 @@ form = "control"
 element = "Water"
 trajectory = "point"
 range = 24.0
-intensity = 6.0
+intensity = 48.0
 duration = 10.0
 areaShape = "disc"
 areaRadius = 2.0
 channeled = true
 costPeriod = 1.0
+upkeepScale = 0.25
 
 # The floating held volume: a slow shimmering sphere, no gravity.
 [[records]]

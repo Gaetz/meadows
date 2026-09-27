@@ -4673,6 +4673,7 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
                          : seconds;
     action.channeled = spell.channeled;
     action.costPeriod = spell.costPeriod;
+    action.upkeepScale = spell.upkeepScale;
     switch (spell.trajectory) {
     case world::SpellTrajectory::Point:
         if (!aimedAt) {
@@ -4714,6 +4715,7 @@ void LandscapeScene::applyPendingSpiritActions() {
             hold.radius = action.radius;
             hold.maxVolume = action.rate * action.seconds;
             hold.costPeriod = action.costPeriod;
+            hold.upkeepScale = action.upkeepScale;
             hold.ability = spiritAbility ? spiritAbility->id : core::Guid {};
             hold.aim = Vec3 { action.x,
                               render::terrain::height(renderer.terrainParams(),
@@ -4745,6 +4747,7 @@ void LandscapeScene::applyPendingSpiritActions() {
             jet.remaining = action.seconds;
             jet.channeled = action.channeled;
             jet.costPeriod = action.costPeriod;
+            jet.upkeepScale = action.upkeepScale;
             jet.ability = spiritAbility ? spiritAbility->id : core::Guid {};
             // The visible stream: the spirit's jet ParticleForm, its
             // duration bound to the gesture; the per-frame steer keeps
@@ -4808,7 +4811,8 @@ void LandscapeScene::updateSpiritHold(f32 dt) {
         auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
         auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
         if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags })) {
+                                                 { forms, gameTags },
+                                                 hold.upkeepScale)) {
             interaction.say(texts.get("spirit.refused"), 1.5f);
             releaseSpiritHold(true);
             return;
@@ -4994,7 +4998,7 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
         auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
         auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
         if (!gameplay::payAbilityCost(*ability, set, system,
-                                      { forms, gameTags })) {
+                                      { forms, gameTags }, jet.upkeepScale)) {
             jet.remaining = 0.0f;
             interaction.say(texts.get("spirit.refused"), 1.5f);
         }
