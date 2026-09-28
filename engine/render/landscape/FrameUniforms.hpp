@@ -229,6 +229,18 @@ struct FrameUniforms {
     // Fire scorch mask (FireScorchMap::info): xy = window origin,
     // z = 1/texel, w = cells per side (0 = nothing burnt).
     Vec4 fireScorchInfo {};
+    // The burnt ground's look (FireLook): info = {bed intensity (0 =
+    // off), pulse, erode, noise volume ready}; hot = ember colour (rgb) +
+    // coal scale (w); cold = ember colour (rgb) + ash (w); char = the
+    // charred colour (rgb) + grass cull threshold (w).
+    Vec4 fireEmberInfo {};
+    Vec4 fireEmberHot {};
+    Vec4 fireEmberCold {};
+    Vec4 fireCharInfo {};
+    // The flames' flipbook (RenderSnapshot::FlameSheet): {columns, rows,
+    // fps, frame aspect}. Look: {HDR boost, posterize bands (0 = off), 0, 0}.
+    Vec4 fireFlameInfo {};
+    Vec4 fireFlameLook {};
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -313,7 +325,10 @@ static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 2064);
 static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 2080);
 static_assert(offsetof(FrameUniforms, waterSimFrozen) == 2096);
 static_assert(offsetof(FrameUniforms, fireScorchInfo) == 2160);
-static_assert(sizeof(FrameUniforms) == 2176,
+static_assert(offsetof(FrameUniforms, fireEmberInfo) == 2176);
+static_assert(offsetof(FrameUniforms, fireCharInfo) == 2224);
+static_assert(offsetof(FrameUniforms, fireFlameInfo) == 2240);
+static_assert(sizeof(FrameUniforms) == 2272,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

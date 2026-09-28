@@ -634,11 +634,18 @@ private:
     void resetSpiritFire(); // map swap / exit: window, mask and flames go
     struct FlameEmitter {
         Vec2 at { 0.0f }; // the cell center (exact: matched by equality)
-        u32 emitter { 0 };
+        u32 emitter { 0 }; // the flames
+        u32 sparks { 0 };  // the embers it sheds
     };
     vector<FlameEmitter> flameEmitters;
-    static constexpr u32 kMaxFlames = 24;
-    static constexpr f32 kFlameReach = 160.0f;
+    static constexpr u32 kMaxFlames = 96;
+    static constexpr f32 kFlameReach = 120.0f;
+    static constexpr f32 kFlameBehindRadius = 12.0f; // behind the camera, flames only this close
+    // The field's 3D loop (SpiritForm.fieldSound): one source that
+    // follows the burning cell nearest the camera, silent beyond reach.
+    audio::AudioSystem::SoundId fireLoop { 0 };
+    static constexpr f32 kFireSoundReach = 60.0f;
+    void updateSpiritFireSound(const Vec3& cam);
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

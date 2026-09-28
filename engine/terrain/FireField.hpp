@@ -38,6 +38,7 @@ struct FireGrid {
     vector<f32> flammability;
     vector<f32> moisture;
     vector<u8> state;    // FireState
+    vector<f32> ember;   // 1 at burnout, cooling to 0 over emberSeconds
     u64 tick { 0 };
     size_t cells() const { return spec.cells(); }
     bool valid() const { return spec.n > 0 && heat.size() == cells(); }
@@ -50,6 +51,11 @@ struct FireParams {
     u32 spreadBudgetPerTick { 64 };
     f32 burnRate { 1.0f };         // fuel/s consumed while burning
     f32 heatDecay { 0.5f };        // heat/s lost by a cell not burning
+    // The FRONT's width in time: a cell glows (and carries flames) for
+    // this long after ignition, then burns on darkly; a burnt cell's
+    // embers cool over the same span. At the front's speed this is its
+    // width in metres.
+    f32 emberSeconds { 45.0f };
     Vec2 wind { 0.0f, 0.0f };      // unit-ish direction x strength (0..1)
 };
 
@@ -76,12 +82,24 @@ void fireIgnite(FireGrid& grid, f32 x, f32 z, f32 radius, f32 heat,
 void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
               const WetFn& wet, FireStats* stats = nullptr);
 
-// The render mask: 0 untouched .. 1 fully burnt (burning cells count as
-// their consumed share). One byte per cell.
-void fireScorch(const FireGrid& grid, vector<u8>& out);
+// The render mask: 0 untouched .. 1 charred. A cell chars as the front
+// passes over it (over emberSeconds from its ignition), whatever fuel
+// it still burns through darkly afterwards. One byte per cell.
+void fireScorch(const FireGrid& grid, const FireParams& params, vector<u8>& out);
+// The ember mask: how brightly a cell glows — a burning cell fading
+// from ignition over emberSeconds, a burnt cell by its cooling embers,
+// a dormant cell warming toward ignition faintly, wet / cold cells not
+// at all. One byte per cell.
+void fireGlow(const FireGrid& grid, const FireParams& params, vector<u8>& out);
 
-// The cells burning right now, hottest first, at most `maxCount` — the
-// emitter budget (world XZ centers).
-vector<Vec2> fireBurningCenters(const FireGrid& grid, u32 maxCount);
+// The cells burning right now, freshest first, at most `maxCount` — the
+// emitter budget (world XZ centers). `maxBurnedSeconds` keeps only the
+// cells ignited that recently (the front; infinity = every burning
+// cell). Cells heating past half their ignition point count too (last
+// in the order): the flames reach the front's leading edge, not a cell
+// behind it.
+vector<Vec2> fireBurningCenters(const FireGrid& grid, u32 maxCount,
+                                const FireParams& params = FireParams {},
+                                f32 maxBurnedSeconds = 1.0e9f);
 
 } // namespace render::terrain

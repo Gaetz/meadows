@@ -1615,20 +1615,40 @@ void LandscapeScene::update(f32 dt) {
     // far-to-near around the camera (additive needs no order).
     snapshot.fxAlpha.clear();
     snapshot.fxAdditive.clear();
-    fxSim.forEach([&](const Vec3& position, f32 size, const Vec4& color,
-                      bool additive) {
-        (additive ? snapshot.fxAdditive : snapshot.fxAlpha)
-            .push_back({ Vec4 { position, size }, color });
+    snapshot.fxFlames.clear();
+    snapshot.flameSheet = {};
+    fxSim.forEachRaw([&](const fx::Particle& p, f32 t) {
+        if (p.flame) {
+            if (snapshot.fxFlames.empty() && p.texture != core::Guid {}) {
+                snapshot.flameSheet = { p.texture,
+                                        static_cast<f32>(p.flipbookColumns),
+                                        static_cast<f32>(p.flipbookRows),
+                                        p.flipbookFps, p.flipbookAspect };
+            }
+            // Tint (core colour), age, lifetime and seed for the shader;
+            // the outer colour feeds the procedural tongue.
+            snapshot.fxFlames.push_back(
+                { Vec4 { p.position, glm::mix(p.sizeStart, p.sizeEnd, t) },
+                  Vec4 { Vec3 { p.colorStart }, t },
+                  Vec4 { Vec3 { p.colorEnd }, p.seed },
+                  Vec4 { p.lifetime, 0.0f, 0.0f, 0.0f } });
+            return;
+        }
+        (p.additive ? snapshot.fxAdditive : snapshot.fxAlpha)
+            .push_back({ Vec4 { p.position, glm::mix(p.sizeStart, p.sizeEnd, t) },
+                         glm::mix(p.colorStart, p.colorEnd, t),
+                         Vec4 { 0.0f }, Vec4 { 0.0f } });
     });
     {
         const Vec3 eye = flyCamera.camera.position;
-        std::sort(snapshot.fxAlpha.begin(), snapshot.fxAlpha.end(),
-                  [&](const render::FxInstance& a,
-                      const render::FxInstance& b) {
-                      const Vec3 da = Vec3 { a.positionSize } - eye;
-                      const Vec3 db = Vec3 { b.positionSize } - eye;
-                      return glm::dot(da, da) > glm::dot(db, db);
-                  });
+        const auto farToNear = [&](const render::FxInstance& a,
+                                   const render::FxInstance& b) {
+            const Vec3 da = Vec3 { a.positionSize } - eye;
+            const Vec3 db = Vec3 { b.positionSize } - eye;
+            return glm::dot(da, da) > glm::dot(db, db);
+        };
+        std::sort(snapshot.fxAlpha.begin(), snapshot.fxAlpha.end(), farToNear);
+        std::sort(snapshot.fxFlames.begin(), snapshot.fxFlames.end(), farToNear);
     }
     // The skinned extract runs AFTER the NPC update so the packet
     // carries this frame's pose (paused sim: the last pose, still valid).
@@ -5439,29 +5459,50 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
     // A job landed: the mask and the flames follow it.
     const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
     renderer.fireScorchMap().upload(engine->getDevice(),
-                                    spiritDirector.fireScorch(), spec.n,
+                                    spiritDirector.fireScorch(),
+                                    spiritDirector.fireGlow(), spec.n,
                                     { spec.originX, spec.originZ },
                                     spec.texelSize);
-    // Wanted flames: the burning cells nearest the camera, under budget.
-    vector<Vec2> wanted;
+    // Wanted flames: the burning cells the camera can SEE, nearest and
+    // most in view first, under budget — emitters behind the camera are
+    // wasted (beyond a small radius, so turning around never shows a
+    // gap: the set is re-placed every landed job, flames burst in).
+    const Vec3 forward3 = flyCamera.camera.forward();
+    const Vec2 forward = glm::length(Vec2 { forward3.x, forward3.z }) > 1e-3f
+                             ? glm::normalize(Vec2 { forward3.x, forward3.z })
+                             : Vec2 { 0.0f, 1.0f };
+    struct Candidate {
+        Vec2 at;
+        f32 score;
+    };
+    vector<Candidate> candidates;
     for (const Vec2& at : spiritDirector.fireBurning()) {
-        const f32 dx = at.x - cam.x;
-        const f32 dz = at.y - cam.z;
-        if (dx * dx + dz * dz <= kFlameReach * kFlameReach) {
-            wanted.push_back(at);
+        const Vec2 to { at.x - cam.x, at.y - cam.z };
+        const f32 d2 = glm::dot(to, to);
+        if (d2 > kFlameReach * kFlameReach) {
+            continue;
         }
+        const f32 dist = std::sqrt(d2);
+        const f32 facing = dist > 1e-3f ? glm::dot(to / dist, forward) : 1.0f;
+        if (facing < -0.2f && dist > kFlameBehindRadius) {
+            continue; // behind the camera
+        }
+        // In the axis of view: preferred at equal distance.
+        candidates.push_back({ at, dist * (1.6f - 0.6f * facing) });
     }
-    std::stable_sort(wanted.begin(), wanted.end(),
-                     [&](const Vec2& a, const Vec2& b) {
-                         const f32 da = (a.x - cam.x) * (a.x - cam.x) +
-                                        (a.y - cam.z) * (a.y - cam.z);
-                         const f32 db = (b.x - cam.x) * (b.x - cam.x) +
-                                        (b.y - cam.z) * (b.y - cam.z);
-                         return da < db;
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const Candidate& a, const Candidate& b) {
+                         return a.score < b.score;
                      });
-    if (wanted.size() > kMaxFlames) {
-        wanted.resize(kMaxFlames);
+    if (candidates.size() > kMaxFlames) {
+        candidates.resize(kMaxFlames);
     }
+    vector<Vec2> wanted;
+    wanted.reserve(candidates.size());
+    for (const Candidate& c : candidates) {
+        wanted.push_back(c.at);
+    }
+    updateSpiritFireSound(cam);
     // Keep the emitters still wanted, stop the others, light the new.
     vector<FlameEmitter> kept;
     for (const FlameEmitter& flame : flameEmitters) {
@@ -5473,38 +5514,92 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         if (it != wanted.end()) {
             kept.push_back(flame);
             wanted.erase(it);
-        } else if (flame.emitter != 0) {
-            fxSim.stopEmitter(flame.emitter);
+        } else {
+            if (flame.emitter != 0) {
+                fxSim.stopEmitter(flame.emitter);
+            }
+            if (flame.sparks != 0) {
+                fxSim.stopEmitter(flame.sparks);
+            }
         }
     }
-    const core::Guid& fxId =
-        spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire);
-    const auto* form = forms.find<data::ParticleForm>(fxId);
+    const auto* flameForm = forms.find<data::ParticleForm>(
+        spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire));
+    const auto* sparkForm = forms.find<data::ParticleForm>(
+        spiritDirector.sparkParticles(render::terrain::SpiritKind::Fire));
     for (const Vec2& at : wanted) {
-        FlameEmitter flame { at, 0 };
-        if (form) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+        FlameEmitter flame { at, 0, 0 };
+        const Vec3 pos { at.x,
+                         render::terrain::height(renderer.terrainParams(),
+                                                 at.x, at.y) +
+                             0.15f,
+                         at.y };
+        const u32 seed =
+            static_cast<u32>(static_cast<i32>(pos.x * 73.0f)) ^
+            (static_cast<u32>(static_cast<i32>(pos.z * 179.0f)) << 8) ^
+            fxSim.count();
+        if (flameForm) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
             params.duration = 1.0e9f; // stopped when the cell stops burning
-            const Vec3 pos { at.x,
-                             render::terrain::height(renderer.terrainParams(),
-                                                     at.x, at.y) +
-                                 0.15f,
-                             at.y };
-            const u32 seed =
-                static_cast<u32>(static_cast<i32>(pos.x * 73.0f)) ^
-                (static_cast<u32>(static_cast<i32>(pos.z * 179.0f)) << 8) ^
-                fxSim.count();
             flame.emitter = fxSim.spawn(params, pos, seed);
+        }
+        if (sparkForm) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
+            params.duration = 1.0e9f;
+            flame.sparks = fxSim.spawn(params, pos, seed ^ 0x9e3779b9u);
         }
         kept.push_back(flame);
     }
     flameEmitters = std::move(kept);
 }
 
+void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
+    // The nearest burning cell within reach carries the loop.
+    const Vec2* nearest = nullptr;
+    f32 best = kFireSoundReach * kFireSoundReach;
+    for (const Vec2& at : spiritDirector.fireBurning()) {
+        const f32 dx = at.x - cam.x;
+        const f32 dz = at.y - cam.z;
+        const f32 d2 = dx * dx + dz * dz;
+        if (d2 < best) {
+            best = d2;
+            nearest = &at;
+        }
+    }
+    if (!nearest) {
+        if (fireLoop != 0) {
+            audioSystem.stop(fireLoop, 0.8f);
+            fireLoop = 0;
+        }
+        return;
+    }
+    const Vec3 at { nearest->x,
+                    render::terrain::height(renderer.terrainParams(), nearest->x,
+                                            nearest->y) +
+                        0.5f,
+                    nearest->y };
+    if (fireLoop == 0) {
+        const core::Guid& sound =
+            spiritDirector.fieldSound(render::terrain::SpiritKind::Fire);
+        if (const auto params = soundResolver.resolve(sound, at, 0x5f1e5u)) {
+            fireLoop = audioSystem.play(*params);
+        }
+        return;
+    }
+    audioSystem.setPosition(fireLoop, at);
+}
+
 void LandscapeScene::resetSpiritFire() {
+    if (fireLoop != 0) {
+        audioSystem.stop(fireLoop, 0.3f);
+        fireLoop = 0;
+    }
     for (const FlameEmitter& flame : flameEmitters) {
         if (flame.emitter != 0) {
             fxSim.stopEmitter(flame.emitter);
+        }
+        if (flame.sparks != 0) {
+            fxSim.stopEmitter(flame.sparks);
         }
     }
     flameEmitters.clear();

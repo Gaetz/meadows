@@ -428,6 +428,28 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
     // Every meadow constant, live. The render
     // half rides the FrameUbo; a scatter knob queues a grass-only
     // re-scatter on release (budgeted — the ring rebuilds over frames).
+    if (ImGui::CollapsingHeader("Fire")) {
+        render::FireLook& fl = r.fireScorchMap().look;
+        ImGui::SliderFloat("Coal bed (0 = off)", &fl.bedIntensity, 0.0f,
+                           10.0f, "%.2f");
+        ImGui::SliderFloat("Pulse", &fl.pulse, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Front erosion", &fl.erode, 0.0f, 0.8f, "%.2f");
+        ImGui::SliderFloat("Coal scale (m / tile)", &fl.coalScale, 2.0f,
+                           16.0f, "%.1f");
+        ImGui::SliderFloat("Ash", &fl.ash, 0.0f, 1.0f, "%.2f");
+        ImGui::ColorEdit3("Ember hot", &fl.emberHot.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::ColorEdit3("Ember cold", &fl.emberCold.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::ColorEdit3("Char colour", &fl.charColor.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::SliderFloat("Grass cull (charred)", &fl.grassCull, 0.3f,
+                           1.0f, "%.2f");
+        ImGui::SliderFloat("Flame HDR boost", &fl.flameBoost, 0.2f, 6.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Flame posterize (0 = off)", &fl.flamePosterize,
+                           0.0f, 8.0f, "%.0f");
+    }
     if (ImGui::CollapsingHeader("Grass")) {
         render::GrassRenderTuning& gt = r.grass.renderTuning;
         ImGui::SeparatorText("Blade");

@@ -154,8 +154,8 @@ profondeur.
 
 | Brique | Contenu | Dépend de | Bascule A/B |
 |---|---|---|---|
-| **F1 — liseré de braises** | canal chaleur dans `FireScorchMap` (RG16F), front érodé + `rim` émissif dans terrain.frag et grass.frag, herbe qui se rabat avant de disparaître | rien | `uFireScorchInfo` ou un knob du panneau de rendu |
-| **F2 — quads de flamme** | pipeline particule « flamme » (bruit + rampe + bandes + érosion + soft depth), rampe par chaleur, 3-5 quads/cellule près, 1 par 2×2 loin | F1 (même masque) | choix du ParticleForm |
+| **F1 — lit de braises + étincelles** — ✅ v2 construite 2026-09-28 (journal CHANTIER-ESPRITS ; la v1 « liseré » rejetée par le dev : bande invisible, bruit géométrique), validation visuelle dev en attente | canal braise (refroidissement `ember` du noyau) dans `FireScorchMap` (RGBA8), charbon découpé en charbons/fissures par le Worley du NoiseVolume (unité 12), fissures émissives qui respirent, cendre au refroidissement, herbe qui se rabat avant de disparaître, étincelles `EmberSparks` par cellule brûlante | rien | `FireLook.bedIntensity = 0` (panneau « Fire ») |
+| **F2 — flammes** — ✅ 2026-09-28, choix dev : **flipbook CC0 seul** (la langue procédurale et la stylisée BotW essayées puis retirées ; recette conservée au §3), validation visuelle dev en attente | `ParticleForm.blend = "flame"` + `texture` (planche 16×4 CC0 Unity Labs, `textures/fx/`) + `flipbook*` → pipeline `fxflame` (quad debout ancré à l'aspect de l'image, deux images fondues, boost HDR, posterize optionnel), forme d'émission `disc` ; reste : plusieurs planches par frame, soft depth, LOD | F1 (même masque) | « Flames as plain sprites » (panneau « Fire ») |
 | **F3 — lumières de feu** | agrégation 8 m → `RenderSnapshot.lights` (≤ 16/32), scintillement 2 octaves, rampe de température, émissif → cascades + bloom | F2 | knob « fire lights » |
 | **F4 — garniture** | braises, fumée avec vent, distorsion de chaleur écran | E4 (direction du vent) | knobs |
 
@@ -188,5 +188,8 @@ rayons, budgets) en data, jamais des constantes dans le shader (règle
 11. GPU Gems 3 ch. 23 « High-Speed, Off-Screen Particles » —
     https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-23-high-speed-screen-particles
 12. Godot Shaders, « Stylized Flame » — https://godotshaders.com/shader/stylized-flame/
+14. Unity Labs, « Free VFX image sequences and flipbooks » (CC0, les planches
+    de flammes du dépôt) —
+    https://unity.com/blog/2016/11/28/free-vfx-image-sequences-flipbooks/
 13. PlayStation Blog, Ghost of Tsushima VFX —
     https://blog.playstation.com/2021/01/12/how-stunning-visual-effects-bring-ghost-of-tsushima-to-life/

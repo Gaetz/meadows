@@ -86,6 +86,17 @@ struct RenderSnapshot {
     // order-free). The renderer draws only these.
     vector<FxInstance> fxAlpha;
     vector<FxInstance> fxAdditive;
+    vector<FxInstance> fxFlames; // the flame pipeline (far-to-near)
+    // The flames' flipbook sheet this frame (ONE sheet per frame for
+    // now: the first flame particle's; null texture = procedural).
+    struct FlameSheet {
+        core::Guid texture;
+        f32 columns { 0.0f };
+        f32 rows { 0.0f };
+        f32 fps { 30.0f };
+        f32 aspect { 1.0f };
+    };
+    FlameSheet flameSheet;
 
     // The landscape frame's world-derived render data: render()
     // consumes these instead of querying the live World.

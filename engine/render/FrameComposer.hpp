@@ -164,6 +164,13 @@ struct FrameComposerInputs {
     Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Fire scorch mask (FireScorchMap::info()).
     Vec4 fireScorchInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // The burn front's look (FireLook -> four lanes).
+    Vec4 fireEmberInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4 fireEmberHot { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4 fireEmberCold { 0.0f, 0.0f, 0.0f, 0.0f };
+    Vec4 fireCharInfo { 0.0f, 0.0f, 0.0f, 1.0f };
+    Vec4 fireFlameInfo { 0.0f, 0.0f, 30.0f, 1.0f };
+    Vec4 fireFlameLook { 1.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // The volumetric fog's reach (froxel far AND cluster grid far — the two

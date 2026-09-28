@@ -533,7 +533,183 @@ persistance du scorch = E3.d optionnelle. E3.c (suite) : contact →
   arbre charbonné/retiré au re-scatter (gaté par le masque, persistant via
   la couverture E3.d). S'inscrit dans E3.c avec les props en bois.
 
-**Validation dev attendue (la phrase de la brique 1)** : en Play, Q vers une
-pente → éclaboussure, l'eau jaillit au point visé, coule, s'accumule ; nage ;
-l'essence baisse, le cooldown bloque 8 s ; save mi-source puis load → le
-record revient et la mare se re-remplit. Console : `spirit list`.
+### F1 — le lit de braises + les étincelles (2026-09-28, NON COMMITÉE : validation visuelle dev)
+Première version = un liseré émissif sur le front érodé par un bruit de
+valeur procédural (transposition des *burn shaders* d'objets DeepSpaceBanana /
+Zhu). Retour dev : bande invisible, bruit « très géométrique, pas beau du
+tout », il attendait « un système de braises visibles ». Choix dev : **lit
+de braises + particules**. La v2 :
+**Noyau** : `FireGrid.ember` — une cellule qui finit de brûler part à 1 et
+refroidit sur `FireParams.emberSeconds` (`SpiritForm.emberSeconds`, 45 s) ;
+l'eau l'éteint aussi. `fireGlow` = flammes (0,55 + 0,45 × combustible
+restant) → braises (0,55 × ember) → chauffe avant ignition (0,5 ×
+chaleur/ignition) ; canal G du masque RGBA8 de `FireScorchMap`.
+**Shader** (`firescorch.glsl`, terrain.frag, grass.vert/frag) : le volume
+Perlin-Worley tileable du moteur (NoiseVolume, nouveau groupe de
+binding 12 lié au slot 9 des passes terrain ; repli sur un hash sans
+compute) — canal r (lisse) pour éroder le front (`charred =
+smoothstep(0,42 ; 0,56)`, plus de bande), canal b (Worley haute
+fréquence) pour découper le charbon en **corps de charbons** (`body`)
+séparés de **fissures** (`crack`) ; `fireCharAlbedo` : charbon sombre, les
+corps virent à la cendre grise à mesure que la braise meurt (`ash × body ×
+(1 − glow)`) ; `fireEmber` : la lumière des fissures = rampe froid→chaud
+× intensité × glow² × (fissures + plein feu sur les cellules fraîches) ×
+respiration à phase par charbon (`sin(2,5t + 25·r + 9·g)`). L'herbe garde
+le rabattement, le charbon et le cull, reçoit 0,4 × la lumière du lit.
+**Particules** : `SpiritForm.emberParticles` → `EmberSparks` (additif,
+0,06 m, 7/s, montée 1,6 m/s avec poussée, 2,2 s ± 0,8) spawné à côté de
+chaque émetteur de flamme (même budget de 24 cellules, `FlameEmitter.sparks`).
+**Réglages** (`FireLook`, panneau « Fire ») : intensité du lit (0 = A/B
+simple scorch), pouls, érosion, échelle des charbons (m / tuile, charbon ≈
+1/16), cendre, couleurs chaud/froid/charbon, seuil de cull. UBO : les 4
+lanes `uFireEmber*` réinterprétées (w : volume prêt, échelle, cendre).
+**À valider par le dev** : le lit de braises de jour et de nuit, la taille
+des charbons, le refroidissement en cendre, les étincelles.
+
+### Retour dev F1 v2 + F2 — les flammes (2026-09-28, NON COMMITÉES : validation visuelle dev)
+Retour dev : « l'effet braises est intéressant seulement sur le premier
+mètre du front, revenir ensuite à la couleur du sol brûlé ; le front
+n'affiche pas de vraies flammes, il en faut aussi pour les torches et les
+feux de camp ». Deux réponses :
+**F1 confinée** : `fireFront` borne la braise à une bande `1 −
+smoothstep(0,58 ; 0,78)` du scorch érodé — le premier mètre derrière les
+flammes ; au-delà, charbon uni (les charbons/cendre ne se dessinent que
+là où la braise luit) ; `emberSeconds` 45 → 8 s en data.
+**F2 — les flammes** (`docs/FIRE-RENDER.md` §3, générique : tout
+`ParticleForm` avec `blend = "flame"` — le front, une torche, un feu de
+camp, une cue) : `EmitterParams/Particle.flame` + `seed` par particule,
+`ParticleSim::forEachRaw`, `FxInstance` passe à trois vec4 (position +
+taille ; couleur cœur + âge ; couleur bord + graine — les sprites ordinaires
+ignorent la troisième), `RenderSnapshot.fxFlames` trié loin→près,
+`FxRenderer` gagne le pipeline `fxflame` (alpha, test de profondeur sans
+écriture) dessiné entre l'alpha et l'additif. `fxflame.vert` : quad
+DEBOUT ancré à la position de la particule, billboard cylindrique autour
+de l'axe monde (une flamme ne se couche jamais), goutte effilée vers la
+pointe, `size` = hauteur. `fxflame.frag` : deux octaves de bruit qui
+montent (le volume Perlin-Worley à l'unité 12 quand il est cuit, sinon un
+hash), distorsion croissant vers la pointe, silhouette `(1 − y)(1 −
+across²)`, trois bandes posterisées à bord dur (bord = colorEnd, milieu,
+cœur = colorStart × 2,5 HDR), l'âge ÉRODE la flamme au lieu de la fondre,
+base fondue dans le sol. Nouvelle forme d'émission `disc` (disque
+horizontal : les flammes naissent AU sol, pas dans une sphère) ;
+`FlameTongue` réécrit (disc 0,9 m, 9/s, 1 s ± 0,35, hauteur 1,1 → 0,7 m,
+montée lente). Bascule A/B : « Flames as plain sprites » (panneau
+« Fire »). Manque encore (F2 suite) : le fondu de profondeur (soft
+particles, la profondeur de scène n'est pas liée à la passe fx), le LOD
+(3-5 langues par cellule près, 1 par 2×2 loin), et F3 les lumières —
+une torche sans lumière n'est pas une torche.
+
+### Retour dev F2 v1 → F2 v2, les flammes en flipbook (2026-09-28, NON COMMITÉE)
+Retour dev sur la v1 procédurale : « franchement ce sont des sprites super
+basiques, cherche des sprites de flammes ». Recherche → **Unity Labs, « Free
+VFX image sequences and flipbooks » (2016), CC0** : de vraies simulations de
+fluide rendues en planches 16×4 (64 images, 128×256 px l'image). Deux
+planches importées en PNG sous `game/data/base/textures/fx/` (README avec la
+licence) : `smallflame01` (flamme basse dense — le sol) et `flame02` (langue
+avec traîne de fumée — torches, braseros), déclarées dans `[assets]` de
+spirits.toml (`…00d0`, `…00d1`). **Rendu** : `ParticleForm.texture` +
+`flipbookColumns/Rows/Fps/Aspect` (repris par `EmitterParams`/`Particle`,
+`RenderSnapshot::FlameSheet` = LA planche de la frame, une seule pour
+l'instant) ; `FxRenderer` lie la planche (résolue par `view.materialTextures`,
+le cache résident : placeholder tant que le PNG décode) au binding 3, slot 2
+de la passe fx ; `fxflame.frag` joue le flipbook depuis une image de départ
+tirée de la graine, à `fps`, **deux images fondues** (le mouvement vient de la
+sim, pas besoin de vecteurs de mouvement), linéarise la planche sRGB, teinte
+par `colorStart`, `flameBoost` HDR, `flamePosterize` optionnel (bandes de
+luminance = le look stylisé) ; fondu d'entrée rapide, érosion sur le dernier
+tiers de vie ; le quad debout prend l'aspect de l'image (`uFireFlameInfo`,
+lanes UBO 2240 → 2272 avec `uFireFlameLook`). Sans texture, la langue
+procédurale v1 reste. `FlameTongue` : 5 flammes/s de 1,6 → 1,2 m sur un
+disque de 0,9 m, 1,6 s ± 0,5. **Reste** : plusieurs planches par frame
+(torche + sol), soft depth, LOD, F3 lumières.
+
+### Retour dev F2 v2 : « les flammes font un décalage sur la droite » (2026-09-28)
+Mesuré sur la planche : le cœur de `SmallFlame01` balance de ±45 px (un
+tiers de la case) sur un cycle de ~16 images — la sim d'origine ondule dans
+le vent, ce qui se lit comme la flamme entière qui glisse. `Flame02` est
+stable (±6 px). Correction hors ligne : la planche du sol est re-posée sur
+des cases élargies 192×256 (aspect 0,75, `flipbookAspect`), chaque image
+décalée pour que son cœur lumineux tombe sur l'axe de la case (rien n'est
+coupé), l'alpha fondu sur 22 px aux bords de la case source (la sim
+débordait de ses cases : sans le fondu, recentrer expose des coupes
+franches ; une trace subtile reste sur 4-5 images). Repli si ça gêne :
+`Flame02` au sol aussi (une ligne de données). Discipline rappelée par le
+dev : suite complète UNIQUEMENT avant le commit, tests ciblés sinon.
+
+### F2 v3 — la flamme stylisée BotW et la combo des styles (2026-09-28, NON COMMITÉE)
+Retour dev sur le flipbook : « vraiment pas beau », « comment sont gérées
+les flammes dans Breath of the Wild ? ». Documenté (reconstructions Silva /
+80.lv, observations bgolus ; rien d'officiel) : un SHADER sur une forme
+peinte — silhouette douce, bruit peint qui défile vers le haut et déplace
+les UV, `smoothstep` à seuil = bord dur + 2-3 bandes plates, érosion par
+l'âge (née pleine, consumée), quelques quads superposés dont des étirés,
+bloom fort ; fumée et braises = sprites érodés non ronds. Prototype Python
+validé sur image (`.claude/tmp/fire/botw_flame_proto2.png`) puis porté :
+`fxflame.frag` réécrit en **quatre styles à switch plat**
+(`FxRenderer::FlameStyle`, `uFireFlameLook.z`) : 0 sprite rond (pipeline
+alpha), 1 langue procédurale, 2 flipbook (repli sur 1 sans planche), 3
+**stylisée** — bruit du volume à deux octaves défilant, `xd = x + (n −
+0,5)·0,9·y²`, largeur `(1 − 0,85·y^1,6)`, silhouette `(1 − across²)·(1 −
+y)^0,6·√(8y)`, champ `v = shape − n·(0,35 + 0,5y) − max(age − 0,5, 0) −
+grow·0,4`, bandes à 0,16 / 0,34 (bord = `colorEnd`, milieu, cœur =
+`colorStart` × boost). Vertex : un tiers des flammes (graine < 0,35) en
+variante étirée (×1,35 de haut, ×0,26 de large) — jamais une rangée de
+découpes identiques. Panneau « Fire » : **combo « Flame style »** à la place
+de la case A/B (demande dev), défaut = stylisée. Reste : la fumée et les
+braises non rondes, le fondu de profondeur, le LOD, F3.
+
+### Retours dev F2 v3 (2026-09-28) : violet, braises sous les flammes
+- « Les couleurs stylisées sont violettes » : la durée de vie était rangée
+  dans le canal bleu de la couleur de bord (`extra.b` = 1,6). `FxInstance`
+  passe à QUATRE vec4 (`life.x` = durée de vie ; SSBO à stride 4).
+- « La partie braises du sol doit être SOUS le front de flammes » : le lit
+  de braises était gaté par « sol déjà charbonné », donc absent sous les
+  flammes. `fireBurn(charred, glow) = max(charred, smoothstep(0,15 ; 0,6 ;
+  glow))` : le sol noircit et luit dès que sa cellule brûle (la lueur =
+  l'intensité des flammes), puis reste charbon uni derrière (les braises
+  refroidissent en 8 s) ; l'herbe se rabat et se cull sur `fireBurn` aussi.
+- « Le front de braises reste allumé trop longtemps, 1-2 m comme les
+  flammes » : la lueur d'une cellule brûlante ne suit plus son combustible
+  restant (8 s d'herbe = 13 m de bande) mais le temps écoulé depuis son
+  ignition : `glow = 1 − brûlé/emberSeconds` (`fireGlow(grid, params)`),
+  et `fireBurningCenters(…, burnRate, maxBurnedSeconds = emberSeconds)`
+  ne rend que les cellules fraîches — les flammes et le lit de braises
+  couvrent la même bande. `emberSeconds` = LA largeur du front en temps :
+  1,2 s en data ≈ 2 m à 1,6 m/s ; derrière, charbon uni pendant que la
+  cellule finit de brûler sans lumière.
+- « Une ligne de braises arrive jusqu'au front quelques secondes plus
+  tard » : reste du lit de braises — à l'extinction d'une cellule (8 s
+  après ignition) `ember` repartait à 1, une seconde ligne s'allumait sur
+  le bord arrière de la bande. Continuité : `ember` reprend la lueur là
+  où elle en était (`1 − fuel0/burnRate/emberSeconds`, donc 0 pour de
+  l'herbe). Largeur du front doublée sur demande : `emberSeconds` 2,4 s.
+- Décision dev (2026-09-28) : **le flipbook seul**, les trois autres
+  styles retirés (`FlameStyle`, la combo, la langue procédurale et la
+  stylisée BotW — la recette reste documentée dans FIRE-RENDER §3 et le
+  prototype Python) ; une flamme sans planche se dessine en sprite rond.
+  HDR des flammes à 3. « Une fois la braise disparue le terrain doit être
+  brûlé, pas revenir vert » : le scorch d'une cellule brûlante suivait sa
+  part de combustible consommée (0,3 après le passage du front, sous le
+  seuil de 0,42) — il suit maintenant le passage du front
+  (`fireScorch(grid, params)` : `brûlé/emberSeconds`, 1 dès que le front
+  est passé). Bande de braises +1 m : `emberSeconds` 3,0 s.
+- Retour dev (2026-09-28) : « flammes en retrait du front, pas sur tout
+  le front, un son 3D près du front ». (1) `fireBurningCenters` inclut les
+  cellules dormantes chauffées à plus de la moitié de leur ignition (une
+  flamme avant même qu'elles prennent : le front visible mène) et
+  `FlameTongue` naît avec `burst = 2` (des flammes dès la pose de
+  l'émetteur, sans attendre le premier tick de débit). (2) Budget : 96
+  émetteurs à moins de 120 m (au lieu de 24 / 160), `maxCenters` 1024. (3)
+  `SpiritForm.fieldSound` → `SoundForm` « SpiritFireCrackle » (bus
+  ambient, 3D, 4-45 m, boucle) sur `sounds/fire/fire-loop.wav` (PagDev,
+  OpenGameArt, CC0, remixé mono 12 s bouclable) ; UNE source qui suit la
+  cellule brûlante la plus proche de la caméra (`AudioSystem::setPosition`,
+  nouveau), coupée au-delà de 60 m ou quand le feu meurt.
+- Idée dev (2026-09-28) : « faire apparaître les sprites relativement au
+  centre de la caméra pour les économiser — coûteux ? » Non : la sélection
+  est CPU à 10 Hz sur ≤ 1024 candidats ; un produit scalaire par cellule.
+  Fait : les cellules derrière la caméra (facing < −0,2) ne reçoivent pas
+  d'émetteur au-delà de 12 m, et le score de tri = distance × (1,6 −
+  0,6·facing) met les cellules dans l'axe de vue devant à distance égale.
+  Le coût GPU (overdraw des quads visibles) ne change pas, le budget
+  d'émetteurs sert là où on regarde.

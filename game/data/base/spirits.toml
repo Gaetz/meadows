@@ -16,6 +16,15 @@ id = "5b1e1700-0000-4000-8000-0000000000ff"
 name = "true-adventurer-spirits"
 dependencies = ["7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f"] # adventure: the rock props
 
+[assets]
+# Flame flipbooks: Unity Labs "Free VFX image sequences and flipbooks"
+# (2016), CC0 — 16x4 frames of a real fluid sim (textures/fx/README.md).
+"5b1e1700-0000-4000-8000-0000000000d0" = "textures/fx/flame02_16x4.png"
+"5b1e1700-0000-4000-8000-0000000000d1" = "textures/fx/smallflame01_16x4.png"
+# The fire field's loop: "Fireplace Sound loop" by PagDev (OpenGameArt),
+# CC0, 12 s mono (sounds/fire/README.md).
+"5b1e1700-0000-4000-8000-0000000000d2" = "sounds/fire/fire-loop.wav"
+
 # --- Spirits ---------------------------------------------------------------
 
 [[records]]
@@ -114,8 +123,11 @@ spreadRate = 1.0
 ignitionPoints = 1.0
 spreadBudgetPerTick = 64
 decayPerSecond = 0.5
+emberSeconds = 3.0
 cueSpawn = "Cue.Spirit.Fire.Spawn"
 fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
+emberParticles = "5b1e1700-0000-4000-8000-0000000000c7"
+fieldSound = "5b1e1700-0000-4000-8000-0000000000d3"
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000009"
@@ -1103,21 +1115,26 @@ type = "ParticleForm"
 new = true
 [records.fields]
 editorId = "FlameTongue"
-shape = "sphere"
-shapeRadius = 0.7
-burst = 0
-rate = 14.0
+shape = "disc"
+shapeRadius = 0.9
+burst = 2
+rate = 5.0
 duration = 1.0
-lifetime = 0.8
-lifetimeJitter = 0.3
-velocity = [0.0, 2.2, 0.0]
-velocityJitter = 0.5
-gravity = [0.0, 1.5, 0.0]
-sizeStart = 0.45
-sizeEnd = 0.08
-colorStart = [1.0, 0.62, 0.18, 0.95]
-colorEnd = [0.5, 0.08, 0.02, 0.0]
-blend = "additive"
+lifetime = 1.6
+lifetimeJitter = 0.5
+velocity = [0.0, 0.25, 0.0]
+velocityJitter = 0.1
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 1.6
+sizeEnd = 1.2
+colorStart = [1.0, 1.0, 1.0, 1.0]
+colorEnd = [0.85, 0.22, 0.04, 1.0]
+blend = "flame"
+texture = "5b1e1700-0000-4000-8000-0000000000d1"
+flipbookColumns = 16
+flipbookRows = 4
+flipbookFps = 30.0
+flipbookAspect = 0.75 # 192 x 256 px frames (32 px margins: the base is recentred, nothing clipped)
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-0000000000c1"
@@ -1198,3 +1215,47 @@ duration = 1.0
 areaShape = "disc"
 areaRadius = 2.5
 channeled = false
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000c7"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "EmberSparks"
+shape = "sphere"
+shapeRadius = 0.8
+burst = 0
+rate = 7.0
+duration = 1.0
+lifetime = 2.2
+lifetimeJitter = 0.8
+velocity = [0.0, 1.6, 0.0]
+velocityJitter = 0.9
+gravity = [0.0, 0.6, 0.0]
+sizeStart = 0.06
+sizeEnd = 0.02
+colorStart = [1.0, 0.72, 0.3, 1.0]
+colorEnd = [0.7, 0.12, 0.02, 0.0]
+blend = "additive"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d3"
+type = "SoundForm"
+new = true
+[records.fields]
+editorId = "SpiritFireCrackle"
+bus = "ambient"
+volume = 0.9
+pitch = 1.0
+is3d = true
+minDistance = 4.0
+maxDistance = 45.0
+loop = true
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d4"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "5b1e1700-0000-4000-8000-0000000000d3"
+asset = "5b1e1700-0000-4000-8000-0000000000d2"

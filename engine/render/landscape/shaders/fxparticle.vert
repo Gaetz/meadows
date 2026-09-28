@@ -7,7 +7,7 @@
 // pulled from the FxInstances SSBO the FxRenderer refills per batch.
 
 layout(std430, binding = 2) readonly buffer FxInstances {
-    vec4 data[]; // pairs: [posSize, color] per particle
+    vec4 data[]; // quads: [posSize, color, extra, life] per particle
 };
 
 // Alpha and additive particles share one SSBO, packed back to back, so the
@@ -23,8 +23,8 @@ layout(location = 1) out vec4 vColor;
 void main() {
     int particle = MEADOWS_VERTEX_INDEX / 6 + uFxBase.x;
     int corner = MEADOWS_VERTEX_INDEX % 6;
-    vec4 posSize = data[particle * 2 + 0];
-    vColor = data[particle * 2 + 1];
+    vec4 posSize = data[particle * 4 + 0];
+    vColor = data[particle * 4 + 1];
 
     // Spherical billboard: face the camera from anywhere (no view
     // matrix needed — uCameraPos is in the frame UBO).

@@ -41,7 +41,10 @@ public:
     void draw(engine::FrameContext& frame, ShaderLibrary& shaders,
               rhi::BindGroupHandle frameGroup,
               const vector<FxInstance>& alpha,
-              const vector<FxInstance>& additive);
+              const vector<FxInstance>& additive,
+              const vector<FxInstance>& flames,
+              rhi::TextureHandle flameSheet = {});
+
 
 private:
     void ensurePipelines(rhi::Device& device, ShaderLibrary& shaders);
@@ -54,8 +57,12 @@ private:
 
     rhi::UniquePipeline alphaPipeline;
     rhi::UniquePipeline additivePipeline;
+    rhi::UniquePipeline flamePipeline;
     rhi::UniqueBuffer instances;
     rhi::UniqueBindGroup group;
+    rhi::UniqueSampler sheetSampler;
+    rhi::UniqueBindGroup sheetGroup; // uFlameSheet (binding 3)
+    rhi::TextureHandle boundSheet {};
     u32 capacity { 0 }; // FxInstance slots in the SSBO
     ShaderLibrary::Watch shaderWatch;
 };

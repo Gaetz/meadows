@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp"
 
 // CPU particle simulation (docs/HORIZONTAL-PASS.md):
 // pure, headless, deterministic per seed — the FX seam's compute half.
@@ -25,6 +26,7 @@ namespace fx {
 enum class EmitterShape : u8 {
     Point,  // all particles at the origin
     Sphere, // uniform inside a shapeRadius ball
+    Disc,   // uniform on the horizontal disc of shapeRadius (ground fires)
     Cone,   // spawn at origin, velocity fanned around `velocity` by
             // shapeRadius RADIANS of half-angle
     Box     // uniform inside a shapeRadius half-extent cube
@@ -46,6 +48,16 @@ struct EmitterParams {
     Vec4 colorStart { 1.0f, 1.0f, 1.0f, 1.0f };
     Vec4 colorEnd { 1.0f, 1.0f, 1.0f, 0.0f };
     bool additive { false }; // ParticleForm.blend — the render batch key
+    // ParticleForm.blend = "flame": drawn by the flame pipeline (an
+    // upright tongue shaped by noise, colorStart = core, colorEnd =
+    // outer band, size = height) instead of a round sprite.
+    bool flame { false };
+    // Flames: the flipbook sheet (null = the procedural tongue).
+    core::Guid texture;
+    i32 flipbookColumns { 1 };
+    i32 flipbookRows { 1 };
+    f32 flipbookFps { 30.0f };
+    f32 flipbookAspect { 1.0f };
 };
 
 struct Particle {
@@ -59,6 +71,13 @@ struct Particle {
     Vec4 colorStart { 1.0f };
     Vec4 colorEnd { 1.0f };
     bool additive { false };
+    bool flame { false };
+    f32 seed { 0.0f }; // 0..1, per particle (cosmetic variety)
+    core::Guid texture; // flames: the flipbook sheet
+    i32 flipbookColumns { 1 };
+    i32 flipbookRows { 1 };
+    f32 flipbookFps { 30.0f };
+    f32 flipbookAspect { 1.0f };
 };
 
 class ParticleSim {
@@ -100,6 +119,14 @@ public:
             const f32 t = glm::clamp(p.age / p.lifetime, 0.0f, 1.0f);
             fn(p.position, glm::mix(p.sizeStart, p.sizeEnd, t),
                glm::mix(p.colorStart, p.colorEnd, t), p.additive);
+        }
+    }
+    // The raw particle plus its life fraction — the extract needs the
+    // flame kind, both colours and the seed.
+    template<typename Fn>
+    void forEachRaw(Fn&& fn) const {
+        for (const Particle& p : particles) {
+            fn(p, glm::clamp(p.age / p.lifetime, 0.0f, 1.0f));
         }
     }
 

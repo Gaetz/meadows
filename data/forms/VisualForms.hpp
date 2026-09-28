@@ -123,7 +123,7 @@ struct WaterVolumeForm : Form {
 // A CPU particle emitter description. Curves are start/end pairs (linear
 // over lifetime) in v1 — append richer keys later if a vertical needs them.
 struct ParticleForm : Form {
-    str shape { "point" };   // "point" | "sphere" | "cone" | "box"
+    str shape { "point" };   // "point" | "sphere" | "cone" | "box" | "disc"
     f32 shapeRadius { 0.1f };
     f32 rate { 20.0f };      // particles/second (0 = burst only)
     i32 burst { 0 };         // particles on spawn
@@ -136,8 +136,18 @@ struct ParticleForm : Form {
     f32 sizeEnd { 0.05f };
     Vec4 colorStart { 1.0f, 1.0f, 1.0f, 1.0f };
     Vec4 colorEnd { 1.0f, 1.0f, 1.0f, 0.0f };
-    core::Guid texture;      // 0 = soft round default
-    str blend { "alpha" };   // "alpha" | "additive"
+    core::Guid texture;      // 0 = soft round default; flames: the sheet
+    // Flames with a texture: an animated SHEET (a fluid-sim flipbook),
+    // columns x rows frames row-major, played at fps from a random start
+    // frame per particle, two frames blended; aspect = frame width /
+    // height (the quad's shape).
+    i32 flipbookColumns { 1 };
+    i32 flipbookRows { 1 };
+    f32 flipbookFps { 30.0f };
+    f32 flipbookAspect { 1.0f };
+    str blend { "alpha" };   // "alpha" | "additive" | "flame" (an upright
+                             // noise-shaped tongue: colorStart = core,
+                             // colorEnd = outer, size = height in m)
     f32 duration { 0.0f };   // emitter seconds; 0 = one burst + drain
 
     REFLECT_BEGIN(ParticleForm, Form)
@@ -155,6 +165,10 @@ struct ParticleForm : Form {
         REFLECT_FIELD(colorStart)
         REFLECT_FIELD(colorEnd)
         REFLECT_FIELD(texture)
+        REFLECT_FIELD(flipbookColumns)
+        REFLECT_FIELD(flipbookRows)
+        REFLECT_FIELD(flipbookFps)
+        REFLECT_FIELD(flipbookAspect)
         REFLECT_FIELD(blend)
         REFLECT_FIELD(duration)
     REFLECT_END()

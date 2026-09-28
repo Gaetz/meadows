@@ -8,17 +8,24 @@ namespace render {
 
 namespace {
 constexpr const char* kShader = "fxparticle";
+constexpr const char* kFlameShader = "fxflame";
 constexpr u32 kMinCapacity = 1024;
 } // namespace
 
 void FxRenderer::create(rhi::Device& device, ShaderLibrary& shaders) {
     shaders.load(kShader, { { "FrameUbo", 0 } });
+    shaders.load(kFlameShader, { { "FrameUbo", 0 } }, { { "uFlameSheet", 3 } });
+    sheetSampler = { device, device.createSampler({}) }; // linear clamp
     ensurePipelines(device, shaders);
 }
 
 void FxRenderer::destroy(rhi::Device&) {
     alphaPipeline.reset();
     additivePipeline.reset();
+    flamePipeline.reset();
+    sheetGroup.reset();
+    sheetSampler.reset();
+    boundSheet = {};
     group.reset();
     instances.reset();
     capacity = 0;
@@ -31,9 +38,9 @@ void FxRenderer::ensurePipelines(rhi::Device& device,
         return;
     }
     shaders.beginWatch();
-    const auto make = [&](rhi::BlendMode blend) {
+    const auto make = [&](rhi::BlendMode blend, const char* shader) {
         return rhi::UniquePipeline { device, device.createPipeline(
-            { .shader = shaders.get(kShader),
+            { .shader = shaders.get(shader),
               .blend = blend,
               // Transparents: tested against the opaques, never writing.
               .depth = { .testEnable = true,
@@ -43,8 +50,9 @@ void FxRenderer::ensurePipelines(rhi::Device& device,
               // ivec4 uFxBase: this batch's first particle in the shared SSBO.
               .pushConstantSize = 16 }) };
     };
-    alphaPipeline = make(rhi::BlendMode::Alpha);
-    additivePipeline = make(rhi::BlendMode::Additive);
+    alphaPipeline = make(rhi::BlendMode::Alpha, kShader);
+    additivePipeline = make(rhi::BlendMode::Additive, kShader);
+    flamePipeline = make(rhi::BlendMode::Alpha, kFlameShader);
     shaderWatch = shaders.endWatch();
 }
 
@@ -69,14 +77,25 @@ void FxRenderer::drawBatch(engine::FrameContext& frame,
 void FxRenderer::draw(engine::FrameContext& frame, ShaderLibrary& shaders,
                       rhi::BindGroupHandle frameGroup,
                       const vector<FxInstance>& alpha,
-                      const vector<FxInstance>& additive) {
-    if (alpha.empty() && additive.empty()) {
+                      const vector<FxInstance>& additive,
+                      const vector<FxInstance>& flames,
+                      rhi::TextureHandle flameSheet) {
+    if (alpha.empty() && additive.empty() && flames.empty()) {
         return;
     }
     ensurePipelines(frame.device, shaders);
-    // Both batches live in the SSBO at once (alpha then additive), so it is
-    // written ONCE per frame and never rewritten between the two draws.
-    const u32 needed = static_cast<u32>(alpha.size() + additive.size());
+    if (!flames.empty() && flameSheet.id != 0 &&
+        (sheetGroup.id() == 0 || boundSheet.id != flameSheet.id)) {
+        sheetGroup = { frame.device, frame.device.createBindGroup(
+            { .entries = { { .binding = 3,
+                             .texture = flameSheet,
+                             .sampler = sheetSampler } } }) };
+        boundSheet = flameSheet;
+    }
+    // The batches live in the SSBO at once (alpha, additive, flames), so
+    // it is written ONCE per frame and never rewritten between draws.
+    const u32 needed =
+        static_cast<u32>(alpha.size() + additive.size() + flames.size());
     if (needed > capacity || instances.id() == 0) {
         capacity = glm::max(needed, kMinCapacity);
         instances = { frame.device, frame.device.createBuffer(
@@ -99,9 +118,20 @@ void FxRenderer::draw(engine::FrameContext& frame, ShaderLibrary& shaders,
                                   additive.size() * sizeof(FxInstance),
                                   alpha.size() * sizeof(FxInstance));
     }
-    // Alpha first, far-to-near (the caller sorted); additive after —
-    // order-free over the already-blended alpha layer.
+    if (!flames.empty()) {
+        frame.device.updateBuffer(
+            instances, flames.data(), flames.size() * sizeof(FxInstance),
+            (alpha.size() + additive.size()) * sizeof(FxInstance));
+    }
+    // Alpha first, far-to-near (the caller sorted); flames (alpha too,
+    // sorted) next; additive last — order-free over the blended layers.
     drawBatch(frame, alpha, 0, alphaPipeline, frameGroup);
+    if (!flames.empty() && sheetGroup.id() != 0 && flameSheet.id != 0) {
+        frame.cmd.setBindGroup(2, sheetGroup);
+    }
+    drawBatch(frame, flames, static_cast<u32>(alpha.size() + additive.size()),
+              // Flames need their sheet; without one they are plain sprites.
+              flameSheet.id != 0 ? flamePipeline : alphaPipeline, frameGroup);
     drawBatch(frame, additive, static_cast<u32>(alpha.size()),
               additivePipeline, frameGroup);
 }

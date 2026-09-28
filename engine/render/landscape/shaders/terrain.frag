@@ -531,10 +531,11 @@ void main() {
                    pomSelfShadow;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
-    // Burnt ground (the fire field): charred, the splat's hue fading
-    // under it; the mask's bilinear filter softens the cell edges.
-    float scorch = fireScorchAt(vWorldPos.xz);
-    albedo = mix(albedo, vec3(0.045, 0.038, 0.032), scorch * 0.92);
+    // Burnt ground (firescorch.glsl): the coal bed's colour under the
+    // eroded scorch, its ember light added after the lighting below.
+    float fireCharred, fireGlow;
+    fireFront(vWorldPos.xz, fireCharred, fireGlow);
+    albedo = fireCharAlbedo(albedo, fireCharred, fireGlow, vWorldPos.xz);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     // Per-material AO shapes the AMBIENT only: crevices deepen in the
     // shade, the stylized sun term keeps its flat readability.
@@ -561,6 +562,7 @@ void main() {
     if (uClusterInfo.x > 0.5) {
         lit += albedo * localLights(vWorldPos, shadedN);
     }
+    lit += fireEmber(fireCharred, fireGlow, vWorldPos.xz);
     // Alpha packs the blended relief height for the SSDM warp
     // (0.5 flat .. ~0.99 crest; the 0.5 floor keeps the grass-exempt
     // flag semantics of every screen pass).

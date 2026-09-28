@@ -92,8 +92,10 @@ FireJobOutput runFireJob(FireJobInput&& in) {
         fireStep(grid, in.params, in.fuel, in.wet, &stats);
     }
     out.stats = stats;
-    fireScorch(grid, out.scorch);
-    out.burning = fireBurningCenters(grid, in.maxCenters);
+    fireScorch(grid, in.params, out.scorch);
+    fireGlow(grid, in.params, out.glow);
+    out.burning = fireBurningCenters(grid, in.maxCenters, in.params,
+                                     in.params.emberSeconds);
     out.active = stats.burning > 0;
     out.grid = std::move(grid);
     out.millis = std::chrono::duration<f32, std::milli>(

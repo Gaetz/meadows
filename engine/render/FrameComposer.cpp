@@ -219,6 +219,12 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     }
     resolved.terrainShadeMapInfo = in.terrainShadeMapInfo;
     resolved.fireScorchInfo = in.fireScorchInfo;
+    resolved.fireEmberInfo = in.fireEmberInfo;
+    resolved.fireEmberHot = in.fireEmberHot;
+    resolved.fireEmberCold = in.fireEmberCold;
+    resolved.fireCharInfo = in.fireCharInfo;
+    resolved.fireFlameInfo = in.fireFlameInfo;
+    resolved.fireFlameLook = in.fireFlameLook;
     // Volumetric sky clouds ride RESOLVED only: the reflection pass has
     // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
     // stays 0 in base and applyClouds draws there).

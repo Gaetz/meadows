@@ -42,13 +42,15 @@ void main() {
     float middle = 1.0 - uGrassBladeInfo.z * (1.0 - acrossEdge) *
                              (1.0 - acrossEdge);
     albedo *= mix(middle, 1.0, vLodOut);
-    // The fire field: blades char as their cell burns and are gone once
-    // it is mostly consumed.
-    float scorch = fireScorchAt(vWorldPos.xz);
-    if (scorch > 0.55) {
+    // Burnt ground (firescorch.glsl): blades char with their cell and
+    // are gone once it is consumed; the coal bed lights the survivors.
+    float fireCharred, fireGlow;
+    fireFront(vWorldPos.xz, fireCharred, fireGlow);
+    float fireBurnt = fireBurn(fireCharred, fireGlow);
+    if (fireBurnt > uFireCharInfo.w) {
         discard;
     }
-    albedo = mix(albedo, vec3(0.10, 0.07, 0.04), scorch * 1.6);
+    albedo = mix(albedo, uFireCharInfo.rgb, fireBurnt);
 
     // Root occlusion (density AO, easeIn^2 up) — kept GENTLE so near
     // blades hold the ground's color down to the carpet. Eases out with
@@ -93,6 +95,7 @@ void main() {
                     uSunColor.rgb *
                         ((diffuse + scatter) * shadow * tl.x)) +
                uSunColor.rgb * sheen * ao * shadow * tl.x;
+    lit += fireEmber(fireCharred, fireGlow, vWorldPos.xz) * 0.4;
 
     // Scene-alpha contract (tonemap.frag): 0 = this pixel does NOT
     // receive screen-space contact shadows. Blade-on-blade contact

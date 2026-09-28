@@ -65,13 +65,14 @@ struct FireJobInput {
     render::terrain::FuelFn fuel;
     render::terrain::WetFn wet;
     u32 epoch { 0 };
-    u32 maxCenters { 256 };
+    u32 maxCenters { 1024 };
 };
 
 struct FireJobOutput {
     render::terrain::FireGrid grid;
     render::terrain::FireStats stats;
     vector<u8> scorch;    // the render mask (fireScorch)
+    vector<u8> glow;      // the ember mask (fireGlow)
     vector<Vec2> burning; // burning cell centers, hottest first
     u32 epoch { 0 };
     f32 millis { 0.0f };

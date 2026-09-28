@@ -1486,6 +1486,9 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
         if (fireScorch.bindGroup().id != 0) {
             frame.cmd.setBindGroup(8, fireScorch.bindGroup());
         }
+        if (noiseVolume.ready() && noiseVolume.fireBindGroup().id != 0) {
+            frame.cmd.setBindGroup(9, noiseVolume.fireBindGroup());
+        }
         // Occlusion applies to the main view only: the set is built for
         // the real camera, not the mirrored one (the grass ring is too
         // close to ever be ridge-occluded — frustum only). CPU horizon
@@ -1576,8 +1579,13 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
         }
         // The frame's particles (camera-facing quads; the
         // extract sorted the alpha batch, additive is order-free).
+        rhi::TextureHandle flameSheet {};
+        if (snapshot.flameSheet.texture != core::Guid {} &&
+            view.materialTextures) {
+            flameSheet = view.materialTextures->resolve(snapshot.flameSheet.texture);
+        }
         fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
-                snapshot.fxAdditive);
+                snapshot.fxAdditive, snapshot.fxFlames, flameSheet);
         // Rain streaks (procedural, camera cylinder).
         if (cfg.sky && frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||
@@ -1663,6 +1671,9 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
         }
         if (fireScorch.bindGroup().id != 0) {
             frame.cmd.setBindGroup(8, fireScorch.bindGroup());
+        }
+        if (noiseVolume.ready() && noiseVolume.fireBindGroup().id != 0) {
+            frame.cmd.setBindGroup(9, noiseVolume.fireBindGroup());
         }
         if (cfg.terrain) {
             terrain.draw(frame.cmd, reflectionBindGroup,
@@ -2317,6 +2328,16 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .waterSimFrozen = water.simFrozenInfo(),
         .terrainShadeMapInfo = terrainShadeMap.info(),
         .fireScorchInfo = fireScorch.info(),
+        .fireEmberInfo = { fireScorch.look.bedIntensity, fireScorch.look.pulse,
+                           fireScorch.look.erode,
+                           noiseVolume.ready() ? 1.0f : 0.0f },
+        .fireEmberHot = { fireScorch.look.emberHot, fireScorch.look.coalScale },
+        .fireEmberCold = { fireScorch.look.emberCold, fireScorch.look.ash },
+        .fireCharInfo = { fireScorch.look.charColor, fireScorch.look.grassCull },
+        .fireFlameInfo = { snapshot.flameSheet.columns, snapshot.flameSheet.rows,
+                           snapshot.flameSheet.fps, snapshot.flameSheet.aspect },
+        .fireFlameLook = { fireScorch.look.flameBoost,
+                           fireScorch.look.flamePosterize, 0.0f, 0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;

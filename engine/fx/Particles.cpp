@@ -69,6 +69,13 @@ void ParticleSim::spawnOne(const EmitterParams& params, const Vec3& origin,
                                     rng.spread() } *
                              params.shapeRadius;
         break;
+    case EmitterShape::Disc: {
+        const f32 angle = rng.next() * 6.2831853f;
+        const f32 radius = std::sqrt(rng.next()) * params.shapeRadius;
+        particle.position += Vec3 { std::cos(angle) * radius, 0.0f,
+                                    std::sin(angle) * radius };
+        break;
+    }
     }
     particle.gravity = params.gravity;
     particle.lifetime = glm::max(
@@ -78,6 +85,13 @@ void ParticleSim::spawnOne(const EmitterParams& params, const Vec3& origin,
     particle.colorStart = params.colorStart;
     particle.colorEnd = params.colorEnd;
     particle.additive = params.additive;
+    particle.flame = params.flame;
+    particle.seed = rng.next();
+    particle.texture = params.texture;
+    particle.flipbookColumns = params.flipbookColumns;
+    particle.flipbookRows = params.flipbookRows;
+    particle.flipbookFps = params.flipbookFps;
+    particle.flipbookAspect = params.flipbookAspect;
     particles.push_back(particle);
 }
 

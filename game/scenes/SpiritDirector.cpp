@@ -19,12 +19,16 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     jetFx.fill(core::Guid {});
     holdFx.fill(core::Guid {});
     fieldFx.fill(core::Guid {});
+    sparkFx.fill(core::Guid {});
+    soundFx.fill(core::Guid {});
     data::forEach<data::SpiritForm>(forms, [&](const data::SpiritForm& spirit) {
         const auto kind = render::terrain::spiritFromName(spirit.name);
         if (kind != render::terrain::SpiritKind::kCount) {
             jetFx[static_cast<size_t>(kind)] = spirit.jetParticles;
             holdFx[static_cast<size_t>(kind)] = spirit.holdParticles;
             fieldFx[static_cast<size_t>(kind)] = spirit.fieldParticles;
+            sparkFx[static_cast<size_t>(kind)] = spirit.emberParticles;
+            soundFx[static_cast<size_t>(kind)] = spirit.fieldSound;
         }
         if (kind == render::terrain::SpiritKind::Earth) {
             lift.quadratic = spirit.liftQuadratic;
@@ -39,6 +43,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             if (spirit.decayPerSecond > 0.0f) {
                 fireParams.heatDecay = spirit.decayPerSecond;
             }
+            fireParams.emberSeconds = glm::max(spirit.emberSeconds, 0.01f);
         }
     });
     holdSource.reset();
@@ -82,6 +87,7 @@ void SpiritDirector::resetFire() {
     fireActive = false;
     fireAccum = 0.0f;
     fireMask.clear();
+    fireGlowMask.clear();
     fireMaskSpec = {};
     fireCenters.clear();
     lastFireStats = {};
@@ -100,6 +106,7 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         const bool wasActive = fireActive;
         fireGrid = std::make_unique<FireGrid>(std::move(out.grid));
         fireMask = std::move(out.scorch);
+        fireGlowMask = std::move(out.glow);
         fireMaskSpec = fireGrid->spec;
         fireCenters = std::move(out.burning);
         lastFireStats = out.stats;

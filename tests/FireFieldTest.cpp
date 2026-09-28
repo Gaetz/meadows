@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "engine/terrain/FireField.hpp"
@@ -189,12 +190,39 @@ TEST_CASE("fire: burning consumes the fuel into burnt ground, scorch reads it, t
     const size_t center = 32 * 65 + 32;
     CHECK(a.state[center] == static_cast<u8>(FireState::Burnt));
     vector<u8> scorch;
-    fireScorch(a, scorch);
+    fireScorch(a, p, scorch);
     CHECK(scorch[center] == 255);
     CHECK(scorch[0] == 0);
-    // Burning cells report as the emitter budget, hottest first.
+    // The ember mask: the front burning bright, the burnt center still
+    // glowing with its cooling embers (2 s into 45), cold ground 0.
+    vector<u8> glow;
+    fireGlow(a, p, glow);
+    CHECK(glow[center] > 100);
+    CHECK(glow[center] < 150);
+    CHECK(glow[0] == 0);
+    u8 brightest = 0;
+    for (const u8 g : glow) {
+        brightest = std::max(brightest, g);
+    }
+    CHECK(brightest > 140); // 0.55 + fresh fuel
+    // Embers cool over emberSeconds: with 1 s they are out at 2 s.
+    FireGrid fast;
+    fireInitWindow(fast, spec65());
+    fireIgnite(fast, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    p.emberSeconds = 1.0f;
+    for (int t = 0; t < 80; ++t) {
+        fireStep(fast, p, grass, nullptr);
+    }
+    fireGlow(fast, p, glow);
+    CHECK(glow[center] == 0);
+    // Burning cells report as the emitter budget, freshest first.
     const vector<Vec2> centers = fireBurningCenters(a, 5);
     CHECK(centers.size() == 5);
+    // The front: only the cells ignited within the last second.
+    const vector<Vec2> front = fireBurningCenters(a, 1000, p, 1.0f);
+    const vector<Vec2> all = fireBurningCenters(a, 1000);
+    CHECK(!front.empty());
+    CHECK(front.size() < all.size());
     // Scrolling keeps the interior bit-exact at its new index.
     FireGrid c = a;
     fireScrollWindow(c, 3, -2);

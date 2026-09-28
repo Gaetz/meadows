@@ -167,4 +167,16 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Fire scorch mask: xy = window origin, z = 1/texel, w = cells per
     // side (0 = nothing burnt). See firescorch.glsl.
     vec4 uFireScorchInfo;
+    // The burnt ground's look: info = {bed intensity (0 = off), pulse,
+    // erode, noise volume ready}; hot = ember colour + coal scale (w);
+    // cold = ember colour + ash (w); char = charred colour + grass cull
+    // threshold (w).
+    vec4 uFireEmberInfo;
+    vec4 uFireEmberHot;
+    vec4 uFireEmberCold;
+    vec4 uFireCharInfo;
+    // The flames' flipbook: {columns, rows, fps, frame aspect}; look:
+    // {HDR boost, posterize bands, 0, 0}.
+    vec4 uFireFlameInfo;
+    vec4 uFireFlameLook;
 };

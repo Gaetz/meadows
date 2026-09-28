@@ -36,6 +36,7 @@ void fireInitWindow(FireGrid& grid, const terraingen::GridSpec& spec) {
     grid.flammability.assign(cells, 0.0f);
     grid.moisture.assign(cells, 0.0f);
     grid.state.assign(cells, static_cast<u8>(FireState::Dormant));
+    grid.ember.assign(cells, 0.0f);
     grid.tick = 0;
 }
 
@@ -68,6 +69,7 @@ void fireScrollWindow(FireGrid& grid, i32 dCol, i32 dRow) {
             next.flammability[d] = grid.flammability[s];
             next.moisture[d] = grid.moisture[s];
             next.state[d] = grid.state[s];
+            next.ember[d] = grid.ember[s];
         }
     }
     grid = std::move(next);
@@ -118,9 +120,18 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
         for (i32 row = 0; row < n; ++row) {
             for (i32 col = 0; col < n; ++col) {
                 const size_t i = static_cast<size_t>(row) * n + col;
-                if (grid.state[i] == static_cast<u8>(FireState::Burnt) ||
-                    (grid.heat[i] <= 0.0f &&
-                     grid.state[i] != static_cast<u8>(FireState::Burning))) {
+                if (grid.state[i] == static_cast<u8>(FireState::Burnt)) {
+                    if (grid.ember[i] > 0.0f) {
+                        const f32 bx = grid.spec.originX + static_cast<f32>(col) * grid.spec.texelSize;
+                        const f32 bz = grid.spec.originZ + static_cast<f32>(row) * grid.spec.texelSize;
+                        if (wet(bx, bz)) {
+                            grid.ember[i] = 0.0f; // quenched
+                        }
+                    }
+                    continue; // stays burnt
+                }
+                if (grid.heat[i] <= 0.0f &&
+                    grid.state[i] != static_cast<u8>(FireState::Burning)) {
                     continue; // nothing to douse, nothing to cool
                 }
                 const f32 x = grid.spec.originX + static_cast<f32>(col) * grid.spec.texelSize;
@@ -131,6 +142,7 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                     }
                     grid.state[i] = static_cast<u8>(FireState::Wet);
                     grid.heat[i] = 0.0f;
+                    grid.ember[i] = 0.0f;
                 }
             }
         }
@@ -207,6 +219,13 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                     grid.fuel[i] = 0.0f;
                     grid.state[i] = static_cast<u8>(FireState::Burnt);
                     grid.heat[i] = 0.0f;
+                    // The embers continue the glow where it stood (no
+                    // second front lighting up when the cell burns out).
+                    const f32 burnedSeconds =
+                        grid.fuel0[i] / glm::max(params.burnRate, 1e-3f);
+                    grid.ember[i] = glm::clamp(
+                        1.0f - burnedSeconds / glm::max(params.emberSeconds, 0.01f),
+                        0.0f, 1.0f);
                 }
                 break;
             case FireState::Wet:
@@ -217,6 +236,8 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                 }
                 break;
             case FireState::Burnt:
+                grid.ember[i] = glm::max(
+                    0.0f, grid.ember[i] - dt / glm::max(params.emberSeconds, 0.01f));
                 break;
             }
             if (grid.state[i] == static_cast<u8>(FireState::Burning)) {
@@ -248,32 +269,71 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
     }
 }
 
-void fireScorch(const FireGrid& grid, vector<u8>& out) {
+void fireScorch(const FireGrid& grid, const FireParams& params, vector<u8>& out) {
     out.assign(grid.cells(), 0);
+    const f32 frontSeconds = glm::max(params.emberSeconds, 0.01f);
+    const f32 burnRate = glm::max(params.burnRate, 1e-3f);
     for (size_t i = 0; i < grid.cells(); ++i) {
         const auto state = static_cast<FireState>(grid.state[i]);
         f32 scorch = 0.0f;
         if (state == FireState::Burnt) {
             scorch = 1.0f;
-        } else if (state == FireState::Burning && grid.fuel0[i] > 0.0f) {
-            scorch = 1.0f - grid.fuel[i] / grid.fuel0[i];
+        } else if (state == FireState::Burning) {
+            const f32 burned = (grid.fuel0[i] - grid.fuel[i]) / burnRate; // seconds
+            scorch = glm::clamp(burned / frontSeconds, 0.0f, 1.0f);
         }
         out[i] = static_cast<u8>(glm::clamp(scorch, 0.0f, 1.0f) * 255.0f + 0.5f);
     }
 }
 
-vector<Vec2> fireBurningCenters(const FireGrid& grid, u32 maxCount) {
+void fireGlow(const FireGrid& grid, const FireParams& params, vector<u8>& out) {
+    out.assign(grid.cells(), 0);
+    const f32 points = glm::max(params.ignitionPoints, 1e-3f);
+    const f32 frontSeconds = glm::max(params.emberSeconds, 0.01f);
+    const f32 burnRate = glm::max(params.burnRate, 1e-3f);
+    for (size_t i = 0; i < grid.cells(); ++i) {
+        const auto state = static_cast<FireState>(grid.state[i]);
+        f32 glow = 0.0f;
+        if (state == FireState::Burning) {
+            const f32 burned = (grid.fuel0[i] - grid.fuel[i]) / burnRate; // seconds
+            glow = glm::clamp(1.0f - burned / frontSeconds, 0.0f, 1.0f);
+        } else if (state == FireState::Burnt) {
+            glow = 0.55f * grid.ember[i]; // the bed cools below the flames
+        } else if (state == FireState::Dormant && grid.heat[i] > 0.0f) {
+            glow = 0.5f * glm::clamp(grid.heat[i] / points, 0.0f, 1.0f);
+        }
+        out[i] = static_cast<u8>(glm::clamp(glow, 0.0f, 1.0f) * 255.0f + 0.5f);
+    }
+}
+
+vector<Vec2> fireBurningCenters(const FireGrid& grid, u32 maxCount,
+                                const FireParams& params, f32 maxBurnedSeconds) {
     struct Hot {
         f32 key;
         Vec2 at;
     };
     vector<Hot> hot;
     const i32 n = static_cast<i32>(grid.spec.n);
+    const f32 rate = glm::max(params.burnRate, 1e-3f);
+    const f32 points = glm::max(params.ignitionPoints, 1e-3f);
     for (i32 row = 0; row < n; ++row) {
         for (i32 col = 0; col < n; ++col) {
             const size_t i = static_cast<size_t>(row) * n + col;
-            if (grid.state[i] != static_cast<u8>(FireState::Burning)) {
+            const auto state = static_cast<FireState>(grid.state[i]);
+            if (state == FireState::Dormant) {
+                if (grid.heat[i] >= 0.5f * points && grid.fuel[i] > 0.0f) {
+                    // About to catch: a flame already, the least hot.
+                    hot.push_back({ -1.0f,
+                                    { grid.spec.originX + static_cast<f32>(col) * grid.spec.texelSize,
+                                      grid.spec.originZ + static_cast<f32>(row) * grid.spec.texelSize } });
+                }
                 continue;
+            }
+            if (state != FireState::Burning) {
+                continue;
+            }
+            if ((grid.fuel0[i] - grid.fuel[i]) / rate > maxBurnedSeconds) {
+                continue; // ignited too long ago: behind the front
             }
             // Hottest = the most fuel left to burn (the longest flames).
             hot.push_back({ grid.fuel[i],

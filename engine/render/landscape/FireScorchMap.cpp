@@ -10,12 +10,12 @@ constexpr u32 kScorchBinding = 10; // firescorch.glsl
 
 void FireScorchMap::create(rhi::Device& device) {
     sampler = device.createSampler({}); // linear clamp: soft cell edges
-    const f32 kNone = 0.0f;
+    const u8 kNone[4] = { 0, 0, 0, 255 };
     texture = device.createTexture({ .width = 1,
                                      .height = 1,
-                                     .format = rhi::TextureFormat::R16F,
+                                     .format = rhi::TextureFormat::RGBA8,
                                      .usage = rhi::TextureUsage_Sampled },
-                                   &kNone);
+                                   kNone);
     rebuildGroup(device);
 }
 
@@ -48,21 +48,28 @@ void FireScorchMap::rebuildGroup(rhi::Device& device) {
 }
 
 void FireScorchMap::upload(rhi::Device& device, const vector<u8>& scorch,
-                           u32 n, const Vec2& at, f32 cellSize) {
-    if (n == 0 || scorch.size() < static_cast<size_t>(n) * n) {
+                           const vector<u8>& glow, u32 n, const Vec2& at,
+                           f32 cellSize) {
+    const size_t count = static_cast<size_t>(n) * n;
+    if (n == 0 || scorch.size() < count) {
         clear(device);
         return;
     }
-    staging.resize(static_cast<size_t>(n) * n);
-    for (size_t i = 0; i < staging.size(); ++i) {
-        staging[i] = static_cast<f32>(scorch[i]) * (1.0f / 255.0f);
+    const bool hasGlow = glow.size() >= count;
+    staging.resize(count * 4);
+    for (size_t i = 0; i < count; ++i) {
+        staging[i * 4 + 0] = scorch[i];
+        staging[i * 4 + 1] = hasGlow ? glow[i] : 0;
+        staging[i * 4 + 2] = 0;
+        staging[i * 4 + 3] = 255;
     }
     if (texture.id != 0) {
         device.destroyTexture(texture);
     }
     texture = device.createTexture({ .width = n,
                                      .height = n,
-                                     .format = rhi::TextureFormat::R16F,
+                                     .format = rhi::TextureFormat::RGBA8,
+                                     .filter = rhi::FilterMode::Linear,
                                      .usage = rhi::TextureUsage_Sampled },
                                    staging.data());
     origin = at;
@@ -78,12 +85,12 @@ void FireScorchMap::clear(rhi::Device& device) {
     if (texture.id != 0) {
         device.destroyTexture(texture);
     }
-    const f32 kNone = 0.0f;
+    const u8 kNone[4] = { 0, 0, 0, 255 };
     texture = device.createTexture({ .width = 1,
                                      .height = 1,
-                                     .format = rhi::TextureFormat::R16F,
+                                     .format = rhi::TextureFormat::RGBA8,
                                      .usage = rhi::TextureUsage_Sampled },
-                                   &kNone);
+                                   kNone);
     cells = 0;
     texel = 0.0f;
     rebuildGroup(device);

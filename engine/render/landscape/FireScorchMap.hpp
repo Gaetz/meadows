@@ -11,20 +11,47 @@ class Device;
 
 namespace render {
 
+// The look of burnt ground (docs/FIRE-RENDER.md F1): a bed of coals —
+// dark coal bodies split by cracks that glow while the cell burns and
+// as its embers cool, the coals turning to ash as they die; the char
+// colour; the grass cull. Live knobs (render panel "Fire"); bed
+// intensity 0 = the plain scorch look (the A/B toggle).
+struct FireLook {
+    f32 bedIntensity { 3.0f };  // HDR emissive scale of the cracks (0 = off)
+    f32 pulse { 0.35f };        // the coals' breathing amplitude
+    f32 erode { 0.3f };         // noise amplitude eroding the front
+    f32 coalScale { 6.0f };     // metres per noise tile (coal size ~ /16)
+    f32 ash { 0.7f };           // how grey cooled coals turn
+    Vec3 emberHot { 1.0f, 0.72f, 0.35f };   // fresh flames
+    Vec3 emberCold { 0.85f, 0.2f, 0.04f };  // dying embers
+    Vec3 charColor { 0.05f, 0.04f, 0.035f };
+    f32 grassCull { 0.9f };     // charred past this = no blade
+    // The flipbook flames (fxflame.frag): HDR boost on the sheet's
+    // colour, and an optional posterize (0 = the sheet as is, N = bands
+    // of brightness, the stylized look).
+    f32 flameBoost { 3.0f };
+    f32 flamePosterize { 0.0f };
+};
+
 // The fire field's render mask (chantier ESPRITS E3): one texel per 2 m
-// cell of the fire window, 0 untouched .. 1 burnt, sampled by
-// terrain.frag (charred albedo) and grass.frag (blades burn away) at
-// unit 10 through uFireScorchInfo — the pool-map idiom: a fresh texture
-// per landed fire job, a 1x1 zero placeholder while nothing burnt.
+// cell of the fire window — R = scorch (0 untouched .. 1 burnt), G =
+// ember glow (fireGlow) — sampled by terrain.frag, grass.vert/frag at
+// unit 10 through uFireScorchInfo (firescorch.glsl) — the pool-map
+// idiom: a fresh texture per landed fire job, a 1x1 zero placeholder
+// while nothing burnt.
 class FireScorchMap {
 public:
+    FireLook look;
+
     void create(rhi::Device& device);
     void destroy(rhi::Device& device);
 
-    // A landed mask: n x n bytes over the window at `origin`, `texel`
-    // apart (cell (col, row) centered on origin + (col, row) * texel).
-    void upload(rhi::Device& device, const vector<u8>& scorch, u32 n,
-                const Vec2& origin, f32 texel);
+    // A landed mask: n x n bytes each over the window at `origin`,
+    // `texel` apart (cell (col, row) centered on origin + (col, row) *
+    // texel). `glow` may be empty (no rim).
+    void upload(rhi::Device& device, const vector<u8>& scorch,
+                const vector<u8>& glow, u32 n, const Vec2& origin,
+                f32 texel);
     // Back to the placeholder (map swap): nothing burnt anywhere.
     void clear(rhi::Device& device);
 
@@ -44,7 +71,7 @@ private:
     Vec2 origin {};
     f32 texel { 0.0f };
     u32 cells { 0 };
-    vector<f32> staging; // R16F initial-data contract: packed f32 per texel
+    vector<u8> staging; // RGBA8 texels
 };
 
 } // namespace render

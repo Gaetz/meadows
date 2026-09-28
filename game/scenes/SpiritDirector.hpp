@@ -58,6 +58,14 @@ public:
     const core::Guid& fieldParticles(render::terrain::SpiritKind kind) const {
         return fieldFx[static_cast<size_t>(kind)];
     }
+    // The ParticleForm of the sparks an active cell sheds.
+    const core::Guid& sparkParticles(render::terrain::SpiritKind kind) const {
+        return sparkFx[static_cast<size_t>(kind)];
+    }
+    // The SoundForm looped near the field's active cells.
+    const core::Guid& fieldSound(render::terrain::SpiritKind kind) const {
+        return soundFx[static_cast<size_t>(kind)];
+    }
     // The earth spirit's lift (SpiritForm Earth): the speed a rising
     // ground throws a character with, from how deep it sank into it.
     struct EarthLift {
@@ -115,6 +123,7 @@ public:
         return !fireGrid && !fireInFlight && fireIgnitions.empty();
     }
     const vector<u8>& fireScorch() const { return fireMask; }
+    const vector<u8>& fireGlow() const { return fireGlowMask; }
     const render::terraingen::GridSpec& fireSpec() const { return fireMaskSpec; }
     const vector<Vec2>& fireBurning() const { return fireCenters; }
     const render::terrain::FireStats& fireStats() const { return lastFireStats; }
@@ -133,6 +142,12 @@ private:
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         fieldFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        sparkFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        soundFx {};
     std::optional<render::terraingen::WaterSource> holdSource;
     EarthLift lift;
 
@@ -149,6 +164,7 @@ private:
     render::terrain::FireParams fireParams;
     world::GroundProps groundProps {};
     vector<u8> fireMask;
+    vector<u8> fireGlowMask;
     render::terraingen::GridSpec fireMaskSpec;
     vector<Vec2> fireCenters;
     render::terrain::FireStats lastFireStats;

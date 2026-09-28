@@ -68,11 +68,13 @@ TEST_CASE("fire lane: the job initialises, ignites, steps, masks and scrolls") {
     CHECK(out.stats.burning > 4);
     CHECK(out.grid.valid());
     CHECK(out.scorch.size() == out.grid.cells());
+    CHECK(out.glow.size() == out.grid.cells());
     CHECK(!out.burning.empty());
     // The center cell is burning: its scorch grew past zero.
     const u32 n = out.grid.spec.n;
     const size_t center = static_cast<size_t>(n / 2) * n + n / 2;
     CHECK(out.scorch[center] > 0);
+    CHECK(out.glow[center] > 100); // burning: it glows
     // Next job: the focus moved east past the band -> scrolled window,
     // the fire still burns in it (world position kept).
     FireJobInput next;

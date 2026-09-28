@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "firescorch.glsl"
 
 // The SimonDev Quick_Grass
 // model (github.com/simondevyoutube/Quick_Grass), ported from three.js to
@@ -123,6 +124,11 @@ void main() {
     float fadeStart = uGrassBaseTint.w + fadeKey * 0.7 * fadeSpan;
     float fade = 1.0 - smoothstep(fadeStart, uGrassTipTint.w, dist);
     float height = uGrassShapeInfo.x * aPosScale.w * fade;
+    // The burn front: blades shrivel as their cell chars (the fragment
+    // culls them past the threshold).
+    float fireCharred, fireGlow;
+    fireFront(aPosScale.xz, fireCharred, fireGlow);
+    height *= 1.0 - 0.8 * fireBurn(fireCharred, fireGlow);
 
     // Player push: compute from the root before shaping.
     float push = 0.0;

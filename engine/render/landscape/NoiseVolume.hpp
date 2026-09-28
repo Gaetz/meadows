@@ -33,12 +33,16 @@ public:
 
     // Sampler group (binding 9, repeat wrap — the noise tiles).
     rhi::BindGroupHandle bindGroup() const { return sampleGroup.get(); }
+    // The same volume at binding 12 for the terrain and grass passes
+    // (the fire's coal bed, firescorch.glsl) — unit 9 is their ORM there.
+    rhi::BindGroupHandle fireBindGroup() const { return fireGroup.get(); }
     bool ready() const { return baked; }
 
 private:
     rhi::UniqueTexture texture;
     rhi::UniqueSampler sampler;
     rhi::UniqueBindGroup sampleGroup;
+    rhi::UniqueBindGroup fireGroup;
     rhi::UniqueBindGroup bakeGroup;
     rhi::UniquePipeline bakePipeline;
     bool baked { false };

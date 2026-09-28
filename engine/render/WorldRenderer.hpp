@@ -214,6 +214,7 @@ public:
     const render::WaterSystem& waterSystem() const { return water; }
     // The fire field's render mask (fed by the scene's fire lane).
     render::FireScorchMap& fireScorchMap() { return fireScorch; }
+    render::FxRenderer& fxRenderer() { return fx; }
     void requestRegenerate() { regenerateRequested = true; }
     // Variant meshes only (scatter/instances stay) — the tree builder's
     // regen trigger, applied at render()'s safe point.

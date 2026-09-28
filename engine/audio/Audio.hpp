@@ -61,6 +61,9 @@ public:
     // Stops a playing sound (loops included) with a short fade; unknown
     // or already-finished ids are ignored.
     void stop(SoundId id, f32 fadeSeconds = 0.05f);
+    // Moves a playing 3D source (a loop that follows its emitter);
+    // unknown ids are ignored.
+    void setPosition(SoundId id, const Vec3& position);
 
     // Music slot with crossfade: the previous track fades out while the
     // new one fades in over `fadeSeconds`.

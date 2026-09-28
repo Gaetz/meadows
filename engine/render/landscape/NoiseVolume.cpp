@@ -35,6 +35,10 @@ void NoiseVolume::create(rhi::Device& device, ShaderLibrary& shaders) {
         { .entries = { { .binding = 9,
                          .texture = texture.get(),
                          .sampler = sampler.get() } } }) };
+    fireGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 12,
+                         .texture = texture.get(),
+                         .sampler = sampler.get() } } }) };
     bakePipeline = { device, device.createComputePipeline(
         { shaders.get(kBakeShader) }) };
 }

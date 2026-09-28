@@ -35,6 +35,7 @@ fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     params.shape = form.shape == "sphere" ? fx::EmitterShape::Sphere
                    : form.shape == "cone" ? fx::EmitterShape::Cone
                    : form.shape == "box"  ? fx::EmitterShape::Box
+                   : form.shape == "disc" ? fx::EmitterShape::Disc
                                           : fx::EmitterShape::Point;
     // The form authors the cone in DEGREES of half-angle; the sim takes
     // radians (and meters for the volume shapes).
@@ -54,6 +55,12 @@ fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     params.colorStart = form.colorStart;
     params.colorEnd = form.colorEnd;
     params.additive = form.blend == "additive";
+    params.flame = form.blend == "flame";
+    params.texture = form.texture;
+    params.flipbookColumns = glm::max(form.flipbookColumns, 1);
+    params.flipbookRows = glm::max(form.flipbookRows, 1);
+    params.flipbookFps = form.flipbookFps;
+    params.flipbookAspect = form.flipbookAspect;
     return params;
 }
 

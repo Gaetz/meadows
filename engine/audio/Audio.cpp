@@ -192,6 +192,19 @@ AudioSystem::SoundId AudioSystem::play(const SoundParams& params) {
     return id;
 }
 
+void AudioSystem::setPosition(SoundId id, const Vec3& position) {
+    if (!pimpl || id == 0) {
+        return;
+    }
+    for (Impl::ActiveSound& active : pimpl->active) {
+        if (active.id == id) {
+            ma_sound_set_position(active.sound.get(), position.x, position.y,
+                                  position.z);
+            return;
+        }
+    }
+}
+
 void AudioSystem::stop(SoundId id, f32 fadeSeconds) {
     if (!pimpl || id == 0) {
         return;
