@@ -124,6 +124,16 @@ public:
     }
     const vector<u8>& fireScorch() const { return fireMask; }
     const vector<u8>& fireGlow() const { return fireGlowMask; }
+    // The ember level at a point, 0..1 (0 outside the window / cold).
+    f32 fireGlowAt(f32 x, f32 z) const;
+    // The EffectForm actors standing in the field take (SpiritForm
+    // contactEffect), every contactPeriod seconds.
+    const core::Guid& contactEffect(render::terrain::SpiritKind kind) const {
+        return contactFx[static_cast<size_t>(kind)];
+    }
+    f32 contactPeriod(render::terrain::SpiritKind kind) const {
+        return contactEvery[static_cast<size_t>(kind)];
+    }
     const render::terraingen::GridSpec& fireSpec() const { return fireMaskSpec; }
     const vector<Vec2>& fireBurning() const { return fireCenters; }
     const render::terrain::FireStats& fireStats() const { return lastFireStats; }
@@ -165,6 +175,11 @@ private:
     world::GroundProps groundProps {};
     vector<u8> fireMask;
     vector<u8> fireGlowMask;
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        contactFx {};
+    std::array<f32, static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        contactEvery {};
     render::terraingen::GridSpec fireMaskSpec;
     vector<Vec2> fireCenters;
     render::terrain::FireStats lastFireStats;

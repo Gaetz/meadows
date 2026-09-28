@@ -732,3 +732,54 @@ rayon de base, scintillement, nombre, couleur. Pas de lumière par flamme
 héros ni de torche : les torches viendront avec leurs props (flamme
 `flame02` + `LightSource`). À valider : nuit sur le front, le rebond GI,
 le nombre de lumières au F6.
+
+### F3 COMMITÉE (`c8fa108`) ; E3.c — le feu devient dangereux (2026-09-28, NON COMMITÉE)
+**Contact → statut** : `SpiritForm.contactEffect` (Feu : `SpiritFireContact`,
+EffectForm `buildupType = "ignition"`, 30 points) appliqué tous les
+`contactPeriod` (0,5 s) au joueur et aux PNJ dont les pieds sont sur une
+cellule dont la braise ≥ 0,25 (`SpiritDirector::fireGlowAt`, lu dans le
+masque de la dernière job — jamais dans la grille, qui vit dans le job) ;
+`applyEffect(…, &StatusBuildup)` route vers `tryAddBuildup` : Status.Ignited
+après ~2 s dans les flammes contre une endurance de 100, la DoT, les
+résistances d'armure et la règle « pas de ré-acquisition » viennent du
+buildup existant (§2.9 : l'UNIQUE voie vers les attributs). Horloges par
+acteur (`playerFireClock`, `npcFireClocks`).
+**Props en bois** : `village.toml` en dépendance ; `Crate`, `Wagon`,
+`WoodenFence` patchés `surfaceMaterial = "wood"` (bois `fuel` 12 s). À
+chaque job atterrie (10 Hz) les props statiques en bois posés sur une
+cellule qui luit chauffent (`kPropHeatRate` 0,6/s × braise) ; à 1 ils
+prennent (`BurningProp` : flammes + étincelles pendant `fuel`, cue), ils
+enflamment le sol autour d'eux une fois (`ignite` 2 m / 1,5 — le feu saute
+d'une palissade à l'herbe), puis : collider retiré, référence désactivée
+dans la couche de save (`disableReference`, comme un objet ramassé — absent
+après save/load), entité détruite.
+**Le scatter ne repousse pas** : `FireBurntMask` (spec + scorch) publié
+par le directeur à chaque job, porté par `TerrainParams.burnt` (sptr : les
+workers du scatter gardent leur copie, comme `patches`) ; `scatterProps`
+refuse arbres, troncs, plantes et buissons sur une cellule brûlée (les
+cailloux restent) ; les chunks nouvellement brûlés sont poussés dans
+`sculptScatterQueue` → l'herbe et la végétation se ré-instancient. Test :
+un masque brûlé sur tout un chunk → 0 arbre, 0 buisson, autant de rochers.
+Limite connue : la couverture est transitoire (fenêtre 512 m) — hors
+fenêtre ou après un scroll, un re-scatter fait revenir les arbres (E3.d
+persisterait le masque).
+**Reste** : les arbres du scatter ne brûlent pas encore (ils ne sont pas
+des entités : il faudra intégrer la chaleur au tronc depuis les cellules
+voisines et une flamme sur la canopée — demande dev notée plus haut) ;
+les PNJ en feu ne fuient pas (IA).
+
+### Retour dev E3.c (2026-09-28) : « ça ne va pas — les plantes repoussent, un arbre ne disparaît pas comme ça »
+RÈGLE DE DESIGN (dev) : **l'état brûlé est transitoire** — l'herbe
+correctement irriguée revient au bout d'un moment ; **un arbre ne disparaît
+jamais par un masque** ; un arbre ne brûlera que par un mécanisme
+progressif dédié (chantier à part), et au pire il perd son feuillage
+(absent comme en hiver). Fait : le gate du scatter retiré entièrement
+(`TerrainParams.burnt`, `FireBurntMask`, la file de re-scatter, le test).
+À la place, la **repousse dans le noyau** : `FireGrid.regrow` ; une cellule
+brûlée regagne `dt × (1 + 3 × moiteur) / regrowSeconds` (`SpiritForm.
+regrowSeconds`, 360 s en data après retour dev « double » : 6 min sur sol sec, ~1,5 min en marais) ; à 1
+elle redevient dormante avec son combustible restauré (elle peut brûler à
+nouveau) et le scorch s'efface avec elle (`1 − regrow` : le charbon refond
+au vert, l'herbe revient par le même masque qui l'avait culée). Test :
+deux cellules sèche/marais, la marais revient 3× plus vite, le sec refond
+puis rebrûle. Les props en bois et le contact restent.

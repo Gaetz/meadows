@@ -14,7 +14,8 @@
 [plugin]
 id = "5b1e1700-0000-4000-8000-0000000000ff"
 name = "true-adventurer-spirits"
-dependencies = ["7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f"] # adventure: the rock props
+dependencies = ["7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f", # adventure: the rock props
+                "9e1b3d50-4c2a-4f6b-8d7e-1a2b3c4d5e6f"] # village: the wooden props
 
 [assets]
 # Flame flipbooks: Unity Labs "Free VFX image sequences and flipbooks"
@@ -124,6 +125,9 @@ ignitionPoints = 1.0
 spreadBudgetPerTick = 64
 decayPerSecond = 0.5
 emberSeconds = 3.0
+regrowSeconds = 360.0
+contactEffect = "5b1e1700-0000-4000-8000-0000000000d5"
+contactPeriod = 0.5
 cueSpawn = "Cue.Spirit.Fire.Spawn"
 fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
 emberParticles = "5b1e1700-0000-4000-8000-0000000000c7"
@@ -199,7 +203,7 @@ new = true
 editorId = "MaterialWood"
 materialClass = "wood"
 flammability = 0.7
-fuel = 3.0
+fuel = 12.0
 moisture = 0.3
 hardness = 1.5
 
@@ -1259,3 +1263,36 @@ new = true
 [records.fields]
 parent = "5b1e1700-0000-4000-8000-0000000000d3"
 asset = "5b1e1700-0000-4000-8000-0000000000d2"
+
+# --- E3.c: the fire is dangerous --------------------------------------------
+
+# Standing in the flames: an ignition buildup every contactPeriod (30
+# points against an endurance of 100: Status.Ignited after ~2 s).
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d5"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireContact"
+buildupType = "ignition"
+magnitude = 30.0
+duration = "instant"
+
+# The wooden props of the village burn (what the fire consumes).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000017"
+type = "StaticForm"
+[records.fields]
+surfaceMaterial = "wood"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000018"
+type = "StaticForm"
+[records.fields]
+surfaceMaterial = "wood"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000019"
+type = "StaticForm"
+[records.fields]
+surfaceMaterial = "wood"

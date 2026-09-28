@@ -156,6 +156,48 @@ TEST_CASE("fire: standing water douses a burning cell in one tick and keeps it o
     CHECK(g.fuel[center] > 0.0f);
 }
 
+TEST_CASE("fire: burnt ground regrows, the wetter the sooner, and can burn again") {
+    // Two cells: dry grass and marsh grass (moisture 0.75 = 3.25x faster).
+    const FuelFn banded = [](f32 x, f32) -> FireCellFuel {
+        return x < 64.0f ? FireCellFuel { 1.0f, 1.0f, 0.0f }
+                         : FireCellFuel { 1.0f, 1.0f, 0.75f };
+    };
+    FireGrid g;
+    fireInitWindow(g, spec65());
+    FireParams p = fast();
+    p.regrowSeconds = 4.0f; // dry: 40 ticks; marsh: ~12 ticks
+    p.spreadRate = 0.0f;    // no spread: the two sparks stay put
+    fireIgnite(g, 62.0f, 64.0f, 0.5f, 2.0f, banded);
+    fireIgnite(g, 66.0f, 64.0f, 0.5f, 2.0f, banded);
+    const size_t dry = 32 * 65 + 31;
+    const size_t wet = 32 * 65 + 33;
+    // 1 s of fuel at 0.5/s = 20 ticks to burn out.
+    for (int t = 0; t < 21; ++t) {
+        fireStep(g, p, banded, nullptr);
+    }
+    CHECK(g.state[dry] == static_cast<u8>(FireState::Burnt));
+    CHECK(g.state[wet] == static_cast<u8>(FireState::Burnt));
+    for (int t = 0; t < 20; ++t) {
+        fireStep(g, p, banded, nullptr);
+    }
+    CHECK(g.state[wet] == static_cast<u8>(FireState::Dormant)); // marsh: back
+    CHECK(g.state[dry] == static_cast<u8>(FireState::Burnt));   // dry: not yet
+    vector<u8> scorch;
+    fireScorch(g, p, scorch);
+    CHECK(scorch[wet] == 0);
+    CHECK(scorch[dry] > 0);
+    CHECK(scorch[dry] < 255); // fading as it regrows
+    for (int t = 0; t < 25; ++t) {
+        fireStep(g, p, banded, nullptr);
+    }
+    CHECK(g.state[dry] == static_cast<u8>(FireState::Dormant));
+    CHECK(g.fuel[dry] == doctest::Approx(1.0f)); // fuel restored
+    // It burns again.
+    fireIgnite(g, 62.0f, 64.0f, 0.5f, 2.0f, banded);
+    fireStep(g, p, banded, nullptr);
+    CHECK(g.state[dry] == static_cast<u8>(FireState::Burning));
+}
+
 TEST_CASE("fire: the ignition budget caps how many cells catch per tick") {
     FireGrid g;
     fireInitWindow(g, spec65());
@@ -191,7 +233,7 @@ TEST_CASE("fire: burning consumes the fuel into burnt ground, scorch reads it, t
     CHECK(a.state[center] == static_cast<u8>(FireState::Burnt));
     vector<u8> scorch;
     fireScorch(a, p, scorch);
-    CHECK(scorch[center] == 255);
+    CHECK(scorch[center] > 240); // burnt 2 s ago: barely regrown
     CHECK(scorch[0] == 0);
     // The ember mask: the front burning bright, the burnt center still
     // glowing with its cooling embers (2 s into 45), cold ground 0.

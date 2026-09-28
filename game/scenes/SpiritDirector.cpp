@@ -4,6 +4,7 @@
 
 #include "data/forms/FormQuery.hpp"
 #include "data/forms/SpiritForms.hpp"
+#include <algorithm>
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/WaterQuery.hpp"
@@ -21,6 +22,8 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     fieldFx.fill(core::Guid {});
     sparkFx.fill(core::Guid {});
     soundFx.fill(core::Guid {});
+    contactFx.fill(core::Guid {});
+    contactEvery.fill(0.5f);
     data::forEach<data::SpiritForm>(forms, [&](const data::SpiritForm& spirit) {
         const auto kind = render::terrain::spiritFromName(spirit.name);
         if (kind != render::terrain::SpiritKind::kCount) {
@@ -29,6 +32,9 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             fieldFx[static_cast<size_t>(kind)] = spirit.fieldParticles;
             sparkFx[static_cast<size_t>(kind)] = spirit.emberParticles;
             soundFx[static_cast<size_t>(kind)] = spirit.fieldSound;
+            contactFx[static_cast<size_t>(kind)] = spirit.contactEffect;
+            contactEvery[static_cast<size_t>(kind)] =
+                glm::max(spirit.contactPeriod, 0.05f);
         }
         if (kind == render::terrain::SpiritKind::Earth) {
             lift.quadratic = spirit.liftQuadratic;
@@ -44,6 +50,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
                 fireParams.heatDecay = spirit.decayPerSecond;
             }
             fireParams.emberSeconds = glm::max(spirit.emberSeconds, 0.01f);
+            fireParams.regrowSeconds = glm::max(spirit.regrowSeconds, 0.01f);
         }
     });
     holdSource.reset();
@@ -72,6 +79,21 @@ core::Guid SpiritDirector::spawn(render::terrain::SpiritKind kind, f32 x,
 }
 
 // --- The fire lane ---------------------------------------------------------
+
+f32 SpiritDirector::fireGlowAt(f32 x, f32 z) const {
+    const render::terraingen::GridSpec& spec = fireMaskSpec;
+    if (spec.n == 0 || fireGlowMask.size() < spec.cells()) {
+        return 0.0f;
+    }
+    const i32 n = static_cast<i32>(spec.n);
+    const i32 col = static_cast<i32>(std::lround((x - spec.originX) / spec.texelSize));
+    const i32 row = static_cast<i32>(std::lround((z - spec.originZ) / spec.texelSize));
+    if (col < 0 || row < 0 || col >= n || row >= n) {
+        return 0.0f;
+    }
+    return static_cast<f32>(fireGlowMask[static_cast<size_t>(row) * n + col]) /
+           255.0f;
+}
 
 void SpiritDirector::ignite(f32 x, f32 z, f32 radius, f32 heat) {
     if (heat <= 0.0f) {

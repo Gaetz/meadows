@@ -652,6 +652,26 @@ private:
     // clustered path and the GI take them like any other).
     static constexpr f32 kFireLightTile = 8.0f;
     void extractFireLights(render::RenderSnapshot& out);
+    // E3.c — the fire is dangerous: actors standing on a glowing cell take
+    // the spirit's contactEffect (an ignition buildup, §2.9: the ONLY path
+    // to their attributes) every contactPeriod; wooden props (StaticForm
+    // surfaceMaterial "wood") heat up in the fire, burn for their
+    // material's fuel, light the ground around them and are gone for good
+    // (disabled in the save layer, like a picked-up item).
+    void applyFireContact(f32 dt);
+    void updateSpiritFireProps();
+    f32 playerFireClock { 0.0f };
+    std::unordered_map<u64, f32> npcFireClocks;
+    std::unordered_map<u64, f32> propFireHeat; // entity id -> heat 0..1
+    struct BurningProp {
+        ecs::Entity entity;
+        f32 remaining { 0.0f };
+        u32 flames { 0 };
+        u32 sparks { 0 };
+        bool lit { false }; // the ground around it took its spark
+    };
+    vector<BurningProp> burningProps;
+    static constexpr f32 kPropHeatRate = 0.6f; // per second in full fire
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

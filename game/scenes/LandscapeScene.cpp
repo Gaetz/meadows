@@ -5445,6 +5445,44 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
     if (spiritDirector.fireIdle()) {
         return;
     }
+    applyFireContact(simSeconds);
+    // Burning props: they light the ground around them once, burn their
+    // fuel, then are gone for good.
+    for (size_t i = 0; i < burningProps.size();) {
+        BurningProp& burning = burningProps[i];
+        if (!burning.entity.is_alive()) {
+            burningProps.erase(burningProps.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        const Vec3 at = burning.entity.get<world::Transform>().position;
+        if (!burning.lit) {
+            spiritDirector.ignite(at.x, at.z, 2.0f, 1.5f);
+            burning.lit = true;
+        }
+        burning.remaining -= simSeconds;
+        if (burning.remaining > 0.0f) {
+            ++i;
+            continue;
+        }
+        if (burning.flames != 0) {
+            fxSim.stopEmitter(burning.flames);
+        }
+        if (burning.sparks != 0) {
+            fxSim.stopEmitter(burning.sparks);
+        }
+        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 0.5f });
+        if (const phys::BodyId old = streaming.takeStaticCollider(burning.entity.id())) {
+            physics->removeBody(old);
+        }
+        if (burning.entity.has<world::RefId>()) {
+            saveController.pending().disableReference(
+                burning.entity.get<world::RefId>().referenceId, forms, burning.entity);
+        }
+        propFireHeat.erase(burning.entity.id());
+        const ecs::Entity gone = burning.entity;
+        burningProps.erase(burningProps.begin() + static_cast<std::ptrdiff_t>(i));
+        gone.destruct();
+    }
     const render::WaterSystem& water = renderer.waterSystem();
     SpiritDirector::FireFrame frame;
     frame.params = &renderer.terrainParams();
@@ -5459,6 +5497,7 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         return;
     }
     // A job landed: the mask and the flames follow it.
+    updateSpiritFireProps();
     const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
     renderer.fireScorchMap().upload(engine->getDevice(),
                                     spiritDirector.fireScorch(),
@@ -5622,6 +5661,107 @@ void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
     out.lights = std::move(merged);
 }
 
+void LandscapeScene::applyFireContact(f32 dt) {
+    using render::terrain::SpiritKind;
+    const auto* effect =
+        forms.find<gameplay::EffectForm>(spiritDirector.contactEffect(SpiritKind::Fire));
+    if (!effect) {
+        return;
+    }
+    const f32 period = spiritDirector.contactPeriod(SpiritKind::Fire);
+    const auto touch = [&](ecs::Entity entity, const Vec3& feet, f32& clock) {
+        const f32 glow = spiritDirector.fireGlowAt(feet.x, feet.z);
+        if (glow < 0.25f || !entity.has<gameplay::AttributeSet>() ||
+            !entity.has<gameplay::AbilitySystem>() ||
+            !entity.has<gameplay::StatusBuildup>()) {
+            clock = 0.0f;
+            return;
+        }
+        clock += dt;
+        if (clock < period) {
+            return;
+        }
+        clock = 0.0f;
+        gameplay::applyEffect(entity.get_mut<gameplay::AttributeSet>(),
+                              entity.get_mut<gameplay::AbilitySystem>(), *effect,
+                              gameTags, &entity.get_mut<gameplay::StatusBuildup>());
+    };
+    if (mode == SceneMode::Play && !interiorMode && playerEntity.is_alive()) {
+        if (phys::CharacterBody* body = playerController.body()) {
+            touch(playerEntity, body->position(), playerFireClock);
+        }
+    }
+    if (!interiorMode) {
+        for (const auto& npc : npcDirector.npcs()) {
+            if (!npc->entity.is_alive() || npc->dead ||
+                !npc->entity.has<world::Transform>()) {
+                continue;
+            }
+            touch(npc->entity, npc->entity.get<world::Transform>().position,
+                  npcFireClocks[npc->entity.id()]);
+        }
+    }
+}
+
+void LandscapeScene::updateSpiritFireProps() {
+    using render::terrain::SpiritKind;
+    // Heat every wooden prop standing in the glow (10 Hz: per landed job).
+    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
+    const world::SpiritRuleTable& rules = spiritDirector.rules();
+    const i32 woodIndex = rules.classIndex("wood");
+    const f32 fuel = woodIndex >= 0 && static_cast<size_t>(woodIndex) < rules.props.size()
+                         ? glm::max(rules.props[static_cast<size_t>(woodIndex)].fuel, 1.0f)
+                         : 8.0f;
+    const auto* flameForm = forms.find<data::ParticleForm>(
+        spiritDirector.fieldParticles(SpiritKind::Fire));
+    const auto* sparkForm = forms.find<data::ParticleForm>(
+        spiritDirector.sparkParticles(SpiritKind::Fire));
+    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
+                           const world::RefId& ref) {
+        const reflect::TypeInfo* type = forms.typeOf(ref.base);
+        if (!type || !type->isA(staticType.id)) {
+            return;
+        }
+        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
+        if (!form || form->surfaceMaterial != "wood") {
+            return;
+        }
+        for (const BurningProp& burning : burningProps) {
+            if (burning.entity == ecs::Entity { e }) {
+                return; // already alight
+            }
+        }
+        const f32 glow = spiritDirector.fireGlowAt(transform.position.x,
+                                                   transform.position.z);
+        f32& heat = propFireHeat[e.id()];
+        if (glow < 0.2f) {
+            heat = glm::max(0.0f, heat - 0.1f * kPropHeatRate);
+            return;
+        }
+        heat += 0.1f * kPropHeatRate * glow;
+        if (heat < 1.0f) {
+            return;
+        }
+        BurningProp burning;
+        burning.entity = ecs::Entity { e };
+        burning.remaining = fuel;
+        const Vec3 at = transform.position + Vec3 { 0.0f, 0.4f, 0.0f };
+        const u32 seed = static_cast<u32>(e.id() & 0xffffffffu) ^ 0x7a11beefu;
+        if (flameForm) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
+            params.duration = fuel;
+            burning.flames = fxSim.spawn(params, at, seed);
+        }
+        if (sparkForm) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
+            params.duration = fuel;
+            burning.sparks = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
+        }
+        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 1.0f });
+        burningProps.push_back(burning);
+    });
+}
+
 void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
     // The nearest burning cell within reach carries the loop.
     const Vec2* nearest = nullptr;
@@ -5663,6 +5803,18 @@ void LandscapeScene::resetSpiritFire() {
         audioSystem.stop(fireLoop, 0.3f);
         fireLoop = 0;
     }
+    for (const BurningProp& burning : burningProps) {
+        if (burning.flames != 0) {
+            fxSim.stopEmitter(burning.flames);
+        }
+        if (burning.sparks != 0) {
+            fxSim.stopEmitter(burning.sparks);
+        }
+    }
+    burningProps.clear();
+    propFireHeat.clear();
+    npcFireClocks.clear();
+    playerFireClock = 0.0f;
     for (const FlameEmitter& flame : flameEmitters) {
         if (flame.emitter != 0) {
             fxSim.stopEmitter(flame.emitter);

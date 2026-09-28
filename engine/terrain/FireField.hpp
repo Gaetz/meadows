@@ -39,6 +39,7 @@ struct FireGrid {
     vector<f32> moisture;
     vector<u8> state;    // FireState
     vector<f32> ember;   // 1 at burnout, cooling to 0 over emberSeconds
+    vector<f32> regrow;  // burnt: 0..1 back to life (fuel and green return)
     u64 tick { 0 };
     size_t cells() const { return spec.cells(); }
     bool valid() const { return spec.n > 0 && heat.size() == cells(); }
@@ -56,6 +57,11 @@ struct FireParams {
     // embers cool over the same span. At the front's speed this is its
     // width in metres.
     f32 emberSeconds { 45.0f };
+    // The burnt state is TRANSITORY: a burnt cell regrows over this many
+    // seconds on dry ground, faster the wetter its ground (x (1 + 3 x
+    // moisture)); regrown, it is dormant again with its fuel restored,
+    // and its char fades back to green meanwhile.
+    f32 regrowSeconds { 180.0f };
     Vec2 wind { 0.0f, 0.0f };      // unit-ish direction x strength (0..1)
 };
 
@@ -84,7 +90,8 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
 
 // The render mask: 0 untouched .. 1 charred. A cell chars as the front
 // passes over it (over emberSeconds from its ignition), whatever fuel
-// it still burns through darkly afterwards. One byte per cell.
+// it still burns through darkly afterwards, and fades back as it
+// regrows (regrowSeconds). One byte per cell.
 void fireScorch(const FireGrid& grid, const FireParams& params, vector<u8>& out);
 // The ember mask: how brightly a cell glows — a burning cell fading
 // from ignition over emberSeconds, a burnt cell by its cooling embers,

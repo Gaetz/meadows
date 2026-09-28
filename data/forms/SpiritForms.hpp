@@ -41,6 +41,8 @@ struct SpiritForm : Form {
     // = liftQuadratic x depth², clamped to [liftMin, liftMax] m/s (a brush
     // stroke hops it gently, a mound throws it high, a wall is capped).
     f32 emberSeconds { 45.0f };      // fire: a burnt cell's embers cool over this
+    f32 regrowSeconds { 180.0f };    // fire: burnt ground regrows over this (dry;
+                                     // wet ground up to 4x faster)
     core::Guid emberParticles;       // ParticleForm of the sparks a burning
                                      // cell sheds (beside fieldParticles)
     core::Guid fieldSound;           // SoundForm looped near the field's
@@ -71,6 +73,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(holdParticles)
         REFLECT_FIELD(fieldParticles)
         REFLECT_FIELD(emberSeconds)
+        REFLECT_FIELD(regrowSeconds)
         REFLECT_FIELD(emberParticles)
         REFLECT_FIELD(fieldSound)
         REFLECT_FIELD(liftQuadratic)

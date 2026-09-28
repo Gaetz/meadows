@@ -122,7 +122,18 @@ dealing `spreadRate` heat per second to its eight neighbours, damped by
 their `moisture`; bare rock, sand and snow carry no fuel, standing water
 puts a burning cell out and keeps it out. Burnt ground stays charred and
 its grass is gone; the field lives in a 512 m window around the camera
-and is not saved. A spell outside that set is
+and is not saved. The fire is dangerous: whoever stands in the flames
+takes the spirit's `contactEffect` every `contactPeriod` seconds — an
+ignition buildup that ends in `Status.Ignited` (damage over time, armour
+resistances apply). Wooden props (a `StaticForm` whose `surfaceMaterial`
+is `"wood"`: the village's crates, wagons and fences) heat up in the
+flames, burn for their material's `fuel` seconds, set the ground around
+them alight and are gone for good (disabled in the save, like a picked-up
+item). Burnt ground is not forever: a burnt cell regrows over the
+spirit's `regrowSeconds` (dry ground; wet ground up to four times
+faster), its char fading back to green and its grass returning, and it
+can burn again. Trees are never removed by the fire (a tree burning is a
+mechanism of its own, to come). A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

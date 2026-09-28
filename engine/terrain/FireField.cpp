@@ -37,6 +37,7 @@ void fireInitWindow(FireGrid& grid, const terraingen::GridSpec& spec) {
     grid.moisture.assign(cells, 0.0f);
     grid.state.assign(cells, static_cast<u8>(FireState::Dormant));
     grid.ember.assign(cells, 0.0f);
+    grid.regrow.assign(cells, 0.0f);
     grid.tick = 0;
 }
 
@@ -70,6 +71,7 @@ void fireScrollWindow(FireGrid& grid, i32 dCol, i32 dRow) {
             next.moisture[d] = grid.moisture[s];
             next.state[d] = grid.state[s];
             next.ember[d] = grid.ember[s];
+            next.regrow[d] = grid.regrow[s];
         }
     }
     grid = std::move(next);
@@ -226,6 +228,7 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                     grid.ember[i] = glm::clamp(
                         1.0f - burnedSeconds / glm::max(params.emberSeconds, 0.01f),
                         0.0f, 1.0f);
+                    grid.regrow[i] = 0.0f;
                 }
                 break;
             case FireState::Wet:
@@ -235,10 +238,22 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                     grid.state[i] = static_cast<u8>(FireState::Dormant);
                 }
                 break;
-            case FireState::Burnt:
+            case FireState::Burnt: {
                 grid.ember[i] = glm::max(
                     0.0f, grid.ember[i] - dt / glm::max(params.emberSeconds, 0.01f));
+                // Life returns, the wetter the sooner.
+                const f32 rate = (1.0f + 3.0f * grid.moisture[i]) /
+                                 glm::max(params.regrowSeconds, 0.01f);
+                grid.regrow[i] += dt * rate;
+                if (grid.regrow[i] >= 1.0f) {
+                    grid.regrow[i] = 0.0f;
+                    grid.ember[i] = 0.0f;
+                    grid.heat[i] = 0.0f;
+                    grid.fuel[i] = grid.fuel0[i]; // fresh fuel: it can burn again
+                    grid.state[i] = static_cast<u8>(FireState::Dormant);
+                }
                 break;
+            }
             }
             if (grid.state[i] == static_cast<u8>(FireState::Burning)) {
                 ++local.burning;
@@ -277,7 +292,7 @@ void fireScorch(const FireGrid& grid, const FireParams& params, vector<u8>& out)
         const auto state = static_cast<FireState>(grid.state[i]);
         f32 scorch = 0.0f;
         if (state == FireState::Burnt) {
-            scorch = 1.0f;
+            scorch = 1.0f - glm::clamp(grid.regrow[i], 0.0f, 1.0f);
         } else if (state == FireState::Burning) {
             const f32 burned = (grid.fuel0[i] - grid.fuel[i]) / burnRate; // seconds
             scorch = glm::clamp(burned / frontSeconds, 0.0f, 1.0f);
