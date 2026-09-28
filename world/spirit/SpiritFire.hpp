@@ -91,4 +91,27 @@ struct FireJobOutput {
 
 FireJobOutput runFireJob(FireJobInput&& in);
 
+// A TREE in the fire (docs/CHANTIER-ESPRITS.md E3.e): never removed —
+// it heats while the cells around its trunk burn, catches, burns for a
+// while (its canopy going progressively, like winter's leaf fall, the
+// wood charring), then stands bare and regrows over a long time. Data
+// per spirit (SpiritForm tree*); the scene keeps one state per tree.
+struct TreeFireParams {
+    f32 ignitionSeconds { 6.0f }; // in full surrounding fire
+    f32 burnSeconds { 25.0f };
+    f32 regrowSeconds { 900.0f };
+};
+enum class TreeFirePhase : u8 { Cold = 0, Burning, Burnt };
+struct TreeFire {
+    TreeFirePhase phase { TreeFirePhase::Cold };
+    f32 heat { 0.0f };  // 0..1 toward ignition
+    f32 burn { 0.0f };  // 0..1 canopy gone (the mask's B channel)
+    f32 timer { 0.0f }; // seconds in the current phase
+    bool idle() const { return phase == TreeFirePhase::Cold && heat <= 0.0f && burn <= 0.0f; }
+};
+// `exposure` = the share (0..1) of the cells around the trunk that burn.
+// Returns true the tick the tree catches.
+bool advanceTreeFire(TreeFire& tree, f32 exposure, f32 dt,
+                     const TreeFireParams& params);
+
 } // namespace world

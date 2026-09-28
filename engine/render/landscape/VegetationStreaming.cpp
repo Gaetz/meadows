@@ -79,7 +79,8 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uPropNormal", 12 },
                    { "uTerrainShade0", 4 },
                    { "uBark", 13 },
-                   { "uBarkNrm", 14 } });
+                   { "uBarkNrm", 14 },
+                   { "uFireScorch", 10 } });
     buildPipeline(device, shaders);
     shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } },
                  { { "uLeafMask", 0 } });

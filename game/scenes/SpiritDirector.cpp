@@ -53,6 +53,9 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             }
             fireParams.emberSeconds = glm::max(spirit.emberSeconds, 0.01f);
             fireParams.regrowSeconds = glm::max(spirit.regrowSeconds, 0.01f);
+            treeFireParams.ignitionSeconds = glm::max(spirit.treeIgnitionSeconds, 0.1f);
+            treeFireParams.burnSeconds = glm::max(spirit.treeBurnSeconds, 0.1f);
+            treeFireParams.regrowSeconds = glm::max(spirit.treeRegrowSeconds, 1.0f);
         }
     });
     holdSource.reset();

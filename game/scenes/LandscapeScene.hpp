@@ -569,11 +569,15 @@ private:
         // `radius` around it with `rate` heat every costPeriod.
         // FireGlobe: the fire ward around the caster while held — nothing
         // burns within `radius`, the caster feels no flame.
+        // FireStream: the flame jet — a short cone ahead of the caster while
+        // held, igniting the ground along it (`rate` heat, `radius`) and
+        // burning whoever stands in it, out to `range`.
         enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
                                EarthDig, EarthWall, EarthSeize, FireIgnite,
-                               FireDouse, FireBrand, FireGlobe };
+                               FireDouse, FireBrand, FireGlobe, FireStream };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
+        f32 range { 0.0f };
         bool channeled { false };
         f32 costPeriod { 1.0f };
         f32 upkeepScale { 0.25f };
@@ -665,6 +669,10 @@ private:
     // material's fuel, light the ground around them and are gone for good
     // (disabled in the save layer, like a picked-up item).
     void applyFireContact(f32 dt);
+    // One actor's contact with fire this frame: `inFire` accumulates its
+    // clock toward contactPeriod, then the spirit's contactEffect
+    // (buildup) and contactDamage (typed, through applyDamage) land.
+    void fireTouch(ecs::Entity entity, f32& clock, f32 dt, bool inFire);
     void updateSpiritFireProps();
     f32 playerFireClock { 0.0f };
     std::unordered_map<u64, f32> npcFireClocks;
@@ -678,6 +686,30 @@ private:
     };
     vector<BurningProp> burningProps;
     static constexpr f32 kPropHeatRate = 0.6f; // per second in full fire
+    // E3.e — the trees of the scatter in the fire: one state per tree
+    // (keyed by its quantized base), heated by the burning cells around
+    // its trunk, burning with flames, its canopy going through the mask's
+    // B channel (the tree shader's leaf fall), regrowing after. Never
+    // removed.
+    struct TreeFireEntry {
+        Vec3 at { 0.0f };
+        f32 scale { 1.0f };
+        world::TreeFire state;
+        u32 flames { 0 };      // the trunk and branches
+        u32 crownFlames { 0 }; // the canopy
+        u32 sparks { 0 };
+        f32 emberClock { 0.0f };
+    };
+    std::unordered_map<u64, TreeFireEntry> treeFires;
+    vector<u8> fireCanopy; // the mask's B channel, composed per landed job
+    f32 fireLandClock { 0.0f }; // sim seconds since the last landed job
+    void updateSpiritFireTrees(f32 landDt);
+    static constexpr f32 kTreeFireReach = 160.0f;
+    static u64 treeKey(const Vec3& at) {
+        const i64 x = static_cast<i64>(std::llround(at.x * 4.0f));
+        const i64 z = static_cast<i64>(std::llround(at.z * 4.0f));
+        return (static_cast<u64>(x) << 32) ^ (static_cast<u64>(z) & 0xffffffffu);
+    }
     // Control x Fire, the firebrand: a flame at the aim that lights the
     // ground under it while the key is held (upkeep like the water hold).
     struct SpiritBrand {
@@ -707,6 +739,27 @@ private:
     std::optional<SpiritGlobe> spiritGlobe;
     void updateSpiritGlobe(f32 dt);
     void endSpiritGlobe();
+    // Create x Fire as a stream, held: the flame jet — the fire's
+    // counterpart of the water jet, short and straight: flames stream
+    // from the hand along the aim, the ground under the cone catches
+    // (props and trees through the field), whoever stands in it burns.
+    struct SpiritFlameJet {
+        f32 heat { 1.0f };
+        f32 radius { 1.0f };
+        f32 range { 10.0f };
+        f32 costPeriod { 0.5f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        f32 pulseClock { 0.0f };
+        u32 emitter { 0 };
+        core::Guid ability;
+    };
+    std::optional<SpiritFlameJet> spiritFlameJet;
+    void updateSpiritFlameJet(f32 dt);
+    void endSpiritFlameJet();
+    static constexpr f32 kFlameJetPulse = 0.25f;
+    static constexpr f32 kFlameJetSpeed = 14.0f;     // m/s, the flames' travel
+    static constexpr f32 kFlameJetHalfAngle = 0.28f; // radians, the cone
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

@@ -215,6 +215,12 @@ public:
     // The fire field's render mask (fed by the scene's fire lane).
     render::FireScorchMap& fireScorchMap() { return fireScorch; }
     render::FxRenderer& fxRenderer() { return fx; }
+    // The scattered props near a point (the vegetation's CPU copy).
+    void collectProps(const Vec3& center, f32 halfSpan,
+                      vector<render::VegetationSystem::GiProp>& out,
+                      size_t maxProps) const {
+        vegetation.collectGiProps(center, halfSpan, out, maxProps);
+    }
     void requestRegenerate() { regenerateRequested = true; }
     // Variant meshes only (scatter/instances stay) — the tree builder's
     // regen trigger, applied at render()'s safe point.

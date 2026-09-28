@@ -44,8 +44,9 @@ struct FireLook {
 
 // The fire field's render mask (chantier ESPRITS E3): one texel per 2 m
 // cell of the fire window — R = scorch (0 untouched .. 1 burnt), G =
-// ember glow (fireGlow) — sampled by terrain.frag, grass.vert/frag at
-// unit 10 through uFireScorchInfo (firescorch.glsl) — the pool-map
+// ember glow (fireGlow), B = the canopy burnt there (a tree's foliage
+// gone, 0..1) — sampled by terrain, grass and tree shaders at unit 10
+// through uFireScorchInfo (firemask.glsl) — the pool-map
 // idiom: a fresh texture per landed fire job, a 1x1 zero placeholder
 // while nothing burnt.
 class FireScorchMap {
@@ -59,8 +60,8 @@ public:
     // `texel` apart (cell (col, row) centered on origin + (col, row) *
     // texel). `glow` may be empty (no rim).
     void upload(rhi::Device& device, const vector<u8>& scorch,
-                const vector<u8>& glow, u32 n, const Vec2& origin,
-                f32 texel);
+                const vector<u8>& glow, const vector<u8>& canopy, u32 n,
+                const Vec2& origin, f32 texel);
     // Back to the placeholder (map swap): nothing burnt anywhere.
     void clear(rhi::Device& device);
 

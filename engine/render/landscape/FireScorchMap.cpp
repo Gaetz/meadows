@@ -48,19 +48,20 @@ void FireScorchMap::rebuildGroup(rhi::Device& device) {
 }
 
 void FireScorchMap::upload(rhi::Device& device, const vector<u8>& scorch,
-                           const vector<u8>& glow, u32 n, const Vec2& at,
-                           f32 cellSize) {
+                           const vector<u8>& glow, const vector<u8>& canopy,
+                           u32 n, const Vec2& at, f32 cellSize) {
     const size_t count = static_cast<size_t>(n) * n;
     if (n == 0 || scorch.size() < count) {
         clear(device);
         return;
     }
     const bool hasGlow = glow.size() >= count;
+    const bool hasCanopy = canopy.size() >= count;
     staging.resize(count * 4);
     for (size_t i = 0; i < count; ++i) {
         staging[i * 4 + 0] = scorch[i];
         staging[i * 4 + 1] = hasGlow ? glow[i] : 0;
-        staging[i * 4 + 2] = 0;
+        staging[i * 4 + 2] = hasCanopy ? canopy[i] : 0;
         staging[i * 4 + 3] = 255;
     }
     if (texture.id != 0) {

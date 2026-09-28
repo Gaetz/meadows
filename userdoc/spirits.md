@@ -132,14 +132,21 @@ them alight and are gone for good (disabled in the save, like a picked-up
 item). Burnt ground is not forever: a burnt cell regrows over the
 spirit's `regrowSeconds` (dry ground; wet ground up to four times
 faster), its char fading back to green and its grass returning, and it
-can burn again. Trees are never removed by the fire (a tree burning is a
-mechanism of its own, to come). The other fire spells: `destroy` as
+can burn again. Trees are never removed by the fire: a tree whose
+surroundings burn heats up (`treeIgnitionSeconds` in full fire), then
+burns for `treeBurnSeconds` with flames at its trunk, shedding embers
+around it, its canopy falling progressively like in winter and its wood
+charring; it then stands bare and grows its foliage back over
+`treeRegrowSeconds`. The other fire spells: `destroy` as
 `point` puts the flames out around the aim (the cells keep their fuel),
 `destroy` as `self` held is the fire ward (nothing burns within
 `areaRadius` of you and you feel no flame while you hold it), `control`
 as `point` held is the firebrand (a flame at the aim that lights the
 ground under it, never on water), `understand` reads the aimed cell, its
-fuel and the nearest fire front. A spell outside that set is
+fuel and the nearest fire front; `create` as `stream` held is the flame
+jet — a short cone of flames ahead of you (`range`), the ground under it
+catches (so do the props and trees standing there) and whoever stands in
+it burns. A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

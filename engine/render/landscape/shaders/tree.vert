@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "firemask.glsl"
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
@@ -25,6 +26,7 @@ layout(location = 7) out vec4 vObjPos;
 layout(location = 8) out vec3 vObjNormal;
 // Height above the instance base — the ground-anchor blend (tree.frag).
 layout(location = 6) out float vGroundDelta;
+layout(location = 9) out float vBurn; // the fire's canopy burn at this tree
 
 void main() {
     float yaw = aParams.x;
@@ -84,9 +86,13 @@ void main() {
     // slot's seasonality) collapses the quad — deciduous crowns thin to
     // bare branches, evergreens (seasonality 0) keep every needle. The
     // shadow caster runs the SAME rule (shadow_prop.vert).
+    // The fire's own leaf fall (chantier ESPRITS E3.e): a burnt tree's
+    // canopy goes progressively, evergreen or not, and returns as the
+    // cell regrows — the same collapse rule as winter.
+    float burn = fireCanopyAt(aPosScale.xz);
     bool dropped = false;
     if (leafCard) {
-        float fall = uSeasonInfo.y * uLeafSeason[int(slot)].a;
+        float fall = max(uSeasonInfo.y * uLeafSeason[int(slot)].a, burn);
         if (fall > 0.0) {
             float h = fract(sin(dot(aPosScale.xyz + aPos,
                                     vec3(12.9898, 78.233, 45.164))) *
@@ -129,5 +135,6 @@ void main() {
     vTint = aParams.y;
     vWorldPos = world;
     vGroundDelta = world.y - aPosScale.y;
+    vBurn = burn;
     gl_Position = uViewProj * vec4(world, 1.0);
 }

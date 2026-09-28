@@ -2116,3 +2116,12 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'fire.stillAir'
     text = 'Still air.'
+
+[[records]]
+form = 'e8527ca6-076c-4c62-a014-86de1af546e5'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireStream'
+    text = 'Flame jet'

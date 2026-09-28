@@ -90,6 +90,7 @@ layout(location = 5) in vec2 vPropUv;
 layout(location = 6) in float vGroundDelta;
 layout(location = 7) in vec4 vObjPos;
 layout(location = 8) in vec3 vObjNormal;
+layout(location = 9) in float vBurn;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -104,6 +105,9 @@ void main() {
     float leafShade = 1.0;
     vec3 baseColor = vColor;
     if (vCardUv.x >= 0.0) {
+        if (vBurn > 0.98) {
+            discard; // a consumed canopy: nothing left of the card
+        }
         vec2 mask = texture(uLeafMask, vCardUv).ra;
         float lod = textureQueryLod(uLeafMask, vCardUv).x;
         float solid = smoothstep(uLeafLodInfo.x, uLeafLodInfo.y, lod);
@@ -114,8 +118,15 @@ void main() {
         // Season: mix toward the slot's autumn tint, weighted by its
         // seasonality — evergreens stay green.
         vec4 season = uLeafSeason[int(clamp(floor(vCardUv.x * 8.0), 0.0, 7.0))];
-        baseColor = mix(vColor, season.rgb, uSeasonInfo.x * season.a);
+        // Burning leaves russet like autumn first (evergreen or not),
+        // over the first 40 % of the burn, then char below.
+        float russet = max(uSeasonInfo.x * season.a, clamp(vBurn * 2.5, 0.0, 1.0));
+        baseColor = mix(vColor, season.rgb, russet);
     }
+    // A burning / burnt tree chars: the russet leaves that remain go
+    // dark before they fall, the wood blackens.
+    baseColor = mix(baseColor, vec3(0.05, 0.045, 0.04),
+                    clamp((vBurn - 0.35) * 1.6, 0.0, 0.92));
 
     // SSDM relief packed in alpha. NEUTRAL is 0.745 — the decode
     // centers at mid height ((a-0.5)*2 - 0.5): packing "flat" at 0.5

@@ -126,6 +126,9 @@ spreadBudgetPerTick = 64
 decayPerSecond = 0.5
 emberSeconds = 3.0
 regrowSeconds = 360.0
+treeIgnitionSeconds = 6.0
+treeBurnSeconds = 25.0
+treeRegrowSeconds = 900.0
 contactEffect = "5b1e1700-0000-4000-8000-0000000000d5"
 contactPeriod = 0.5
 contactDamage = 6.0 # fire, per contact: ~12/s in the flames before resistances
@@ -134,6 +137,7 @@ fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
 emberParticles = "5b1e1700-0000-4000-8000-0000000000c7"
 fieldSound = "5b1e1700-0000-4000-8000-0000000000d3"
 holdParticles = "5b1e1700-0000-4000-8000-0000000000e4"
+jetParticles = "5b1e1700-0000-4000-8000-0000000000e5"
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000009"
@@ -1521,3 +1525,72 @@ sizeEnd = 0.04
 colorStart = [0.55, 0.8, 1.0, 0.8]
 colorEnd = [0.7, 0.9, 1.0, 0.0]
 blend = "additive"
+
+# --- Create x Fire as a stream: the flame jet ---------------------------------
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e5"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "FlameJet"
+shape = "point"
+burst = 0
+rate = 30.0
+duration = 1.0
+lifetime = 0.7
+lifetimeJitter = 0.15
+velocity = [0.0, 0.0, 0.0]
+velocityJitter = 1.2
+gravity = [0.0, 2.0, 0.0]
+sizeStart = 0.7
+sizeEnd = 1.5
+colorStart = [1.0, 1.0, 1.0, 1.0]
+colorEnd = [0.85, 0.22, 0.04, 1.0]
+blend = "flame"
+texture = "5b1e1700-0000-4000-8000-0000000000d1"
+flipbookColumns = 16
+flipbookRows = 4
+flipbookFps = 30.0
+flipbookAspect = 0.75
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e6"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireStreamCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritFireStream"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e7"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireStream"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000e6"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e8"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireStream"
+parent = "5b1e1700-0000-4000-8000-0000000000e7"
+name = "spell.fireStream"
+form = "create"
+element = "Fire"
+trajectory = "stream"
+range = 10.0
+intensity = 1.2
+duration = 1.0
+areaShape = "disc"
+areaRadius = 1.2
+channeled = true
+costPeriod = 0.5
+upkeepScale = 0.25

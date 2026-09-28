@@ -819,3 +819,67 @@ reprend), matrice Feu. À valider en jeu : les quatre sorts à la molette.
 - Retour dev : « SpellFireWard: range must be positive » — `compileSpell`
   exige une portée > 0 même pour un sort sur soi ; le globe avait `range =
   0` et ne compilait donc jamais. Portée mise à 6 (ignorée pour `self`).
+
+### E3.d COMMITÉE (`5a3612b`) ; E3.e — les arbres qui brûlent, progressivement (2026-09-28, NON COMMITÉE)
+Règle dev : jamais de disparition ; au pire le feuillage absent comme en
+hiver, et seulement après avoir brûlé progressivement. **Headless**
+(`world/spirit/SpiritFire` : `TreeFire`, `advanceTreeFire`, `TreeFireParams`
+= `SpiritForm.treeIgnitionSeconds` 6 / `treeBurnSeconds` 25 /
+`treeRegrowSeconds` 900) : Cold — la chaleur monte avec l'exposition (part
+des 3×3 cellules autour du tronc qui brûlent) et retombe seule ; ≥ 1 →
+Burning — `burn` (feuillage parti, 0..1) monte linéairement sur
+`burnSeconds` ; → Burnt (`burn` = 1) : nu, ne reprend pas tant qu'il n'a pas
+regagné un quart de sa repousse ; → Cold, `burn` redescend sur
+`regrowSeconds` (le feuillage revient). Test : demi-exposé prend en 8 s,
+canopée à 50 % à mi-combustion, nu, repousse, refroidissement d'un arbre
+laissé seul. **Scène** (`updateSpiritFireTrees`, par job atterrie, avec le
+temps de sim écoulé depuis la précédente) : les arbres du scatter à moins
+de 160 m viennent de la copie CPU de la végétation (`WorldRenderer::
+collectProps`, `GiProp.kind == 0`), un état par arbre clé par sa base
+quantifiée au quart de mètre ; à la prise : flammes et étincelles au tronc
+(taille × échelle) pendant `burnSeconds`, cue ; un arbre qui brûle sème
+des braises autour de lui toutes les 3 s (`ignite` 3 m × échelle) ; les
+états oisifs sont effacés. **Rendu** : le masque de feu gagne un canal B =
+canopée brûlée à la cellule de l'arbre (`fireCanopy`, composé par la scène,
+`FireScorchMap::upload` à trois canaux) ; `firemask.glsl` (sampler 10 +
+`fireMaskAt` vec3) séparé de `firescorch.glsl` (qui garde le bruit à
+l'unité 12, occupée par les normales des props dans le pipeline d'arbres) ;
+`tree.vert` : `fall = max(chute hivernale, canopée brûlée)` — la MÊME
+règle de chute par carte que l'hiver, progressive et réversible — et
+`vBurn` vers `tree.frag` qui charbonne feuilles restantes et bois. Limite :
+le caster d'ombre garde les feuilles (shadow_prop.vert sans le masque) ;
+l'état des arbres est transitoire comme le champ (fenêtre 512 m).
+
+### E3.f — le jet de flammes (demande dev 2026-09-28, NON COMMITÉ)
+« Comme le sort qui jette de l'eau, un sort qui jette une traînée de feu
+devant nous, brûlant l'ennemi ou l'objet sur une portée limitée ; ça peut
+servir à mettre le feu à un arbre. » Créer × Feu × `stream` maintenu
+(`SpellFireStream`, portée 10 m, chaleur 1,2, rayon 1,2 m, upkeep ÷4 toutes
+les 0,5 s) : contrairement au jet d'eau balistique, un cône droit et court
+(`kFlameJetHalfAngle` 0,28 rad, flammes flipbook `FlameJet` émises de la
+main à 14 m/s, durée de vie = portée/vitesse, steer suit la visée) ; toutes
+les 0,25 s le sol sous le cône prend tous les 1,5 m jusqu'à la portée ou
+jusqu'au premier versant touché (jamais sur l'eau) — les props et les
+arbres prennent par le champ ; les PNJ dans le cône reçoivent le contact
+direct (`fireTouch`, désormais un membre partagé avec le contact du champ :
+buildup + dégâts typés). Matrice Feu : Créer × stream (maintenu).
+- Retour dev E3.e : « les feuilles ont pris feu mais n'ont pas disparu ».
+  Le journal montre le CPU correct (burn 1,00 → masque 255) : la faute était
+  au **fetch à lod implicite dans un vertex shader** (`texture()` sans
+  dérivées : Vulkan rend zéro) — `fireMaskAt` et `fireNoiseAt` passent en
+  `textureLod(…, 0)` (ils servent tree.vert et grass.vert). Leçon : tout
+  échantillonnage partagé vertex/fragment se fait en lod explicite.
+- Retour dev : « les feuilles grisent mais ne tombent pas ». Le canal
+  était bon mais DILUÉ : la valeur est estampée sur UN texel (la cellule de
+  la base) et lue en bilinéaire à une base décentrée → 25-60 % de la valeur.
+  `fireCanopyAt` (firemask.glsl) lit le canal B par `texelFetch` sur la
+  cellule même (le `lround` du C++ et le `floor(+0,5)` du shader
+  coïncident) ; tree.vert l'utilise pour la chute.
+- Validé dev (chute des feuilles OK) ; traces retirées. Retouches
+  demandées : les flammes AUSSI dans la CANOPÉE (deuxième émetteur, sphère de 40 % de la hauteur
+  autour du centre du houppier à 70 % de la hauteur, hauteur ≈ 2,12 ×
+  échelle d'après la silhouette moyenne du scatter), celles du tronc et des
+  branches conservées ;
+  les feuilles ROUSSISSENT comme à l'automne pendant les premiers 40 % de la
+  combustion (teinte de saison du slot, persistants compris) avant de
+  noircir et de tomber.

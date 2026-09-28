@@ -45,6 +45,9 @@ struct SpiritForm : Form {
     f32 emberSeconds { 45.0f };      // fire: a burnt cell's embers cool over this
     f32 regrowSeconds { 180.0f };    // fire: burnt ground regrows over this (dry;
                                      // wet ground up to 4x faster)
+    f32 treeIgnitionSeconds { 6.0f }; // fire: a tree in full surrounding fire catches after
+    f32 treeBurnSeconds { 25.0f };    // fire: it burns (canopy going) this long
+    f32 treeRegrowSeconds { 900.0f }; // fire: a bare tree's canopy returns over this
     core::Guid emberParticles;       // ParticleForm of the sparks a burning
                                      // cell sheds (beside fieldParticles)
     core::Guid fieldSound;           // SoundForm looped near the field's
@@ -77,6 +80,9 @@ struct SpiritForm : Form {
         REFLECT_FIELD(fieldParticles)
         REFLECT_FIELD(emberSeconds)
         REFLECT_FIELD(regrowSeconds)
+        REFLECT_FIELD(treeIgnitionSeconds)
+        REFLECT_FIELD(treeBurnSeconds)
+        REFLECT_FIELD(treeRegrowSeconds)
         REFLECT_FIELD(emberParticles)
         REFLECT_FIELD(fieldSound)
         REFLECT_FIELD(liftQuadratic)

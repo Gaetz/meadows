@@ -8,20 +8,8 @@
 // the char is split into coal bodies by its Worley cracks, the cracks
 // glow with the cell's ember level and breathe, the cooled coals turn to
 // ash. Without the volume (no compute caps) a hash lattice stands in.
-layout(binding = 10) uniform sampler2D uFireScorch;
+#include "firemask.glsl"
 layout(binding = 12) uniform sampler3D uFireNoise;
-
-vec2 fireMaskAt(vec2 xz) {
-    if (uFireScorchInfo.w < 0.5) {
-        return vec2(0.0);
-    }
-    vec2 uv = ((xz - uFireScorchInfo.xy) * uFireScorchInfo.z + 0.5) /
-              uFireScorchInfo.w;
-    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
-        return vec2(0.0);
-    }
-    return texture(uFireScorch, uv).rg;
-}
 
 float fireHash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -35,15 +23,15 @@ vec4 fireNoiseAt(vec2 xz) {
         float h = fireHash(floor(xz * 2.0));
         return vec4(h, h, fireHash(floor(xz * 3.0) + 0.5), 1.0);
     }
-    return texture(uFireNoise, vec3(xz / max(uFireEmberHot.w, 0.5),
-                                    uTime.x * 0.004));
+    return textureLod(uFireNoise, vec3(xz / max(uFireEmberHot.w, 0.5),
+                                    uTime.x * 0.004), 0.0);
 }
 
 // charred: 0..1 the ground is char (the eroded scorch); glow: 0..1 the
 // cell's ember level — its flames while it burns, then the short
 // cooling behind the front (emberSeconds), then nothing.
 void fireFront(vec2 xz, out float charred, out float glow) {
-    vec2 m = fireMaskAt(xz);
+    vec3 m = fireMaskAt(xz);
     glow = m.y;
     charred = 0.0;
     if (m.x <= 0.0) {

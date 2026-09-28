@@ -68,6 +68,50 @@ render::terrain::FireCellFuel fuelFromWeights(const GroundProps& props,
     return out;
 }
 
+bool advanceTreeFire(TreeFire& tree, f32 exposure, f32 dt,
+                     const TreeFireParams& params) {
+    exposure = glm::clamp(exposure, 0.0f, 1.0f);
+    switch (tree.phase) {
+    case TreeFirePhase::Cold:
+        if (exposure > 0.0f) {
+            tree.heat += dt * exposure / glm::max(params.ignitionSeconds, 0.01f);
+        } else {
+            tree.heat = glm::max(0.0f, tree.heat - dt * 0.2f /
+                                              glm::max(params.ignitionSeconds, 0.01f));
+        }
+        // A bare tree regrows its canopy while cold.
+        if (tree.burn > 0.0f) {
+            tree.burn = glm::max(0.0f, tree.burn - dt / glm::max(params.regrowSeconds, 0.01f));
+        }
+        if (tree.heat >= 1.0f) {
+            tree.heat = 0.0f;
+            tree.phase = TreeFirePhase::Burning;
+            tree.timer = 0.0f;
+            return true;
+        }
+        return false;
+    case TreeFirePhase::Burning:
+        tree.timer += dt;
+        tree.burn = glm::max(tree.burn, glm::clamp(tree.timer / glm::max(params.burnSeconds, 0.01f), 0.0f, 1.0f));
+        if (tree.timer >= params.burnSeconds) {
+            tree.phase = TreeFirePhase::Burnt;
+            tree.timer = 0.0f;
+            tree.burn = 1.0f;
+        }
+        return false;
+    case TreeFirePhase::Burnt:
+        tree.timer += dt;
+        // The bare tree: it cannot catch again until it has grown some
+        // canopy back (nothing left to burn).
+        if (tree.timer >= params.regrowSeconds * 0.25f) {
+            tree.phase = TreeFirePhase::Cold;
+            tree.timer = 0.0f;
+        }
+        return false;
+    }
+    return false;
+}
+
 FireJobOutput runFireJob(FireJobInput&& in) {
     using namespace render::terrain;
     const auto start = std::chrono::steady_clock::now();

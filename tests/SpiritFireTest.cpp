@@ -53,6 +53,57 @@ TEST_CASE("fire lane: fuel blends the splat classes, marsh wetness damps") {
     CHECK(none.fuel == doctest::Approx(0.0f));
 }
 
+TEST_CASE("fire lane: a tree heats, catches, burns its canopy, stands bare and regrows") {
+    TreeFireParams p;
+    p.ignitionSeconds = 4.0f;
+    p.burnSeconds = 10.0f;
+    p.regrowSeconds = 100.0f;
+    TreeFire tree;
+    // Half-surrounded: catches after 8 s, not 4.
+    bool caught = false;
+    f32 t = 0.0f;
+    while (!caught && t < 20.0f) {
+        caught = advanceTreeFire(tree, 0.5f, 0.1f, p);
+        t += 0.1f;
+    }
+    CHECK(caught);
+    CHECK(t == doctest::Approx(8.0f).epsilon(0.05));
+    CHECK(tree.phase == TreeFirePhase::Burning);
+    // Burning: the canopy goes progressively, whatever the ground does.
+    for (int i = 0; i < 50; ++i) {
+        advanceTreeFire(tree, 0.0f, 0.1f, p);
+    }
+    CHECK(tree.burn == doctest::Approx(0.5f).epsilon(0.05));
+    for (int i = 0; i < 51; ++i) {
+        advanceTreeFire(tree, 0.0f, 0.1f, p);
+    }
+    CHECK(tree.phase == TreeFirePhase::Burnt);
+    CHECK(tree.burn == doctest::Approx(1.0f));
+    // Bare for a quarter of the regrowth, then cold and regrowing; fire
+    // around a bare tree does nothing.
+    for (int i = 0; i < 260; ++i) {
+        advanceTreeFire(tree, 1.0f, 0.1f, p);
+    }
+    CHECK(tree.phase == TreeFirePhase::Cold);
+    CHECK(tree.burn < 1.0f);
+    CHECK(tree.burn > 0.9f);
+    for (int i = 0; i < 1000; ++i) {
+        advanceTreeFire(tree, 0.0f, 0.1f, p);
+    }
+    CHECK(tree.burn == doctest::Approx(0.0f));
+    CHECK(tree.idle());
+    // Cooling: a tree half-heated and left alone cools down.
+    TreeFire cool;
+    for (int i = 0; i < 20; ++i) {
+        advanceTreeFire(cool, 1.0f, 0.1f, p); // 2 s of 4: heat 0.5
+    }
+    CHECK(cool.heat == doctest::Approx(0.5f).epsilon(0.05));
+    for (int i = 0; i < 100; ++i) {
+        advanceTreeFire(cool, 0.0f, 0.1f, p);
+    }
+    CHECK(cool.heat == doctest::Approx(0.0f));
+}
+
 TEST_CASE("fire lane: the job initialises, ignites, steps, masks and scrolls") {
     FireJobInput in;
     in.spec = FireWindow::specFor(0.0f, 0.0f);

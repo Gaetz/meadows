@@ -111,8 +111,9 @@ bool spellSupported(const SpellSpec& spec) {
     }
     if (spec.element == SpiritKind::Fire) {
         switch (spec.verb) {
-        case SpellVerb::Create: // the spark: heat under the aim, the field spreads it
-            return spec.trajectory == SpellTrajectory::Point;
+        case SpellVerb::Create: // the spark at the aim, or the flame jet ahead (held)
+            return spec.trajectory == SpellTrajectory::Point ||
+                   (spec.trajectory == SpellTrajectory::Stream && spec.channeled);
         case SpellVerb::Destroy: // put out at the aim; held on self = the fire ward
             return spec.trajectory == SpellTrajectory::Point ||
                    (spec.trajectory == SpellTrajectory::Self && spec.channeled);

@@ -1757,6 +1757,7 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritReading(dt);
         updateSpiritBrand(dt);
         updateSpiritGlobe(dt);
+        updateSpiritFlameJet(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
         if (const f32 wheel = engine->getInput().wheelDelta();
@@ -4812,6 +4813,13 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         }
         break;
     case world::SpellTrajectory::Stream:
+        if (spell.element == render::terrain::SpiritKind::Fire) {
+            action.mode = PendingSpiritAction::Mode::FireStream;
+            action.rate = spell.intensity;
+            action.radius = spell.areaRadius;
+            action.range = spell.range;
+            break;
+        }
         action.mode = PendingSpiritAction::Mode::Jet;
         action.speed = world::launchSpeedForRange(
             spell.range, world::SpiritJetList::kGravity);
@@ -4878,6 +4886,27 @@ void LandscapeScene::applyPendingSpiritActions() {
                 brand.emitter = fxSim.spawn(params, at, 0x6b7a9du ^ fxSim.count());
             }
             spiritBrand = brand;
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::FireStream) {
+            endSpiritFlameJet();
+            SpiritFlameJet jet;
+            jet.heat = action.rate;
+            jet.radius = action.radius;
+            jet.range = action.range;
+            jet.costPeriod = action.costPeriod;
+            jet.upkeepScale = action.upkeepScale;
+            jet.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+            const core::Guid& fxId =
+                spiritDirector.jetParticles(render::terrain::SpiritKind::Fire);
+            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f; // until the key lets go
+                params.velocity = flyCamera.camera.forward() * kFlameJetSpeed;
+                params.lifetime = action.range / kFlameJetSpeed;
+                jet.emitter = fxSim.spawn(params, spiritNozzle(), 0x5e7f1a3u ^ fxSim.count());
+            }
+            spiritFlameJet = jet;
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::FireGlobe) {
@@ -5562,15 +5591,19 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
     frame.seaLevel = renderer.terrainParams().seaLevel;
     const Vec3 cam = flyCamera.camera.position;
     frame.focus = { cam.x, cam.z };
+    fireLandClock += simSeconds;
     if (!spiritDirector.updateFire(engine->getJobSystem(), frame, simSeconds)) {
         return;
     }
-    // A job landed: the mask and the flames follow it.
+    const f32 landDt = fireLandClock;
+    fireLandClock = 0.0f;
+    // A job landed: the mask, the props, the trees and the flames follow it.
     updateSpiritFireProps();
+    updateSpiritFireTrees(landDt);
     const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
     renderer.fireScorchMap().upload(engine->getDevice(),
                                     spiritDirector.fireScorch(),
-                                    spiritDirector.fireGlow(), spec.n,
+                                    spiritDirector.fireGlow(), fireCanopy, spec.n,
                                     { spec.originX, spec.originZ },
                                     spec.texelSize);
     // Wanted flames: the burning cells the camera can SEE, nearest and
@@ -5730,52 +5763,52 @@ void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
     out.lights = std::move(merged);
 }
 
-void LandscapeScene::applyFireContact(f32 dt) {
+void LandscapeScene::fireTouch(ecs::Entity entity, f32& clock, f32 dt,
+                               bool inFire) {
     using render::terrain::SpiritKind;
-    const auto* effect =
-        forms.find<gameplay::EffectForm>(spiritDirector.contactEffect(SpiritKind::Fire));
-    if (!effect) {
+    if (!inFire || !entity.has<gameplay::AttributeSet>() ||
+        !entity.has<gameplay::AbilitySystem>() ||
+        !entity.has<gameplay::StatusBuildup>()) {
+        clock = 0.0f;
         return;
     }
-    const f32 period = spiritDirector.contactPeriod(SpiritKind::Fire);
-    const f32 damage = spiritDirector.contactDamage(SpiritKind::Fire);
-    const auto touch = [&](ecs::Entity entity, const Vec3& feet, f32& clock) {
-        if (!spiritDirector.fireBurningAt(feet.x, feet.z) ||
-            !entity.has<gameplay::AttributeSet>() ||
-            !entity.has<gameplay::AbilitySystem>() ||
-            !entity.has<gameplay::StatusBuildup>()) {
-            clock = 0.0f;
-            return;
-        }
-        clock += dt;
-        if (clock < period) {
-            return;
-        }
-        clock = 0.0f;
-        // The buildup (Status.Ignited in time) ...
+    clock += dt;
+    if (clock < spiritDirector.contactPeriod(SpiritKind::Fire)) {
+        return;
+    }
+    clock = 0.0f;
+    // The buildup (Status.Ignited in time) ...
+    if (const auto* effect = forms.find<gameplay::EffectForm>(
+            spiritDirector.contactEffect(SpiritKind::Fire))) {
         gameplay::applyEffect(entity.get_mut<gameplay::AttributeSet>(),
                               entity.get_mut<gameplay::AbilitySystem>(), *effect,
                               gameTags, &entity.get_mut<gameplay::StatusBuildup>());
-        // ... and the flames' own typed damage through the pipeline
-        // (fire resistance mitigates; §2.9's sanctioned terminal write).
-        if (damage > 0.0f && entity.has<gameplay::CoreAttributes>() &&
-            entity.has<gameplay::CombatState>()) {
-            gameplay::StatBlock block {
-                entity.get_mut<gameplay::CoreAttributes>(),
-                entity.get_mut<gameplay::AttributeSet>(),
-                entity.get_mut<gameplay::AbilitySystem>(),
-                entity.get_mut<gameplay::CombatState>()
-            };
-            gameplay::DamageEvent burn;
-            burn.channels = { { gameplay::DamageType::Fire, damage } };
-            gameplay::applyDamage(block, burn, gameTags, derivedStats, nullptr,
-                                  statsTuning);
-        }
-    };
+    }
+    // ... and the flames' own typed damage through the pipeline (fire
+    // resistance mitigates; §2.9's sanctioned terminal write).
+    const f32 damage = spiritDirector.contactDamage(SpiritKind::Fire);
+    if (damage > 0.0f && entity.has<gameplay::CoreAttributes>() &&
+        entity.has<gameplay::CombatState>()) {
+        gameplay::StatBlock block {
+            entity.get_mut<gameplay::CoreAttributes>(),
+            entity.get_mut<gameplay::AttributeSet>(),
+            entity.get_mut<gameplay::AbilitySystem>(),
+            entity.get_mut<gameplay::CombatState>()
+        };
+        gameplay::DamageEvent burn;
+        burn.channels = { { gameplay::DamageType::Fire, damage } };
+        gameplay::applyDamage(block, burn, gameTags, derivedStats, nullptr,
+                              statsTuning);
+    }
+}
+
+void LandscapeScene::applyFireContact(f32 dt) {
     if (mode == SceneMode::Play && !interiorMode && playerEntity.is_alive() &&
         !spiritGlobe) { // the fire ward: no flame reaches the caster
         if (phys::CharacterBody* body = playerController.body()) {
-            touch(playerEntity, body->position(), playerFireClock);
+            const Vec3 feet = body->position();
+            fireTouch(playerEntity, playerFireClock, dt,
+                      spiritDirector.fireBurningAt(feet.x, feet.z));
         }
     }
     if (!interiorMode) {
@@ -5784,10 +5817,92 @@ void LandscapeScene::applyFireContact(f32 dt) {
                 !npc->entity.has<world::Transform>()) {
                 continue;
             }
-            touch(npc->entity, npc->entity.get<world::Transform>().position,
-                  npcFireClocks[npc->entity.id()]);
+            const Vec3& at = npc->entity.get<world::Transform>().position;
+            fireTouch(npc->entity, npcFireClocks[npc->entity.id()], dt,
+                      spiritDirector.fireBurningAt(at.x, at.z));
         }
     }
+}
+
+void LandscapeScene::updateSpiritFlameJet(f32 dt) {
+    if (!spiritFlameJet) {
+        return;
+    }
+    SpiritFlameJet& jet = *spiritFlameJet;
+    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive()) {
+        endSpiritFlameJet();
+        return;
+    }
+    jet.costClock += dt;
+    if (jet.costClock >= jet.costPeriod) {
+        jet.costClock -= jet.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(jet.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags },
+                                                 jet.upkeepScale)) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            endSpiritFlameJet();
+            return;
+        }
+    }
+    const Vec3 origin = spiritNozzle();
+    const Vec3 forward = flyCamera.camera.forward();
+    if (jet.emitter != 0) {
+        fxSim.moveEmitter(jet.emitter, origin);
+        fxSim.steerEmitter(jet.emitter, forward * kFlameJetSpeed,
+                           jet.range / kFlameJetSpeed);
+    }
+    // Whoever stands in the cone burns (the same contact as the field).
+    if (!interiorMode) {
+        const f32 cosHalf = std::cos(kFlameJetHalfAngle);
+        for (const auto& npc : npcDirector.npcs()) {
+            if (!npc->entity.is_alive() || npc->dead ||
+                !npc->entity.has<world::Transform>()) {
+                continue;
+            }
+            const Vec3 to = npc->entity.get<world::Transform>().position +
+                            Vec3 { 0.0f, 0.9f, 0.0f } - origin;
+            const f32 dist = glm::length(to);
+            const bool inCone = dist > 0.2f && dist <= jet.range &&
+                                glm::dot(to / dist, forward) >= cosHalf;
+            if (inCone) {
+                fireTouch(npc->entity, npcFireClocks[npc->entity.id()], dt, true);
+            }
+        }
+    }
+    // The ground under the cone catches, every pulse, out to the range
+    // or the first hillside the flames hit.
+    jet.pulseClock += dt;
+    if (jet.pulseClock < kFlameJetPulse) {
+        return;
+    }
+    jet.pulseClock -= kFlameJetPulse;
+    const auto& params = renderer.terrainParams();
+    for (f32 t = 1.5f; t <= jet.range; t += 1.5f) {
+        const Vec3 p = origin + forward * t;
+        const f32 ground = render::terrain::height(params, p.x, p.z);
+        if (p.y < ground) {
+            spiritDirector.ignite(p.x, p.z, jet.radius, jet.heat); // the hillside
+            break;
+        }
+        if (p.y - ground < 2.5f &&
+            !render::terrain::waterSurfaceQuery(makeWaterQuery(), p.x, p.z, ground)) {
+            spiritDirector.ignite(p.x, p.z, jet.radius, jet.heat);
+        }
+    }
+}
+
+void LandscapeScene::endSpiritFlameJet() {
+    if (!spiritFlameJet) {
+        return;
+    }
+    if (spiritFlameJet->emitter != 0) {
+        fxSim.stopEmitter(spiritFlameJet->emitter);
+    }
+    spiritFlameJet.reset();
 }
 
 void LandscapeScene::updateSpiritFireProps() {
@@ -5849,6 +5964,120 @@ void LandscapeScene::updateSpiritFireProps() {
     });
 }
 
+void LandscapeScene::updateSpiritFireTrees(f32 landDt) {
+    using render::terrain::SpiritKind;
+    const world::TreeFireParams& params = spiritDirector.treeFire();
+    const Vec3 cam = flyCamera.camera.position;
+    // The trees near the camera (the vegetation's CPU copy), matched to
+    // their state by their base.
+    vector<render::VegetationSystem::GiProp> props;
+    renderer.collectProps(cam, kTreeFireReach, props, 6000);
+    const auto* flameForm = forms.find<data::ParticleForm>(
+        spiritDirector.fieldParticles(SpiritKind::Fire));
+    const auto* sparkForm = forms.find<data::ParticleForm>(
+        spiritDirector.sparkParticles(SpiritKind::Fire));
+    for (const render::VegetationSystem::GiProp& prop : props) {
+        if (prop.kind != 0) {
+            continue; // trees only
+        }
+        // Exposure: the share of the 3x3 cells around the trunk that burn.
+        u32 burning = 0;
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                if (spiritDirector.fireBurningAt(prop.position.x + 2.0f * dx,
+                                                 prop.position.z + 2.0f * dz)) {
+                    ++burning;
+                }
+            }
+        }
+        const f32 exposure = static_cast<f32>(burning) / 9.0f;
+        const u64 key = treeKey(prop.position);
+        auto it = treeFires.find(key);
+        if (it == treeFires.end()) {
+            if (exposure <= 0.0f) {
+                continue; // cold and untouched: no state
+            }
+            it = treeFires.emplace(key, TreeFireEntry { prop.position, prop.scale }).first;
+        }
+        TreeFireEntry& tree = it->second;
+        tree.at = prop.position;
+        tree.scale = prop.scale;
+        const bool caught = world::advanceTreeFire(tree.state, exposure, landDt, params);
+        // Trunk and branches burn, and the crown with them: the scatter's
+        // mean silhouette (~2.1 m of height per scale unit, the crown's
+        // centre at 70 % of it, its radius ~40 % of it) places the
+        // canopy's flames.
+        const f32 height = 2.12f * tree.scale;
+        const Vec3 trunk = tree.at + Vec3 { 0.0f, 2.0f * tree.scale, 0.0f };
+        const Vec3 crown = tree.at + Vec3 { 0.0f, 0.7f * height, 0.0f };
+        if (caught) {
+            const u32 seed = static_cast<u32>(key ^ (key >> 32)) ^ 0x7ee5u;
+            if (flameForm) {
+                fx::EmitterParams p = gameplay::toEmitterParams(*flameForm);
+                p.duration = params.burnSeconds;
+                p.shapeRadius = 1.2f * tree.scale;
+                p.sizeStart *= 1.6f * tree.scale;
+                p.sizeEnd *= 1.6f * tree.scale;
+                p.rate *= 1.5f;
+                tree.flames = fxSim.spawn(p, trunk, seed);
+                fx::EmitterParams c = gameplay::toEmitterParams(*flameForm);
+                c.duration = params.burnSeconds;
+                c.shape = fx::EmitterShape::Sphere;
+                c.shapeRadius = 0.4f * height;
+                c.sizeStart *= 1.4f;
+                c.sizeEnd *= 1.4f;
+                c.rate *= 3.0f;
+                tree.crownFlames = fxSim.spawn(c, crown, seed ^ 0x51ed270bu);
+            }
+            if (sparkForm) {
+                fx::EmitterParams p = gameplay::toEmitterParams(*sparkForm);
+                p.duration = params.burnSeconds;
+                p.shape = fx::EmitterShape::Sphere;
+                p.shapeRadius = 0.45f * height;
+                p.rate *= 3.0f;
+                tree.sparks = fxSim.spawn(p, crown + Vec3 { 0.0f, 0.15f * height, 0.0f },
+                                          seed ^ 0x9e3779b9u);
+            }
+            fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", crown, 1.0f });
+        }
+        if (tree.state.phase == world::TreeFirePhase::Burning) {
+            // A burning tree sheds embers on the ground around it.
+            tree.emberClock += landDt;
+            if (tree.emberClock >= 3.0f) {
+                tree.emberClock = 0.0f;
+                spiritDirector.ignite(tree.at.x, tree.at.z, 3.0f * tree.scale, 1.0f);
+            }
+        } else if (tree.flames != 0 || tree.crownFlames != 0 || tree.sparks != 0) {
+            for (u32* emitter : { &tree.flames, &tree.crownFlames, &tree.sparks }) {
+                if (*emitter != 0) {
+                    fxSim.stopEmitter(*emitter);
+                    *emitter = 0;
+                }
+            }
+        }
+    }
+    // Drop the states that went cold and whole; compose the canopy mask.
+    const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
+    fireCanopy.assign(spec.cells(), 0);
+    const i32 n = static_cast<i32>(spec.n);
+    for (auto it = treeFires.begin(); it != treeFires.end();) {
+        TreeFireEntry& tree = it->second;
+        if (tree.state.idle()) {
+            it = treeFires.erase(it);
+            continue;
+        }
+        if (n > 0 && tree.state.burn > 0.0f) {
+            const i32 col = static_cast<i32>(std::lround((tree.at.x - spec.originX) / spec.texelSize));
+            const i32 row = static_cast<i32>(std::lround((tree.at.z - spec.originZ) / spec.texelSize));
+            if (col >= 0 && row >= 0 && col < n && row < n) {
+                u8& cell = fireCanopy[static_cast<size_t>(row) * n + col];
+                cell = glm::max(cell, static_cast<u8>(tree.state.burn * 255.0f + 0.5f));
+            }
+        }
+        ++it;
+    }
+}
+
 void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
     // The nearest burning cell within reach carries the loop.
     const Vec2* nearest = nullptr;
@@ -5888,6 +6117,7 @@ void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
 void LandscapeScene::resetSpiritFire() {
     endSpiritBrand();
     endSpiritGlobe();
+    endSpiritFlameJet();
     if (fireLoop != 0) {
         audioSystem.stop(fireLoop, 0.3f);
         fireLoop = 0;
@@ -5902,6 +6132,16 @@ void LandscapeScene::resetSpiritFire() {
     }
     burningProps.clear();
     propFireHeat.clear();
+    for (auto& [key, tree] : treeFires) {
+        for (const u32 emitter : { tree.flames, tree.crownFlames, tree.sparks }) {
+            if (emitter != 0) {
+                fxSim.stopEmitter(emitter);
+            }
+        }
+    }
+    treeFires.clear();
+    fireCanopy.clear();
+    fireLandClock = 0.0f;
     npcFireClocks.clear();
     playerFireClock = 0.0f;
     for (const FlameEmitter& flame : flameEmitters) {

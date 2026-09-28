@@ -137,6 +137,7 @@ public:
     // contact and props: a cell burns for its whole fuel, well past the
     // front's glow).
     bool fireBurningAt(f32 x, f32 z) const;
+    const world::TreeFireParams& treeFire() const { return treeFireParams; }
     // Typed fire damage dealt with each contact (SpiritForm.contactDamage).
     f32 contactDamage(render::terrain::SpiritKind kind) const {
         return contactHurt[static_cast<size_t>(kind)];
@@ -189,6 +190,7 @@ private:
     vector<world::FireDouse> fireDouses;
     std::optional<world::FireDouse> fireWard;
     render::terrain::FireParams fireParams;
+    world::TreeFireParams treeFireParams;
     world::GroundProps groundProps {};
     vector<u8> fireMask;
     vector<u8> fireGlowMask;
