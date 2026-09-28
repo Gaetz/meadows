@@ -564,8 +564,14 @@ private:
         // bigger than `rate` metres, carried while held.
         // FireIgnite: `rate` heat dealt to the fire field's cells within
         // `radius` of (x, z) — the field spreads it.
+        // FireDouse: the burning cells within `radius` of (x, z) put out.
+        // FireBrand: a flame carried at the aim while held, igniting
+        // `radius` around it with `rate` heat every costPeriod.
+        // FireGlobe: the fire ward around the caster while held — nothing
+        // burns within `radius`, the caster feels no flame.
         enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
-                               EarthDig, EarthWall, EarthSeize, FireIgnite };
+                               EarthDig, EarthWall, EarthSeize, FireIgnite,
+                               FireDouse, FireBrand, FireGlobe };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         bool channeled { false };
@@ -672,6 +678,35 @@ private:
     };
     vector<BurningProp> burningProps;
     static constexpr f32 kPropHeatRate = 0.6f; // per second in full fire
+    // Control x Fire, the firebrand: a flame at the aim that lights the
+    // ground under it while the key is held (upkeep like the water hold).
+    struct SpiritBrand {
+        f32 heat { 1.0f };
+        f32 radius { 1.0f };
+        f32 costPeriod { 1.0f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        f32 pulseClock { 0.0f };
+        u32 emitter { 0 };
+        core::Guid ability;
+    };
+    std::optional<SpiritBrand> spiritBrand;
+    void updateSpiritBrand(f32 dt);
+    void endSpiritBrand();
+    static constexpr f32 kBrandPulse = 0.25f;
+    // Destroy x Fire on self, held: the fire ward — a douse repeated by
+    // every fire job around the caster, who feels no flame meanwhile.
+    struct SpiritGlobe {
+        f32 radius { 6.0f };
+        f32 costPeriod { 1.0f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        u32 emitter { 0 };
+        core::Guid ability;
+    };
+    std::optional<SpiritGlobe> spiritGlobe;
+    void updateSpiritGlobe(f32 dt);
+    void endSpiritGlobe();
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };
@@ -682,7 +717,10 @@ private:
     void updateSpiritLine();
     // Understand x Earth: the ground under the aim, same HUD block.
     void castGroundReading(const Vec3& at, f32 seconds, bool live);
-    enum class ReadingKind : u8 { Water, Ground };
+    enum class ReadingKind : u8 { Water, Ground, Fire };
+    // Understand x Fire: the cell under the aim (cold / heating / burning /
+    // burnt and regrowing), its fuel, the nearest front.
+    void castFireReading(const Vec3& at, f32 seconds, bool live);
     ReadingKind spiritReadingKind { ReadingKind::Water };
     // Ground rising into characters throws them (the earth spirit's lift
     // curve, SpiritForm Earth). ONE mechanism at the ONE place the ground

@@ -24,6 +24,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     soundFx.fill(core::Guid {});
     contactFx.fill(core::Guid {});
     contactEvery.fill(0.5f);
+    contactHurt.fill(0.0f);
     data::forEach<data::SpiritForm>(forms, [&](const data::SpiritForm& spirit) {
         const auto kind = render::terrain::spiritFromName(spirit.name);
         if (kind != render::terrain::SpiritKind::kCount) {
@@ -35,6 +36,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             contactFx[static_cast<size_t>(kind)] = spirit.contactEffect;
             contactEvery[static_cast<size_t>(kind)] =
                 glm::max(spirit.contactPeriod, 0.05f);
+            contactHurt[static_cast<size_t>(kind)] = spirit.contactDamage;
         }
         if (kind == render::terrain::SpiritKind::Earth) {
             lift.quadratic = spirit.liftQuadratic;
@@ -80,6 +82,35 @@ core::Guid SpiritDirector::spawn(render::terrain::SpiritKind kind, f32 x,
 
 // --- The fire lane ---------------------------------------------------------
 
+f32 SpiritDirector::fireScorchAt(f32 x, f32 z) const {
+    const render::terraingen::GridSpec& spec = fireMaskSpec;
+    if (spec.n == 0 || fireMask.size() < spec.cells()) {
+        return 0.0f;
+    }
+    const i32 n = static_cast<i32>(spec.n);
+    const i32 col = static_cast<i32>(std::lround((x - spec.originX) / spec.texelSize));
+    const i32 row = static_cast<i32>(std::lround((z - spec.originZ) / spec.texelSize));
+    if (col < 0 || row < 0 || col >= n || row >= n) {
+        return 0.0f;
+    }
+    return static_cast<f32>(fireMask[static_cast<size_t>(row) * n + col]) / 255.0f;
+}
+
+bool SpiritDirector::fireBurningAt(f32 x, f32 z) const {
+    const render::terraingen::GridSpec& spec = fireMaskSpec;
+    if (spec.n == 0 || fireStateMask.size() < spec.cells()) {
+        return false;
+    }
+    const i32 n = static_cast<i32>(spec.n);
+    const i32 col = static_cast<i32>(std::lround((x - spec.originX) / spec.texelSize));
+    const i32 row = static_cast<i32>(std::lround((z - spec.originZ) / spec.texelSize));
+    if (col < 0 || row < 0 || col >= n || row >= n) {
+        return false;
+    }
+    return fireStateMask[static_cast<size_t>(row) * n + col] ==
+           static_cast<u8>(render::terrain::FireState::Burning);
+}
+
 f32 SpiritDirector::fireGlowAt(f32 x, f32 z) const {
     const render::terraingen::GridSpec& spec = fireMaskSpec;
     if (spec.n == 0 || fireGlowMask.size() < spec.cells()) {
@@ -102,14 +133,21 @@ void SpiritDirector::ignite(f32 x, f32 z, f32 radius, f32 heat) {
     fireIgnitions.push_back({ x, z, glm::max(radius, 0.5f), heat });
 }
 
+void SpiritDirector::douse(f32 x, f32 z, f32 radius) {
+    fireDouses.push_back({ x, z, glm::max(radius, 0.5f) });
+}
+
 void SpiritDirector::resetFire() {
     ++fireEpoch; // an in-flight job lands stale and is dropped
     fireGrid.reset();
     fireIgnitions.clear();
+    fireDouses.clear();
+    fireWard.reset();
     fireActive = false;
     fireAccum = 0.0f;
     fireMask.clear();
     fireGlowMask.clear();
+    fireStateMask.clear();
     fireMaskSpec = {};
     fireCenters.clear();
     lastFireStats = {};
@@ -129,6 +167,7 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         fireGrid = std::make_unique<FireGrid>(std::move(out.grid));
         fireMask = std::move(out.scorch);
         fireGlowMask = std::move(out.glow);
+        fireStateMask = std::move(out.state);
         fireMaskSpec = fireGrid->spec;
         fireCenters = std::move(out.burning);
         lastFireStats = out.stats;
@@ -145,8 +184,10 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
     if (fireInFlight || !frame.params) {
         return landed;
     }
-    const bool sparks = !fireIgnitions.empty();
+    const bool sparks = !fireIgnitions.empty() ||
+                        (fireActive && (!fireDouses.empty() || fireWard));
     if (!sparks && !fireActive) {
+        fireDouses.clear(); // nothing burns: nothing to put out
         return landed; // the lane idles: no job while nothing burns
     }
     u32 steps = static_cast<u32>(std::floor(fireAccum / fireParams.dt));
@@ -175,6 +216,11 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
     in.params = fireParams;
     in.ignitions = std::move(fireIgnitions);
     fireIgnitions.clear();
+    in.douses = std::move(fireDouses);
+    fireDouses.clear();
+    if (fireWard) {
+        in.douses.push_back(*fireWard);
+    }
     in.steps = steps;
     in.epoch = fireEpoch;
     // Value copies for the worker: the terrain (one shared copy for both

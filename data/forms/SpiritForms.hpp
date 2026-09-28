@@ -29,6 +29,8 @@ struct SpiritForm : Form {
     i32 spreadBudgetPerTick { 64 };  // never "the whole map burns"
     core::Guid contactEffect;        // EffectForm applied to actors in the field
     f32 contactPeriod { 0.5f };      // seconds between applications per actor
+    f32 contactDamage { 0.0f };      // typed damage (the spirit's element) dealt
+                                     // with each contact through applyDamage
     str damageType;                  // triad 2: "blunt" | "slashing" | "piercing"
     str cueSpawn;                    // "Cue.Spirit.Water.Spawn"
     str cueActive;
@@ -65,6 +67,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(spreadBudgetPerTick)
         REFLECT_FIELD(contactEffect)
         REFLECT_FIELD(contactPeriod)
+        REFLECT_FIELD(contactDamage)
         REFLECT_FIELD(damageType)
         REFLECT_FIELD(cueSpawn)
         REFLECT_FIELD(cueActive)

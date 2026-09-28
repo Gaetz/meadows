@@ -198,6 +198,25 @@ TEST_CASE("fire: burnt ground regrows, the wetter the sooner, and can burn again
     CHECK(g.state[dry] == static_cast<u8>(FireState::Burning));
 }
 
+TEST_CASE("fire: a douse puts the cells out, keeps their fuel, and they catch again") {
+    FireGrid g;
+    fireInitWindow(g, spec65());
+    const FireParams p = fast();
+    fireIgnite(g, 64.0f, 64.0f, 3.0f, 2.0f, grass);
+    FireStats stats;
+    fireStep(g, p, grass, nullptr, &stats);
+    CHECK(stats.burning > 1);
+    fireDouse(g, 64.0f, 64.0f, 6.0f);
+    fireStep(g, p, grass, nullptr, &stats);
+    CHECK(stats.burning == 0);
+    const size_t center = 32 * 65 + 32;
+    CHECK(g.state[center] == static_cast<u8>(FireState::Dormant));
+    CHECK(g.fuel[center] > 2.0f); // barely burnt: the fuel stays
+    fireIgnite(g, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    fireStep(g, p, grass, nullptr, &stats);
+    CHECK(stats.burning >= 1);
+}
+
 TEST_CASE("fire: the ignition budget caps how many cells catch per tick") {
     FireGrid g;
     fireInitWindow(g, spec65());

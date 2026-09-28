@@ -104,6 +104,20 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     spec.trajectory = SpellTrajectory::Stream;
     CHECK_FALSE(spellSupported(spec)); // a flame jet waits for its brick
     spec.trajectory = SpellTrajectory::Point;
+    spec.verb = SpellVerb::Destroy;
+    CHECK(spellSupported(spec)); // put out at the aim
+    spec.trajectory = SpellTrajectory::Self;
+    CHECK_FALSE(spellSupported(spec)); // the ward is held by nature
+    spec.channeled = true;
+    CHECK(spellSupported(spec)); // the fire ward
+    spec.trajectory = SpellTrajectory::Point;
+    spec.verb = SpellVerb::Control;
+    CHECK(spellSupported(spec)); // the firebrand, held
+    spec.channeled = false;
+    CHECK_FALSE(spellSupported(spec));
+    spec.verb = SpellVerb::Understand;
+    CHECK(spellSupported(spec)); // the fire reading
+    spec.verb = SpellVerb::Create;
     spec.element = SpiritKind::Wind;
     CHECK_FALSE(spellSupported(spec)); // wind waits for E4
     spec.element = SpiritKind::Earth;

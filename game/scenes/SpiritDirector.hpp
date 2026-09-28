@@ -114,6 +114,11 @@ public:
     };
     // Heat dealt to every cell within `radius` of (x, z) by the next job.
     void ignite(f32 x, f32 z, f32 radius, f32 heat);
+    // Every burning cell within `radius` of (x, z) put out by the next job.
+    void douse(f32 x, f32 z, f32 radius);
+    // A douse repeated by EVERY job while set (the fire ward around a
+    // character): nothing burns inside it.
+    void setWard(std::optional<world::FireDouse> ward) { fireWard = std::move(ward); }
     // Once per frame after the safe point. True when a job landed this
     // frame (fireScorch / fireBurning are fresh).
     bool updateFire(core::JobSystem& jobs, const FireFrame& frame,
@@ -126,6 +131,16 @@ public:
     const vector<u8>& fireGlow() const { return fireGlowMask; }
     // The ember level at a point, 0..1 (0 outside the window / cold).
     f32 fireGlowAt(f32 x, f32 z) const;
+    // The scorch at a point, 0..1 (0 outside the window / untouched).
+    f32 fireScorchAt(f32 x, f32 z) const;
+    // Is the cell at a point burning right now (the gameplay truth for
+    // contact and props: a cell burns for its whole fuel, well past the
+    // front's glow).
+    bool fireBurningAt(f32 x, f32 z) const;
+    // Typed fire damage dealt with each contact (SpiritForm.contactDamage).
+    f32 contactDamage(render::terrain::SpiritKind kind) const {
+        return contactHurt[static_cast<size_t>(kind)];
+    }
     // The EffectForm actors standing in the field take (SpiritForm
     // contactEffect), every contactPeriod seconds.
     const core::Guid& contactEffect(render::terrain::SpiritKind kind) const {
@@ -171,15 +186,20 @@ private:
     u32 fireEpoch { 0 };
     f32 fireAccum { 0.0f }; // sim seconds owed to the 10 Hz step
     vector<world::FireIgnition> fireIgnitions;
+    vector<world::FireDouse> fireDouses;
+    std::optional<world::FireDouse> fireWard;
     render::terrain::FireParams fireParams;
     world::GroundProps groundProps {};
     vector<u8> fireMask;
     vector<u8> fireGlowMask;
+    vector<u8> fireStateMask;
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         contactFx {};
     std::array<f32, static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         contactEvery {};
+    std::array<f32, static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        contactHurt {};
     render::terraingen::GridSpec fireMaskSpec;
     vector<Vec2> fireCenters;
     render::terrain::FireStats lastFireStats;

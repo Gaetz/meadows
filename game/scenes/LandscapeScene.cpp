@@ -1755,6 +1755,8 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritLine();
         updateSpiritRocks(dt);
         updateSpiritReading(dt);
+        updateSpiritBrand(dt);
+        updateSpiritGlobe(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
         if (const f32 wheel = engine->getInput().wheelDelta();
@@ -4787,8 +4789,17 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
             break;
         }
         if (spell.element == render::terrain::SpiritKind::Fire) {
+            if (spell.verb == world::SpellVerb::Understand) {
+                castFireReading(*aimedAt, spell.duration, spell.channeled);
+                return;
+            }
             action.rate = spell.intensity; // heat dealt to each cell
-            action.mode = PendingSpiritAction::Mode::FireIgnite;
+            action.radius = spell.areaRadius;
+            action.mode = spell.verb == world::SpellVerb::Destroy
+                              ? PendingSpiritAction::Mode::FireDouse
+                          : spell.verb == world::SpellVerb::Control
+                              ? PendingSpiritAction::Mode::FireBrand
+                              : PendingSpiritAction::Mode::FireIgnite;
             break;
         }
         if (spell.verb == world::SpellVerb::Understand) {
@@ -4813,6 +4824,13 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         spiritLine = SpiritLine { *aimedAt, spell.intensity, spell.areaRadius };
         return;
     case world::SpellTrajectory::Self:
+        if (spell.element == render::terrain::SpiritKind::Fire &&
+            spell.verb == world::SpellVerb::Destroy && spell.channeled) {
+            action.radius = spell.areaRadius;
+            action.mode = PendingSpiritAction::Mode::FireGlobe;
+            break;
+        }
+        return;
     case world::SpellTrajectory::Projectile:
         return; // not in the matrix yet (spellSupported gates the cast)
     }
@@ -4828,6 +4846,57 @@ void LandscapeScene::applyPendingSpiritActions() {
         const PendingSpiritAction action = pendingSpiritActions.front();
         pendingSpiritActions.pop_front();
         if (!sandboxActive) {
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::FireDouse) {
+            spiritDirector.douse(action.x, action.z, action.radius);
+            const Vec3 at { action.x,
+                            render::terrain::height(renderer.terrainParams(),
+                                                    action.x, action.z),
+                            action.z };
+            fxDirector.cues().emit({ "Cue.Spirit.Fire.Douse", at, action.radius });
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::FireBrand) {
+            endSpiritBrand();
+            SpiritBrand brand;
+            brand.heat = action.rate;
+            brand.radius = action.radius;
+            brand.costPeriod = action.costPeriod;
+            brand.upkeepScale = action.upkeepScale;
+            brand.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+            const core::Guid& fxId =
+                spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire);
+            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f; // until the key lets go
+                params.shapeRadius = glm::min(params.shapeRadius, action.radius);
+                const Vec3 at { action.x,
+                                render::terrain::height(renderer.terrainParams(),
+                                                        action.x, action.z),
+                                action.z };
+                brand.emitter = fxSim.spawn(params, at, 0x6b7a9du ^ fxSim.count());
+            }
+            spiritBrand = brand;
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::FireGlobe) {
+            endSpiritGlobe();
+            SpiritGlobe globe;
+            globe.radius = action.radius;
+            globe.costPeriod = action.costPeriod;
+            globe.upkeepScale = action.upkeepScale;
+            globe.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+            const auto* form = forms.find<data::ParticleForm>(
+                spiritDirector.holdParticles(render::terrain::SpiritKind::Fire));
+            if (form && playerController.body()) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f;
+                params.shapeRadius = action.radius * 0.5f;
+                const Vec3 at = playerController.body()->position() + Vec3 { 0.0f, 1.0f, 0.0f };
+                globe.emitter = fxSim.spawn(params, at, 0x4a11e5u ^ fxSim.count());
+            }
+            spiritGlobe = globe;
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::FireIgnite) {
@@ -5669,9 +5738,10 @@ void LandscapeScene::applyFireContact(f32 dt) {
         return;
     }
     const f32 period = spiritDirector.contactPeriod(SpiritKind::Fire);
+    const f32 damage = spiritDirector.contactDamage(SpiritKind::Fire);
     const auto touch = [&](ecs::Entity entity, const Vec3& feet, f32& clock) {
-        const f32 glow = spiritDirector.fireGlowAt(feet.x, feet.z);
-        if (glow < 0.25f || !entity.has<gameplay::AttributeSet>() ||
+        if (!spiritDirector.fireBurningAt(feet.x, feet.z) ||
+            !entity.has<gameplay::AttributeSet>() ||
             !entity.has<gameplay::AbilitySystem>() ||
             !entity.has<gameplay::StatusBuildup>()) {
             clock = 0.0f;
@@ -5682,11 +5752,28 @@ void LandscapeScene::applyFireContact(f32 dt) {
             return;
         }
         clock = 0.0f;
+        // The buildup (Status.Ignited in time) ...
         gameplay::applyEffect(entity.get_mut<gameplay::AttributeSet>(),
                               entity.get_mut<gameplay::AbilitySystem>(), *effect,
                               gameTags, &entity.get_mut<gameplay::StatusBuildup>());
+        // ... and the flames' own typed damage through the pipeline
+        // (fire resistance mitigates; §2.9's sanctioned terminal write).
+        if (damage > 0.0f && entity.has<gameplay::CoreAttributes>() &&
+            entity.has<gameplay::CombatState>()) {
+            gameplay::StatBlock block {
+                entity.get_mut<gameplay::CoreAttributes>(),
+                entity.get_mut<gameplay::AttributeSet>(),
+                entity.get_mut<gameplay::AbilitySystem>(),
+                entity.get_mut<gameplay::CombatState>()
+            };
+            gameplay::DamageEvent burn;
+            burn.channels = { { gameplay::DamageType::Fire, damage } };
+            gameplay::applyDamage(block, burn, gameTags, derivedStats, nullptr,
+                                  statsTuning);
+        }
     };
-    if (mode == SceneMode::Play && !interiorMode && playerEntity.is_alive()) {
+    if (mode == SceneMode::Play && !interiorMode && playerEntity.is_alive() &&
+        !spiritGlobe) { // the fire ward: no flame reaches the caster
         if (phys::CharacterBody* body = playerController.body()) {
             touch(playerEntity, body->position(), playerFireClock);
         }
@@ -5731,14 +5818,14 @@ void LandscapeScene::updateSpiritFireProps() {
                 return; // already alight
             }
         }
-        const f32 glow = spiritDirector.fireGlowAt(transform.position.x,
-                                                   transform.position.z);
+        const bool inFlames = spiritDirector.fireBurningAt(transform.position.x,
+                                                           transform.position.z);
         f32& heat = propFireHeat[e.id()];
-        if (glow < 0.2f) {
+        if (!inFlames) {
             heat = glm::max(0.0f, heat - 0.1f * kPropHeatRate);
             return;
         }
-        heat += 0.1f * kPropHeatRate * glow;
+        heat += 0.1f * kPropHeatRate;
         if (heat < 1.0f) {
             return;
         }
@@ -5799,6 +5886,8 @@ void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
 }
 
 void LandscapeScene::resetSpiritFire() {
+    endSpiritBrand();
+    endSpiritGlobe();
     if (fireLoop != 0) {
         audioSystem.stop(fireLoop, 0.3f);
         fireLoop = 0;
@@ -5917,6 +6006,163 @@ void LandscapeScene::castGroundReading(const Vec3& at, f32 seconds, bool live) {
     }
 }
 
+void LandscapeScene::castFireReading(const Vec3& at, f32 seconds, bool live) {
+    const auto num = [](f32 v, i32 decimals) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
+                      static_cast<f64>(v));
+        return str { buf };
+    };
+    vector<str> lines;
+    lines.push_back(texts.get("fire.title"));
+    // The cell: what the last landed job published.
+    const f32 glow = spiritDirector.fireGlowAt(at.x, at.z);
+    const f32 scorch = spiritDirector.fireScorchAt(at.x, at.z);
+    if (glow >= 0.25f) {
+        lines.push_back(texts.format("fire.burning", { num(glow * 100.0f, 0) }));
+    } else if (scorch > 0.05f) {
+        lines.push_back(texts.format("fire.burnt", { num((1.0f - scorch) * 100.0f, 0) }));
+    } else {
+        lines.push_back(texts.get("fire.cold"));
+    }
+    // The fuel the ground holds (the same blend the kernel samples).
+    const auto& params = renderer.terrainParams();
+    const f32 h = render::terrain::height(params, at.x, at.z);
+    const Vec3 n = render::terrain::normal(params, at.x, at.z);
+    const render::terrain::RegionFields fields =
+        render::terrain::regionFieldsAt(params, at.x, at.z);
+    const render::terrain::MaterialWeights w =
+        render::terrain::materialWeightsAt(params, at.x, at.z, h, n, fields);
+    const render::terrain::FireCellFuel fuel = world::fuelFromWeights(
+        world::groundPropsFrom(spiritDirector.rules()),
+        { w.grass, w.rock, w.cliff, w.snow, w.sand }, fields.wetness);
+    lines.push_back(texts.format("fire.fuel",
+                                 { num(fuel.fuel, 0), num(fuel.flammability * 100.0f, 0),
+                                   num(fuel.moisture * 100.0f, 0) }));
+    // The nearest front.
+    f32 best = 1.0e9f;
+    Vec2 front { 0.0f };
+    for (const Vec2& cell : spiritDirector.fireBurning()) {
+        const Vec2 to { cell.x - at.x, cell.y - at.z };
+        const f32 d2 = glm::dot(to, to);
+        if (d2 < best) {
+            best = d2;
+            front = to;
+        }
+    }
+    if (best < 1.0e9f && best > 4.0f) {
+        lines.push_back(texts.format(
+            "fire.front", { num(std::sqrt(best), 0), texts.get(str { "dir." } + world::compassCode(front)) }));
+    } else if (best <= 4.0f) {
+        lines.push_back(texts.get("fire.frontHere"));
+    } else {
+        lines.push_back(texts.get("fire.noFront"));
+    }
+    lines.push_back(texts.get("fire.stillAir"));
+    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
+    spiritReadingKind = ReadingKind::Fire;
+    spiritReading = std::move(lines);
+    spiritReading.resize(kReadingLines);
+    spiritReadingLive = live;
+    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
+    if (opening) {
+        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 0.3f });
+    }
+}
+
+void LandscapeScene::updateSpiritBrand(f32 dt) {
+    if (!spiritBrand) {
+        return;
+    }
+    SpiritBrand& brand = *spiritBrand;
+    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive()) {
+        endSpiritBrand();
+        return;
+    }
+    brand.costClock += dt;
+    if (brand.costClock >= brand.costPeriod) {
+        brand.costClock -= brand.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(brand.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags },
+                                                 brand.upkeepScale)) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            endSpiritBrand();
+            return;
+        }
+    }
+    const std::optional<Vec3> aim = aimGround();
+    if (!aim) {
+        return;
+    }
+    if (brand.emitter != 0) {
+        fxSim.moveEmitter(brand.emitter, *aim);
+    }
+    brand.pulseClock += dt;
+    if (brand.pulseClock >= kBrandPulse) {
+        brand.pulseClock -= kBrandPulse;
+        // Never into water: the flame just hovers over it.
+        if (!render::terrain::waterSurfaceQuery(makeWaterQuery(), aim->x, aim->z, aim->y)) {
+            spiritDirector.ignite(aim->x, aim->z, brand.radius, brand.heat);
+        }
+    }
+}
+
+void LandscapeScene::endSpiritBrand() {
+    if (!spiritBrand) {
+        return;
+    }
+    if (spiritBrand->emitter != 0) {
+        fxSim.stopEmitter(spiritBrand->emitter);
+    }
+    spiritBrand.reset();
+}
+
+void LandscapeScene::updateSpiritGlobe(f32 dt) {
+    if (!spiritGlobe) {
+        return;
+    }
+    SpiritGlobe& globe = *spiritGlobe;
+    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive() || !playerController.body()) {
+        endSpiritGlobe();
+        return;
+    }
+    globe.costClock += dt;
+    if (globe.costClock >= globe.costPeriod) {
+        globe.costClock -= globe.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(globe.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags },
+                                                 globe.upkeepScale)) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            endSpiritGlobe();
+            return;
+        }
+    }
+    const Vec3 at = playerController.body()->position();
+    spiritDirector.setWard(world::FireDouse { at.x, at.z, globe.radius });
+    if (globe.emitter != 0) {
+        fxSim.moveEmitter(globe.emitter, at + Vec3 { 0.0f, 1.0f, 0.0f });
+    }
+}
+
+void LandscapeScene::endSpiritGlobe() {
+    if (!spiritGlobe) {
+        return;
+    }
+    if (spiritGlobe->emitter != 0) {
+        fxSim.stopEmitter(spiritGlobe->emitter);
+    }
+    spiritGlobe.reset();
+    spiritDirector.setWard(std::nullopt);
+}
+
 void LandscapeScene::updateSpiritReading(f32 dt) {
     if (spiritReadingLive) {
         // Held: re-read where the aim rests now (live current, volume);
@@ -5929,10 +6175,16 @@ void LandscapeScene::updateSpiritReading(f32 dt) {
             return;
         }
         if (const std::optional<Vec3> at = aimGround()) {
-            if (spiritReadingKind == ReadingKind::Ground) {
+            switch (spiritReadingKind) {
+            case ReadingKind::Ground:
                 castGroundReading(*at, 0.0f, true);
-            } else {
+                break;
+            case ReadingKind::Fire:
+                castFireReading(*at, 0.0f, true);
+                break;
+            case ReadingKind::Water:
                 castWaterReading(*at, 0.0f, true);
+                break;
             }
         }
         return;

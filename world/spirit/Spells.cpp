@@ -110,10 +110,20 @@ bool spellSupported(const SpellSpec& spec) {
         return false;
     }
     if (spec.element == SpiritKind::Fire) {
-        // The spark: heat dealt to the cells under the aim, the field
-        // spreads it (world/spirit/SpiritFire).
-        return spec.verb == SpellVerb::Create &&
-               spec.trajectory == SpellTrajectory::Point;
+        switch (spec.verb) {
+        case SpellVerb::Create: // the spark: heat under the aim, the field spreads it
+            return spec.trajectory == SpellTrajectory::Point;
+        case SpellVerb::Destroy: // put out at the aim; held on self = the fire ward
+            return spec.trajectory == SpellTrajectory::Point ||
+                   (spec.trajectory == SpellTrajectory::Self && spec.channeled);
+        case SpellVerb::Understand: // the fire reading
+            return spec.trajectory == SpellTrajectory::Point;
+        case SpellVerb::Control: // the firebrand: a flame carried at the aim, held
+            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
+        case SpellVerb::Transform:
+            break;
+        }
+        return false;
     }
     if (spec.element != SpiritKind::Water) {
         return false;

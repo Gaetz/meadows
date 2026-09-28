@@ -783,3 +783,39 @@ nouveau) et le scorch s'efface avec elle (`1 − regrow` : le charbon refond
 au vert, l'herbe revient par le même masque qui l'avait culée). Test :
 deux cellules sèche/marais, la marais revient 3× plus vite, le sec refond
 puis rebrûle. Les props en bois et le contact restent.
+
+### E3.c COMMITÉE (`2ada6f2`, repousse doublée à 360 s) ; E3.d — les sorts du feu (2026-09-28, NON COMMITÉE)
+Demande dev : les sorts proposés + « un Globe anti-feu maintenu qui éteint
+autour du personnage, lui-même insensible à la brûlure ». Noyau :
+`fireDouse(grid, x, z, r)` — les cellules brûlantes redeviennent dormantes
+EN GARDANT leur combustible (elles reprennent si le feu revient), chaleur
+et braises à zéro, le brûlé reste brûlé ; `FireJobInput.douses` appliquées
+avant les étincelles ; `SpiritDirector::douse` (une fois) et `setWard`
+(une extinction répétée par CHAQUE job tant qu'elle est posée). Matrice
+Feu : Créer × point ; **Détruire × point** (`SpellFireDouse`, disque
+5 m : extinction, cue `Cue.Spirit.Fire.Douse` = bouffée grise) ;
+**Détruire × self maintenu** (`SpellFireWard`, le globe : `setWard` autour
+du corps du joueur à chaque frame, rayon 6 m, voile de particules
+`FireWardVeil` qui suit le joueur, `applyFireContact` ignore le joueur tant
+que le globe tient, upkeep ÷4 chaque seconde) ; **Comprendre × point**
+(`SpellFireUnderstand`, maintenu, `castFireReading` : état de la cellule
+depuis les masques — brûle/braises %, brûlé/repoussé %, froid —,
+combustible/inflammabilité/moiteur par le même mélange que le noyau,
+front de feu le plus proche en m + point cardinal, « air immobile » en
+attendant E4) ; **Contrôler × point maintenu** (`SpellFireBrand`, le
+brandon : une flamme portée à la visée qui allume 1 m autour toutes les
+0,25 s, jamais sur l'eau, upkeep ÷4 toutes les 0,5 s). Loc en/fr
+`spell.fire*`, `fire.*`. Tests : douse (éteint, garde le combustible,
+reprend), matrice Feu. À valider en jeu : les quatre sorts à la molette.
+- Retour dev (2026-09-28) : « le personnage ne prend pas de dégâts dans le
+  feu ». Deux causes : le contact lisait la lueur des braises (nulle au-delà
+  de la bande de 3 s du front — au milieu d'une zone qui brûle, rien) et le
+  seul effet était le buildup, dont la DoT Ignited vaut 0,2 %/s. Fait :
+  `FireJobOutput.state` voyage avec les masques, `fireBurningAt` = l'état
+  BRÛLE de la cellule (toute la durée du combustible) pour le contact ET
+  les props ; `SpiritForm.contactDamage` (Feu : 6 par contact, ~12/s) =
+  dégâts typés Feu par `applyDamage` (StatBlock, résistances, l'écriture
+  terminale sanctionnée §2.9), en plus du buildup.
+- Retour dev : « SpellFireWard: range must be positive » — `compileSpell`
+  exige une portée > 0 même pour un sort sur soi ; le globe avait `range =
+  0` et ne compilait donc jamais. Portée mise à 6 (ignorée pour `self`).

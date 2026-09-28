@@ -2008,3 +2008,120 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.fireIgnite'
     text = 'Étincelle'
+
+[[records]]
+form = '7110fc53-00de-4539-acf8-aece870c5f26'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireDouse'
+    text = 'Extinction'
+
+[[records]]
+form = 'a56e9c3d-91a9-4042-b7ac-352f49c8435c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireUnderstand'
+    text = 'Intelligo du feu'
+
+[[records]]
+form = 'bb6b1060-33d7-4e75-ae6c-7eb10e052c49'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireBrand'
+    text = 'Brandon'
+
+[[records]]
+form = '50b17fdc-4d41-4a06-80b8-9fa1b4564018'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.fireWard'
+    text = 'Globe anti-feu'
+
+[[records]]
+form = 'a0c1ca1c-8ad0-4e78-b773-6b06f3be4031'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.title'
+    text = '~ Intelligo du feu ~'
+
+[[records]]
+form = '3e62253a-f929-40c1-b9d2-cce0c9879e6e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.burning'
+    text = 'Ça brûle, braises à {} %.'
+
+[[records]]
+form = '807bf18d-747f-4c70-9a90-cfde9301a310'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.burnt'
+    text = 'Sol brûlé, repoussé à {} %.'
+
+[[records]]
+form = 'b5edc985-a7da-4798-9234-af8a24064e1f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.cold'
+    text = 'Sol froid.'
+
+[[records]]
+form = '4bfa3a40-2e6c-4d8a-954d-3bd70e0e98e1'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.fuel'
+    text = 'Combustible {} s, inflammabilité {} %, moiteur {} %.'
+
+[[records]]
+form = '2188f567-4439-4313-9fa2-c9a03361e913'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.front'
+    text = 'Front de feu à {} m vers {}.'
+
+[[records]]
+form = '72f80a32-bb56-4aaf-8b49-ab80afb4d429'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.frontHere'
+    text = 'Le front est ici.'
+
+[[records]]
+form = '637cde0d-e61a-4def-93fa-95e4775360dd'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.noFront'
+    text = 'Aucun feu en vue.'
+
+[[records]]
+form = 'a7db62ae-a6b3-479d-a9ee-a6050c543c6a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.stillAir'
+    text = 'Air immobile.'

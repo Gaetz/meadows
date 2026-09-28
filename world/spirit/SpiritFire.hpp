@@ -53,6 +53,12 @@ struct FireIgnition {
     f32 heat { 1.0f };
 };
 
+struct FireDouse {
+    f32 x { 0.0f };
+    f32 z { 0.0f };
+    f32 radius { 1.0f };
+};
+
 // One job's input, moved in. An invalid grid (no window yet) is
 // initialised at `spec`; a valid one is scrolled to `spec` when the
 // origins differ (whole cells, bit-exact interior).
@@ -61,6 +67,7 @@ struct FireJobInput {
     render::terraingen::GridSpec spec;
     render::terrain::FireParams params;
     vector<FireIgnition> ignitions;
+    vector<FireDouse> douses; // applied before the ignitions
     u32 steps { 1 };
     render::terrain::FuelFn fuel;
     render::terrain::WetFn wet;
@@ -73,6 +80,7 @@ struct FireJobOutput {
     render::terrain::FireStats stats;
     vector<u8> scorch;    // the render mask (fireScorch)
     vector<u8> glow;      // the ember mask (fireGlow)
+    vector<u8> state;     // FireState per cell (the gameplay's "is it burning")
     vector<Vec2> burning; // burning cell centers, hottest first
     u32 epoch { 0 };
     f32 millis { 0.0f };

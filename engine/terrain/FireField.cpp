@@ -108,6 +108,35 @@ void fireIgnite(FireGrid& grid, f32 x, f32 z, f32 radius, f32 heat,
     }
 }
 
+void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius) {
+    if (!grid.valid()) {
+        return;
+    }
+    const i32 n = static_cast<i32>(grid.spec.n);
+    const f32 texel = grid.spec.texelSize;
+    const i32 col = static_cast<i32>(std::lround((x - grid.spec.originX) / texel));
+    const i32 row = static_cast<i32>(std::lround((z - grid.spec.originZ) / texel));
+    const i32 reach = static_cast<i32>(std::ceil(radius / texel));
+    for (i32 dz = -reach; dz <= reach; ++dz) {
+        for (i32 dx = -reach; dx <= reach; ++dx) {
+            const i32 c = col + dx;
+            const i32 r = row + dz;
+            if (c < 0 || r < 0 || c >= n || r >= n) {
+                continue;
+            }
+            if (std::sqrt(static_cast<f32>(dx * dx + dz * dz)) * texel > radius) {
+                continue;
+            }
+            const size_t i = static_cast<size_t>(r) * n + c;
+            if (grid.state[i] == static_cast<u8>(FireState::Burning)) {
+                grid.state[i] = static_cast<u8>(FireState::Dormant);
+            }
+            grid.heat[i] = 0.0f;
+            grid.ember[i] = 0.0f;
+        }
+    }
+}
+
 void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
               const WetFn& wet, FireStats* stats) {
     if (!grid.valid()) {

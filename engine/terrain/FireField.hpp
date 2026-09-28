@@ -83,6 +83,11 @@ void fireScrollWindow(FireGrid& grid, i32 dCol, i32 dRow);
 void fireIgnite(FireGrid& grid, f32 x, f32 z, f32 radius, f32 heat,
                 const FuelFn& fuel);
 
+// The opposite of a spark: every cell within `radius` metres of (x, z)
+// stops burning (its fuel stays — it can catch again) and loses its heat
+// and embers; burnt ground stays burnt.
+void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius);
+
 // One tick. Order per cell is fixed (row-major), so two identical grids
 // stepped with identical inputs stay identical.
 void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,

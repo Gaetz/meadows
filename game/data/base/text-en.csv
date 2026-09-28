@@ -221,3 +221,16 @@ material.sand,Sandy
 spell.earthControl,Seize Rock
 spirit.noRock,No rock small enough within reach.
 spell.fireIgnite,Spark
+spell.fireDouse,Douse
+spell.fireUnderstand,Fire intelligo
+spell.fireBrand,Firebrand
+spell.fireWard,Fire ward
+fire.title,~ Fire intelligo ~
+fire.burning,"Burning, embers at {} %."
+fire.burnt,"Burnt ground, regrown {} %."
+fire.cold,Cold ground.
+fire.fuel,"Fuel {} s, flammability {} %, moisture {} %."
+fire.front,Fire front {} m to the {}.
+fire.frontHere,The front is here.
+fire.noFront,No fire in sight.
+fire.stillAir,Still air.

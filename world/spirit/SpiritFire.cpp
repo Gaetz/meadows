@@ -84,6 +84,9 @@ FireJobOutput runFireJob(FireJobInput&& in) {
             (in.spec.originZ - grid.spec.originZ) / grid.spec.texelSize));
         fireScrollWindow(grid, dCol, dRow);
     }
+    for (const FireDouse& douse : in.douses) {
+        fireDouse(grid, douse.x, douse.z, douse.radius);
+    }
     for (const FireIgnition& spark : in.ignitions) {
         fireIgnite(grid, spark.x, spark.z, spark.radius, spark.heat, in.fuel);
     }
@@ -94,6 +97,7 @@ FireJobOutput runFireJob(FireJobInput&& in) {
     out.stats = stats;
     fireScorch(grid, in.params, out.scorch);
     fireGlow(grid, in.params, out.glow);
+    out.state = grid.state;
     out.burning = fireBurningCenters(grid, in.maxCenters, in.params,
                                      in.params.emberSeconds);
     out.active = stats.burning > 0;

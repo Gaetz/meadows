@@ -128,10 +128,12 @@ emberSeconds = 3.0
 regrowSeconds = 360.0
 contactEffect = "5b1e1700-0000-4000-8000-0000000000d5"
 contactPeriod = 0.5
+contactDamage = 6.0 # fire, per contact: ~12/s in the flames before resistances
 cueSpawn = "Cue.Spirit.Fire.Spawn"
 fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
 emberParticles = "5b1e1700-0000-4000-8000-0000000000c7"
 fieldSound = "5b1e1700-0000-4000-8000-0000000000d3"
+holdParticles = "5b1e1700-0000-4000-8000-0000000000e4"
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000009"
@@ -1296,3 +1298,226 @@ form = "4d7a9b30-0000-4000-8000-000000000019"
 type = "StaticForm"
 [records.fields]
 surfaceMaterial = "wood"
+
+# --- The fire spells --------------------------------------------------------
+
+# Destroy x Fire at the aim: the burning cells around the spot are put out.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d6"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireDouseCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritFireDouse"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d7"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireDouse"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000d6"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d8"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireDouse"
+parent = "5b1e1700-0000-4000-8000-0000000000d7"
+name = "spell.fireDouse"
+form = "destroy"
+element = "Fire"
+trajectory = "point"
+range = 180.0
+intensity = 1.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 5.0
+channeled = false
+
+# Understand x Fire: the reading, held.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000d9"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireUnderstandCooldown"
+duration = "duration"
+durationSeconds = 1.0
+grantedTag = "Cooldown.SpiritFireUnderstand"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000da"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireUnderstand"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000d9"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000db"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireUnderstand"
+parent = "5b1e1700-0000-4000-8000-0000000000da"
+name = "spell.fireUnderstand"
+form = "understand"
+element = "Fire"
+trajectory = "point"
+range = 180.0
+intensity = 0.0
+duration = 8.0
+areaShape = "disc"
+areaRadius = 2.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.0
+
+# Control x Fire, the firebrand: a flame carried at the aim, held, that
+# lights the ground under it.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000dc"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireBrandCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritFireBrand"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000dd"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireBrand"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000dc"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000de"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireBrand"
+parent = "5b1e1700-0000-4000-8000-0000000000dd"
+name = "spell.fireBrand"
+form = "control"
+element = "Fire"
+trajectory = "point"
+range = 120.0
+intensity = 1.5
+duration = 1.0
+areaShape = "disc"
+areaRadius = 1.0
+channeled = true
+costPeriod = 0.5
+upkeepScale = 0.25
+
+# Destroy x Fire on self, held: the fire ward — nothing burns around the
+# caster, who feels no flame.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000df"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritFireWardCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritFireWard"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e0"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritFireWard"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000df"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e1"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellFireWard"
+parent = "5b1e1700-0000-4000-8000-0000000000e0"
+name = "spell.fireWard"
+form = "destroy"
+element = "Fire"
+trajectory = "self"
+range = 6.0 # unused on self (compileSpell wants it positive)
+intensity = 0.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 6.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25
+
+# The douse's puff and the ward's veil.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e2"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "DousePuff"
+shape = "sphere"
+shapeRadius = 1.5
+burst = 40
+lifetime = 1.6
+lifetimeJitter = 0.5
+velocity = [0.0, 1.2, 0.0]
+velocityJitter = 0.6
+gravity = [0.0, 0.3, 0.0]
+sizeStart = 0.35
+sizeEnd = 0.9
+colorStart = [0.75, 0.75, 0.78, 0.5]
+colorEnd = [0.6, 0.6, 0.62, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e3"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritFireDouse"
+tag = "Cue.Spirit.Fire.Douse"
+particles = "5b1e1700-0000-4000-8000-0000000000e2"
+cameraShake = 0.0
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e4"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "FireWardVeil"
+shape = "sphere"
+shapeRadius = 3.0
+burst = 0
+rate = 60.0
+duration = 1.0
+lifetime = 0.7
+lifetimeJitter = 0.2
+velocity = [0.0, 0.3, 0.0]
+velocityJitter = 0.3
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.12
+sizeEnd = 0.04
+colorStart = [0.55, 0.8, 1.0, 0.8]
+colorEnd = [0.7, 0.9, 1.0, 0.0]
+blend = "additive"

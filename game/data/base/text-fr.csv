@@ -222,3 +222,16 @@ material.sand,sableux
 spell.earthControl,Emprise de pierre
 spirit.noRock,Aucun rocher assez petit à portée.
 spell.fireIgnite,Étincelle
+spell.fireDouse,Extinction
+spell.fireUnderstand,Intelligo du feu
+spell.fireBrand,Brandon
+spell.fireWard,Globe anti-feu
+fire.title,~ Intelligo du feu ~
+fire.burning,"Ça brûle, braises à {} %."
+fire.burnt,"Sol brûlé, repoussé à {} %."
+fire.cold,Sol froid.
+fire.fuel,"Combustible {} s, inflammabilité {} %, moiteur {} %."
+fire.front,Front de feu à {} m vers {}.
+fire.frontHere,Le front est ici.
+fire.noFront,Aucun feu en vue.
+fire.stillAir,Air immobile.
