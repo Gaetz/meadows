@@ -713,3 +713,22 @@ braises non rondes, le fondu de profondeur, le LOD, F3.
   0,6·facing) met les cellules dans l'axe de vue devant à distance égale.
   Le coût GPU (overdraw des quads visibles) ne change pas, le budget
   d'émetteurs sert là où on regarde.
+
+### F1 + F2 COMMITÉES (`43bd2d6`, 2026-09-28) après validation dev ; F3 — les lumières du feu (NON COMMITÉE)
+`LandscapeScene::extractFireLights`, appelée juste après `extractLights` à
+l'extract : les cellules du front (`fireBurning`, pré-ignition comprise)
+agrégées par **tuiles de 8 m** → une `SceneLight` au barycentre de chaque
+tuile (y = sol + 0,8 m), `intensité = min(lightIntensity × cellules,
+lightMaxIntensity)`, `rayon = lightRadius + 2·√cellules`, `flicker` (le
+scintillement CPU existant, deux sinus déphasés par index), couleur
+`lightColor` ; les `lightCount` tuiles les plus proches de la caméra sont
+INSÉRÉES EN TÊTE de `snapshot.lights` (le feu est la chose la plus
+lumineuse alentour ; la queue du budget de 64 tombe). Le chemin clusterisé
+les éclaire comme toute lumière locale ; les cascades de radiance prennent
+les 24 plus proches → le rebond orangé sur la prairie et les personnages
+vient gratuitement. Réglages `FireLook` (panneau « Fire », section
+Lights) : intensité par cellule (0 = pas de lumière), plafond par tuile,
+rayon de base, scintillement, nombre, couleur. Pas de lumière par flamme
+héros ni de torche : les torches viendront avec leurs props (flamme
+`flame02` + `LightSource`). À valider : nuit sur le front, le rebond GI,
+le nombre de lumières au F6.

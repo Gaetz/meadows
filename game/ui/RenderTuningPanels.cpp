@@ -449,6 +449,18 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            "%.2f");
         ImGui::SliderFloat("Flame posterize (0 = off)", &fl.flamePosterize,
                            0.0f, 8.0f, "%.0f");
+        ImGui::SeparatorText("Lights");
+        ImGui::SliderFloat("Light per cell (0 = off)", &fl.lightIntensity,
+                           0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Light tile cap", &fl.lightMaxIntensity, 1.0f,
+                           30.0f, "%.1f");
+        ImGui::SliderFloat("Light radius base (m)", &fl.lightRadius, 1.0f,
+                           16.0f, "%.1f");
+        ImGui::SliderFloat("Light flicker", &fl.lightFlicker, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::SliderInt("Light count", &fl.lightCount, 0, 48);
+        ImGui::ColorEdit3("Light colour", &fl.lightColor.x,
+                          ImGuiColorEditFlags_Float);
     }
     if (ImGui::CollapsingHeader("Grass")) {
         render::GrassRenderTuning& gt = r.grass.renderTuning;

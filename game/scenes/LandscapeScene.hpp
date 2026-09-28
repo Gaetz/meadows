@@ -646,6 +646,12 @@ private:
     audio::AudioSystem::SoundId fireLoop { 0 };
     static constexpr f32 kFireSoundReach = 60.0f;
     void updateSpiritFireSound(const Vec3& cam);
+    // The fire's lights (docs/FIRE-RENDER.md F3): the front's cells
+    // aggregated per 8 m tile into point lights, the nearest tiles first,
+    // inserted ahead of the world's lights in the frame's list (the
+    // clustered path and the GI take them like any other).
+    static constexpr f32 kFireLightTile = 8.0f;
+    void extractFireLights(render::RenderSnapshot& out);
     // The wall gesture: the press spot, the release spot builds the ridge.
     struct SpiritLine {
         Vec3 start { 0.0f };

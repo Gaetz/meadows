@@ -31,6 +31,15 @@ struct FireLook {
     // of brightness, the stylized look).
     f32 flameBoost { 3.0f };
     f32 flamePosterize { 0.0f };
+    // The fire's LIGHTS (docs/FIRE-RENDER.md F3): the front's cells
+    // aggregated per 8 m tile into point lights for the clustered path
+    // (and the GI, which takes the nearest). Intensity 0 = no lights.
+    f32 lightIntensity { 0.7f };     // per burning cell in the tile
+    f32 lightMaxIntensity { 8.0f };  // a tile's cap
+    f32 lightRadius { 5.0f };        // + 2 m x sqrt(cells)
+    f32 lightFlicker { 0.35f };
+    i32 lightCount { 16 };           // nearest tiles that get a light
+    Vec3 lightColor { 1.0f, 0.6f, 0.28f };
 };
 
 // The fire field's render mask (chantier ESPRITS E3): one texel per 2 m

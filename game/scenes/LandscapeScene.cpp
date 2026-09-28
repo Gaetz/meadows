@@ -23,6 +23,7 @@
 #include "game/scenes/LandscapeScene.hpp"
 
 #include <algorithm>
+#include <map>
 #include <chrono> // Save/load timing baselines
 #include <cmath>
 #include <filesystem>
@@ -1533,6 +1534,7 @@ void LandscapeScene::update(f32 dt) {
         extractLights(world, flyCamera.camera.position,
                       render::WorldRenderer::kMaxLights, snapshot,
                       &cameraViewProj);
+        extractFireLights(snapshot);
         extractWaterVolumes(world, snapshot);
     }
     if (debugCapsule) {
@@ -5551,6 +5553,73 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         kept.push_back(flame);
     }
     flameEmitters = std::move(kept);
+}
+
+void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
+    const render::FireLook& look = renderer.fireScorchMap().look;
+    if (look.lightIntensity <= 0.0f || look.lightCount <= 0 ||
+        spiritDirector.fireIdle()) {
+        return;
+    }
+    // One tile = the cells of the front it holds (their centroid).
+    struct Tile {
+        Vec2 sum { 0.0f };
+        u32 count { 0 };
+    };
+    std::map<std::pair<i32, i32>, Tile> tiles;
+    for (const Vec2& at : spiritDirector.fireBurning()) {
+        const std::pair<i32, i32> key {
+            static_cast<i32>(std::floor(at.x / kFireLightTile)),
+            static_cast<i32>(std::floor(at.y / kFireLightTile))
+        };
+        Tile& tile = tiles[key];
+        tile.sum += at;
+        ++tile.count;
+    }
+    if (tiles.empty()) {
+        return;
+    }
+    const Vec3 cam = flyCamera.camera.position;
+    struct Candidate {
+        render::SceneLight light;
+        f32 dist2;
+    };
+    vector<Candidate> candidates;
+    candidates.reserve(tiles.size());
+    for (const auto& [key, tile] : tiles) {
+        const Vec2 center = tile.sum / static_cast<f32>(tile.count);
+        const f32 y =
+            render::terrain::height(renderer.terrainParams(), center.x, center.y) +
+            0.8f;
+        render::SceneLight light;
+        light.position = { center.x, y, center.y };
+        light.color = look.lightColor;
+        light.intensity = glm::min(look.lightIntensity * static_cast<f32>(tile.count),
+                                   look.lightMaxIntensity);
+        light.radius = look.lightRadius +
+                       2.0f * std::sqrt(static_cast<f32>(tile.count));
+        light.flicker = look.lightFlicker;
+        const Vec3 to = light.position - cam;
+        candidates.push_back({ light, glm::dot(to, to) });
+    }
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const Candidate& a, const Candidate& b) {
+                         return a.dist2 < b.dist2;
+                     });
+    const size_t keep =
+        glm::min(candidates.size(), static_cast<size_t>(look.lightCount));
+    // Ahead of the world's lights: the fire is the brightest thing
+    // around; the budget's tail is what drops.
+    vector<render::SceneLight> merged;
+    merged.reserve(keep + out.lights.size());
+    for (size_t i = 0; i < keep; ++i) {
+        merged.push_back(candidates[i].light);
+    }
+    merged.insert(merged.end(), out.lights.begin(), out.lights.end());
+    if (merged.size() > render::WorldRenderer::kMaxLights) {
+        merged.resize(render::WorldRenderer::kMaxLights);
+    }
+    out.lights = std::move(merged);
 }
 
 void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
