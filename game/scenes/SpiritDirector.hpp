@@ -98,7 +98,12 @@ public:
         }
         return out;
     }
-    vector<data::Record> capture() const { return sources.capture(); }
+    // The save's records: the sources, and the fire's cells when it burns
+    // (a FireStateForm — worldspace-tagged, restored by restoreFire).
+    vector<data::Record> capture(const core::Guid& worldspace) const;
+    // A loaded save's fire: its cells go into the next job's window (the
+    // lane wakes for it).
+    void restoreFire(const world::FireStateForm& form);
     const world::SpiritSourceList& list() const { return sources; }
     const world::SpiritRuleTable& rules() const { return table; }
 
@@ -115,6 +120,7 @@ public:
         sptr<const render::WaterBodies> bodies;
         f32 seaLevel { -1.0e6f };
         Vec2 focus { 0.0f }; // camera XZ
+        f32 rain { 0.0f };   // the weather's rain 0..1 (FireParams::rain)
     };
     // Heat dealt to every cell within `radius` of (x, z) by the next job.
     void ignite(f32 x, f32 z, f32 radius, f32 heat);
@@ -216,6 +222,8 @@ private:
         contactHurt {};
     render::terraingen::GridSpec fireMaskSpec;
     vector<Vec2> fireCenters;
+    vector<render::terrain::FireSavedCell> fireCells; // the last landed job's
+    vector<render::terrain::FireSavedCell> fireRestores; // a loaded save's, until the next job
     render::terrain::FireStats lastFireStats;
     f32 fireMs { 0.0f };
     static constexpr u32 kMaxStepsPerJob = 5;

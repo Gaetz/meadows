@@ -78,6 +78,9 @@ struct FireJobInput {
     f32 windFullSpeed { 10.0f };
     u32 epoch { 0 };
     u32 maxCenters { 1024 };
+    // Cells of a loaded save, written into the window before anything
+    // else (FireStateForm -> unpackFireCells).
+    vector<render::terrain::FireSavedCell> restores;
 };
 
 struct FireJobOutput {
@@ -86,6 +89,8 @@ struct FireJobOutput {
     vector<u8> scorch;    // the render mask (fireScorch)
     vector<u8> glow;      // the ember mask (fireGlow)
     vector<u8> state;     // FireState per cell (the gameplay's "is it burning")
+    // The burning and burnt cells, what a save carries (packFireCells).
+    vector<render::terrain::FireSavedCell> cells;
     vector<Vec2> burning; // burning cell centers, hottest first
     u32 epoch { 0 };
     f32 millis { 0.0f };
@@ -118,5 +123,12 @@ struct TreeFire {
 // Returns true the tick the tree catches.
 bool advanceTreeFire(TreeFire& tree, f32 exposure, f32 dt,
                      const TreeFireParams& params);
+
+// The FireStateForm's `cells` text: "x z state fuel regrow ember;" per
+// cell, burning cells first (a cap keeps the record bounded: the burnt
+// tail is the least precious).
+str packFireCells(const vector<render::terrain::FireSavedCell>& cells,
+                  size_t maxCells = 65536);
+vector<render::terrain::FireSavedCell> unpackFireCells(const str& text);
 
 } // namespace world

@@ -120,9 +120,13 @@ spirit's `ignitionPoints`, then burns its ground's `fuel` seconds (a
 `SurfaceMaterialForm` field, blended over the splat under it) while
 dealing `spreadRate` heat per second to its eight neighbours, damped by
 their `moisture`; bare rock, sand and snow carry no fuel, standing water
-puts a burning cell out and keeps it out. Burnt ground stays charred and
-its grass is gone; the field lives in a 512 m window around the camera
-and is not saved. The fire is dangerous: whoever stands in the flames
+puts a burning cell out and keeps it out. Rain counts as moisture (the
+wetter of the two) and, from half strength up, soaks burning cells out
+in a few seconds. Burnt ground stays charred and its grass is gone; the
+field lives in a 512 m window around the camera and **is saved**: a
+`FireStateForm` record in the save carries the burning and burnt cells,
+and the next visit relights them (a mod could ship one too — a
+smouldering battlefield). The fire is dangerous: whoever stands in the flames
 takes the spirit's `contactEffect` every `contactPeriod` seconds — an
 ignition buildup that ends in `Status.Ignited` (damage over time, armour
 resistances apply). Wooden props (a `StaticForm` whose `surfaceMaterial`
@@ -137,7 +141,14 @@ surroundings burn heats up (`treeIgnitionSeconds` in full fire), then
 burns for `treeBurnSeconds` with flames at its trunk, shedding embers
 around it, its canopy falling progressively like in winter and its wood
 charring; it then stands bare and grows its foliage back over
-`treeRegrowSeconds`. The other fire spells: `destroy` as
+`treeRegrowSeconds`. Villagers run from burning ground (any peaceful
+actor within 6 m of flames drops what he was doing and runs the other
+way until the ground is safe). Fire the world carries: a `StaticForm`
+may declare a `light` (a `LightForm`, at `lightOffset`) and
+`flameParticles` / `smokeParticles` (`ParticleForm`s, at
+`particlesOffset`) — the spawner attaches them and the scene keeps them
+alight within 90 m; the base data ships a `Campfire` and a `Torch` on the
+village square. Neither lights the ground. The other fire spells: `destroy` as
 `point` puts the flames out around the aim (the cells keep their fuel),
 `destroy` as `self` held is the fire ward (nothing burns within
 `areaRadius` of you and you feel no flame while you hold it), `control`
@@ -151,8 +162,9 @@ spot (a spirit source like a spring: `intensity` m/s, `areaRadius`,
 `duration`, blowing where you faced when you cast), `create` as `stream`
 held is the breath (a gust carried ahead of you), `destroy` on `self`
 held calms the weather's wind while you concentrate, and `control` on
-`self` held steers it where you face. Gusts push you, carry particles and
-bend the fire; the weather's ambient wind never pushes you. A spell outside that set is
+`self` held steers it where you face. Gusts push you and the villagers,
+carry particles and bend the fire, and floating props drift with the
+wind; the weather's ambient wind never pushes anyone. A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

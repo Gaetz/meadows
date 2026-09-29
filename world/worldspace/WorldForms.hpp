@@ -264,6 +264,22 @@ struct SpiritSourceForm : data::Form {
     REFLECT_END()
 };
 
+// The fire's state in a save (§2.4: one more record of the save layer,
+// captured by SpiritDirector, restored by the next job): the window's
+// burning and burnt cells packed as text, "x z state fuel regrow ember;"
+// per cell in world metres (world/spirit/SpiritFire packs and unpacks).
+struct FireStateForm : data::Form {
+    core::Guid worldspace;
+    i32 cellCount { 0 };
+    str cells;
+
+    REFLECT_BEGIN(FireStateForm, data::Form)
+        REFLECT_FIELD(worldspace)
+        REFLECT_FIELD(cellCount)
+        REFLECT_FIELD(cells)
+    REFLECT_END()
+};
+
 // A baked terrain REGION: an absolute height grid (.trg asset) replacing
 // the procedural base inside its rectangle — the generated-terrain layer
 // under the sculpt deltas above. Geometry (origin/size/texel) lives in the

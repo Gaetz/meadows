@@ -21,15 +21,7 @@ namespace world {
 
 namespace {
 
-void spawnStatic(SpawnContext&, ecs::Entity entity, const data::Form&,
-                 const reflect::TypeInfo&) {
-    entity.add<StaticMarker>();
-}
-
-void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
-                const reflect::TypeInfo&) {
-    entity.add<LightMarker>();
-    const auto& light = static_cast<const data::LightForm&>(base);
+LightSource lightSourceFrom(const data::LightForm& light) {
     LightSource source;
     source.color = light.color;
     source.intensity = light.intensity;
@@ -42,7 +34,33 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     source.rcOnly = light.shadowMode == "rcOnly";
     source.windowHalfWidth = light.windowHalfWidth;
     source.windowHalfHeight = light.windowHalfHeight;
-    entity.set<LightSource>(source);
+    return source;
+}
+
+void spawnStatic(SpawnContext& ctx, ecs::Entity entity, const data::Form& base,
+                 const reflect::TypeInfo&) {
+    entity.add<StaticMarker>();
+    // A prop that carries its own light / flames (a torch, a campfire):
+    // the optional components the form declares, nothing else.
+    const auto& form = static_cast<const data::StaticForm&>(base);
+    if (form.light.isValid()) {
+        if (const auto* light = ctx.forms.find<data::LightForm>(form.light)) {
+            LightSource source = lightSourceFrom(*light);
+            source.offset = form.lightOffset;
+            entity.set<LightSource>(source);
+        }
+    }
+    if (form.flameParticles.isValid() || form.smokeParticles.isValid()) {
+        entity.set<FxSource>({ form.flameParticles, form.smokeParticles,
+                               form.particlesOffset });
+    }
+}
+
+void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
+                const reflect::TypeInfo&) {
+    entity.add<LightMarker>();
+    const auto& light = static_cast<const data::LightForm&>(base);
+    entity.set<LightSource>(lightSourceFrom(light));
 }
 
 void spawnWaterVolume(SpawnContext&, ecs::Entity entity,

@@ -1585,7 +1585,8 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
             flameSheet = view.materialTextures->resolve(snapshot.flameSheet.texture);
         }
         fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
-                snapshot.fxAdditive, snapshot.fxFlames, flameSheet);
+                snapshot.fxAdditive, snapshot.fxFlames, flameSheet,
+                waterSceneBindGroup);
         // Rain streaks (procedural, camera cylinder).
         if (cfg.sky && frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||
@@ -1736,6 +1737,11 @@ void WorldRenderer::recordShadowCascades(engine::FrameContext& frame,
             // ultra tree ring). Far cascades cast with the solid shadow
             // proxies (metaball blobs), cascade 0 with the leafy cards.
             if (cfg.vegetation) {
+                if (fireScorch.bindGroup().id != 0) {
+                    // The caster drops the burnt canopies too (slot 8,
+                    // bound per pass: the frame's replay starts empty).
+                    frame.cmd.setBindGroup(8, fireScorch.bindGroup());
+                }
                 vegetation.drawDepth(frame.cmd, frameBindGroup,
                                      shadows.casterBindGroup(i),
                                      camera.position, casterChunks,
@@ -1773,6 +1779,9 @@ void WorldRenderer::recordRainOcclusion(engine::FrameContext& frame,
         // here; solid shadow proxies / ultra lobes keep it cutout-free.
         // The window is 40 m around the camera — one chunk of reach.
         if (cfg.vegetation) {
+            if (fireScorch.bindGroup().id != 0) {
+                frame.cmd.setBindGroup(8, fireScorch.bindGroup());
+            }
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  rainCasterGroup, camera.position,
                                  /*maxChunkDistance=*/1, nullptr,

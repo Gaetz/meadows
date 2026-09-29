@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_set>
 #include <chrono> // Save/load timing baselines
 #include <cmath>
 #include <filesystem>
@@ -960,6 +961,8 @@ void LandscapeScene::setupWorldAndStreaming() {
                     .query<const world::Transform, const world::DoorTarget>();
     interactQuery =
         world.handle().query<const world::Transform, const world::RefId>();
+    fxSourceQuery =
+        world.handle().query<const world::Transform, const world::FxSource>();
     streaming.init(world);
     categories = world::FormCategoryRegistry {};
     world::registerCoreCategories(categories);
@@ -1059,6 +1062,17 @@ void LandscapeScene::setupWorldAndStreaming() {
                     : probeSandboxSpawn();
             armWarmup(around, false, true);
         }
+    }
+    // A loaded save's fire (its FireStateForm record, this worldspace's):
+    // the lane relights it with the first job.
+    if (saveController.loadedFromSave()) {
+        data::forEach<world::FireStateForm>(
+            forms, [&](const world::FireStateForm& form) {
+                if (!form.worldspace.isValid() ||
+                    form.worldspace == activeWorldspaceGuid()) {
+                    spiritDirector.restoreFire(form);
+                }
+            });
     }
     // A fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
@@ -1602,15 +1616,19 @@ void LandscapeScene::update(f32 dt) {
                     return render::terrain::waterSurfaceQuery(
                         waterQuery, at.x, at.z, at.y);
                 },
-                [&waterQuery](const Vec3& at) {
+                [&waterQuery, this](const Vec3& at) {
+                    // The current, and the wind's share (E4): a crate
+                    // drifts downwind across a still pond.
                     return render::terrain::waterFlowQuery(
-                        waterQuery, at.x, at.z, at.y);
+                        waterQuery, at.x, at.z, at.y) +
+                           windField.windAt(at.x, at.z) * kFloaterWindDrift;
                 });
         }
     }
     // Shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
     fxDirector.update(dt, flyCamera);
+    updateFxSources(); // the torches and campfires within reach
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
     audioSystem.setListener(flyCamera.camera.position,
@@ -2164,6 +2182,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     params.snowLine = activeSnowLine;
     stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
     resetSpiritFire();
+    resetFxSources();
     resetSpiritWind();
     releaseSpiritHold(false);
     finishSpiritEarth(false);
@@ -3784,7 +3803,7 @@ SaveContext LandscapeScene::makeSaveContext() {
             });
         },
         [this](const str& msg) { interaction.say(msg, 3.0f); },
-        [this] { return spiritDirector.capture(); },
+        [this] { return spiritDirector.capture(activeWorldspaceGuid()); },
         // The reshaped ground rides with the save: saves/<slot>/terrain/.
         [this](const str& slot, vector<data::Record>& records,
                vector<data::AssetEntry>& assets) {
@@ -4164,6 +4183,7 @@ void LandscapeScene::createConsole() {
             releaseSpiritHold(false);
             finishSpiritEarth(true);
             resetSpiritFire();
+            resetFxSources();
     resetSpiritWind();
             pushRuntimeWaterSources();
             return "spirit sources cleared";
@@ -5660,6 +5680,7 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
                       : nullptr;
     frame.bodies = waterBodies;
     frame.seaLevel = renderer.terrainParams().seaLevel;
+    frame.rain = atmos.rainIntensity; // the rain soaks the fuel and the flames
     const Vec3 cam = flyCamera.camera.position;
     frame.focus = { cam.x, cam.z };
     fireLandClock += simSeconds;
@@ -5691,8 +5712,9 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         f32 score;
     };
     vector<Candidate> candidates;
-    for (const Vec2& at : spiritDirector.fireBurning()) {
-        const Vec2 to { at.x - cam.x, at.y - cam.z };
+    std::unordered_set<u64> farBlocks; // 2x2 blocks already represented
+    for (const Vec2& cell : spiritDirector.fireBurning()) {
+        const Vec2 to { cell.x - cam.x, cell.y - cam.z };
         const f32 d2 = glm::dot(to, to);
         if (d2 > kFlameReach * kFlameReach) {
             continue;
@@ -5701,6 +5723,18 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         const f32 facing = dist > 1e-3f ? glm::dot(to / dist, forward) : 1.0f;
         if (facing < -0.2f && dist > kFlameBehindRadius) {
             continue; // behind the camera
+        }
+        Vec2 at = cell;
+        if (dist > kFlameLodNear) {
+            // LOD: the cell's 2x2 block centre, once per block.
+            const i32 bx = static_cast<i32>(std::floor(cell.x / 4.0f));
+            const i32 bz = static_cast<i32>(std::floor(cell.y / 4.0f));
+            const u64 key = (static_cast<u64>(static_cast<u32>(bx)) << 32) ^
+                            static_cast<u32>(bz);
+            if (!farBlocks.insert(key).second) {
+                continue;
+            }
+            at = { (static_cast<f32>(bx) + 0.5f) * 4.0f, (static_cast<f32>(bz) + 0.5f) * 4.0f };
         }
         // In the axis of view: preferred at equal distance.
         candidates.push_back({ at, dist * (1.6f - 0.6f * facing) });
@@ -5754,9 +5788,18 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
             static_cast<u32>(static_cast<i32>(pos.x * 73.0f)) ^
             (static_cast<u32>(static_cast<i32>(pos.z * 179.0f)) << 8) ^
             fxSim.count();
+        const f32 dist = glm::distance(Vec2 { pos.x, pos.z }, Vec2 { cam.x, cam.z });
+        const bool far = dist > kFlameLodNear;
         if (flameForm) {
             fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
             params.duration = 1.0e9f; // stopped when the cell stops burning
+            if (far) {
+                // One flame for four cells: taller, wider, a little sparser.
+                params.sizeStart *= 1.8f;
+                params.sizeEnd *= 1.8f;
+                params.shapeRadius *= 2.0f;
+                params.rate *= 0.7f;
+            }
             flame.emitter = fxSim.spawn(params, pos, seed);
         }
         if (sparkForm) {
@@ -5789,6 +5832,7 @@ void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
     struct Tile {
         Vec2 sum { 0.0f };
         u32 count { 0 };
+        f32 glow { 0.0f }; // summed ember levels: the tile's freshness
     };
     std::map<std::pair<i32, i32>, Tile> tiles;
     for (const Vec2& at : spiritDirector.fireBurning()) {
@@ -5798,6 +5842,7 @@ void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
         };
         Tile& tile = tiles[key];
         tile.sum += at;
+        tile.glow += spiritDirector.fireGlowAt(at.x, at.y);
         ++tile.count;
     }
     if (tiles.empty()) {
@@ -5817,7 +5862,10 @@ void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
             0.8f;
         render::SceneLight light;
         light.position = { center.x, y, center.y };
-        light.color = look.lightColor;
+        // Temperature: fresh flames burn the hot colour, a tile of dying
+        // embers the cold one (the same ramp as the coal bed).
+        const f32 freshness = glm::clamp(tile.glow / static_cast<f32>(tile.count), 0.0f, 1.0f);
+        light.color = glm::mix(look.emberCold, look.lightColor, freshness);
         light.intensity = glm::min(look.lightIntensity * static_cast<f32>(tile.count),
                                    look.lightMaxIntensity);
         light.radius = look.lightRadius +
@@ -6364,6 +6412,59 @@ void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
     audioSystem.setPosition(fireLoop, at);
 }
 
+void LandscapeScene::updateFxSources() {
+    const Vec3 cam = flyCamera.camera.position;
+    std::unordered_set<u64> seen;
+    fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
+                           const world::FxSource& source) {
+        const Vec3 at = transform.position + transform.rotation * source.offset;
+        if (glm::distance(at, cam) > kFxSourceReach) {
+            return; // out of reach: swept below if it was alight
+        }
+        seen.insert(e.id());
+        if (fxSourceEmitters.contains(e.id())) {
+            return;
+        }
+        FxSourceEmitters emitters;
+        const u32 seed = static_cast<u32>(e.id() & 0xffffffffu) ^ 0x5eedf1a3u;
+        if (const auto* form = forms.find<data::ParticleForm>(source.flame)) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+            params.duration = 1.0e9f; // for the prop's life
+            emitters.flame = fxSim.spawn(params, at, seed);
+        }
+        if (const auto* form = forms.find<data::ParticleForm>(source.smoke)) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+            params.duration = 1.0e9f;
+            emitters.smoke = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
+        }
+        fxSourceEmitters.emplace(e.id(), emitters);
+    });
+    // Gone (despawned, disabled) or out of reach: the emitters stop.
+    for (auto it = fxSourceEmitters.begin(); it != fxSourceEmitters.end();) {
+        if (seen.contains(it->first)) {
+            ++it;
+            continue;
+        }
+        for (const u32 emitter : { it->second.flame, it->second.smoke }) {
+            if (emitter != 0) {
+                fxSim.stopEmitter(emitter);
+            }
+        }
+        it = fxSourceEmitters.erase(it);
+    }
+}
+
+void LandscapeScene::resetFxSources() {
+    for (const auto& [id, emitters] : fxSourceEmitters) {
+        for (const u32 emitter : { emitters.flame, emitters.smoke }) {
+            if (emitter != 0) {
+                fxSim.stopEmitter(emitter);
+            }
+        }
+    }
+    fxSourceEmitters.clear();
+}
+
 void LandscapeScene::resetSpiritFire() {
     endSpiritBrand();
     endSpiritGlobe();
@@ -6902,6 +7003,8 @@ NpcContext LandscapeScene::makeNpcContext() {
             : ecs::Entity {},
         interiorMode,
         interiorArrival,
+        &spiritDirector, // the fire the NPCs flee
+        &windField,      // the gusts that shove them
     };
 }
 

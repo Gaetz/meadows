@@ -47,6 +47,15 @@ struct StaticForm : Form {
     // The SurfaceMaterialForm class this prop is made of ("rock",
     // "wood"...; empty = inert): what the spirits may seize or burn.
     str surfaceMaterial;
+    // What the prop carries for its whole life (a torch, a campfire, a
+    // chimney): a LightForm and/or ParticleForms, at offsets from the
+    // prop's pivot in its own frame (metres). The spawner attaches the
+    // light (LightSource) and the FxSource the scene keeps alight.
+    core::Guid light;
+    Vec3 lightOffset { 0.0f };
+    core::Guid flameParticles;
+    core::Guid smokeParticles;
+    Vec3 particlesOffset { 0.0f };
 
     REFLECT_BEGIN(StaticForm, Form)
         REFLECT_FIELD(displayName)
@@ -56,6 +65,11 @@ struct StaticForm : Form {
         REFLECT_FIELD(collides)
         REFLECT_FIELD(snapToGround)
         REFLECT_FIELD(surfaceMaterial)
+        REFLECT_FIELD(light)
+        REFLECT_FIELD(lightOffset)
+        REFLECT_FIELD(flameParticles)
+        REFLECT_FIELD(smokeParticles)
+        REFLECT_FIELD(particlesOffset)
     REFLECT_END()
 };
 

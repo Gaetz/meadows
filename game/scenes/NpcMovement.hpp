@@ -53,4 +53,16 @@ void moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
 bool steerBlocked(const NpcContext& ctx, const Vec3& from,
                   const Vec3& direction);
 
+// The fire's flee: samples the burning cells around the actor (rings out
+// to kFireFleeRadius) and runs him straight away from them, pathless,
+// wall-guarded. True when it steered this frame — the caller drops its
+// schedule for the frame (the path is cleared here).
+constexpr f32 kFireFleeRadius = 6.0f;
+bool steerFromFire(const NpcContext& ctx, Npc& npc, f32 dt);
+
+// A gust (the wind beyond its ambient part) shoves the actor — the
+// player's rule (LandscapeScene::kPlayerWindPush), grounded after.
+constexpr f32 kNpcWindPush = 0.6f;
+void pushNpcByWind(const NpcContext& ctx, Npc& npc, f32 dt);
+
 } // namespace game

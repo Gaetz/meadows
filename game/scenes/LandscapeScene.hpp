@@ -202,6 +202,17 @@ private:
     // `world`; rebuilt right after it in onEnter.
     flecs::query<const world::Transform, const world::DoorTarget> doorQuery;
     flecs::query<const world::Transform, const world::RefId> interactQuery;
+    // Props carrying flames (world::FxSource — torches, campfires): one
+    // emitter set per entity while it lives within reach of the camera.
+    flecs::query<const world::Transform, const world::FxSource> fxSourceQuery;
+    struct FxSourceEmitters {
+        u32 flame { 0 };
+        u32 smoke { 0 };
+    };
+    std::unordered_map<u64, FxSourceEmitters> fxSourceEmitters;
+    static constexpr f32 kFxSourceReach = 90.0f;
+    void updateFxSources();
+    void resetFxSources(); // map swap / exit: the emitters go with the world
 
     // Cells stream around the player (synchronous ring —
     // async streaming may come later). References
@@ -658,6 +669,9 @@ private:
     static constexpr u32 kMaxFlames = 96;
     static constexpr f32 kFlameReach = 120.0f;
     static constexpr f32 kFlameBehindRadius = 12.0f; // behind the camera, flames only this close
+    // Beyond this, one flame stands for a 2x2 block of cells (bigger,
+    // sparser): the far front costs a quarter of the emitters.
+    static constexpr f32 kFlameLodNear = 40.0f;
     // The field's 3D loop (SpiritForm.fieldSound): one source that
     // follows the burning cell nearest the camera, silent beyond reach.
     audio::AudioSystem::SoundId fireLoop { 0 };
@@ -775,6 +789,7 @@ private:
     render::terrain::WindField windField;
     static constexpr f32 kWindSpeedPerStrength = 5.0f; // m/s at weather strength 1
     static constexpr f32 kPlayerWindPush = 0.6f;       // of the gusts' speed
+    static constexpr f32 kFloaterWindDrift = 0.08f;    // of the wind, on a floating prop
     void updateSpiritWind(f32 dt);
     // The breath (Create x Wind as a stream, held).
     struct SpiritBlow {

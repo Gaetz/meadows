@@ -7,7 +7,9 @@
 
 #include "engine/physics/Physics.hpp"     // phys::PhysicsWorld/RayHit
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
+#include "engine/terrain/WindField.hpp"   // the gusts
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
+#include "game/scenes/SpiritDirector.hpp" // fireBurningAt
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
 #include "gameplay/stats/StatsTuning.hpp"  // movementSpeedScale3D
@@ -160,6 +162,70 @@ bool steerBlocked(const NpcContext& ctx, const Vec3& from,
         }
     }
     return false;
+}
+
+// Contract in the header.
+bool steerFromFire(const NpcContext& ctx, Npc& npc, f32 dt) {
+    if (!ctx.spirits || ctx.interiorMode || ctx.spirits->fireIdle()) {
+        return false;
+    }
+    const Vec3 pos = npc.entity.get<world::Transform>().position;
+    // Three rings of samples: every burning one pushes away, the near
+    // ones harder.
+    Vec2 push { 0.0f };
+    u32 hits = 0;
+    for (i32 ring = 1; ring <= 3; ++ring) {
+        const f32 r = kFireFleeRadius * static_cast<f32>(ring) / 3.0f;
+        for (i32 k = 0; k < 12; ++k) {
+            const f32 a = static_cast<f32>(k) * (glm::two_pi<f32>() / 12.0f);
+            const Vec2 d { std::cos(a), std::sin(a) };
+            if (ctx.spirits->fireBurningAt(pos.x + d.x * r, pos.z + d.y * r)) {
+                push -= d / r;
+                ++hits;
+            }
+        }
+    }
+    const bool underfoot = ctx.spirits->fireBurningAt(pos.x, pos.z);
+    if (hits == 0 && !underfoot) {
+        return false;
+    }
+    // Surrounded evenly (or only the ground underfoot burns): straight
+    // ahead is as good a way out as any.
+    Vec2 dir = glm::length(push) > 1e-3f
+                   ? glm::normalize(push)
+                   : Vec2 { std::sin(npc.yaw), std::cos(npc.yaw) };
+    Vec3 away { dir.x, 0.0f, dir.y };
+    if (steerBlocked(ctx, pos, away)) {
+        for (const f32 turn : { 1.2f, -1.2f }) {
+            const Vec3 side = glm::angleAxis(turn, Vec3 { 0.0f, 1.0f, 0.0f }) * away;
+            if (!steerBlocked(ctx, pos, side)) {
+                away = side;
+                break;
+            }
+        }
+    }
+    npc.path.clear();
+    npc.pathIndex = 0;
+    moveNpcDirect(ctx, npc, dt, away, 1.35f, std::atan2(away.x, away.z));
+    return true;
+}
+
+void pushNpcByWind(const NpcContext& ctx, Npc& npc, f32 dt) {
+    if (!ctx.wind || ctx.interiorMode) {
+        return;
+    }
+    auto& transform = npc.entity.get_mut<world::Transform>();
+    const Vec2 gust =
+        ctx.wind->windAt(transform.position.x, transform.position.z) -
+        ctx.wind->globalDir * ctx.wind->globalSpeed;
+    if (glm::dot(gust, gust) < 0.25f) {
+        return; // under 0.5 m/s: a breath, not a shove
+    }
+    Vec3 next = transform.position +
+                Vec3 { gust.x, 0.0f, gust.y } * (kNpcWindPush * dt);
+    if (groundNpc(ctx, next)) {
+        transform.position = next;
+    }
 }
 
 } // namespace game

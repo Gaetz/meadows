@@ -99,15 +99,16 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
         .query<const world::Transform, const world::LightSource>()
         .each([&](flecs::entity, const world::Transform& transform,
                   const world::LightSource& source) {
-            if (viewProj && !frustum.intersectsSphere(transform.position,
-                                                      source.radius)) {
+            const Vec3 at =
+                transform.position + transform.rotation * source.offset;
+            if (viewProj && !frustum.intersectsSphere(at, source.radius)) {
                 return;
             }
-            const Vec3 d = transform.position - focus;
+            const Vec3 d = at - focus;
             const f32 distanceSq = glm::dot(d, d);
             candidates.push_back(
                 { distanceSq, source.intensity / (1.0f + distanceSq), order++,
-                  { transform.position, source.color, source.intensity,
+                  { at, source.color, source.intensity,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
                     source.spotAngle, source.sunLinked,
@@ -149,7 +150,8 @@ void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
                 const Vec3 forward =
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
                 out.shadowLights.push_back(
-                    { transform.position, source.color, source.intensity,
+                    { transform.position + transform.rotation * source.offset,
+                      source.color, source.intensity,
                       source.radius, source.flicker, forward,
                       source.spotAngle, source.sunLinked, true, false,
                       source.windowHalfWidth, source.windowHalfHeight });

@@ -22,6 +22,7 @@ void registerSceneComponents(ecs::World& world) {
     world.registerComponent<Perception>(); // reflected: alerts persist
     world.registerComponent<WaterVolume>();
     world.registerComponent<Displaced>();
+    world.registerComponent<FxSource>();
     // Marker tags (StaticMarker/ItemMarker/ActorMarker) carry no fields and are
     // never serialized, so flecs auto-registers them on first use — they do not
     // go through the reflected-component bridge.

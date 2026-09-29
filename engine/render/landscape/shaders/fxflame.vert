@@ -20,6 +20,7 @@ layout(location = 0) out vec2 vUv;     // x -1..1 across, y 0..1 base->tip
 layout(location = 1) out vec4 vCore;   // rgb core colour, a = age 0..1
 layout(location = 2) out vec4 vOuter;  // rgb outer colour, a = seed
 layout(location = 3) out vec4 vLife;   // x = lifetime (s)
+layout(location = 4) out vec3 vWorldPos;
 
 void main() {
     int particle = MEADOWS_VERTEX_INDEX / 6 + uFxBase.x;
@@ -47,5 +48,6 @@ void main() {
     float halfWidth = height * max(uFireFlameInfo.w, 0.05) * 0.5;
     vec3 world = posSize.xyz + right * (uv.x * halfWidth) +
                  vec3(0.0, uv.y * height, 0.0);
+    vWorldPos = world;
     gl_Position = uViewProj * vec4(world, 1.0);
 }

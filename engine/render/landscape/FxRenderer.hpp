@@ -43,7 +43,8 @@ public:
               const vector<FxInstance>& alpha,
               const vector<FxInstance>& additive,
               const vector<FxInstance>& flames,
-              rhi::TextureHandle flameSheet = {});
+              rhi::TextureHandle flameSheet = {},
+              rhi::BindGroupHandle sceneDepthGroup = {});
 
 
 private:

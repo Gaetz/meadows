@@ -1,4 +1,5 @@
 #include "game/scenes/NpcDirector.hpp"
+#include "game/scenes/NpcMovement.hpp"
 
 #include <cmath>
 
@@ -258,8 +259,15 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // 10-min slot boundary resumes on the CURRENT entry.
         const bool inDialogue = ctx.dialoguePartner.is_alive() &&
                                 ctx.dialoguePartner == npc.entity;
-        switch (gameplay::updateInterruption(npc.scheduleInterrupted,
-                                             inCombat || inDialogue)) {
+        // The fire (E3): a peaceful actor near burning ground runs from
+        // it before anything on his schedule; a seat is left behind.
+        const bool fleeingFire =
+            !inCombat && !inDialogue && steerFromFire(ctx, npc, dt);
+        if (fleeingFire && (npc.sitting || npc.furnitureClaimed)) {
+            schedule_.releaseFurniture(ctx, npc);
+        }
+        switch (gameplay::updateInterruption(
+            npc.scheduleInterrupted, inCombat || inDialogue || fleeingFire)) {
         case gameplay::ScheduleSignal::Interrupted:
             npc.path.clear();
             npc.pathIndex = 0;
@@ -275,6 +283,8 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         } else if (inDialogue) {
             // held still while the player talks to him (seated stays
             // seated — only the walking stops)
+        } else if (fleeingFire) {
+            // running from the flames (steered above)
         } else if (staying) {
             // stand where ordered (no follow, no schedule)
         } else if (following) {
@@ -286,6 +296,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             // --- Legacy patrol fallback ---
             schedule_.patrol(dt, ctx, npc, patrolPoints);
         }
+        pushNpcByWind(ctx, npc, dt); // the gusts (E4) shove him too
         // Standing = no path AND no direct steering this frame (strafe
         // and flee move pathless — their run must reach the anim).
         npc.speed -= npc.speed * (1.0f - std::exp(-idleDecay * dt)) *

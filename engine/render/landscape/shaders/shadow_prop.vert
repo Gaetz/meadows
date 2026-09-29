@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "firemask.glsl"
 
 // Mirrors tree.vert's placement (yaw, scale, distance fade, canopy sway) so
 // shadows match the drawn geometry; lighting-only outputs dropped.
@@ -47,10 +48,12 @@ void main() {
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
     vCardUv = vec2(-1.0);
-    // Same leaf-fall rule as tree.vert: bare crowns cast bare shadows.
+    // Same leaf-fall rule as tree.vert (winter AND the fire's canopy
+    // burn): bare crowns cast bare shadows.
     bool dropped = false;
     if (leafCard) {
-        float fall = uSeasonInfo.y * uLeafSeason[int(slot)].a;
+        float fall = max(uSeasonInfo.y * uLeafSeason[int(slot)].a,
+                         fireCanopyAt(aPosScale.xz));
         if (fall > 0.0) {
             float h = fract(sin(dot(aPosScale.xyz + aPos,
                                     vec3(12.9898, 78.233, 45.164))) *

@@ -152,3 +152,39 @@ TEST_CASE("fire lane: the job initialises, ignites, steps, masks and scrolls") {
     const FireJobOutput quiet = runFireJob(std::move(idle));
     CHECK(!quiet.active);
 }
+
+TEST_CASE("fire lane: the save's cells pack, unpack and relight the next job") {
+    using render::terrain::FireSavedCell;
+    using render::terrain::FireState;
+    vector<FireSavedCell> cells;
+    cells.push_back({ 10.0f, -4.0f, FireState::Burnt, 0.0f, 0.25f, 0.5f });
+    cells.push_back({ 0.0f, 0.0f, FireState::Burning, 0.6f, 0.0f, 0.9f });
+    cells.push_back({ 2.0f, 0.0f, FireState::Burning, 1.0f, 0.0f, 1.0f });
+    const str packed = packFireCells(cells);
+    CHECK(packed.find(';') != str::npos);
+    const vector<FireSavedCell> back = unpackFireCells(packed);
+    REQUIRE(back.size() == 3);
+    // Burning first (the cap keeps the flames over the ashes).
+    CHECK(back[0].state == FireState::Burning);
+    CHECK(back[0].x == doctest::Approx(0.0f));
+    CHECK(back[0].fuelFraction == doctest::Approx(0.6f));
+    CHECK(back[2].state == FireState::Burnt);
+    CHECK(back[2].regrow == doctest::Approx(0.25f));
+    CHECK(back[2].ember == doctest::Approx(0.5f));
+    // Garbage is skipped, not fatal.
+    CHECK(unpackFireCells("nonsense;1 2 3;").empty());
+    CHECK(packFireCells(cells, 1).find(';') == packFireCells(cells, 1).size() - 1);
+
+    FireJobInput in;
+    in.spec = FireWindow::specFor(0.0f, 0.0f);
+    in.params.spreadRate = 0.0f; // no spread: what burns is what was restored
+    in.restores = back;
+    in.steps = 1;
+    in.fuel = grass;
+    FireJobOutput out = runFireJob(std::move(in));
+    CHECK(out.active);
+    CHECK(out.stats.burning == 2);
+    CHECK(out.stats.burnt == 1);
+    CHECK(out.cells.size() == 3);
+    CHECK(!out.burning.empty());
+}

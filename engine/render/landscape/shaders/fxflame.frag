@@ -11,12 +11,15 @@
 // last third of the life. A flame particle without a sheet is drawn by
 // the plain sprite pipeline instead (FxRenderer).
 
+#include "view_util.glsl"
 layout(binding = 3) uniform sampler2D uFlameSheet;
+layout(binding = 1) uniform sampler2D uSceneDepth; // the pre-fx scene depth
 
 layout(location = 0) in vec2 vUv;    // x -1..1 across, y 0 base .. 1 tip
 layout(location = 1) in vec4 vCore;  // rgb tint, a = age 0..1
 layout(location = 2) in vec4 vOuter; // a = seed 0..1 (rgb unused here)
 layout(location = 3) in vec4 vLife;  // x = lifetime (s)
+layout(location = 4) in vec3 vWorldPos;
 layout(location = 0) out vec4 fragColor;
 
 vec4 flipbook(vec2 uv, float age, float lifetime, float seed) {
@@ -47,7 +50,18 @@ void main() {
         col *= lum > 1e-4 ? q / lum : 0.0;
     }
     float fade = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.65, 1.0, age));
-    float alpha = s.a * fade;
+    // Soft particle: fade out over the last 0.6 m before the scene's
+    // surface behind (a flame's base crossing the ground never shows a
+    // hard line). Reversed-Z: 0 = nothing behind (sky) = no fade.
+    vec2 screenUv = gl_FragCoord.xy * uScreenInfo.zw;
+    float sceneDepth = texture(uSceneDepth, screenUv).r;
+    float soft = 1.0;
+    if (sceneDepth > 0.0) {
+        float sceneDist = length(worldFromDepth(screenUv, sceneDepth) - uCameraPos.xyz);
+        float fragDist = length(vWorldPos - uCameraPos.xyz);
+        soft = clamp((sceneDist - fragDist) / 0.6, 0.0, 1.0);
+    }
+    float alpha = s.a * fade * soft;
     if (alpha <= 0.004) {
         discard;
     }

@@ -27,6 +27,55 @@ void sampleCell(FireGrid& grid, size_t i, i32 col, i32 row, const FuelFn& fuel) 
 
 } // namespace
 
+void fireRestoreCell(FireGrid& grid, f32 x, f32 z, FireState state,
+                     f32 fuelFraction, f32 regrow, f32 ember,
+                     const FuelFn& fuel) {
+    if (!grid.valid()) {
+        return;
+    }
+    const i32 n = static_cast<i32>(grid.spec.n);
+    const i32 col = static_cast<i32>(std::lround((x - grid.spec.originX) / grid.spec.texelSize));
+    const i32 row = static_cast<i32>(std::lround((z - grid.spec.originZ) / grid.spec.texelSize));
+    if (col < 0 || row < 0 || col >= n || row >= n) {
+        return;
+    }
+    const size_t i = static_cast<size_t>(row) * n + col;
+    sampleCell(grid, i, col, row, fuel);
+    grid.fuel[i] = grid.fuel0[i] * glm::clamp(fuelFraction, 0.0f, 1.0f);
+    grid.state[i] = static_cast<u8>(state);
+    grid.heat[i] = 0.0f;
+    grid.regrow[i] = glm::clamp(regrow, 0.0f, 1.0f);
+    grid.ember[i] = glm::clamp(ember, 0.0f, 1.0f);
+    if (state == FireState::Burning && grid.fuel[i] <= 0.0f) {
+        grid.fuel[i] = glm::max(grid.fuel0[i], 0.1f); // rock under a saved flame: let it burn out
+    }
+}
+
+void fireCollectCells(const FireGrid& grid, vector<FireSavedCell>& out) {
+    out.clear();
+    if (!grid.valid()) {
+        return;
+    }
+    const i32 n = static_cast<i32>(grid.spec.n);
+    for (i32 row = 0; row < n; ++row) {
+        for (i32 col = 0; col < n; ++col) {
+            const size_t i = static_cast<size_t>(row) * n + col;
+            const auto state = static_cast<FireState>(grid.state[i]);
+            if (state != FireState::Burning && state != FireState::Burnt) {
+                continue;
+            }
+            FireSavedCell cell;
+            cell.x = grid.spec.originX + static_cast<f32>(col) * grid.spec.texelSize;
+            cell.z = grid.spec.originZ + static_cast<f32>(row) * grid.spec.texelSize;
+            cell.state = state;
+            cell.fuelFraction = grid.fuel0[i] > 0.0f ? grid.fuel[i] / grid.fuel0[i] : 0.0f;
+            cell.regrow = grid.regrow[i];
+            cell.ember = grid.ember[i];
+            out.push_back(cell);
+        }
+    }
+}
+
 void fireInitWindow(FireGrid& grid, const terraingen::GridSpec& spec) {
     grid.spec = spec;
     const size_t cells = spec.cells();
@@ -219,7 +268,7 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                     (1.0f - 0.75f * windLen) +
                     0.75f * windLen * glm::max(0.0f, glm::dot(windDir, dir));
                 dealt[j] += params.spreadRate * windward * grid.flammability[j] *
-                            (1.0f - grid.moisture[j]) * dt;
+                            (1.0f - glm::max(grid.moisture[j], params.rain)) * dt;
             }
         }
     }
@@ -249,6 +298,18 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                 break;
             }
             case FireState::Burning:
+                if (params.rain >= params.rainDouseLevel) {
+                    // Soaked out: a burning cell's heat is free, it clocks
+                    // the rain; the cell goes cold and burnt, no embers.
+                    grid.heat[i] += params.rain * dt;
+                    if (grid.heat[i] >= params.rainDouseSeconds) {
+                        grid.state[i] = static_cast<u8>(FireState::Burnt);
+                        grid.heat[i] = 0.0f;
+                        grid.ember[i] = 0.0f;
+                        grid.regrow[i] = 0.0f;
+                        break;
+                    }
+                }
                 grid.fuel[i] -= params.burnRate * dt;
                 if (grid.fuel[i] <= 0.0f) {
                     grid.fuel[i] = 0.0f;

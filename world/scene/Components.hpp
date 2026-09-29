@@ -130,8 +130,12 @@ struct LightSource {
     // Window projector half extents (> 0 = window light).
     f32 windowHalfWidth { 0.0f };
     f32 windowHalfHeight { 0.0f };
+    // From the entity's pivot, in its frame (a torch's head, a fire's
+    // heart): the light sits at position + rotation * offset.
+    Vec3 offset { 0.0f };
 
     REFLECT_BEGIN(LightSource, void)
+        REFLECT_FIELD(offset)
         REFLECT_FIELD(color)
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(radius)
@@ -222,6 +226,21 @@ struct Floater {
         REFLECT_FIELD(driftFactor)
         REFLECT_FIELD(draft)
         REFLECT_FIELD(bobAmplitude)
+    REFLECT_END()
+};
+
+// Particles a placed prop carries for its whole life (StaticForm
+// flameParticles / smokeParticles): the scene keeps one emitter per
+// form alight while the entity lives near the camera.
+struct FxSource {
+    core::Guid flame;
+    core::Guid smoke;
+    Vec3 offset { 0.0f }; // from the pivot, in the entity's frame
+
+    REFLECT_BEGIN(FxSource, void)
+        REFLECT_FIELD(flame)
+        REFLECT_FIELD(smoke)
+        REFLECT_FIELD(offset)
     REFLECT_END()
 };
 

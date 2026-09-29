@@ -945,3 +945,66 @@ d'où la base explicite. La pré-vérification « sol mouillé » d'un Créer
 (la sim l'utilise) — le verrou §2.10 `meadows-simlink` l'a attrapé dans
 la lib de rendu. Reste : la poussée des PNJ et des floaters, un cue
 sonore, le vent dans la lecture du feu (« air immobile » → direction).
+
+### E4.b COMMITÉE (`aa23507`) ; E5 — la liste de fin de chantier (2026-09-29)
+Demande dev : « fais toute la liste » — PNJ qui fuient le feu, torches et
+feux de camp, fondu de profondeur et LOD des flammes, rampe de
+température des lumières, pluie qui mouille le combustible, persistance
+du feu, ombres des feuilles brûlées, poussée PNJ/floaters par le vent ;
+un seul commit à la fin (« sinon tu vas devoir tout tester pour chaque
+feature »). Quatre volets :
+
+**A — le rendu du feu.** Ombres : `shadow_prop.vert` inclut
+`firemask.glsl` et lit `fireCanopyAt` comme `tree.vert` (chute = max(hiver,
+brûlure de canopée)) ; le caster déclare `uFireScorch` (unité 10) et les
+cascades comme le caster de pluie lient le slot 8 avant `drawDepth` (le
+replay Vulkan d'une frame part vide : lier par passe). Rampe de
+température : `extractFireLights` cumule `fireGlowAt` par tuile 8 m,
+couleur = `mix(emberCold, lightColor, fraîcheur)` — une tuile de braises
+mourantes éclaire rouge sombre, un front frais orange. Fondu de
+profondeur : le `fxflame` reçoit le groupe de scène de l'eau (slot 3,
+`sceneDepthCopy` en unité 1), `fxflame.frag` fond l'alpha sur 0,6 m avant
+la surface derrière (reversed-Z : profondeur 0 = ciel = pas de fondu) —
+la base d'une flamme qui coupe le sol n'a plus d'arête. LOD : au-delà de
+`kFlameLodNear` 40 m, une flamme par bloc 2×2 de cellules (centre du
+bloc, taille ×1,8, rayon ×2, cadence ×0,7) — le front lointain coûte un
+quart d'émetteurs.
+
+**B — la simulation.** Pluie : `FireParams.rain` (= `atmos.rainIntensity`
+via `FireFrame.rain`) ; la propagation prend `max(moiteur, pluie)` ; à
+partir de `rainDouseLevel` 0,5 une cellule brûlante compte la pluie dans
+sa `heat` (libre pendant qu'elle brûle) et s'éteint après
+`rainDouseSeconds` 6 s sous pluie pleine (brûlée, sans braise) ; une
+bruine ne fait que ralentir le front (test noyau). Persistance :
+`world::FireStateForm` (WorldForms, record de la couche save
+`5a5e0000-…-00f1`, `worldspace` + `cells` texte « x z état fuel repousse
+braise; » brûlantes d'abord, plafond 65 536) ; le job sort `out.cells`
+(`fireCollectCells` : brûlantes + brûlées), `SpiritDirector::capture(ws)`
+emballe le dernier atterri (`packFireCells`), `restoreFire` déballe dans
+`fireRestores` que le job suivant écrit en premier (`fireRestoreCell` :
+fuel échantillonné × fraction) — la voie se réveille pour ça. Restauré à
+l'entrée de scène après le `WorldStateForm` (même worldspace ou sans).
+La chaleur des voisins n'est pas sauvée : le front repart de ses cellules.
+
+**C — le monde.** `StaticForm.light/lightOffset/flameParticles/
+smokeParticles/particlesOffset` : le spawner attache un `LightSource`
+(nouvel `offset` réfléchi, `SceneSubmit` le compose dans les deux
+extractions) et un `world::FxSource` ; `LandscapeScene::updateFxSources`
+tient un émetteur par entité à portée (`kFxSourceReach` 90 m), balaie les
+disparues. Data (spirits.toml, qui dépend déjà du village) : `Campfire`
+(lueur 4,5/12 m/scintillement 0,5, `CampfireFlame` disque 0,22 m,
+`CampfireSmoke`) et `Torch` (3/8 m/0,4, `TorchFlame` 0,34 m à 1,62 m) ;
+modèles générés en boîtes (`tools/scripts/gen_fire_props.py` →
+`models/props/`), trois références sur la place du village (52 ; 373,5)
+et (49 / 55 ; 370,5). Ni l'un ni l'autre n'allume le sol : le foyer reste
+dans ses pierres (backlog : un crépitement 3D, une torche qui se prend).
+
+**D — les acteurs.** `NpcContext.spirits/wind` ; `NpcMovement::
+steerFromFire` (trois anneaux de 12 échantillons jusqu'à 6 m sur
+`fireBurningAt`, répulsion 1/r, tout droit si encerclé, `steerBlocked`
+puis ±70°, `moveNpcDirect` ×1,35) avant le planning (interruption
+`fleeingFire` comme le combat, siège lâché) ; `pushNpcByWind` = la règle
+du joueur (rafales seules, 60 %, seuil 0,5 m/s, `groundNpc`) ; les
+floaters prennent 8 % du vent dans leur closure de courant
+(`kFloaterWindDrift`). Le vent dans l'intelligo feu et un cue sonore de
+rafale restent au backlog.

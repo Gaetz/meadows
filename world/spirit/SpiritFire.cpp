@@ -1,5 +1,7 @@
 #include "world/spirit/SpiritFire.hpp"
 
+#include <cstdio>
+
 #include <chrono>
 #include <cmath>
 
@@ -128,6 +130,10 @@ FireJobOutput runFireJob(FireJobInput&& in) {
             (in.spec.originZ - grid.spec.originZ) / grid.spec.texelSize));
         fireScrollWindow(grid, dCol, dRow);
     }
+    for (const FireSavedCell& cell : in.restores) {
+        fireRestoreCell(grid, cell.x, cell.z, cell.state, cell.fuelFraction,
+                        cell.regrow, cell.ember, in.fuel);
+    }
     for (const FireDouse& douse : in.douses) {
         fireDouse(grid, douse.x, douse.z, douse.radius);
     }
@@ -150,10 +156,70 @@ FireJobOutput runFireJob(FireJobInput&& in) {
     out.burning = fireBurningCenters(grid, in.maxCenters, in.params,
                                      in.params.emberSeconds);
     out.active = stats.burning > 0;
+    fireCollectCells(grid, out.cells);
     out.grid = std::move(grid);
     out.millis = std::chrono::duration<f32, std::milli>(
                      std::chrono::steady_clock::now() - start)
                      .count();
+    return out;
+}
+
+str packFireCells(const vector<render::terrain::FireSavedCell>& cells,
+                  size_t maxCells) {
+    using render::terrain::FireState;
+    str out;
+    out.reserve(cells.size() * 40);
+    size_t written = 0;
+    char line[128];
+    for (const bool burningPass : { true, false }) {
+        for (const auto& cell : cells) {
+            if ((cell.state == FireState::Burning) != burningPass) {
+                continue;
+            }
+            if (written >= maxCells) {
+                return out;
+            }
+            std::snprintf(line, sizeof(line), "%.2f %.2f %u %.3f %.3f %.3f;",
+                          static_cast<double>(cell.x), static_cast<double>(cell.z),
+                          static_cast<unsigned>(cell.state),
+                          static_cast<double>(cell.fuelFraction),
+                          static_cast<double>(cell.regrow),
+                          static_cast<double>(cell.ember));
+            out += line;
+            ++written;
+        }
+    }
+    return out;
+}
+
+vector<render::terrain::FireSavedCell> unpackFireCells(const str& text) {
+    using render::terrain::FireSavedCell;
+    using render::terrain::FireState;
+    vector<FireSavedCell> out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t end = text.find(';', pos);
+        const str item = text.substr(pos, end == str::npos ? str::npos : end - pos);
+        pos = end == str::npos ? text.size() : end + 1;
+        float x = 0.0f, z = 0.0f, fuel = 1.0f, regrow = 0.0f, ember = 0.0f;
+        unsigned state = 0;
+        if (std::sscanf(item.c_str(), "%f %f %u %f %f %f", &x, &z, &state, &fuel,
+                        &regrow, &ember) != 6) {
+            continue;
+        }
+        if (state != static_cast<unsigned>(FireState::Burning) &&
+            state != static_cast<unsigned>(FireState::Burnt)) {
+            continue;
+        }
+        FireSavedCell cell;
+        cell.x = x;
+        cell.z = z;
+        cell.state = static_cast<FireState>(state);
+        cell.fuelFraction = fuel;
+        cell.regrow = regrow;
+        cell.ember = ember;
+        out.push_back(cell);
+    }
     return out;
 }
 

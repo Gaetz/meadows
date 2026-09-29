@@ -25,6 +25,9 @@ dependencies = ["7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f", # adventure: the rock pr
 # The fire field's loop: "Fireplace Sound loop" by PagDev (OpenGameArt),
 # CC0, 12 s mono (sounds/fire/README.md).
 "5b1e1700-0000-4000-8000-0000000000d2" = "sounds/fire/fire-loop.wav"
+# The fire props (generated boxes, models/props/README.md).
+"5b1e1700-0000-4000-8000-0000000000f9" = "models/props/campfire.gltf"
+"5b1e1700-0000-4000-8000-0000000000fa" = "models/props/torch.gltf"
 
 # --- Spirits ---------------------------------------------------------------
 
@@ -1847,3 +1850,165 @@ areaRadius = 1.0
 channeled = true
 costPeriod = 1.0
 upkeepScale = 0.25
+
+# --- Torches and campfires: props that carry a light and flames ---------------
+# A StaticForm's light / flameParticles / smokeParticles (+ offsets) — the
+# spawner attaches them; the scene keeps the flames alight within reach.
+# Neither lights the ground: a hearth's fire stays in its stones.
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000100"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "CampfireGlow"
+color = [1.0, 0.58, 0.26]
+intensity = 4.5
+radius = 12.0
+flicker = 0.5
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000101"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "TorchLight"
+color = [1.0, 0.62, 0.30]
+intensity = 3.0
+radius = 8.0
+flicker = 0.4
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000102"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "CampfireFlame"
+windDrag = 0.3
+shape = "disc"
+shapeRadius = 0.22
+burst = 2
+rate = 7.0
+duration = 1.0
+lifetime = 1.0
+lifetimeJitter = 0.3
+velocity = [0.0, 0.35, 0.0]
+velocityJitter = 0.08
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.95
+sizeEnd = 0.7
+colorStart = [1.0, 1.0, 1.0, 1.0]
+colorEnd = [0.85, 0.22, 0.04, 1.0]
+blend = "flame"
+texture = "5b1e1700-0000-4000-8000-0000000000d1"
+flipbookColumns = 16
+flipbookRows = 4
+flipbookFps = 30.0
+flipbookAspect = 0.75
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000103"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "CampfireSmoke"
+windDrag = 1.2
+shape = "sphere"
+shapeRadius = 0.25
+burst = 0
+rate = 1.8
+duration = 1.0
+lifetime = 5.0
+lifetimeJitter = 1.5
+velocity = [0.0, 0.8, 0.0]
+velocityJitter = 0.2
+gravity = [0.0, 0.12, 0.0]
+sizeStart = 0.6
+sizeEnd = 2.6
+colorStart = [0.42, 0.4, 0.38, 0.2]
+colorEnd = [0.5, 0.5, 0.5, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000104"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "TorchFlame"
+windDrag = 0.35
+shape = "point"
+burst = 1
+rate = 6.0
+duration = 1.0
+lifetime = 0.55
+lifetimeJitter = 0.2
+velocity = [0.0, 0.45, 0.0]
+velocityJitter = 0.06
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.34
+sizeEnd = 0.22
+colorStart = [1.0, 1.0, 1.0, 1.0]
+colorEnd = [0.9, 0.3, 0.06, 1.0]
+blend = "flame"
+texture = "5b1e1700-0000-4000-8000-0000000000d1"
+flipbookColumns = 16
+flipbookRows = 4
+flipbookFps = 30.0
+flipbookAspect = 0.75
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000105"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Campfire"
+displayName = "Campfire"
+model = "5b1e1700-0000-4000-8000-0000000000f9"
+collides = true
+light = "5b1e1700-0000-4000-8000-000000000100"
+lightOffset = [0.0, 0.9, 0.0]
+flameParticles = "5b1e1700-0000-4000-8000-000000000102"
+smokeParticles = "5b1e1700-0000-4000-8000-000000000103"
+particlesOffset = [0.0, 0.22, 0.0]
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000106"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Torch"
+displayName = "Torch"
+model = "5b1e1700-0000-4000-8000-0000000000fa"
+collides = true
+light = "5b1e1700-0000-4000-8000-000000000101"
+lightOffset = [0.0, 1.8, 0.0]
+flameParticles = "5b1e1700-0000-4000-8000-000000000104"
+particlesOffset = [0.0, 1.62, 0.0]
+
+# The village square, in front of the house: a campfire and two torches.
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000107"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "5b1e1700-0000-4000-8000-000000000105"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 0.0, 373.5]
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000108"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "5b1e1700-0000-4000-8000-000000000106"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [49.0, 0.0, 370.5]
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-000000000109"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "5b1e1700-0000-4000-8000-000000000106"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [55.0, 0.0, 370.5]

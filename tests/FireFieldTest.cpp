@@ -321,3 +321,82 @@ TEST_CASE("fire: burning consumes the fuel into burnt ground, scorch reads it, t
     CHECK(c.spec.originX == doctest::Approx(6.0f));
     CHECK(c.spec.originZ == doctest::Approx(-4.0f));
 }
+
+TEST_CASE("fire kernel: the rain damps the spread and soaks the flames out") {
+    FireGrid dry;
+    fireInitWindow(dry, spec65());
+    fireIgnite(dry, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    FireGrid wet = dry;
+    FireParams p = fast();
+    FireParams rainy = p;
+    rainy.rain = 1.0f;
+    FireStats dryStats, wetStats;
+    for (int i = 0; i < 40; ++i) {
+        fireStep(dry, p, grass, {}, &dryStats);
+        fireStep(wet, rainy, grass, {}, &wetStats);
+    }
+    // Full rain: nothing caught beyond the spark (4 s stepped, under the
+    // 6 s soak: the spark still burns but spread nothing).
+    CHECK(dryStats.burning > wetStats.burning);
+    CHECK(wetStats.ignited == 0);
+    for (int i = 0; i < 30; ++i) {
+        fireStep(wet, rainy, grass, {}, &wetStats);
+    }
+    CHECK(wetStats.burning == 0); // 7 s of rain: soaked out
+    // A light drizzle only slows the front.
+    FireGrid drizzle;
+    fireInitWindow(drizzle, spec65());
+    fireIgnite(drizzle, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    FireParams light = p;
+    light.rain = 0.3f;
+    FireStats drizzleStats;
+    for (int i = 0; i < 40; ++i) {
+        fireStep(drizzle, light, grass, {}, &drizzleStats);
+    }
+    CHECK(drizzleStats.burning > 0);
+    CHECK(drizzleStats.burning < dryStats.burning);
+}
+
+TEST_CASE("fire kernel: saved cells restore into a fresh window") {
+    FireGrid grid;
+    fireInitWindow(grid, spec65());
+    fireIgnite(grid, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    const FireParams p = fast();
+    for (int i = 0; i < 30; ++i) {
+        fireStep(grid, p, grass, {});
+    }
+    vector<FireSavedCell> cells;
+    fireCollectCells(grid, cells);
+    CHECK(!cells.empty());
+    u32 burning = 0;
+    for (const FireSavedCell& c : cells) {
+        CHECK((c.state == FireState::Burning || c.state == FireState::Burnt));
+        if (c.state == FireState::Burning) {
+            ++burning;
+        }
+    }
+    CHECK(burning > 0);
+    FireGrid fresh;
+    fireInitWindow(fresh, spec65());
+    for (const FireSavedCell& c : cells) {
+        fireRestoreCell(fresh, c.x, c.z, c.state, c.fuelFraction, c.regrow,
+                        c.ember, grass);
+    }
+    vector<FireSavedCell> again;
+    fireCollectCells(fresh, again);
+    REQUIRE(again.size() == cells.size());
+    for (size_t i = 0; i < cells.size(); ++i) {
+        CHECK(again[i].x == doctest::Approx(cells[i].x));
+        CHECK(again[i].state == cells[i].state);
+        CHECK(again[i].fuelFraction == doctest::Approx(cells[i].fuelFraction).epsilon(0.01));
+    }
+    // A cell outside the window is ignored, not written anywhere.
+    fireRestoreCell(fresh, 5000.0f, 5000.0f, FireState::Burning, 1.0f, 0.0f, 0.0f, grass);
+    vector<FireSavedCell> same;
+    fireCollectCells(fresh, same);
+    CHECK(same.size() == again.size());
+    // And the restored fire keeps burning.
+    FireStats stats;
+    fireStep(fresh, p, grass, {}, &stats);
+    CHECK(stats.burning >= burning); // it burns on (and spreads: heat was not saved)
+}

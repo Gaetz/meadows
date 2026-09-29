@@ -66,6 +66,12 @@ struct FireParams {
     // and its char fades back to green meanwhile.
     f32 regrowSeconds { 180.0f };
     Vec2 wind { 0.0f, 0.0f };      // unit-ish direction x strength (0..1)
+    // The weather's rain, 0..1: it damps the spread like ground moisture
+    // (the wetter of the two counts) and, from rainDouseLevel up, soaks
+    // the burning cells out — each after rainDouseSeconds under full rain.
+    f32 rain { 0.0f };
+    f32 rainDouseLevel { 0.5f };
+    f32 rainDouseSeconds { 6.0f };
 };
 
 struct FireStats {
@@ -90,6 +96,25 @@ void fireIgnite(FireGrid& grid, f32 x, f32 z, f32 radius, f32 heat,
 // stops burning (its fuel stays — it can catch again) and loses its heat
 // and embers; burnt ground stays burnt.
 void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius);
+
+// A cell restored from a save (world/spirit FireStateForm): its fuel
+// sampled, then set to `fuelFraction` of it, with its state, regrowth and
+// embers. Outside the window: ignored.
+void fireRestoreCell(FireGrid& grid, f32 x, f32 z, FireState state,
+                     f32 fuelFraction, f32 regrow, f32 ember,
+                     const FuelFn& fuel);
+
+// A cell worth saving: everything that is not dormant-and-cold.
+struct FireSavedCell {
+    f32 x { 0.0f };
+    f32 z { 0.0f };
+    FireState state { FireState::Dormant };
+    f32 fuelFraction { 1.0f }; // of the sampled fuel
+    f32 regrow { 0.0f };
+    f32 ember { 0.0f };
+};
+// The burning and burnt cells (the save's payload), row-major.
+void fireCollectCells(const FireGrid& grid, vector<FireSavedCell>& out);
 
 // One tick. Order per cell is fixed (row-major), so two identical grids
 // stepped with identical inputs stay identical.

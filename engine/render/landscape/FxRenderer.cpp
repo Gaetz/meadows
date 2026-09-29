@@ -14,7 +14,8 @@ constexpr u32 kMinCapacity = 1024;
 
 void FxRenderer::create(rhi::Device& device, ShaderLibrary& shaders) {
     shaders.load(kShader, { { "FrameUbo", 0 } });
-    shaders.load(kFlameShader, { { "FrameUbo", 0 } }, { { "uFlameSheet", 3 } });
+    shaders.load(kFlameShader, { { "FrameUbo", 0 } },
+                 { { "uFlameSheet", 3 }, { "uSceneDepth", 1 } });
     sheetSampler = { device, device.createSampler({}) }; // linear clamp
     ensurePipelines(device, shaders);
 }
@@ -79,7 +80,8 @@ void FxRenderer::draw(engine::FrameContext& frame, ShaderLibrary& shaders,
                       const vector<FxInstance>& alpha,
                       const vector<FxInstance>& additive,
                       const vector<FxInstance>& flames,
-                      rhi::TextureHandle flameSheet) {
+                      rhi::TextureHandle flameSheet,
+                      rhi::BindGroupHandle sceneDepthGroup) {
     if (alpha.empty() && additive.empty() && flames.empty()) {
         return;
     }
@@ -128,6 +130,11 @@ void FxRenderer::draw(engine::FrameContext& frame, ShaderLibrary& shaders,
     drawBatch(frame, alpha, 0, alphaPipeline, frameGroup);
     if (!flames.empty() && sheetGroup.id() != 0 && flameSheet.id != 0) {
         frame.cmd.setBindGroup(2, sheetGroup);
+    }
+    if (!flames.empty() && sceneDepthGroup.id != 0) {
+        // The scene's depth (the water pass's snapshot group, unit 1):
+        // the flames fade where they cross the ground.
+        frame.cmd.setBindGroup(3, sceneDepthGroup);
     }
     drawBatch(frame, flames, static_cast<u32>(alpha.size() + additive.size()),
               // Flames need their sheet; without one they are plain sprites.

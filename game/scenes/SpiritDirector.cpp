@@ -1,4 +1,6 @@
 #include "game/scenes/SpiritDirector.hpp"
+#include "world/worldspace/WorldForms.hpp"
+#include "data/plugins/RecordDiff.hpp"
 
 #include <cmath>
 
@@ -155,7 +157,37 @@ void SpiritDirector::resetFire() {
     fireStateMask.clear();
     fireMaskSpec = {};
     fireCenters.clear();
+    fireCells.clear();
+    fireRestores.clear();
     lastFireStats = {};
+}
+
+vector<data::Record> SpiritDirector::capture(const core::Guid& worldspace) const {
+    vector<data::Record> records = sources.capture();
+    if (fireCells.empty()) {
+        return records;
+    }
+    world::FireStateForm form;
+    form.worldspace = worldspace;
+    form.cells = world::packFireCells(fireCells);
+    form.cellCount = static_cast<i32>(glm::min<size_t>(fireCells.size(), 65536));
+    static const world::FireStateForm kDefaults {};
+    const reflect::TypeInfo& type = world::FireStateForm::staticTypeInfo();
+    data::Record record;
+    record.formId = *core::Guid::fromString("5a5e0000-0000-4000-8000-0000000000f1");
+    record.typeId = type.id;
+    record.creates = true;
+    data::diffToRecord(type, &form, &kDefaults, record,
+                       /*includeInherited=*/false);
+    records.push_back(std::move(record));
+    return records;
+}
+
+void SpiritDirector::restoreFire(const world::FireStateForm& form) {
+    fireRestores = world::unpackFireCells(form.cells);
+    if (!fireRestores.empty()) {
+        LOG_INFO("Fire: {} cell(s) restored from the save", fireRestores.size());
+    }
 }
 
 bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
@@ -175,6 +207,7 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         fireStateMask = std::move(out.state);
         fireMaskSpec = fireGrid->spec;
         fireCenters = std::move(out.burning);
+        fireCells = std::move(out.cells);
         lastFireStats = out.stats;
         fireMs = out.millis;
         fireActive = out.active;
@@ -189,7 +222,7 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
     if (fireInFlight || !frame.params) {
         return landed;
     }
-    const bool sparks = !fireIgnitions.empty() ||
+    const bool sparks = !fireIgnitions.empty() || !fireRestores.empty() ||
                         (fireActive && (!fireDouses.empty() || fireWard));
     if (!sparks && !fireActive) {
         fireDouses.clear(); // nothing burns: nothing to put out
@@ -219,6 +252,9 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         in.spec = world::FireWindow::specFor(frame.focus.x, frame.focus.y);
     }
     in.params = fireParams;
+    in.params.rain = glm::clamp(frame.rain, 0.0f, 1.0f);
+    in.restores = std::move(fireRestores);
+    fireRestores.clear();
     in.wind = windField;
     in.windFullSpeed = kWindFullSpeed;
     in.ignitions = std::move(fireIgnitions);

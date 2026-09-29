@@ -26,6 +26,9 @@ class Device;
 }
 namespace render {
 struct TerrainParams;
+namespace terrain {
+struct WindField;
+}
 }
 namespace data {
 class FormDatabase;
@@ -61,6 +64,8 @@ struct RenderSnapshot; // engine/render/SceneView.hpp — the extract target
 }
 
 namespace game {
+
+class SpiritDirector;
 
 class ProjectileDirector; // Archer NPCs
 
@@ -253,6 +258,12 @@ struct NpcContext {
     // fighter runs — fleeing INTO a dead-end cavern reads wrong, fleeing
     // for the way out reads like a story. Meaningful only in interiorMode.
     Vec3 interiorExit { 0.0f };
+    // The fire (chantier ESPRITS E3): burning-cell queries for the flee
+    // steering (NpcMovement::steerFromFire); null = no fire lane.
+    const SpiritDirector* spirits { nullptr };
+    // The wind (E4): its gusts shove the actors like the player; null =
+    // still air.
+    const render::terrain::WindField* wind { nullptr };
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene:
