@@ -146,7 +146,13 @@ ground under it, never on water), `understand` reads the aimed cell, its
 fuel and the nearest fire front; `create` as `stream` held is the flame
 jet — a short cone of flames ahead of you (`range`), the ground under it
 catches (so do the props and trees standing there) and whoever stands in
-it burns. A spell outside that set is
+it burns. For **Wind**: `create` as `point` places a gust at the aimed
+spot (a spirit source like a spring: `intensity` m/s, `areaRadius`,
+`duration`, blowing where you faced when you cast), `create` as `stream`
+held is the breath (a gust carried ahead of you), `destroy` on `self`
+held calms the weather's wind while you concentrate, and `control` on
+`self` held steers it where you face. Gusts push you, carry particles and
+bend the fire; the weather's ambient wind never pushes you. A spell outside that set is
 refused before any cost is paid. The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every

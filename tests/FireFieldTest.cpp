@@ -99,6 +99,30 @@ TEST_CASE("fire: wind stretches the front downwind") {
     CHECK(east > 2 * west);
 }
 
+TEST_CASE("fire: a gust bends the front where it blows, the calm side spreads as ever") {
+    FireGrid g;
+    fireInitWindow(g, spec65());
+    fireIgnite(g, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    const FireParams p = fast(); // no uniform wind
+    // A gust blowing +x over the spark's neighbourhood only.
+    const WindFn gust = [](f32 x, f32 z) {
+        const f32 dx = x - 64.0f, dz = z - 64.0f;
+        return dx * dx + dz * dz < 30.0f * 30.0f ? Vec2 { 1.0f, 0.0f } : Vec2 { 0.0f };
+    };
+    for (int t = 0; t < 40; ++t) {
+        fireStep(g, p, grass, nullptr, nullptr, gust);
+    }
+    const i32 n = 65;
+    i32 east = 0, west = 0;
+    for (i32 c = 32; c < n; ++c) {
+        if (g.state[32 * n + c] != 0) east = c - 32;
+    }
+    for (i32 c = 32; c >= 0; --c) {
+        if (g.state[32 * n + c] != 0) west = 32 - c;
+    }
+    CHECK(east > 2 * west);
+}
+
 TEST_CASE("fire: a bare rock band stops the front, wet ground never catches") {
     // Rock (no fuel) for x in [80, 90): the fire never crosses it.
     const FuelFn banded = [](f32 x, f32) -> FireCellFuel {

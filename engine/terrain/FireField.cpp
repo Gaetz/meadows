@@ -138,7 +138,7 @@ void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius) {
 }
 
 void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
-              const WetFn& wet, FireStats* stats) {
+              const WetFn& wet, FireStats* stats, const WindFn& windAt) {
     if (!grid.valid()) {
         return;
     }
@@ -183,10 +183,8 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
     vector<f32> dealt(grid.cells(), 0.0f);
     // Wind: strength 0..1 = how much of the spread follows the wind's
     // direction (a full wind leaves a quarter of the rate to the sides
-    // and the back — the bell-shaped downwind front).
-    const f32 windLen = glm::min(glm::length(params.wind), 1.0f);
-    const Vec2 windDir = windLen > 1e-4f ? params.wind / glm::length(params.wind)
-                                         : Vec2 { 0.0f };
+    // and the back — the bell-shaped downwind front). Uniform, or per
+    // burning cell through windAt (the wind field's gusts).
     static const i32 kOffsets[8][2] = { { 1, 0 },  { -1, 0 }, { 0, 1 },  { 0, -1 },
                                         { 1, 1 },  { -1, 1 }, { 1, -1 }, { -1, -1 } };
     for (i32 row = 0; row < n; ++row) {
@@ -195,6 +193,12 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
             if (grid.state[i] != static_cast<u8>(FireState::Burning)) {
                 continue;
             }
+            const Vec2 wind =
+                windAt ? windAt(grid.spec.originX + static_cast<f32>(col) * grid.spec.texelSize,
+                                grid.spec.originZ + static_cast<f32>(row) * grid.spec.texelSize)
+                       : params.wind;
+            const f32 windLen = glm::min(glm::length(wind), 1.0f);
+            const Vec2 windDir = windLen > 1e-4f ? wind / glm::length(wind) : Vec2 { 0.0f };
             for (const auto& off : kOffsets) {
                 const i32 c = col + off[0];
                 const i32 r = row + off[1];

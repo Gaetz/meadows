@@ -113,7 +113,9 @@ AbilityForm (l'activation : coût, cooldown, tags, conditions, skill)
 | Détruire × Feu | ✅ **globe anti-feu** (`SpellFireWard`, maintenu) : rien ne brûle à `areaRadius` du personnage, qui ne sent pas la flamme | ✅ **extinction** (`SpellFireDouse`) : les cellules brûlantes à `areaRadius` s'éteignent en gardant leur combustible | — | — |
 | Contrôler × Feu | — | ✅ **brandon** (`SpellFireBrand`, maintenu) : une flamme portée à la visée qui allume `areaRadius` autour d'elle, jamais sur l'eau | — | — |
 | Comprendre × Feu | — | ✅ **intelligo** : état de la cellule (brûle, brûlé et repoussé, froid), combustible / inflammabilité / moiteur, front le plus proche (`SpellFireUnderstand`, maintenu) | — | — |
-| Créer × Vent | — | — | ⏳ (E4) | — |
+| Créer × Vent | — | ✅ **rafale** (`SpellWindGust`) : une source de vent posée au point visé, soufflant vers où le joueur regardait, `intensity` m/s, `areaRadius`, `duration` | ✅ **souffle** (`SpellWindBlow`, maintenu) : une rafale portée devant la main jusqu'à `range`, qui suit la visée | — |
+| Détruire × Vent | ✅ **calmer le vent** (`SpellWindCalm`, maintenu) : le vent de la météo tombe tant que le joueur se concentre | — | — | — |
+| Contrôler × Vent | ✅ **diriger le vent** (`SpellWindDirect`, maintenu) : le vent de la météo souffle vers où le joueur regarde | — | — | — |
 | Détruire / Transformer / Contrôler / Comprendre × autres | ⏳ | ⏳ | ⏳ | ⏳ |
 
 Une case hors matrice refuse le cast (toast, log) **avant** de payer :

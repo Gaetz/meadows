@@ -166,9 +166,10 @@ void ParticleSim::update(f32 dt) {
         p.age += dt;
         p.velocity += p.gravity * dt;
         if (p.windDrag > 0.0f) {
+            const Vec3 w = windSampler ? windSampler(p.position) : wind;
             const f32 k = glm::min(1.0f, p.windDrag * dt);
-            p.velocity.x += (wind.x - p.velocity.x) * k;
-            p.velocity.z += (wind.z - p.velocity.z) * k;
+            p.velocity.x += (w.x - p.velocity.x) * k;
+            p.velocity.z += (w.z - p.velocity.z) * k;
         }
         p.position += p.velocity * dt;
     }

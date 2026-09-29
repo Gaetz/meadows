@@ -219,6 +219,8 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         in.spec = world::FireWindow::specFor(frame.focus.x, frame.focus.y);
     }
     in.params = fireParams;
+    in.wind = windField;
+    in.windFullSpeed = kWindFullSpeed;
     in.ignitions = std::move(fireIgnitions);
     fireIgnitions.clear();
     in.douses = std::move(fireDouses);

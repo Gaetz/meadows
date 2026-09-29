@@ -572,12 +572,18 @@ private:
         // FireStream: the flame jet — a short cone ahead of the caster while
         // held, igniting the ground along it (`rate` heat, `radius`) and
         // burning whoever stands in it, out to `range`.
+        // WindBlow: the breath — a gust carried at the aim while held.
+        // WindCalm / WindDirect: the weather's wind stilled / steered
+        // where the caster faces, while held.
         enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
                                EarthDig, EarthWall, EarthSeize, FireIgnite,
-                               FireDouse, FireBrand, FireGlobe, FireStream };
+                               FireDouse, FireBrand, FireGlobe, FireStream,
+                               WindBlow, WindCalm, WindDirect };
         Mode mode { Mode::Source };
         f32 speed { 0.0f };
         f32 range { 0.0f };
+        f32 dirX { 0.0f }; // wind sources: the direction they blow toward
+        f32 dirZ { 0.0f };
         bool channeled { false };
         f32 costPeriod { 1.0f };
         f32 upkeepScale { 0.25f };
@@ -708,10 +714,7 @@ private:
     f32 fireLandClock { 0.0f }; // sim seconds since the last landed job
     void updateSpiritFireTrees(f32 landDt);
     static constexpr f32 kTreeFireReach = 160.0f;
-    // Weather wind strength 1 = a 0.6 wind for the fire's spread.
-    static constexpr f32 kFireWindFactor = 0.6f;
-    // Weather wind strength 1 = 3 m/s carrying the particles.
-    static constexpr f32 kParticleWindSpeed = 3.0f;
+
     static u64 treeKey(const Vec3& at) {
         const i64 x = static_cast<i64>(std::llround(at.x * 4.0f));
         const i64 z = static_cast<i64>(std::llround(at.z * 4.0f));
@@ -765,6 +768,46 @@ private:
     void updateSpiritFlameJet(f32 dt);
     void endSpiritFlameJet();
     static constexpr f32 kFlameJetPulse = 0.25f;
+    // E4.b — the wind spirit. The scene's wind FIELD: the weather's
+    // global wind (direction and strength x kWindSpeedPerStrength m/s)
+    // plus the placed gusts (Wind SpiritSources) and the breath's carried
+    // gust; the fire job, the particles and the player's body read it.
+    render::terrain::WindField windField;
+    static constexpr f32 kWindSpeedPerStrength = 5.0f; // m/s at weather strength 1
+    static constexpr f32 kPlayerWindPush = 0.6f;       // of the gusts' speed
+    void updateSpiritWind(f32 dt);
+    // The breath (Create x Wind as a stream, held).
+    struct SpiritBlow {
+        f32 speed { 12.0f };
+        f32 radius { 6.0f };
+        f32 range { 20.0f };
+        f32 costPeriod { 0.5f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        u32 emitter { 0 };
+        core::Guid ability;
+    };
+    std::optional<SpiritBlow> spiritBlow;
+    void updateSpiritBlow(f32 dt);
+    void endSpiritBlow();
+    // The weather's wind under a spell: calmed (Destroy x Wind on self,
+    // held) or steered where the caster faces (Control x Wind on self,
+    // held). The base is what the weather set before the spell.
+    struct SpiritWindHold {
+        bool calm { false };
+        bool direct { false };
+        f32 calmFactor { 1.0f };
+        f32 costPeriod { 1.0f };
+        f32 costClock { 0.0f };
+        f32 upkeepScale { 0.25f };
+        core::Guid ability;
+    };
+    std::optional<SpiritWindHold> spiritWindHold;
+    f32 windBaseStrength { 1.0f };
+    f32 windBaseDirectionDeg { 20.0f };
+    void updateSpiritWindHold(f32 dt);
+    void endSpiritWindHold();
+    void resetSpiritWind();
     static constexpr f32 kFlameJetSpeed = 14.0f;     // m/s, the flames' travel
     static constexpr f32 kFlameJetHalfAngle = 0.28f; // radians, the cone
     // The wall gesture: the press spot, the release spot builds the ridge.

@@ -235,3 +235,7 @@ fire.frontHere,The front is here.
 fire.noFront,No fire in sight.
 fire.stillAir,Still air.
 spell.fireStream,Flame jet
+spell.windGust,Gust
+spell.windBlow,Breath
+spell.windCalm,Calm the wind
+spell.windDirect,Steer the wind

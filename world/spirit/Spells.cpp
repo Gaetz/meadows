@@ -126,6 +126,21 @@ bool spellSupported(const SpellSpec& spec) {
         }
         return false;
     }
+    if (spec.element == SpiritKind::Wind) {
+        switch (spec.verb) {
+        case SpellVerb::Create: // a gust placed at the aim, or the breath ahead (held)
+            return spec.trajectory == SpellTrajectory::Point ||
+                   (spec.trajectory == SpellTrajectory::Stream && spec.channeled);
+        case SpellVerb::Destroy: // calm the wind while concentrating
+            return spec.trajectory == SpellTrajectory::Self && spec.channeled;
+        case SpellVerb::Control: // steer the wind where the caster faces
+            return spec.trajectory == SpellTrajectory::Self && spec.channeled;
+        case SpellVerb::Understand:
+        case SpellVerb::Transform:
+            break;
+        }
+        return false;
+    }
     if (spec.element != SpiritKind::Water) {
         return false;
     }

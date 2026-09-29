@@ -236,3 +236,7 @@ fire.frontHere,Le front est ici.
 fire.noFront,Aucun feu en vue.
 fire.stillAir,Air immobile.
 spell.fireStream,Jet de flammes
+spell.windGust,Rafale
+spell.windBlow,Souffle
+spell.windCalm,Calmer le vent
+spell.windDirect,Diriger le vent

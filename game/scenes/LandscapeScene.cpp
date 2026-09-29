@@ -1610,10 +1610,6 @@ void LandscapeScene::update(f32 dt) {
     }
     // Shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
-    {
-        const Vec2 dir = render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg);
-        fxSim.setWind(Vec3 { dir.x, 0.0f, dir.y } * (atmos.windStrength * kParticleWindSpeed));
-    }
     fxDirector.update(dt, flyCamera);
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
@@ -1730,6 +1726,7 @@ void LandscapeScene::update(f32 dt) {
     // Weather crossfade (owned by WeatherController): slides `atmos` from the
     // captured start state to the selected weather over its duration.
     weather.update(atmos, dt);
+    updateSpiritWindHold(dt);
 
     // Mode switching lives with the F2/F3 hotkeys (drawn overlay); Play is
     // home. Nothing to toggle here anymore.
@@ -1764,6 +1761,8 @@ void LandscapeScene::update(f32 dt) {
         updateSpiritBrand(dt);
         updateSpiritGlobe(dt);
         updateSpiritFlameJet(dt);
+        updateSpiritBlow(dt);
+        updateSpiritWind(dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
         if (const f32 wheel = engine->getInput().wheelDelta();
@@ -2165,6 +2164,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     params.snowLine = activeSnowLine;
     stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
     resetSpiritFire();
+    resetSpiritWind();
     releaseSpiritHold(false);
     finishSpiritEarth(false);
     spiritLine.reset();
@@ -4164,6 +4164,7 @@ void LandscapeScene::createConsole() {
             releaseSpiritHold(false);
             finishSpiritEarth(true);
             resetSpiritFire();
+    resetSpiritWind();
             pushRuntimeWaterSources();
             return "spirit sources cleared";
         }
@@ -4713,7 +4714,8 @@ void LandscapeScene::castSpirit() {
             return;
         }
         // Only a CREATE pours: destroy/control want the water there.
-        const bool creates = !spell || spell->verb == world::SpellVerb::Create;
+        const bool creates = (!spell || spell->verb == world::SpellVerb::Create) &&
+                             (!spell || spell->element != render::terrain::SpiritKind::Wind);
         if (creates && render::terrain::waterSurfaceQuery(makeWaterQuery(),
                                                           at->x, at->z, at->y)) {
             interaction.say(texts.get("spirit.wetGround"), 1.5f);
@@ -4795,6 +4797,19 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
                               : PendingSpiritAction::Mode::EarthDig;
             break;
         }
+        if (spell.element == render::terrain::SpiritKind::Wind) {
+            // A gust placed at the aim, blowing where the caster faces.
+            const Vec3 forward = flyCamera.camera.forward();
+            const Vec2 flat = glm::length(Vec2 { forward.x, forward.z }) > 1e-3f
+                                  ? glm::normalize(Vec2 { forward.x, forward.z })
+                                  : Vec2 { 1.0f, 0.0f };
+            action.dirX = flat.x;
+            action.dirZ = flat.y;
+            action.rate = spell.intensity; // m/s at the centre
+            action.radius = spell.areaRadius;
+            action.mode = PendingSpiritAction::Mode::Source;
+            break;
+        }
         if (spell.element == render::terrain::SpiritKind::Fire) {
             if (spell.verb == world::SpellVerb::Understand) {
                 castFireReading(*aimedAt, spell.duration, spell.channeled);
@@ -4819,6 +4834,13 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
         }
         break;
     case world::SpellTrajectory::Stream:
+        if (spell.element == render::terrain::SpiritKind::Wind) {
+            action.mode = PendingSpiritAction::Mode::WindBlow;
+            action.rate = spell.intensity;
+            action.radius = spell.areaRadius;
+            action.range = spell.range;
+            break;
+        }
         if (spell.element == render::terrain::SpiritKind::Fire) {
             action.mode = PendingSpiritAction::Mode::FireStream;
             action.rate = spell.intensity;
@@ -4842,6 +4864,14 @@ void LandscapeScene::executeSpell(const world::SpellSpec& spell,
             spell.verb == world::SpellVerb::Destroy && spell.channeled) {
             action.radius = spell.areaRadius;
             action.mode = PendingSpiritAction::Mode::FireGlobe;
+            break;
+        }
+        if (spell.element == render::terrain::SpiritKind::Wind && spell.channeled &&
+            (spell.verb == world::SpellVerb::Destroy ||
+             spell.verb == world::SpellVerb::Control)) {
+            action.mode = spell.verb == world::SpellVerb::Destroy
+                              ? PendingSpiritAction::Mode::WindCalm
+                              : PendingSpiritAction::Mode::WindDirect;
             break;
         }
         return;
@@ -4892,6 +4922,42 @@ void LandscapeScene::applyPendingSpiritActions() {
                 brand.emitter = fxSim.spawn(params, at, 0x6b7a9du ^ fxSim.count());
             }
             spiritBrand = brand;
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::WindBlow) {
+            endSpiritBlow();
+            SpiritBlow blow;
+            blow.speed = action.rate;
+            blow.radius = action.radius;
+            blow.range = action.range;
+            blow.costPeriod = action.costPeriod;
+            blow.upkeepScale = action.upkeepScale;
+            blow.ability = spiritAbility ? spiritAbility->id : core::Guid {};
+            const core::Guid& fxId =
+                spiritDirector.jetParticles(render::terrain::SpiritKind::Wind);
+            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
+                fx::EmitterParams params = gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f;
+                params.velocity = flyCamera.camera.forward() * action.rate;
+                params.lifetime = action.range / glm::max(action.rate, 1.0f);
+                blow.emitter = fxSim.spawn(params, spiritNozzle(), 0x91d0u ^ fxSim.count());
+            }
+            spiritBlow = blow;
+            continue;
+        }
+        if (action.mode == PendingSpiritAction::Mode::WindCalm ||
+            action.mode == PendingSpiritAction::Mode::WindDirect) {
+            if (!spiritWindHold) {
+                spiritWindHold = SpiritWindHold {};
+                windBaseStrength = atmos.windStrength;
+                windBaseDirectionDeg = atmos.windDirectionDeg;
+            }
+            spiritWindHold->calm = action.mode == PendingSpiritAction::Mode::WindCalm;
+            spiritWindHold->direct = action.mode == PendingSpiritAction::Mode::WindDirect;
+            spiritWindHold->costPeriod = action.costPeriod;
+            spiritWindHold->upkeepScale = action.upkeepScale;
+            spiritWindHold->costClock = 0.0f;
+            spiritWindHold->ability = spiritAbility ? spiritAbility->id : core::Guid {};
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::FireStream) {
@@ -5032,7 +5098,7 @@ void LandscapeScene::applyPendingSpiritActions() {
         }
         spiritDirector.spawn(action.kind, action.x, action.z, action.rate,
                              action.radius, action.seconds,
-                             activeWorldspaceGuid());
+                             activeWorldspaceGuid(), action.dirX, action.dirZ);
         changed = true;
         const Vec3 at { action.x,
                         render::terrain::height(renderer.terrainParams(),
@@ -5597,13 +5663,7 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
     const Vec3 cam = flyCamera.camera.position;
     frame.focus = { cam.x, cam.z };
     fireLandClock += simSeconds;
-    {
-        // The weather's wind drives the spread (FireField: a full wind
-        // leaves a quarter of the rate to the sides and the back).
-        const Vec2 dir = render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg);
-        spiritDirector.setFireWind(dir * glm::clamp(atmos.windStrength * kFireWindFactor,
-                                                    0.0f, 1.0f));
-    }
+    spiritDirector.setWindField(windField); // the job copies it
     if (!spiritDirector.updateFire(engine->getJobSystem(), frame, simSeconds)) {
         return;
     }
@@ -6118,6 +6178,153 @@ void LandscapeScene::updateSpiritFireTrees(f32 landDt) {
             }
         }
         ++it;
+    }
+}
+
+void LandscapeScene::updateSpiritWind(f32 dt) {
+    // The field this frame: the weather's global wind + the placed gusts
+    // (Wind sources, in SIM seconds like every source) + the breath.
+    const Vec2 dir = render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg);
+    windField.globalDir = dir;
+    windField.globalSpeed = glm::max(atmos.windStrength, 0.0f) * kWindSpeedPerStrength;
+    windField.gusts.clear();
+    const core::Guid here = activeWorldspaceGuid();
+    for (const world::SpiritSourceList::Entry& entry : spiritDirector.list().entries()) {
+        const render::terrain::SpiritSource& source = entry.source;
+        if (source.kind != render::terrain::SpiritKind::Wind || entry.worldspace != here) {
+            continue;
+        }
+        windField.gusts.push_back({ source.x, source.z, source.dirX, source.dirZ,
+                                    source.rate, glm::max(source.radius, 1.0f),
+                                    source.remaining < 0.0f ? 1.0e9f : source.remaining });
+    }
+    if (spiritBlow) {
+        const Vec3 forward = flyCamera.camera.forward();
+        const Vec3 at = spiritNozzle() + forward * (spiritBlow->range * 0.5f);
+        const Vec2 flat = glm::length(Vec2 { forward.x, forward.z }) > 1e-3f
+                              ? glm::normalize(Vec2 { forward.x, forward.z })
+                              : Vec2 { 1.0f, 0.0f };
+        windField.gusts.push_back({ at.x, at.z, flat.x, flat.y, spiritBlow->speed,
+                                    glm::max(spiritBlow->range * 0.5f, spiritBlow->radius),
+                                    1.0f });
+    }
+    // Consumers: the particles sample it per particle, the player's body
+    // is pushed by the GUSTS (never by the ambient wind).
+    fxSim.setWindSampler([this](const Vec3& p) {
+        const Vec2 w = windField.windAt(p.x, p.z);
+        return Vec3 { w.x, 0.0f, w.y };
+    });
+    if (phys::CharacterBody* body = playerController.body()) {
+        const Vec3 feet = body->position();
+        const Vec2 gusts = windField.windAt(feet.x, feet.z) -
+                           windField.globalDir * windField.globalSpeed;
+        body->setExternalVelocity(Vec3 { gusts.x, 0.0f, gusts.y } * kPlayerWindPush);
+    }
+    (void)dt;
+}
+
+void LandscapeScene::updateSpiritBlow(f32 dt) {
+    if (!spiritBlow) {
+        return;
+    }
+    SpiritBlow& blow = *spiritBlow;
+    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive()) {
+        endSpiritBlow();
+        return;
+    }
+    blow.costClock += dt;
+    if (blow.costClock >= blow.costPeriod) {
+        blow.costClock -= blow.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(blow.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags },
+                                                 blow.upkeepScale)) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            endSpiritBlow();
+            return;
+        }
+    }
+    if (blow.emitter != 0) {
+        const Vec3 forward = flyCamera.camera.forward();
+        fxSim.moveEmitter(blow.emitter, spiritNozzle());
+        fxSim.steerEmitter(blow.emitter, forward * blow.speed,
+                           blow.range / glm::max(blow.speed, 1.0f));
+    }
+}
+
+void LandscapeScene::endSpiritBlow() {
+    if (!spiritBlow) {
+        return;
+    }
+    if (spiritBlow->emitter != 0) {
+        fxSim.stopEmitter(spiritBlow->emitter);
+    }
+    spiritBlow.reset();
+}
+
+void LandscapeScene::updateSpiritWindHold(f32 dt) {
+    if (!spiritWindHold) {
+        return;
+    }
+    SpiritWindHold& hold = *spiritWindHold;
+    // The base: what the weather sets. Refreshed while a crossfade runs
+    // (it rewrites the atmosphere each frame ahead of this).
+    if (weather.transitioning()) {
+        windBaseStrength = atmos.windStrength;
+        windBaseDirectionDeg = atmos.windDirectionDeg;
+    }
+    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
+    if (!held || !playerEntity.is_alive()) {
+        endSpiritWindHold();
+        return;
+    }
+    hold.costClock += dt;
+    if (hold.costClock >= hold.costPeriod) {
+        hold.costClock -= hold.costPeriod;
+        const auto* ability = forms.find<gameplay::AbilityForm>(hold.ability);
+        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (ability && !gameplay::payAbilityCost(*ability, set, system,
+                                                 { forms, gameTags },
+                                                 hold.upkeepScale)) {
+            interaction.say(texts.get("spirit.refused"), 1.5f);
+            endSpiritWindHold();
+            return;
+        }
+    }
+    if (hold.calm) {
+        // The wind dies over a second of concentration.
+        hold.calmFactor = glm::max(0.0f, hold.calmFactor - dt);
+        atmos.windStrength = windBaseStrength * hold.calmFactor;
+    }
+    if (hold.direct) {
+        const Vec3 forward = flyCamera.camera.forward();
+        if (glm::length(Vec2 { forward.x, forward.z }) > 1e-3f) {
+            // The compass of windDirectionFromDegrees: dir = (cos, -sin).
+            atmos.windDirectionDeg = glm::degrees(std::atan2(-forward.z, forward.x));
+        }
+    }
+}
+
+void LandscapeScene::endSpiritWindHold() {
+    if (!spiritWindHold) {
+        return;
+    }
+    atmos.windStrength = windBaseStrength;
+    atmos.windDirectionDeg = windBaseDirectionDeg;
+    spiritWindHold.reset();
+}
+
+void LandscapeScene::resetSpiritWind() {
+    endSpiritBlow();
+    endSpiritWindHold();
+    windField.gusts.clear();
+    fxSim.setWindSampler({});
+    if (phys::CharacterBody* body = playerController.body()) {
+        body->setExternalVelocity(Vec3 { 0.0f });
     }
 }
 

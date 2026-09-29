@@ -27,6 +27,9 @@ struct FireCellFuel {
 };
 using FuelFn = std::function<FireCellFuel(f32 x, f32 z)>;
 using WetFn = std::function<bool(f32 x, f32 z)>; // standing water there
+// The wind over a cell (unit-ish direction x strength 0..1); null = the
+// uniform FireParams::wind.
+using WindFn = std::function<Vec2(f32 x, f32 z)>;
 
 enum class FireState : u8 { Dormant = 0, Burning = 1, Burnt = 2, Wet = 3 };
 
@@ -91,7 +94,8 @@ void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius);
 // One tick. Order per cell is fixed (row-major), so two identical grids
 // stepped with identical inputs stay identical.
 void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
-              const WetFn& wet, FireStats* stats = nullptr);
+              const WetFn& wet, FireStats* stats = nullptr,
+              const WindFn& windAt = {});
 
 // The render mask: 0 untouched .. 1 charred. A cell chars as the front
 // passes over it (over emberSeconds from its ignition), whatever fuel

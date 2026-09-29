@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
+
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 
@@ -105,8 +107,12 @@ public:
     void stopEmitter(u32 id);
 
     void update(f32 dt);
-    // The wind every particle with windDrag drifts with (m/s, world).
+    // The wind every particle with windDrag drifts with (m/s, world):
+    // uniform, or sampled per particle when a sampler is set (the wind
+    // field's gusts).
     void setWind(const Vec3& velocity) { wind = velocity; }
+    using WindSampler = std::function<Vec3(const Vec3& position)>;
+    void setWindSampler(WindSampler sampler) { windSampler = std::move(sampler); }
     void clear();
 
     u32 count() const { return static_cast<u32>(particles.size()); }
@@ -150,6 +156,7 @@ private:
     void spawnOne(const EmitterParams& params, const Vec3& origin,
                   u32 seed);
     Vec3 wind { 0.0f };
+    WindSampler windSampler;
 
     vector<Particle> particles;
     vector<Emitter> emitters;

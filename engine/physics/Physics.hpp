@@ -123,6 +123,9 @@ public:
     // (gravity off — the controller owns buoyancy and surface clamping).
     void move(const Vec3& desiredVelocity, f32 dt);
     void jump(f32 speed);
+    // A horizontal velocity added to every move() (a gust): set each
+    // frame by the caller, zero = none.
+    void setExternalVelocity(const Vec3& velocity);
 
     // Swim mode — gravity off, vertical control to the caller.
     void setSwimming(bool swimming);

@@ -150,6 +150,8 @@ name = "Wind"
 triad = 3
 channel = "garnet"
 fieldKind = "vector"
+jetParticles = "5b1e1700-0000-4000-8000-0000000000ea"
+cueSpawn = "Cue.Spirit.Wind.Spawn"
 
 # --- Surface material classes ------------------------------------------------
 
@@ -1622,3 +1624,226 @@ sizeEnd = 3.2
 colorStart = [0.42, 0.4, 0.38, 0.22]
 colorEnd = [0.5, 0.5, 0.5, 0.0]
 blend = "alpha"
+
+# --- The wind spirit (E4.b) ---------------------------------------------------
+
+# Streaks of air: what a breath or a gust looks like.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000ea"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "WindStreak"
+windDrag = 3.0
+shape = "sphere"
+shapeRadius = 0.6
+burst = 0
+rate = 70.0
+duration = 1.0
+lifetime = 0.7
+lifetimeJitter = 0.25
+velocity = [0.0, 0.0, 0.0]
+velocityJitter = 1.5
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.22
+sizeEnd = 0.05
+colorStart = [0.9, 0.95, 1.0, 0.16]
+colorEnd = [0.9, 0.95, 1.0, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000eb"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "GustBurst"
+windDrag = 3.0
+shape = "sphere"
+shapeRadius = 2.5
+burst = 50
+lifetime = 1.2
+lifetimeJitter = 0.4
+velocity = [0.0, 0.8, 0.0]
+velocityJitter = 2.0
+gravity = [0.0, 0.0, 0.0]
+sizeStart = 0.25
+sizeEnd = 0.05
+colorStart = [0.9, 0.95, 1.0, 0.2]
+colorEnd = [0.9, 0.95, 1.0, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000ec"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueSpiritWindSpawn"
+tag = "Cue.Spirit.Wind.Spawn"
+particles = "5b1e1700-0000-4000-8000-0000000000eb"
+cameraShake = 0.0
+
+# Create x Wind at the aim: a gust that lasts, blowing where the caster faced.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000ed"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWindGustCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritWindGust"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000ee"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWindGust"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000ed"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000ef"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWindGust"
+parent = "5b1e1700-0000-4000-8000-0000000000ee"
+name = "spell.windGust"
+form = "create"
+element = "Wind"
+trajectory = "point"
+range = 90.0
+intensity = 12.0
+duration = 10.0
+areaShape = "disc"
+areaRadius = 8.0
+channeled = false
+
+# Create x Wind as a stream: the breath, held.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f0"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWindBlowCooldown"
+duration = "duration"
+durationSeconds = 2.0
+grantedTag = "Cooldown.SpiritWindBlow"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f1"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWindBlow"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000f0"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f2"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWindBlow"
+parent = "5b1e1700-0000-4000-8000-0000000000f1"
+name = "spell.windBlow"
+form = "create"
+element = "Wind"
+trajectory = "stream"
+range = 20.0
+intensity = 14.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 6.0
+channeled = true
+costPeriod = 0.5
+upkeepScale = 0.25
+
+# Destroy x Wind on self, held: calm the wind while concentrating.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f3"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWindCalmCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritWindCalm"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f4"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWindCalm"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000f3"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f5"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWindCalm"
+parent = "5b1e1700-0000-4000-8000-0000000000f4"
+name = "spell.windCalm"
+form = "destroy"
+element = "Wind"
+trajectory = "self"
+range = 1.0
+intensity = 0.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 1.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25
+
+# Control x Wind on self, held: the wind blows where the caster faces.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f6"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SpiritWindDirectCooldown"
+duration = "duration"
+durationSeconds = 3.0
+grantedTag = "Cooldown.SpiritWindDirect"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f7"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "SpiritWindDirect"
+cost = "5b1e1700-0000-4000-8000-0000000000c3"
+cooldown = "5b1e1700-0000-4000-8000-0000000000f6"
+costPolicy = "strict"
+blockedTag = "State.Exhausted"
+
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000f8"
+type = "SpellForm"
+new = true
+[records.fields]
+editorId = "SpellWindDirect"
+parent = "5b1e1700-0000-4000-8000-0000000000f7"
+name = "spell.windDirect"
+form = "control"
+element = "Wind"
+trajectory = "self"
+range = 1.0
+intensity = 0.0
+duration = 1.0
+areaShape = "disc"
+areaRadius = 1.0
+channeled = true
+costPeriod = 1.0
+upkeepScale = 0.25

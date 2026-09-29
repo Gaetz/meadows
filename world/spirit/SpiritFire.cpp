@@ -135,8 +135,13 @@ FireJobOutput runFireJob(FireJobInput&& in) {
         fireIgnite(grid, spark.x, spark.z, spark.radius, spark.heat, in.fuel);
     }
     FireStats stats;
+    const f32 full = glm::max(in.windFullSpeed, 0.1f);
+    const render::terrain::WindField& field = in.wind;
+    const WindFn windAt = [&field, full](f32 x, f32 z) {
+        return field.windAt(x, z) / full;
+    };
     for (u32 i = 0; i < glm::max(in.steps, 1u); ++i) {
-        fireStep(grid, in.params, in.fuel, in.wet, &stats);
+        fireStep(grid, in.params, in.fuel, in.wet, &stats, windAt);
     }
     out.stats = stats;
     fireScorch(grid, in.params, out.scorch);

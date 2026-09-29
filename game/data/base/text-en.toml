@@ -2125,3 +2125,39 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.fireStream'
     text = 'Flame jet'
+
+[[records]]
+form = 'ccad630a-7b1f-41de-87fe-e697f9c63630'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windGust'
+    text = 'Gust'
+
+[[records]]
+form = '2524b5f7-ba56-415f-bc03-af09b7414dfd'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windBlow'
+    text = 'Breath'
+
+[[records]]
+form = '67be9a94-ab7c-44f4-bfcf-ce0670838a00'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windCalm'
+    text = 'Calm the wind'
+
+[[records]]
+form = '031cac84-0b19-4615-85be-087dc237e5c6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windDirect'
+    text = 'Steer the wind'

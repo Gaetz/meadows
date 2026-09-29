@@ -122,7 +122,21 @@ TEST_CASE("spells: the matrix names what the generic caster implements") {
     CHECK(spellSupported(spec)); // the fire reading
     spec.verb = SpellVerb::Create;
     spec.element = SpiritKind::Wind;
-    CHECK_FALSE(spellSupported(spec)); // wind waits for E4
+    CHECK(spellSupported(spec)); // a gust placed at the aim
+    spec.trajectory = SpellTrajectory::Stream;
+    CHECK_FALSE(spellSupported(spec)); // the breath is held by nature
+    spec.channeled = true;
+    CHECK(spellSupported(spec));
+    spec.trajectory = SpellTrajectory::Self;
+    spec.verb = SpellVerb::Destroy;
+    CHECK(spellSupported(spec)); // calm the wind
+    spec.verb = SpellVerb::Control;
+    CHECK(spellSupported(spec)); // steer the wind
+    spec.verb = SpellVerb::Understand;
+    CHECK_FALSE(spellSupported(spec));
+    spec.channeled = false;
+    spec.trajectory = SpellTrajectory::Point;
+    spec.verb = SpellVerb::Create;
     spec.element = SpiritKind::Earth;
     CHECK(spellSupported(spec)); // the bump
     spec.trajectory = SpellTrajectory::Line;

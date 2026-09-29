@@ -913,3 +913,35 @@ cinématique des personnages et des floaters, fumée.
 émetteur de fumée à 1,2 m au-dessus des flammes ; les props en bois et
 les arbres qui brûlent en ont un (×2 et ×1,5 au-dessus de la canopée pour
 les arbres). Coupée avec les flammes.
+
+### E4.a + E4.c COMMITÉES (`5594941`) ; E4.b — l'esprit Vent (2026-09-29)
+Demande dev : les sorts prévus + « Calmer le vent » (le vent tombe tant que
+le joueur se concentre) et « Diriger le vent » (Contrôler : il souffle vers
+où le joueur regarde). **Le champ** (`LandscapeScene::windField`, un
+`WindField` par frame) : global = direction × force de la météo ×
+`kWindSpeedPerStrength` (5 m/s à force 1) + les rafales = les
+`SpiritSource` de type Vent de la carte (posées par `SpellWindGust`,
+persistées comme toute source, `dirX/dirZ` = le cap du joueur au cast,
+`rate` = m/s au centre, `radius`, `remaining`) + la rafale portée du
+Souffle. **Consommateurs** : le job du feu reçoit une copie du champ
+(`FireJobInput.wind`, `fireStep` prend un `WindFn` par cellule brûlante,
+|vent| / 10 m/s = force 0..1 — test : une rafale locale courbe le front) ;
+les particules échantillonnent le champ par particule
+(`ParticleSim::setWindSampler`) ; le corps du joueur est poussé par les
+seules RAFALES (`CharacterBody::setExternalVelocity`, 60 % de leur
+vitesse — jamais par le vent ambiant). **Les sorts** (matrice Vent) :
+Créer × point = `SpellWindGust` (12 m/s, 8 m, 10 s) ; Créer × stream
+maintenu = `SpellWindBlow` le Souffle (14 m/s, portée 20 m, rafale de
+10 m centrée à mi-portée qui suit la visée, traînées `WindStreak`) ;
+Détruire × self maintenu = `SpellWindCalm` (la force de la météo tombe à
+zéro en 1 s, rendue au relâché) ; Contrôler × self maintenu =
+`SpellWindDirect` (le cap de la météo = celui du joueur : `atan2(−fz,
+fx)` dans la boussole des lectures). Les deux derniers reposent sur une
+BASE (`windBase*`) capturée au cast et rafraîchie pendant un crossfade de
+météo (qui réécrit l'atmosphère chaque frame avant les surcharges) ; sans
+crossfade en cours, le contrôleur de météo ne réécrit pas l'atmosphère,
+d'où la base explicite. La pré-vérification « sol mouillé » d'un Créer
+épargne le Vent. Leçon : `WindField.cpp` doit vivre dans la lib CŒUR
+(la sim l'utilise) — le verrou §2.10 `meadows-simlink` l'a attrapé dans
+la lib de rendu. Reste : la poussée des PNJ et des floaters, un cue
+sonore, le vent dans la lecture du feu (« air immobile » → direction).

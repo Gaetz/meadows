@@ -2134,3 +2134,39 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'spell.fireStream'
     text = 'Jet de flammes'
+
+[[records]]
+form = '494b110f-82b2-4cef-9881-e033e59bd175'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windGust'
+    text = 'Rafale'
+
+[[records]]
+form = 'b2505bed-86da-4f19-8538-cd67528b35c0'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windBlow'
+    text = 'Souffle'
+
+[[records]]
+form = 'b1921644-8ffe-418b-bd4e-e35d246f8ef6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windCalm'
+    text = 'Calmer le vent'
+
+[[records]]
+form = 'ac0f460a-9d38-40d9-bb07-504a564f035a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'spell.windDirect'
+    text = 'Diriger le vent'

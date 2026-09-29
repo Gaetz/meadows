@@ -128,9 +128,10 @@ public:
     bool updateFire(core::JobSystem& jobs, const FireFrame& frame,
                     f32 simSeconds);
     void resetFire(); // map swap / exit: the window is dropped
-    // The wind the kernel spreads with (unit-ish direction x strength
-    // 0..1), set by the scene from the weather each frame.
-    void setFireWind(const Vec2& wind) { fireParams.wind = wind; }
+    // The wind field the fire spreads with (m/s; the kernel scales it
+    // to 0..1 by windFullSpeed), a value copy per job.
+    void setWindField(const render::terrain::WindField& field) { windField = field; }
+    static constexpr f32 kWindFullSpeed = 10.0f; // m/s = a full (1.0) fire wind
     bool fireIdle() const {
         return !fireGrid && !fireInFlight && fireIgnitions.empty();
     }
@@ -201,6 +202,7 @@ private:
     std::optional<world::FireDouse> fireWard;
     render::terrain::FireParams fireParams;
     world::TreeFireParams treeFireParams;
+    render::terrain::WindField windField;
     world::GroundProps groundProps {};
     vector<u8> fireMask;
     vector<u8> fireGlowMask;

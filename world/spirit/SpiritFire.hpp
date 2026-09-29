@@ -4,6 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/FireField.hpp"
+#include "engine/terrain/WindField.hpp"
 #include "world/spirit/SpiritRules.hpp"
 
 // Chantier ESPRITS E3 — the fire lane, headless: the camera window the
@@ -71,6 +72,10 @@ struct FireJobInput {
     u32 steps { 1 };
     render::terrain::FuelFn fuel;
     render::terrain::WetFn wet;
+    // The wind field (m/s) copied in; the kernel takes |wind| / windFullSpeed
+    // as its 0..1 strength. Empty gusts + zero global = calm.
+    render::terrain::WindField wind;
+    f32 windFullSpeed { 10.0f };
     u32 epoch { 0 };
     u32 maxCenters { 1024 };
 };
