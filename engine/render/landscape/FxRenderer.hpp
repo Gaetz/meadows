@@ -43,8 +43,9 @@ public:
               const vector<FxInstance>& alpha,
               const vector<FxInstance>& additive,
               const vector<FxInstance>& flames,
+              const vector<FxInstance>& haze,
               rhi::TextureHandle flameSheet = {},
-              rhi::BindGroupHandle sceneDepthGroup = {});
+              rhi::BindGroupHandle sceneGroup = {});
 
 
 private:
@@ -59,6 +60,7 @@ private:
     rhi::UniquePipeline alphaPipeline;
     rhi::UniquePipeline additivePipeline;
     rhi::UniquePipeline flamePipeline;
+    rhi::UniquePipeline hazePipeline;
     rhi::UniqueBuffer instances;
     rhi::UniqueBindGroup group;
     rhi::UniqueSampler sheetSampler;

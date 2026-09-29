@@ -234,6 +234,7 @@ fire.front,Fire front {} m to the {}.
 fire.frontHere,The front is here.
 fire.noFront,No fire in sight.
 fire.stillAir,Still air.
+fire.wind,Wind {} m/s to the {}.
 spell.fireStream,Flame jet
 spell.windGust,Gust
 spell.windBlow,Breath

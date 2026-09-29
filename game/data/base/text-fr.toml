@@ -2127,6 +2127,15 @@ type = 'LocStringForm'
     text = 'Air immobile.'
 
 [[records]]
+form = 'ef9aef96-019e-417c-a9ee-7b818c55e6db'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.wind'
+    text = 'Vent de {} m/s vers {}.'
+
+[[records]]
 form = 'f1a0804c-296b-414f-8d85-ef9dac275d71'
 new = true
 type = 'LocStringForm'

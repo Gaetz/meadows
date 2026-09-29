@@ -86,6 +86,7 @@ void ParticleSim::spawnOne(const EmitterParams& params, const Vec3& origin,
     particle.colorEnd = params.colorEnd;
     particle.additive = params.additive;
     particle.flame = params.flame;
+    particle.haze = params.haze;
     particle.seed = rng.next();
     particle.windDrag = params.windDrag;
     particle.texture = params.texture;

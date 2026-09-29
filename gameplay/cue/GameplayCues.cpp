@@ -56,6 +56,7 @@ fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     params.colorEnd = form.colorEnd;
     params.additive = form.blend == "additive";
     params.flame = form.blend == "flame";
+    params.haze = form.blend == "haze";
     params.texture = form.texture;
     params.flipbookColumns = glm::max(form.flipbookColumns, 1);
     params.flipbookRows = glm::max(form.flipbookRows, 1);

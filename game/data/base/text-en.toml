@@ -2118,6 +2118,15 @@ type = 'LocStringForm'
     text = 'Still air.'
 
 [[records]]
+form = 'ade1ece3-92f1-4227-9af4-6ecc74a20b9c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'fire.wind'
+    text = 'Wind {} m/s to the {}.'
+
+[[records]]
 form = 'e8527ca6-076c-4c62-a014-86de1af546e5'
 new = true
 type = 'LocStringForm'

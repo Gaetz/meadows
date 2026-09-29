@@ -87,6 +87,7 @@ struct RenderSnapshot {
     vector<FxInstance> fxAlpha;
     vector<FxInstance> fxAdditive;
     vector<FxInstance> fxFlames; // the flame pipeline (far-to-near)
+    vector<FxInstance> fxHaze;   // the heat-haze pipeline (refracts the scene)
     // The flames' flipbook sheet this frame (ONE sheet per frame for
     // now: the first flame particle's; null texture = procedural).
     struct FlameSheet {

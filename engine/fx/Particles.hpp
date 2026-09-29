@@ -54,6 +54,8 @@ struct EmitterParams {
     // upright tongue shaped by noise, colorStart = core, colorEnd =
     // outer band, size = height) instead of a round sprite.
     bool flame { false };
+    // ParticleForm.blend = "haze": the heat-shimmer pipeline.
+    bool haze { false };
     // How much the wind carries the particle: 0 = none, 1 = its
     // horizontal velocity relaxes to the wind's in ~1 s (ParticleForm.windDrag).
     f32 windDrag { 0.0f };
@@ -77,6 +79,7 @@ struct Particle {
     Vec4 colorEnd { 1.0f };
     bool additive { false };
     bool flame { false };
+    bool haze { false };
     f32 seed { 0.0f }; // 0..1, per particle (cosmetic variety)
     f32 windDrag { 0.0f };
     core::Guid texture; // flames: the flipbook sheet

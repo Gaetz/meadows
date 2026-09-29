@@ -449,6 +449,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            "%.2f");
         ImGui::SliderFloat("Flame posterize (0 = off)", &fl.flamePosterize,
                            0.0f, 8.0f, "%.0f");
+        ImGui::SliderFloat("Heat haze (0 = off)", &fl.hazeStrength, 0.0f,
+                           0.05f, "%.3f");
         ImGui::SeparatorText("Lights");
         ImGui::SliderFloat("Light per cell (0 = off)", &fl.lightIntensity,
                            0.0f, 3.0f, "%.2f");

@@ -208,11 +208,31 @@ private:
     struct FxSourceEmitters {
         u32 flame { 0 };
         u32 smoke { 0 };
+        u32 haze { 0 };
+        audio::AudioSystem::SoundId sound { 0 };
     };
     std::unordered_map<u64, FxSourceEmitters> fxSourceEmitters;
     static constexpr f32 kFxSourceReach = 90.0f;
     void updateFxSources();
     void resetFxSources(); // map swap / exit: the emitters go with the world
+    // The igniters among them (FxSource.igniteHeat > 0), rebuilt each
+    // frame: their heat goes to the wooden props and trees within reach
+    // (per frame, waking the fire lane so its job ticks them) and to the
+    // ground when the flame stands within a metre of it.
+    struct FxIgniter {
+        Vec3 at { 0.0f };
+        f32 radius { 0.0f };
+        f32 heat { 0.0f };
+        bool ground { false };
+    };
+    vector<FxIgniter> fxIgniters;
+    f32 fxIgniterTreeClock { 0.0f };
+    bool fxIgniterNearTree { false };
+    void applyFxIgniters(f32 dt);
+    bool nearFxIgniter(const Vec3& at) const;
+    // A wooden prop catches: its flames, sparks and smoke, the record
+    // shared by the fire's own heat (updateSpiritFireProps) and an igniter's.
+    void lightProp(ecs::Entity entity, const Vec3& position, f32 fuel);
 
     // Cells stream around the player (synchronous ring —
     // async streaming may come later). References
@@ -664,8 +684,10 @@ private:
         u32 emitter { 0 }; // the flames
         u32 sparks { 0 };  // the embers it sheds
         u32 smoke { 0 };   // one cell in four smokes (discreet)
+        u32 haze { 0 };    // the heat shimmer, near cells only
     };
     vector<FlameEmitter> flameEmitters;
+    static constexpr f32 kFlameHazeNear = 30.0f; // shimmer within this
     static constexpr u32 kMaxFlames = 96;
     static constexpr f32 kFlameReach = 120.0f;
     static constexpr f32 kFlameBehindRadius = 12.0f; // behind the camera, flames only this close

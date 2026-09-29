@@ -50,9 +50,18 @@ void spawnStatic(SpawnContext& ctx, ecs::Entity entity, const data::Form& base,
             entity.set<LightSource>(source);
         }
     }
-    if (form.flameParticles.isValid() || form.smokeParticles.isValid()) {
-        entity.set<FxSource>({ form.flameParticles, form.smokeParticles,
-                               form.particlesOffset });
+    if (form.flameParticles.isValid() || form.smokeParticles.isValid() ||
+        form.hazeParticles.isValid() || form.sound.isValid() ||
+        form.igniteHeat > 0.0f) {
+        FxSource source;
+        source.flame = form.flameParticles;
+        source.smoke = form.smokeParticles;
+        source.haze = form.hazeParticles;
+        source.sound = form.sound;
+        source.offset = form.particlesOffset;
+        source.igniteRadius = form.igniteRadius;
+        source.igniteHeat = form.igniteHeat;
+        entity.set<FxSource>(source);
     }
 }
 

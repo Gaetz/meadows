@@ -55,7 +55,17 @@ struct StaticForm : Form {
     Vec3 lightOffset { 0.0f };
     core::Guid flameParticles;
     core::Guid smokeParticles;
+    core::Guid hazeParticles;
     Vec3 particlesOffset { 0.0f };
+    // A looped SoundForm played at the particles' spot (a hearth's crackle).
+    core::Guid sound;
+    // A prop whose flame sets things alight: heat/s dealt within
+    // igniteRadius (metres) of the particles' spot — to wooden props
+    // and trees always, to the ground only when the flame stands within
+    // 1 m of it (a torch on its post spares the grass; a fallen one
+    // would not). 0 = a contained fire (a hearth in its stones).
+    f32 igniteRadius { 0.0f };
+    f32 igniteHeat { 0.0f };
 
     REFLECT_BEGIN(StaticForm, Form)
         REFLECT_FIELD(displayName)
@@ -69,7 +79,11 @@ struct StaticForm : Form {
         REFLECT_FIELD(lightOffset)
         REFLECT_FIELD(flameParticles)
         REFLECT_FIELD(smokeParticles)
+        REFLECT_FIELD(hazeParticles)
         REFLECT_FIELD(particlesOffset)
+        REFLECT_FIELD(sound)
+        REFLECT_FIELD(igniteRadius)
+        REFLECT_FIELD(igniteHeat)
     REFLECT_END()
 };
 
@@ -161,7 +175,9 @@ struct ParticleForm : Form {
     f32 flipbookAspect { 1.0f };
     str blend { "alpha" };   // "alpha" | "additive" | "flame" (an upright
                              // noise-shaped tongue: colorStart = core,
-                             // colorEnd = outer, size = height in m)
+                             // colorEnd = outer, size = height in m) |
+                             // "haze" (heat shimmer: the scene behind,
+                             // refracted; the alpha ramp = its strength)
     f32 duration { 0.0f };   // emitter seconds; 0 = one burst + drain
     f32 windDrag { 0.0f };   // 0 = the wind ignores it; 1 = carried within ~1 s
 

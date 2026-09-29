@@ -66,6 +66,9 @@ public:
     const core::Guid& smokeParticles(render::terrain::SpiritKind kind) const {
         return smokeFx[static_cast<size_t>(kind)];
     }
+    const core::Guid& hazeParticles(render::terrain::SpiritKind kind) const {
+        return hazeFx[static_cast<size_t>(kind)];
+    }
     // The SoundForm looped near the field's active cells.
     const core::Guid& fieldSound(render::terrain::SpiritKind kind) const {
         return soundFx[static_cast<size_t>(kind)];
@@ -134,6 +137,9 @@ public:
     bool updateFire(core::JobSystem& jobs, const FireFrame& frame,
                     f32 simSeconds);
     void resetFire(); // map swap / exit: the window is dropped
+    // Runs a job even while nothing burns (a torch heating a prop: the
+    // job is what ticks the props and trees). Consumed by the next job.
+    void wakeFire() { fireWake = true; }
     // The wind field the fire spreads with (m/s; the kernel scales it
     // to 0..1 by windFullSpeed), a value copy per job.
     void setWindField(const render::terrain::WindField& field) { windField = field; }
@@ -191,6 +197,9 @@ private:
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         smokeFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        hazeFx {};
     std::optional<render::terraingen::WaterSource> holdSource;
     EarthLift lift;
 
@@ -201,6 +210,7 @@ private:
     std::unique_ptr<render::terrain::FireGrid> fireGrid; // null while in flight
     bool fireInFlight { false };
     bool fireActive { false };
+    bool fireWake { false };
     u32 fireEpoch { 0 };
     f32 fireAccum { 0.0f }; // sim seconds owed to the 10 Hz step
     vector<world::FireIgnition> fireIgnitions;

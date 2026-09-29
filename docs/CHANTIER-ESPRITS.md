@@ -1008,3 +1008,46 @@ du joueur (rafales seules, 60 %, seuil 0,5 m/s, `groundNpc`) ; les
 floaters prennent 8 % du vent dans leur closure de courant
 (`kFloaterWindDrift`). Le vent dans l'intelligo feu et un cue sonore de
 rafale restent au backlog.
+
+### E5 COMMITÉE (`9b373b2`) ; E6 — la garniture du feu et du vent (2026-09-29)
+Demande dev : « crépitement 3D des feux de camp, torche qui peut allumer,
+distorsion de chaleur, vent dans l'intelligo du feu, cue sonore de rafale »
+(les trois derniers à tester par le dev ensuite).
+
+- **Crépitement** : `StaticForm.sound` → `FxSource.sound` ; la scène joue
+  la boucle 3D par source à portée (`soundResolver.resolve` + `play`,
+  `stop` au balayage). Le feu de camp prend la boucle du champ
+  (`SpiritFireCrackle`, d3), la torche un `TorchCrackle` (même asset,
+  35 %, 14 m, pitch 1,15).
+- **Torche qui allume** : `StaticForm.igniteRadius/igniteHeat` →
+  `FxSource` → liste `fxIgniters` par frame (`applyFxIgniters`). Les props
+  en bois dans le rayon chauffent (`propFireHeat`, `kPropHeatRate`) et
+  prennent par `lightProp` (création du `BurningProp` extraite de
+  `updateSpiritFireProps`) ; les arbres comptent une exposition 1,0
+  (`nearFxIgniter` dans `updateSpiritFireTrees`) ; le sol seulement si la
+  flamme est à moins d'1 m (`FxSource.offset.y`) — une torche sur son
+  poteau épargne l'herbe, un foyer (`igniteRadius` 0) reste dans ses
+  pierres. La voie feu s'endort sans feu : `SpiritDirector::wakeFire()`
+  force un job (consommé) quand un prop vient de prendre, brûle, ou
+  qu'un arbre est dans une flamme (vérifié à 1 Hz par `collectProps`).
+  Data : Torch rayon 1 m, chaleur 1,5/s — les deux torches de la place
+  sont à > 2,8 m de la clôture et de la caisse.
+- **Distorsion de chaleur** : `ParticleForm.blend = "haze"` →
+  `Particle.haze` → lot `fxHaze` du snapshot → pipeline `fxhaze`
+  (fxhaze.vert = le billboard des particules ; fxhaze.frag = bruit de
+  valeur défilant × masque doux × rampe alpha, lit `uSceneColor` unité 0
+  du groupe de scène de l'eau au slot 3 — le même groupe que le fondu de
+  profondeur — et écrit la scène réfractée en alpha). Amplitude =
+  `FireLook.hazeStrength` (0,012 écran, panneau Fire « Heat haze »,
+  lane `uFireFlameLook.z`). Émetteurs : `SpiritForm.hazeParticles`
+  (`FireHaze`) sur les cellules à < 30 m, `StaticForm.hazeParticles` sur
+  foyers/torches. Sans copie de scène (GL sans copies) : pas de haze.
+- **Vent dans l'intelligo** : `castFireReading` lit `windField.windAt` à la
+  visée : < 0,3 m/s « air immobile », sinon `fire.wind` (« Vent de {} m/s
+  vers {} », boussole `compassCode` comme le front). Loc EN/FR
+  régénérée par `cooker import-csv` (sans --patch).
+- **Cue de rafale** : `Cue.Spirit.Wind.Spawn` était déjà émis au spawn
+  d'une rafale posée ; il manquait sa `CueForm` — ajoutée avec un
+  `SoundForm` `WindGustWhoosh` (3D, 45 m, jitter de pitch) sur un
+  `gust.wav` généré (`tools/scripts/gen_gust_wav.py` : bruit filtré,
+  passe-bas balayé) ; le Souffle l'émet aussi au démarrage, au nez.

@@ -31,6 +31,9 @@ struct FireLook {
     // of brightness, the stylized look).
     f32 flameBoost { 3.0f };
     f32 flamePosterize { 0.0f };
+    // The heat haze (fxhaze.frag): screen-space refraction amplitude (a
+    // fraction of the screen; 0 = off).
+    f32 hazeStrength { 0.012f };
     // The fire's LIGHTS (docs/FIRE-RENDER.md F3): the front's cells
     // aggregated per 8 m tile into point lights for the clustered path
     // (and the GI, which takes the nearest). Intensity 0 = no lights.

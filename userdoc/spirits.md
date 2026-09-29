@@ -146,9 +146,16 @@ actor within 6 m of flames drops what he was doing and runs the other
 way until the ground is safe). Fire the world carries: a `StaticForm`
 may declare a `light` (a `LightForm`, at `lightOffset`) and
 `flameParticles` / `smokeParticles` (`ParticleForm`s, at
-`particlesOffset`) — the spawner attaches them and the scene keeps them
-alight within 90 m; the base data ships a `Campfire` and a `Torch` on the
-village square. Neither lights the ground. The other fire spells: `destroy` as
+`particlesOffset`), `hazeParticles` (a `"haze"`-blend `ParticleForm`: the
+air shimmers above it), a looped `sound` (a hearth's crackle, 3D) and
+`igniteRadius` / `igniteHeat` — a prop whose flame sets alight the wooden
+props and trees within that radius, and the ground too when the flame
+stands within a metre of it. The spawner attaches them and the scene
+keeps them alight within 90 m; the base data ships a `Campfire` (safe in
+its stones) and a `Torch` (its flame, 1.6 m up, lights wood and trees
+within a metre but spares the grass) on the village square. The fire
+reading also names the wind at the aimed spot (still air, or its speed
+and bearing). The other fire spells: `destroy` as
 `point` puts the flames out around the aim (the cells keep their fuel),
 `destroy` as `self` held is the fire ward (nothing burns within
 `areaRadius` of you and you feel no flame while you hold it), `control`

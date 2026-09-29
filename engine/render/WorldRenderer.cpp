@@ -1585,8 +1585,8 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
             flameSheet = view.materialTextures->resolve(snapshot.flameSheet.texture);
         }
         fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
-                snapshot.fxAdditive, snapshot.fxFlames, flameSheet,
-                waterSceneBindGroup);
+                snapshot.fxAdditive, snapshot.fxFlames, snapshot.fxHaze,
+                flameSheet, waterSceneBindGroup);
         // Rain streaks (procedural, camera cylinder).
         if (cfg.sky && frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||
@@ -2346,7 +2346,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .fireFlameInfo = { snapshot.flameSheet.columns, snapshot.flameSheet.rows,
                            snapshot.flameSheet.fps, snapshot.flameSheet.aspect },
         .fireFlameLook = { fireScorch.look.flameBoost,
-                           fireScorch.look.flamePosterize, 0.0f, 0.0f },
+                           fireScorch.look.flamePosterize,
+                           fireScorch.look.hazeStrength, 0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;

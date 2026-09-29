@@ -235,12 +235,20 @@ struct Floater {
 struct FxSource {
     core::Guid flame;
     core::Guid smoke;
+    core::Guid haze;
+    core::Guid sound;     // a looped SoundForm at the spot
     Vec3 offset { 0.0f }; // from the pivot, in the entity's frame
+    f32 igniteRadius { 0.0f }; // StaticForm.igniteRadius / igniteHeat
+    f32 igniteHeat { 0.0f };
 
     REFLECT_BEGIN(FxSource, void)
         REFLECT_FIELD(flame)
         REFLECT_FIELD(smoke)
+        REFLECT_FIELD(haze)
+        REFLECT_FIELD(sound)
         REFLECT_FIELD(offset)
+        REFLECT_FIELD(igniteRadius)
+        REFLECT_FIELD(igniteHeat)
     REFLECT_END()
 };
 

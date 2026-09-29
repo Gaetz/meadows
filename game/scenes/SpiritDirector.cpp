@@ -25,6 +25,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     sparkFx.fill(core::Guid {});
     soundFx.fill(core::Guid {});
     smokeFx.fill(core::Guid {});
+    hazeFx.fill(core::Guid {});
     contactFx.fill(core::Guid {});
     contactEvery.fill(0.5f);
     contactHurt.fill(0.0f);
@@ -37,6 +38,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             sparkFx[static_cast<size_t>(kind)] = spirit.emberParticles;
             soundFx[static_cast<size_t>(kind)] = spirit.fieldSound;
             smokeFx[static_cast<size_t>(kind)] = spirit.smokeParticles;
+            hazeFx[static_cast<size_t>(kind)] = spirit.hazeParticles;
             contactFx[static_cast<size_t>(kind)] = spirit.contactEffect;
             contactEvery[static_cast<size_t>(kind)] =
                 glm::max(spirit.contactPeriod, 0.05f);
@@ -151,6 +153,7 @@ void SpiritDirector::resetFire() {
     fireDouses.clear();
     fireWard.reset();
     fireActive = false;
+    fireWake = false;
     fireAccum = 0.0f;
     fireMask.clear();
     fireGlowMask.clear();
@@ -223,7 +226,9 @@ bool SpiritDirector::updateFire(core::JobSystem& jobs, const FireFrame& frame,
         return landed;
     }
     const bool sparks = !fireIgnitions.empty() || !fireRestores.empty() ||
+                        fireWake ||
                         (fireActive && (!fireDouses.empty() || fireWard));
+    fireWake = false;
     if (!sparks && !fireActive) {
         fireDouses.clear(); // nothing burns: nothing to put out
         return landed; // the lane idles: no job while nothing burns

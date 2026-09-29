@@ -1629,6 +1629,7 @@ void LandscapeScene::update(f32 dt) {
     // each frame, so paused sims and fly cameras never accumulate it).
     fxDirector.update(dt, flyCamera);
     updateFxSources(); // the torches and campfires within reach
+    applyFxIgniters(dt);
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
     audioSystem.setListener(flyCamera.camera.position,
@@ -1638,8 +1639,17 @@ void LandscapeScene::update(f32 dt) {
     snapshot.fxAlpha.clear();
     snapshot.fxAdditive.clear();
     snapshot.fxFlames.clear();
+    snapshot.fxHaze.clear();
     snapshot.flameSheet = {};
     fxSim.forEachRaw([&](const fx::Particle& p, f32 t) {
+        if (p.haze) {
+            // Seed, age and strength (the alpha ramp) for the shimmer.
+            snapshot.fxHaze.push_back(
+                { Vec4 { p.position, glm::mix(p.sizeStart, p.sizeEnd, t) },
+                  Vec4 { p.seed, t, glm::mix(p.colorStart.a, p.colorEnd.a, t), 0.0f },
+                  Vec4 { 0.0f }, Vec4 { 0.0f } });
+            return;
+        }
         if (p.flame) {
             if (snapshot.fxFlames.empty() && p.texture != core::Guid {}) {
                 snapshot.flameSheet = { p.texture,
@@ -4963,6 +4973,7 @@ void LandscapeScene::applyPendingSpiritActions() {
                 blow.emitter = fxSim.spawn(params, spiritNozzle(), 0x91d0u ^ fxSim.count());
             }
             spiritBlow = blow;
+            fxDirector.cues().emit({ "Cue.Spirit.Wind.Spawn", spiritNozzle(), blow.speed });
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::WindCalm ||
@@ -5764,7 +5775,7 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
             kept.push_back(flame);
             wanted.erase(it);
         } else {
-            for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke }) {
+            for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke, flame.haze }) {
                 if (emitter != 0) {
                     fxSim.stopEmitter(emitter);
                 }
@@ -5777,8 +5788,10 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
         spiritDirector.sparkParticles(render::terrain::SpiritKind::Fire));
     const auto* smokeForm = forms.find<data::ParticleForm>(
         spiritDirector.smokeParticles(render::terrain::SpiritKind::Fire));
+    const auto* hazeForm = forms.find<data::ParticleForm>(
+        spiritDirector.hazeParticles(render::terrain::SpiritKind::Fire));
     for (const Vec2& at : wanted) {
-        FlameEmitter flame { at, 0, 0, 0 };
+        FlameEmitter flame { at, 0, 0, 0, 0 };
         const Vec3 pos { at.x,
                          render::terrain::height(renderer.terrainParams(),
                                                  at.x, at.y) +
@@ -5816,6 +5829,14 @@ void LandscapeScene::updateSpiritFire(f32 simSeconds) {
             params.duration = 1.0e9f;
             flame.smoke = fxSim.spawn(params, pos + Vec3 { 0.0f, 1.2f, 0.0f },
                                       seed ^ 0x2545f491u);
+        }
+        // The heat shimmer above the near flames (a screen refraction:
+        // pointless far away).
+        if (hazeForm && dist < kFlameHazeNear) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*hazeForm);
+            params.duration = 1.0e9f;
+            flame.haze = fxSim.spawn(params, pos + Vec3 { 0.0f, 0.9f, 0.0f },
+                                     seed ^ 0x7f4a7c15u);
         }
         kept.push_back(flame);
     }
@@ -6045,12 +6066,6 @@ void LandscapeScene::updateSpiritFireProps() {
     const f32 fuel = woodIndex >= 0 && static_cast<size_t>(woodIndex) < rules.props.size()
                          ? glm::max(rules.props[static_cast<size_t>(woodIndex)].fuel, 1.0f)
                          : 8.0f;
-    const auto* flameForm = forms.find<data::ParticleForm>(
-        spiritDirector.fieldParticles(SpiritKind::Fire));
-    const auto* sparkForm = forms.find<data::ParticleForm>(
-        spiritDirector.sparkParticles(SpiritKind::Fire));
-    const auto* smokeForm = forms.find<data::ParticleForm>(
-        spiritDirector.smokeParticles(SpiritKind::Fire));
     interactQuery.each([&](flecs::entity e, const world::Transform& transform,
                            const world::RefId& ref) {
         const reflect::TypeInfo* type = forms.typeOf(ref.base);
@@ -6077,30 +6092,41 @@ void LandscapeScene::updateSpiritFireProps() {
         if (heat < 1.0f) {
             return;
         }
-        BurningProp burning;
-        burning.entity = ecs::Entity { e };
-        burning.remaining = fuel;
-        const Vec3 at = transform.position + Vec3 { 0.0f, 0.4f, 0.0f };
-        const u32 seed = static_cast<u32>(e.id() & 0xffffffffu) ^ 0x7a11beefu;
-        if (flameForm) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
-            params.duration = fuel;
-            burning.flames = fxSim.spawn(params, at, seed);
-        }
-        if (sparkForm) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
-            params.duration = fuel;
-            burning.sparks = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
-        }
-        if (smokeForm) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*smokeForm);
-            params.duration = fuel;
-            burning.smoke = fxSim.spawn(params, at + Vec3 { 0.0f, 1.0f, 0.0f },
-                                        seed ^ 0x2545f491u);
-        }
-        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 1.0f });
-        burningProps.push_back(burning);
+        lightProp(ecs::Entity { e }, transform.position, fuel);
     });
+}
+
+void LandscapeScene::lightProp(ecs::Entity entity, const Vec3& position, f32 fuel) {
+    using render::terrain::SpiritKind;
+    const auto* flameForm = forms.find<data::ParticleForm>(
+        spiritDirector.fieldParticles(SpiritKind::Fire));
+    const auto* sparkForm = forms.find<data::ParticleForm>(
+        spiritDirector.sparkParticles(SpiritKind::Fire));
+    const auto* smokeForm = forms.find<data::ParticleForm>(
+        spiritDirector.smokeParticles(SpiritKind::Fire));
+    BurningProp burning;
+    burning.entity = entity;
+    burning.remaining = fuel;
+    const Vec3 at = position + Vec3 { 0.0f, 0.4f, 0.0f };
+    const u32 seed = static_cast<u32>(entity.id() & 0xffffffffu) ^ 0x7a11beefu;
+    if (flameForm) {
+        fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
+        params.duration = fuel;
+        burning.flames = fxSim.spawn(params, at, seed);
+    }
+    if (sparkForm) {
+        fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
+        params.duration = fuel;
+        burning.sparks = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
+    }
+    if (smokeForm) {
+        fx::EmitterParams params = gameplay::toEmitterParams(*smokeForm);
+        params.duration = fuel;
+        burning.smoke = fxSim.spawn(params, at + Vec3 { 0.0f, 1.0f, 0.0f },
+                                    seed ^ 0x2545f491u);
+    }
+    fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 1.0f });
+    burningProps.push_back(burning);
 }
 
 void LandscapeScene::updateSpiritFireTrees(f32 landDt) {
@@ -6131,7 +6157,9 @@ void LandscapeScene::updateSpiritFireTrees(f32 landDt) {
                 }
             }
         }
-        const f32 exposure = static_cast<f32>(burning) / 9.0f;
+        const f32 exposure = nearFxIgniter(prop.position)
+                                 ? 1.0f
+                                 : static_cast<f32>(burning) / 9.0f;
         const u64 key = treeKey(prop.position);
         auto it = treeFires.find(key);
         if (it == treeFires.end()) {
@@ -6437,6 +6465,17 @@ void LandscapeScene::updateFxSources() {
             params.duration = 1.0e9f;
             emitters.smoke = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
         }
+        if (const auto* form = forms.find<data::ParticleForm>(source.haze)) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+            params.duration = 1.0e9f;
+            emitters.haze = fxSim.spawn(params, at + Vec3 { 0.0f, 0.5f, 0.0f },
+                                        seed ^ 0x7f4a7c15u);
+        }
+        if (source.sound.isValid()) {
+            if (const auto params = soundResolver.resolve(source.sound, at, seed)) {
+                emitters.sound = audioSystem.play(*params);
+            }
+        }
         fxSourceEmitters.emplace(e.id(), emitters);
     });
     // Gone (despawned, disabled) or out of reach: the emitters stop.
@@ -6445,24 +6484,120 @@ void LandscapeScene::updateFxSources() {
             ++it;
             continue;
         }
-        for (const u32 emitter : { it->second.flame, it->second.smoke }) {
+        for (const u32 emitter : { it->second.flame, it->second.smoke, it->second.haze }) {
             if (emitter != 0) {
                 fxSim.stopEmitter(emitter);
             }
         }
+        if (it->second.sound != 0) {
+            audioSystem.stop(it->second.sound, 0.5f);
+        }
         it = fxSourceEmitters.erase(it);
     }
+    // The igniters among the sources in reach, then their heat.
+    fxIgniters.clear();
+    fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
+                           const world::FxSource& source) {
+        if (source.igniteHeat <= 0.0f || !seen.contains(e.id())) {
+            return;
+        }
+        const Vec3 at = transform.position + transform.rotation * source.offset;
+        fxIgniters.push_back({ at, glm::max(source.igniteRadius, 0.3f),
+                               source.igniteHeat, source.offset.y < 1.0f });
+    });
 }
 
 void LandscapeScene::resetFxSources() {
     for (const auto& [id, emitters] : fxSourceEmitters) {
-        for (const u32 emitter : { emitters.flame, emitters.smoke }) {
+        for (const u32 emitter : { emitters.flame, emitters.smoke, emitters.haze }) {
             if (emitter != 0) {
                 fxSim.stopEmitter(emitter);
             }
         }
+        if (emitters.sound != 0) {
+            audioSystem.stop(emitters.sound, 0.3f);
+        }
     }
     fxSourceEmitters.clear();
+    fxIgniters.clear();
+    fxIgniterNearTree = false;
+    fxIgniterTreeClock = 0.0f;
+}
+
+bool LandscapeScene::nearFxIgniter(const Vec3& at) const {
+    for (const FxIgniter& igniter : fxIgniters) {
+        const f32 dx = at.x - igniter.at.x;
+        const f32 dz = at.z - igniter.at.z;
+        const f32 reach = igniter.radius + 0.5f;
+        if (dx * dx + dz * dz <= reach * reach) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void LandscapeScene::applyFxIgniters(f32 dt) {
+    if (fxIgniters.empty() || interiorMode) {
+        return;
+    }
+    // The ground under a low flame: heat for the next job.
+    for (const FxIgniter& igniter : fxIgniters) {
+        if (igniter.ground) {
+            spiritDirector.ignite(igniter.at.x, igniter.at.z, igniter.radius,
+                                  igniter.heat * dt);
+        }
+    }
+    // Wooden props in a flame heat up as if in the fire.
+    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
+    const world::SpiritRuleTable& rules = spiritDirector.rules();
+    const i32 woodIndex = rules.classIndex("wood");
+    const f32 fuel = woodIndex >= 0 && static_cast<size_t>(woodIndex) < rules.props.size()
+                         ? glm::max(rules.props[static_cast<size_t>(woodIndex)].fuel, 1.0f)
+                         : 8.0f;
+    bool lit = false;
+    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
+                           const world::RefId& ref) {
+        if (!nearFxIgniter(transform.position)) {
+            return;
+        }
+        const reflect::TypeInfo* type = forms.typeOf(ref.base);
+        if (!type || !type->isA(staticType.id)) {
+            return;
+        }
+        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
+        if (!form || form->surfaceMaterial != "wood") {
+            return;
+        }
+        for (const BurningProp& burning : burningProps) {
+            if (burning.entity == ecs::Entity { e }) {
+                return;
+            }
+        }
+        f32& heat = propFireHeat[e.id()];
+        heat += kPropHeatRate * dt;
+        if (heat >= 1.0f) {
+            lightProp(ecs::Entity { e }, transform.position, fuel);
+            lit = true;
+        }
+    });
+    // Trees in a flame: the lane's job ticks them (updateSpiritFireTrees
+    // reads nearFxIgniter), so it must run — checked once a second.
+    fxIgniterTreeClock -= dt;
+    if (fxIgniterTreeClock <= 0.0f) {
+        fxIgniterTreeClock = 1.0f;
+        fxIgniterNearTree = false;
+        vector<render::VegetationSystem::GiProp> props;
+        renderer.collectProps(flyCamera.camera.position, kFxSourceReach, props, 6000);
+        for (const auto& prop : props) {
+            if (prop.kind == 0 && nearFxIgniter(prop.position)) {
+                fxIgniterNearTree = true;
+                break;
+            }
+        }
+    }
+    if (lit || fxIgniterNearTree || !burningProps.empty()) {
+        spiritDirector.wakeFire();
+    }
 }
 
 void LandscapeScene::resetSpiritFire() {
@@ -6495,7 +6630,7 @@ void LandscapeScene::resetSpiritFire() {
     npcFireClocks.clear();
     playerFireClock = 0.0f;
     for (const FlameEmitter& flame : flameEmitters) {
-        for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke }) {
+        for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke, flame.haze }) {
             if (emitter != 0) {
                 fxSim.stopEmitter(emitter);
             }
@@ -6647,7 +6782,16 @@ void LandscapeScene::castFireReading(const Vec3& at, f32 seconds, bool live) {
     } else {
         lines.push_back(texts.get("fire.noFront"));
     }
-    lines.push_back(texts.get("fire.stillAir"));
+    // The wind the front will follow (the field at the aim; the
+    // reading's compass, like the front's bearing).
+    const Vec2 wind = windField.windAt(at.x, at.z);
+    const f32 windSpeed = glm::length(wind);
+    if (windSpeed < 0.3f) {
+        lines.push_back(texts.get("fire.stillAir"));
+    } else {
+        lines.push_back(texts.format(
+            "fire.wind", { num(windSpeed, 0), texts.get(str { "dir." } + world::compassCode(wind)) }));
+    }
     const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
     spiritReadingKind = ReadingKind::Fire;
     spiritReading = std::move(lines);
