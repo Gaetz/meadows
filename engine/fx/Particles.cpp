@@ -87,6 +87,7 @@ void ParticleSim::spawnOne(const EmitterParams& params, const Vec3& origin,
     particle.additive = params.additive;
     particle.flame = params.flame;
     particle.seed = rng.next();
+    particle.windDrag = params.windDrag;
     particle.texture = params.texture;
     particle.flipbookColumns = params.flipbookColumns;
     particle.flipbookRows = params.flipbookRows;
@@ -164,6 +165,11 @@ void ParticleSim::update(f32 dt) {
     for (Particle& p : particles) {
         p.age += dt;
         p.velocity += p.gravity * dt;
+        if (p.windDrag > 0.0f) {
+            const f32 k = glm::min(1.0f, p.windDrag * dt);
+            p.velocity.x += (wind.x - p.velocity.x) * k;
+            p.velocity.z += (wind.z - p.velocity.z) * k;
+        }
         p.position += p.velocity * dt;
     }
     particles.erase(std::remove_if(particles.begin(), particles.end(),

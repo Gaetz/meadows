@@ -35,7 +35,8 @@ void main() {
 
     // Wind tilt shared with the sway system; streaks lean with gusts.
     vec3 dirDown =
-        normalize(vec3(0.18 * uWindInfo.y, -1.0, 0.06 * uWindInfo.y));
+        normalize(vec3(uWindDirInfo.x * 0.19 * uWindInfo.y, -1.0,
+                       uWindDirInfo.y * 0.19 * uWindInfo.y));
     vec3 view = normalize(base - uCameraPos.xyz);
     vec3 right = normalize(cross(view, dirDown)) * 0.016;
     float len = 0.45 + h3 * 0.25;

@@ -156,7 +156,8 @@ void main() {
 
     // WIND — the reference's two-noise model on our shared wind clock.
     float dirNoise = vnoise(aPosScale.xz * 0.05 + uWindInfo.x * 0.05);
-    float windAngle = 0.34 + (dirNoise * 2.0 - 1.0) * 0.9; // around heading
+    float windAngle = atan(uWindDirInfo.y, uWindDirInfo.x) +
+                      (dirNoise * 2.0 - 1.0) * 0.9; // around the weather's heading
     vec3 windAxis = vec3(cos(windAngle), 0.0, sin(windAngle));
     float gustNoise = vnoise(aPosScale.xz * 0.25 + uWindInfo.x);
     float windLean = mix(0.25, 1.0, gustNoise);

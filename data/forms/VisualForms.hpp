@@ -149,6 +149,7 @@ struct ParticleForm : Form {
                              // noise-shaped tongue: colorStart = core,
                              // colorEnd = outer, size = height in m)
     f32 duration { 0.0f };   // emitter seconds; 0 = one burst + drain
+    f32 windDrag { 0.0f };   // 0 = the wind ignores it; 1 = carried within ~1 s
 
     REFLECT_BEGIN(ParticleForm, Form)
         REFLECT_FIELD(shape)
@@ -169,6 +170,7 @@ struct ParticleForm : Form {
         REFLECT_FIELD(flipbookRows)
         REFLECT_FIELD(flipbookFps)
         REFLECT_FIELD(flipbookAspect)
+        REFLECT_FIELD(windDrag)
         REFLECT_FIELD(blend)
         REFLECT_FIELD(duration)
     REFLECT_END()

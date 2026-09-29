@@ -288,6 +288,7 @@ volumetricIntensity = 0.6
 godRayIntensity = 0.6
 bloomIntensity = 0.35
 windStrength = 0.6
+windDirectionDeg = 20.0
 waveChop = 0.7
 
 [[records]]
@@ -314,6 +315,7 @@ volumetricIntensity = 1.8    # mist is where the shafts live
 godRayIntensity = 0.9
 bloomIntensity = 0.45
 windStrength = 0.35
+windDirectionDeg = 60.0
 waveChop = 0.5
 mistDensity = 0.6            # raymarched valley mist (mist.frag)
 mistCoverage = 0.65          # more of the valley network than baseline
@@ -342,6 +344,7 @@ volumetricIntensity = 1.4
 godRayIntensity = 0.8
 bloomIntensity = 0.4
 windStrength = 0.55
+windDirectionDeg = 35.0
 waveChop = 0.65
 
 [[records]]
@@ -368,6 +371,7 @@ volumetricIntensity = 1.1
 godRayIntensity = 0.6
 bloomIntensity = 0.35
 windStrength = 0.9
+windDirectionDeg = 300.0
 waveChop = 1.0
 
 [[records]]
@@ -394,6 +398,7 @@ volumetricIntensity = 0.9
 godRayIntensity = 0.3
 bloomIntensity = 0.3
 windStrength = 1.1
+windDirectionDeg = 280.0
 waveChop = 1.25
 
 [[records]]
@@ -420,6 +425,7 @@ volumetricIntensity = 0.8
 godRayIntensity = 0.15
 bloomIntensity = 0.28
 windStrength = 1.9
+windDirectionDeg = 250.0
 waveChop = 1.9
 stormFront = 1.0             # brick 30: cumulonimbus towers on the horizon
 rainIntensity = 1.0          # brick 31: full downpour
@@ -449,6 +455,7 @@ volumetricIntensity = 0.6
 godRayIntensity = 0.2
 bloomIntensity = 0.3
 windStrength = 1.3
+windDirectionDeg = 240.0
 waveChop = 1.4
 stormFront = 0.25
 rainIntensity = 0.75

@@ -59,7 +59,7 @@ float cloudDensityVol(vec3 p, float cover, float thick, float detailAmt,
     if (h <= 0.0 || h >= 1.0) {
         return 0.0;
     }
-    vec3 windOfs = vec3(1.0, 0.0, 0.35) * (17.0 * uWindInfo.x);
+    vec3 windOfs = vec3(uWindDirInfo.x, 0.0, uWindDirInfo.y) * (18.0 * uWindInfo.x);
     // Per-column TOP variation (a fixed-z volume tap ≈ tileable 2D
     // noise): tops rise and dip independently of coverage — the Nubis
     // height gradient. Kills the single flat lid.

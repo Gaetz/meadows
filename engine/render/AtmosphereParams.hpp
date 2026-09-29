@@ -34,6 +34,7 @@ struct AtmosphereParams {
     f32 saturation { 1.0f };
     f32 warmth { 0.0f };
     f32 windStrength { 1.0f };
+    f32 windDirectionDeg { 20.0f }; // see WeatherForm::windDirectionDeg
     f32 waveChop { 1.0f };
     f32 stormFront { 0.0f };
     f32 rainIntensity { 0.0f };

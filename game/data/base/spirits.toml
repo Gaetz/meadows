@@ -136,6 +136,7 @@ cueSpawn = "Cue.Spirit.Fire.Spawn"
 fieldParticles = "5b1e1700-0000-4000-8000-0000000000c0"
 emberParticles = "5b1e1700-0000-4000-8000-0000000000c7"
 fieldSound = "5b1e1700-0000-4000-8000-0000000000d3"
+smokeParticles = "5b1e1700-0000-4000-8000-0000000000e9"
 holdParticles = "5b1e1700-0000-4000-8000-0000000000e4"
 jetParticles = "5b1e1700-0000-4000-8000-0000000000e5"
 
@@ -1125,6 +1126,7 @@ type = "ParticleForm"
 new = true
 [records.fields]
 editorId = "FlameTongue"
+windDrag = 0.35
 shape = "disc"
 shapeRadius = 0.9
 burst = 2
@@ -1232,6 +1234,7 @@ type = "ParticleForm"
 new = true
 [records.fields]
 editorId = "EmberSparks"
+windDrag = 1.5
 shape = "sphere"
 shapeRadius = 0.8
 burst = 0
@@ -1480,6 +1483,7 @@ type = "ParticleForm"
 new = true
 [records.fields]
 editorId = "DousePuff"
+windDrag = 1.0
 shape = "sphere"
 shapeRadius = 1.5
 burst = 40
@@ -1594,3 +1598,27 @@ areaRadius = 1.2
 channeled = true
 costPeriod = 0.5
 upkeepScale = 0.25
+
+# The fire's smoke: discreet, soft grey, slow, carried by the wind.
+[[records]]
+form = "5b1e1700-0000-4000-8000-0000000000e9"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "FireSmoke"
+windDrag = 1.2
+shape = "sphere"
+shapeRadius = 0.6
+burst = 0
+rate = 2.5
+duration = 1.0
+lifetime = 4.5
+lifetimeJitter = 1.5
+velocity = [0.0, 0.9, 0.0]
+velocityJitter = 0.25
+gravity = [0.0, 0.15, 0.0]
+sizeStart = 0.9
+sizeEnd = 3.2
+colorStart = [0.42, 0.4, 0.38, 0.22]
+colorEnd = [0.5, 0.5, 0.5, 0.0]
+blend = "alpha"

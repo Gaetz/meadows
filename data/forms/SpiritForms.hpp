@@ -52,6 +52,8 @@ struct SpiritForm : Form {
                                      // cell sheds (beside fieldParticles)
     core::Guid fieldSound;           // SoundForm looped near the field's
                                      // active cells (3D, follows the nearest)
+    core::Guid smokeParticles;       // ParticleForm of the smoke an active cell
+                                     // sheds (one emitter per few cells)
     core::Guid fieldParticles;       // ParticleForm of an ACTIVE field cell
                                      // (flames on a burning cell), placed
                                      // by the scene under an emitter budget
@@ -85,6 +87,7 @@ struct SpiritForm : Form {
         REFLECT_FIELD(treeRegrowSeconds)
         REFLECT_FIELD(emberParticles)
         REFLECT_FIELD(fieldSound)
+        REFLECT_FIELD(smokeParticles)
         REFLECT_FIELD(liftQuadratic)
         REFLECT_FIELD(liftMin)
         REFLECT_FIELD(liftMax)

@@ -241,6 +241,10 @@ struct FrameUniforms {
     // fps, frame aspect}. Look: {HDR boost, posterize bands (0 = off), 0, 0}.
     Vec4 fireFlameInfo {};
     Vec4 fireFlameLook {};
+    // The wind's DIRECTION (xy = unit XZ the wind blows toward, from the
+    // weather's windDirectionDeg), z = gust strength lane (reserved),
+    // w free. The strength and clock stay in windInfo (append-only).
+    Vec4 windDirInfo { 1.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -328,7 +332,8 @@ static_assert(offsetof(FrameUniforms, fireScorchInfo) == 2160);
 static_assert(offsetof(FrameUniforms, fireEmberInfo) == 2176);
 static_assert(offsetof(FrameUniforms, fireCharInfo) == 2224);
 static_assert(offsetof(FrameUniforms, fireFlameInfo) == 2240);
-static_assert(sizeof(FrameUniforms) == 2272,
+static_assert(offsetof(FrameUniforms, windDirInfo) == 2272);
+static_assert(sizeof(FrameUniforms) == 2288,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

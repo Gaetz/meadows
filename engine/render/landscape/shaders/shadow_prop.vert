@@ -43,7 +43,7 @@ void main() {
 
     float gust = sin(uWindInfo.x * 1.1 + aParams.z +
                      (aPosScale.x + aPosScale.z * 0.7) * 0.05);
-    world.xz += vec2(0.9, 0.35) *
+    world.xz += uWindDirInfo.xy * 0.96 *
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
     vCardUv = vec2(-1.0);

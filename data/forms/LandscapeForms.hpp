@@ -710,6 +710,9 @@ struct WeatherForm : Form {
     f32 bloomIntensity { 0.35f };
     // Wind / water.
     f32 windStrength { 1.0f };  // sway amplitude + drift/wave speed
+    // Compass degrees the wind blows TOWARD (0 = east, 90 = north,
+    // counter-clockwise from above); the crossfade takes the short arc.
+    f32 windDirectionDeg { 20.0f };
     f32 waveChop { 1.0f };      // water surface roughness
     // Horizon cumulonimbus towers, 0-1 (Storm = 1).
     f32 stormFront { 0.0f };
@@ -742,6 +745,7 @@ struct WeatherForm : Form {
         REFLECT_FIELD(godRayIntensity)
         REFLECT_FIELD(bloomIntensity)
         REFLECT_FIELD(windStrength)
+        REFLECT_FIELD(windDirectionDeg)
         REFLECT_FIELD(waveChop)
         REFLECT_FIELD(stormFront)
         REFLECT_FIELD(rainIntensity)

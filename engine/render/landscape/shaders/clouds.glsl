@@ -35,7 +35,7 @@ float cloudFbm(vec2 p) {
 float cloudDensityAnalytic(vec2 planePos) {
     // Drift phase = accumulated wind time (uWindInfo.x), NOT wall time:
     // weather changing the wind speed must not teleport the pattern.
-    vec2 wind = vec2(1.0, 0.35) * 17.0; // m/s of drift at wind strength 1
+    vec2 wind = uWindDirInfo.xy * 18.0; // m/s of drift at wind strength 1
     vec2 uv = (planePos + wind * uWindInfo.x) * uCloudInfo.z;
     float f = cloudFbm(uv);
     float threshold = 1.0 - uCloudInfo.x * 0.9;

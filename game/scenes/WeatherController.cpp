@@ -1,5 +1,7 @@
 #include "game/scenes/WeatherController.hpp"
 
+#include <cmath>
+
 #include <glm/glm.hpp>
 
 namespace game {
@@ -99,6 +101,14 @@ void WeatherController::update(render::AtmosphereParams& atmos, f32 dt) {
     const f32 t = glm::smoothstep(0.0f, 1.0f, blend_);
     for (const WeatherLane& lane : kWeatherLanes) {
         atmos.*lane.atmos = glm::mix(from_.*lane.form, to.*lane.form, t);
+    }
+    // The wind's heading turns along the short arc (350 -> 10 is +20,
+    // never a -340 sweep through the south).
+    {
+        const f32 a = from_.windDirectionDeg;
+        const f32 b = to.windDirectionDeg;
+        const f32 delta = std::fmod(b - a + 540.0f, 360.0f) - 180.0f;
+        atmos.windDirectionDeg = a + delta * t;
     }
 }
 

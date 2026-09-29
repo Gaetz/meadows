@@ -179,4 +179,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     // {HDR boost, posterize bands, 0, 0}.
     vec4 uFireFlameInfo;
     vec4 uFireFlameLook;
+    // The wind's direction: xy = unit XZ it blows toward; z reserved.
+    vec4 uWindDirInfo;
 };

@@ -52,6 +52,9 @@ struct EmitterParams {
     // upright tongue shaped by noise, colorStart = core, colorEnd =
     // outer band, size = height) instead of a round sprite.
     bool flame { false };
+    // How much the wind carries the particle: 0 = none, 1 = its
+    // horizontal velocity relaxes to the wind's in ~1 s (ParticleForm.windDrag).
+    f32 windDrag { 0.0f };
     // Flames: the flipbook sheet (null = the procedural tongue).
     core::Guid texture;
     i32 flipbookColumns { 1 };
@@ -73,6 +76,7 @@ struct Particle {
     bool additive { false };
     bool flame { false };
     f32 seed { 0.0f }; // 0..1, per particle (cosmetic variety)
+    f32 windDrag { 0.0f };
     core::Guid texture; // flames: the flipbook sheet
     i32 flipbookColumns { 1 };
     i32 flipbookRows { 1 };
@@ -101,6 +105,8 @@ public:
     void stopEmitter(u32 id);
 
     void update(f32 dt);
+    // The wind every particle with windDrag drifts with (m/s, world).
+    void setWind(const Vec3& velocity) { wind = velocity; }
     void clear();
 
     u32 count() const { return static_cast<u32>(particles.size()); }
@@ -143,6 +149,7 @@ private:
 
     void spawnOne(const EmitterParams& params, const Vec3& origin,
                   u32 seed);
+    Vec3 wind { 0.0f };
 
     vector<Particle> particles;
     vector<Emitter> emitters;

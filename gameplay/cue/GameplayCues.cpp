@@ -61,6 +61,7 @@ fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     params.flipbookRows = glm::max(form.flipbookRows, 1);
     params.flipbookFps = form.flipbookFps;
     params.flipbookAspect = form.flipbookAspect;
+    params.windDrag = form.windDrag;
     return params;
 }
 

@@ -50,7 +50,7 @@ float mistTopAt(vec2 xz) {
 // is ~300 m scale, so the march evaluates it at the clipped segment's
 // two ends only and lerps per step (the big per-step ALU saving).
 vec2 coverageUv(vec3 p) {
-    return (p.xz + vec2(1.0, 0.35) * (4.25 * uWindInfo.x)) *
+    return (p.xz + uWindDirInfo.xy * (4.5 * uWindInfo.x)) *
            uMistShapeInfo.x;
 }
 

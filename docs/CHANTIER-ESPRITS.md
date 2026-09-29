@@ -883,3 +883,33 @@ buildup + dégâts typés). Matrice Feu : Créer × stream (maintenu).
   les feuilles ROUSSISSENT comme à l'automne pendant les premiers 40 % de la
   combustion (teinte de saison du slot, persistants compris) avant de
   noircir et de tomber.
+
+### E3.e/f COMMITÉES (`fc5220c`) ; E4.a — la direction du vent (2026-09-28, NON COMMITÉE)
+Avant : une force (`windStrength`), une horloge accumulée, et un cap codé
+en dur dans chaque shader (herbe 0,34 rad, arbres et caster (0,9 ; 0,35),
+nuages et brume (1 ; 0,35), pluie fixe). Fait : `WeatherForm.
+windDirectionDeg` (degrés boussole vers lesquels le vent SOUFFLE : 0 =
+est, 90 = nord, sens trigonométrique vu de dessus — la boussole des
+intelligos) → `AtmosphereParams.windDirectionDeg`, crossfade de météo sur
+l'ARC COURT (350 → 10 = +20, jamais −340 par le sud) ; lane UBO
+`windDirInfo` ajoutée EN FIN (2272 → 2288, assignée après le bloc
+d'initialiseurs désignés — l'ordre de déclaration l'impose) ; les six
+shaders lisent `uWindDirInfo.xy` (herbe : cap ± bruit, arbres et caster
+d'ombre, nuages 2D et volumétriques, brume, pluie penchée). Sept météos
+autorées (Clear 20°, Morning Mist 60°, Hazy 35°, Cloudy 300°, Overcast
+280°, Storm 250°, Rain 240°). `engine/terrain/WindField` headless : vent
+global + rafales analytiques (`windAt`, `tick`, `windDirectionFromDegrees`),
+testé. Le feu propage sous le vent (`FireParams.wind` = direction ×
+force × 0,6) ; les particules dérivent (`ParticleForm.windDrag` : braises
+1,5, flammes 0,35, bouffée 1 ; `ParticleSim::setWind`, vent = 3 m/s à
+force 1). E4.b (suite) : l'esprit Vent — rafales placées (`spirit.spawn
+Wind`), sorts Créer × Vent (souffle en stream, rafale posée), poussée
+cinématique des personnages et des floaters, fumée.
+
+### E4.c — la fumée du feu (demande dev 2026-09-29, « assez discrète »)
+`SpiritForm.smokeParticles` → `FireSmoke` (alpha, gris doux à 22 %,
+2,5 bouffées/s, 4,5 s ± 1,5, montée 0,9 m/s, 0,9 → 3,2 m, `windDrag`
+1,2) : une cellule brûlante sur quatre (parité de cellule) porte un
+émetteur de fumée à 1,2 m au-dessus des flammes ; les props en bois et
+les arbres qui brûlent en ont un (×2 et ×1,5 au-dessus de la canopée pour
+les arbres). Coupée avec les flammes.

@@ -62,6 +62,10 @@ public:
     const core::Guid& sparkParticles(render::terrain::SpiritKind kind) const {
         return sparkFx[static_cast<size_t>(kind)];
     }
+    // The ParticleForm of the smoke an active cell sheds.
+    const core::Guid& smokeParticles(render::terrain::SpiritKind kind) const {
+        return smokeFx[static_cast<size_t>(kind)];
+    }
     // The SoundForm looped near the field's active cells.
     const core::Guid& fieldSound(render::terrain::SpiritKind kind) const {
         return soundFx[static_cast<size_t>(kind)];
@@ -124,6 +128,9 @@ public:
     bool updateFire(core::JobSystem& jobs, const FireFrame& frame,
                     f32 simSeconds);
     void resetFire(); // map swap / exit: the window is dropped
+    // The wind the kernel spreads with (unit-ish direction x strength
+    // 0..1), set by the scene from the weather each frame.
+    void setFireWind(const Vec2& wind) { fireParams.wind = wind; }
     bool fireIdle() const {
         return !fireGrid && !fireInFlight && fireIgnitions.empty();
     }
@@ -174,6 +181,9 @@ private:
     std::array<core::Guid,
                static_cast<size_t>(render::terrain::SpiritKind::kCount)>
         soundFx {};
+    std::array<core::Guid,
+               static_cast<size_t>(render::terrain::SpiritKind::kCount)>
+        smokeFx {};
     std::optional<render::terraingen::WaterSource> holdSource;
     EarthLift lift;
 

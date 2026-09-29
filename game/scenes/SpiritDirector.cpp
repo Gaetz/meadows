@@ -22,6 +22,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
     fieldFx.fill(core::Guid {});
     sparkFx.fill(core::Guid {});
     soundFx.fill(core::Guid {});
+    smokeFx.fill(core::Guid {});
     contactFx.fill(core::Guid {});
     contactEvery.fill(0.5f);
     contactHurt.fill(0.0f);
@@ -33,6 +34,7 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
             fieldFx[static_cast<size_t>(kind)] = spirit.fieldParticles;
             sparkFx[static_cast<size_t>(kind)] = spirit.emberParticles;
             soundFx[static_cast<size_t>(kind)] = spirit.fieldSound;
+            smokeFx[static_cast<size_t>(kind)] = spirit.smokeParticles;
             contactFx[static_cast<size_t>(kind)] = spirit.contactEffect;
             contactEvery[static_cast<size_t>(kind)] =
                 glm::max(spirit.contactPeriod, 0.05f);

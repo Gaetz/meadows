@@ -1,5 +1,7 @@
 #include "engine/render/FrameComposer.hpp"
 
+#include "engine/terrain/WindField.hpp"
+
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -134,6 +136,11 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
                                     kGrassSpeciesTip[i][2], 0.0f };
     }
 
+    // Appended lanes (declared after the designated block above): the
+    // wind's heading, in BASE so the mirror pass sways the same way.
+    base.windDirInfo = { render::terrain::windDirectionFromDegrees(
+                             in.atmos.windDirectionDeg),
+                         0.0f, 0.0f };
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {
         // Interior mode: no sun, no sky glow, dim constant ambient, no

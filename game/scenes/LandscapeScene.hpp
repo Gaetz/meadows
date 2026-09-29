@@ -646,6 +646,7 @@ private:
         Vec2 at { 0.0f }; // the cell center (exact: matched by equality)
         u32 emitter { 0 }; // the flames
         u32 sparks { 0 };  // the embers it sheds
+        u32 smoke { 0 };   // one cell in four smokes (discreet)
     };
     vector<FlameEmitter> flameEmitters;
     static constexpr u32 kMaxFlames = 96;
@@ -682,6 +683,7 @@ private:
         f32 remaining { 0.0f };
         u32 flames { 0 };
         u32 sparks { 0 };
+        u32 smoke { 0 };
         bool lit { false }; // the ground around it took its spark
     };
     vector<BurningProp> burningProps;
@@ -698,6 +700,7 @@ private:
         u32 flames { 0 };      // the trunk and branches
         u32 crownFlames { 0 }; // the canopy
         u32 sparks { 0 };
+        u32 smoke { 0 };
         f32 emberClock { 0.0f };
     };
     std::unordered_map<u64, TreeFireEntry> treeFires;
@@ -705,6 +708,10 @@ private:
     f32 fireLandClock { 0.0f }; // sim seconds since the last landed job
     void updateSpiritFireTrees(f32 landDt);
     static constexpr f32 kTreeFireReach = 160.0f;
+    // Weather wind strength 1 = a 0.6 wind for the fire's spread.
+    static constexpr f32 kFireWindFactor = 0.6f;
+    // Weather wind strength 1 = 3 m/s carrying the particles.
+    static constexpr f32 kParticleWindSpeed = 3.0f;
     static u64 treeKey(const Vec3& at) {
         const i64 x = static_cast<i64>(std::llround(at.x * 4.0f));
         const i64 z = static_cast<i64>(std::llround(at.z * 4.0f));
