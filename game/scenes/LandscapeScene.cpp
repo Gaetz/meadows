@@ -1517,7 +1517,9 @@ void LandscapeScene::update(f32 dt) {
         applyPendingSpiritActions();
         // Spirit sources live in SIM seconds: a spring pours rate x
         // duration whatever the dev time scale. Re-push only on change.
-        if (sandboxActive) {
+        // Every world: the spirits need the ground, not the sandbox (the
+        // water ones need the live sim — checked at the cast).
+        {
             const f32 simDt = dt * renderer.waterSystem().simConfig().timeScale;
             vector<u32> stopped;
             if (spiritDirector.tick(simDt, &stopped)) {
@@ -4225,8 +4227,9 @@ void LandscapeScene::createConsole() {
         if (kind == render::terrain::SpiritKind::kCount) {
             return "unknown spirit '" + kindName + "'";
         }
-        if (!sandboxActive) {
-            return "spirit sources need the sandbox map world";
+        if (kind == render::terrain::SpiritKind::Water &&
+            !renderer.waterSystem().simIsValid()) {
+            return "water sources need the live water sim";
         }
         const core::Guid id = spiritDirector.spawn(
             kind, x, z, rate, radius, seconds, activeWorldspaceGuid());
@@ -4654,7 +4657,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
 // --- Spirits: the ability -> world seam (chantier ESPRITS) ------------
 
 std::optional<Vec3> LandscapeScene::aimGround() const {
-    if (!physics || !sandboxActive) {
+    if (!physics) {
         return std::nullopt;
     }
     const phys::RayHit hit = physics->rayCast(
@@ -4691,7 +4694,7 @@ script::ScriptContext LandscapeScene::playerScriptContext() {
 }
 
 void LandscapeScene::castSpirit() {
-    if (mode != SceneMode::Play || !sandboxActive || !spiritAbility ||
+    if (mode != SceneMode::Play || !spiritAbility ||
         !playerEntity.is_alive() ||
         !playerEntity.has<gameplay::AbilitySystem>()) {
         return;
@@ -4721,6 +4724,16 @@ void LandscapeScene::castSpirit() {
             interaction.say(texts.get("spirit.refused"), 1.5f);
             return;
         }
+    }
+    // Water pours into the LIVE water sim (runtime sources): without a
+    // valid sim here the spirit stays silent. The other elements need
+    // only the ground, in every world (story or sandbox).
+    const bool waterCast =
+        spell ? spell->element == render::terrain::SpiritKind::Water
+              : spiritAbility->script.find("\"Water\"") != str::npos;
+    if (waterCast && !renderer.waterSystem().simIsValid()) {
+        interaction.say(texts.get("spirit.refused"), 1.5f);
+        return;
     }
     // Geometry first, before any cost is paid: tryActivate has no
     // position. Only AIMED casts (a point spell, a script calling aim()):
@@ -4919,8 +4932,9 @@ void LandscapeScene::applyPendingSpiritActions() {
     while (!pendingSpiritActions.empty()) {
         const PendingSpiritAction action = pendingSpiritActions.front();
         pendingSpiritActions.pop_front();
-        if (!sandboxActive) {
-            continue;
+        if (action.kind == render::terrain::SpiritKind::Water &&
+            !renderer.waterSystem().simIsValid()) {
+            continue; // no live sim to pour into (a script's cast)
         }
         if (action.mode == PendingSpiritAction::Mode::FireDouse) {
             spiritDirector.douse(action.x, action.z, action.radius);
@@ -5207,7 +5221,7 @@ void LandscapeScene::releaseSpiritHold(bool drop) {
     // The carried volume falls where the aim is: a one-second source
     // (the same placed-source path, cue included).
     constexpr f32 kDropSeconds = 1.0f;
-    if (drop && hold.volume > 0.0f && hold.aim && sandboxActive) {
+    if (drop && hold.volume > 0.0f && hold.aim) {
         PendingSpiritAction action;
         action.kind = hold.kind;
         action.x = hold.aim->x;

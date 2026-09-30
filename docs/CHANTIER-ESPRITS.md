@@ -1051,3 +1051,16 @@ distorsion de chaleur, vent dans l'intelligo du feu, cue sonore de rafale »
   `SoundForm` `WindGustWhoosh` (3D, 45 m, jitter de pitch) sur un
   `gust.wav` généré (`tools/scripts/gen_gust_wav.py` : bruit filtré,
   passe-bas balayé) ; le Souffle l'émet aussi au démarrage, au nez.
+
+### E6 COMMITÉE (`4567f91`) ; retour dev : « les sorts ne se lancent pas en story » (2026-09-30)
+Cause : tout le chemin des esprits était verrouillé sur `sandboxActive`
+(`castSpirit`, `aimGround`, `applyPendingSpiritActions`, le tick du
+directeur + `updateSpiritFire`, le lâcher de l'emprise, la console
+`spirit spawn`) — la règle `canCastAt` d'E1, quand seule l'Eau existait
+et versait dans la sim d'eau du monde sandbox. La sim d'eau n'a en fait
+aucune dépendance au sandbox (rien dans WaterSystem). Fait : la porte
+devient PAR ÉLÉMENT — l'Eau (sort d'élément Eau, ou script contenant
+`"Water"`) exige `waterSystem().simIsValid()` (toast `spirit.refused`
+avant tout coût ; une action Eau queue-ée par script est ignorée sans
+sim) ; Feu, Terre, Vent ne demandent que le sol (physique + terrain),
+dans tous les mondes. Les voyages de carte restent sandbox.

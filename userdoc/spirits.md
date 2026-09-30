@@ -172,7 +172,9 @@ held calms the weather's wind while you concentrate, and `control` on
 `self` held steers it where you face. Gusts push you and the villagers,
 carry particles and bend the fire, and floating props drift with the
 wind; the weather's ambient wind never pushes anyone. A spell outside that set is
-refused before any cost is paid. The base game ships `SpellWaterSpring`,
+refused before any cost is paid. Spells work in every world; water spells
+need the live water simulation under the aim (the spirit "does not
+answer" otherwise). The base game ships `SpellWaterSpring`,
 `SpellWaterStream` (the default: hold Q to keep streaming), `SpellWaterDrain`
 and `SpellWaterHold`. The **mouse wheel** cycles the spell book (every
 ability that carries a `SpellForm`); the current spell's `name` (a
