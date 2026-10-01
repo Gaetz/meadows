@@ -114,7 +114,14 @@ ownership transfers post-demo if a PC re-baseline justifies it).
   graphics submit. Sync: its OWN timeline (a third queue interleaving on
   the shared one could signal out of order — forbidden); waits last
   frame's graphics value (WAR), graphics waits its value at the
-  reader stages; buffers are CONCURRENT across the three families. On PC
+  reader stages; buffers AND images are CONCURRENT across the three
+  families (an EXCLUSIVE image written from the upload family without
+  an ownership transfer is undefined — it was, until 2026-10-01). Every
+  barrier's stage masks are clamped to what the recording queue's
+  family can execute (`clampStagesToQueue`: no shader stages on the
+  transfer-only upload queue, no graphics stages on the async-compute
+  queue; a stage dropped takes its access bits with it, the timeline
+  semaphore carries the cross-queue visibility). On PC
   the transfer-only family is a real DMA engine; MoltenVK gives a third
   generic queue (family 2) — same topology, so M1 sync-validates the PC
   path. The compute chain does NOT wait uploads (the rc chain reads no
@@ -871,6 +878,18 @@ the `GpuOcclusion … clip` warning must never appear.
     under the mirror, so the pass's inverted front face back-face-culls
     it while static geometry renders fine (the leafless-reflected-trees
     bug).
+
+17. **A barrier is recorded FOR a queue family.** Stage masks a family
+    cannot execute (shader stages on the transfer-only upload queue,
+    graphics stages on the async-compute queue) and EXCLUSIVE images
+    touched from a second family are undefined behaviour the standard
+    validation layer DOES report — and for three weeks the game shipped
+    them on every texture upload while an intermittent access violation
+    inside `nvoglv64.dll` (five crash dumps, same offset) was filed as
+    "driver flakiness". Lesson: a validation error at exit or in a tool
+    is never noise; read the first one. And `MEADOWS_BOOT=story|sandbox`
+    + `MEADOWS_BOOT_SECONDS=N` boot the real scene unattended, so a
+    crash seen in play can be reproduced and stress-run from a shell.
 
 ## 6. Roadmap (consolidated next steps)
 

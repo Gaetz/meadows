@@ -216,10 +216,52 @@ void layoutMasks(VkImageLayout layout, VkAccessFlags& access,
     }
 }
 
+// A barrier's stage masks must be supported by the queue family the
+// command buffer belongs to: the upload queue (transfer-only) and the
+// async-compute queue (no graphics) reject the shader stages layoutMasks
+// derives. Stages the family lacks are dropped; an empty mask becomes
+// ALL_COMMANDS (always legal, strictly conservative). Recording them
+// anyway was undefined behaviour — the validation layer flagged it on
+// every upload, and the driver's intermittent crash lived there.
+constexpr VkQueueFlags kAllQueueCaps =
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+
+VkPipelineStageFlags clampStagesToQueue(VkPipelineStageFlags stages,
+                                        VkQueueFlags caps) {
+    constexpr VkPipelineStageFlags kGraphicsOnly =
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+        VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
+        VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
+        VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+    VkPipelineStageFlags out = stages;
+    if ((caps & VK_QUEUE_GRAPHICS_BIT) == 0) {
+        out &= ~kGraphicsOnly;
+        // Indirect reads are compute-legal too; the mask above dropped
+        // them with the graphics set.
+        if ((caps & VK_QUEUE_COMPUTE_BIT) != 0 &&
+            (stages & VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) != 0) {
+            out |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        }
+    }
+    if ((caps & VK_QUEUE_COMPUTE_BIT) == 0) {
+        out &= ~static_cast<VkPipelineStageFlags>(
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    }
+    return out == 0 ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : out;
+}
+
 void transitionLayout(VkCommandBuffer cb, VkImage image,
                       VkImageAspectFlags aspect, u32 baseMip, u32 mipCount,
                       u32 layerCount, VkImageLayout oldLayout,
-                      VkImageLayout newLayout) {
+                      VkImageLayout newLayout,
+                      VkQueueFlags queueCaps = kAllQueueCaps) {
     VkImageMemoryBarrier barrier {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -237,6 +279,23 @@ void transitionLayout(VkCommandBuffer cb, VkImage image,
     VkPipelineStageFlags dstStage = 0;
     layoutMasks(oldLayout, barrier.srcAccessMask, srcStage);
     layoutMasks(newLayout, barrier.dstAccessMask, dstStage);
+    // A stage the family lacks takes its access bits with it (a shader
+    // read on a transfer queue is meaningless): the cross-queue
+    // visibility rides the timeline semaphore, not this barrier.
+    constexpr VkAccessFlags kAnyStageAccess =
+        VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
+        VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT |
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    const VkPipelineStageFlags srcClamped = clampStagesToQueue(srcStage, queueCaps);
+    const VkPipelineStageFlags dstClamped = clampStagesToQueue(dstStage, queueCaps);
+    if (srcClamped != srcStage) {
+        barrier.srcAccessMask &= kAnyStageAccess;
+    }
+    if (dstClamped != dstStage) {
+        barrier.dstAccessMask &= kAnyStageAccess;
+    }
+    srcStage = srcClamped;
+    dstStage = dstClamped;
 
     vkCmdPipelineBarrier(cb, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1,
                          &barrier);
@@ -730,6 +789,10 @@ struct VulkanDevice::Impl {
     // last signaled value (the graphics fence does not cover compute).
     bool asyncComputeAvailable { false };
     u32 computeFamily { 0 };
+    // What the async-compute / upload families can execute (barrier
+    // stage masks are clamped to them — clampStagesToQueue).
+    VkQueueFlags computeQueueFlags { kAllQueueCaps };
+    VkQueueFlags uploadQueueFlags { kAllQueueCaps };
     VkQueue computeQueue { VK_NULL_HANDLE };
     VkCommandPool computePool { VK_NULL_HANDLE };
     std::array<VkCommandBuffer, kFramesInFlight> computeCbs {};
@@ -1075,6 +1138,12 @@ namespace {
 class VulkanCommandBuffer final : public CommandBuffer {
 public:
     explicit VulkanCommandBuffer(VulkanDevice::Impl& device) : d_ { &device } {}
+    // The family this buffer records for: the compute one when it IS the
+    // device's async-compute buffer, graphics otherwise.
+    VkQueueFlags queueCaps() const {
+        return this == d_->computeCmd.get() ? d_->computeQueueFlags
+                                            : kAllQueueCaps;
+    }
 
     void begin(VkCommandBuffer cb, VkImageView swapchainView,
                VkFormat swapchainFormat, VkExtent2D extent) {
@@ -1239,7 +1308,7 @@ void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
             if (tex != nullptr) {
                 transitionLayout(cb_, tex->image, tex->aspect, 0,
                                  tex->mipLevels, tex->arrayLayers, tex->layout,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, queueCaps());
                 tex->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             }
             VkRenderingAttachmentInfo color {};
@@ -1257,7 +1326,7 @@ void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
                 transitionLayout(
                     cb_, tex->image, tex->aspect, 0, tex->mipLevels,
                     tex->arrayLayers, tex->layout,
-                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, queueCaps());
                 tex->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             }
             depthAttachment.sType =
@@ -1307,7 +1376,7 @@ void VulkanCommandBuffer::endRenderPass() {
             if (tex != nullptr) {
                 transitionLayout(cb_, tex->image, tex->aspect, 0,
                                  tex->mipLevels, tex->arrayLayers, tex->layout,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
                 tex->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
         }
@@ -1316,7 +1385,7 @@ void VulkanCommandBuffer::endRenderPass() {
             transitionLayout(cb_, depth->image, depth->aspect, 0,
                              depth->mipLevels, depth->arrayLayers,
                              depth->layout,
-                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
             depth->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
     }
@@ -1582,7 +1651,7 @@ void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
                 if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
                     transitionLayout(cb_, tex->image, tex->aspect, 0,
                                      tex->mipLevels, tex->arrayLayers,
-                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL);
+                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL, queueCaps());
                     tex->layout = VK_IMAGE_LAYOUT_GENERAL;
                 }
                 image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1710,7 +1779,7 @@ void VulkanCommandBuffer::bindMissingDummies() {
                 if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
                     transitionLayout(cb_, tex->image, tex->aspect, 0,
                                      tex->mipLevels, tex->arrayLayers,
-                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL);
+                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL, queueCaps());
                     tex->layout = VK_IMAGE_LAYOUT_GENERAL;
                 }
                 image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1849,8 +1918,9 @@ void VulkanCommandBuffer::memoryBarrier(u32 dst) {
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStages,
-                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         clampStagesToQueue(dstStages, queueCaps()), 0, 1,
+                         &barrier, 0, nullptr, 0, nullptr);
 }
 
 void VulkanCommandBuffer::readBarrier(u32 src) {
@@ -1876,8 +1946,9 @@ void VulkanCommandBuffer::readBarrier(u32 src) {
     if (srcStages == 0) {
         return;
     }
-    vkCmdPipelineBarrier(cb_, srcStages, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0, 0, nullptr, 0, nullptr, 0, nullptr);
+    vkCmdPipelineBarrier(cb_, clampStagesToQueue(srcStages, queueCaps()),
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 0, nullptr);
 }
 
 void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,
@@ -1919,8 +1990,10 @@ bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, u64 srcOffset,
     barrier.size = size;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier(cb_, readStages, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                         nullptr, 1, &barrier, 0, nullptr);
+    const VkPipelineStageFlags queueReadStages =
+        clampStagesToQueue(readStages, queueCaps());
+    vkCmdPipelineBarrier(cb_, queueReadStages, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 1, &barrier, 0, nullptr);
 
     VkBufferCopy region {};
     region.srcOffset = srcOffset;
@@ -1930,8 +2003,8 @@ bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, u64 srcOffset,
 
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = readAccess;
-    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_TRANSFER_BIT, readStages, 0, 0,
-                         nullptr, 1, &barrier, 0, nullptr);
+    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_TRANSFER_BIT, queueReadStages,
+                         0, 0, nullptr, 1, &barrier, 0, nullptr);
     return true;
 }
 
@@ -1944,9 +2017,9 @@ void VulkanCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
     const VkImageLayout srcWas = s->layout;
     const VkImageLayout dstWas = t->layout;
     transitionLayout(cb_, s->image, s->aspect, 0, 1, s->arrayLayers, srcWas,
-                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, queueCaps());
     transitionLayout(cb_, t->image, t->aspect, 0, 1, t->arrayLayers, dstWas,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, queueCaps());
 
     VkImageCopy region {};
     region.srcSubresource.aspectMask = s->aspect;
@@ -1960,10 +2033,10 @@ void VulkanCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
     // Both are sampled again afterwards (the point of snapshotting).
     transitionLayout(cb_, s->image, s->aspect, 0, 1, s->arrayLayers,
                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
     transitionLayout(cb_, t->image, t->aspect, 0, 1, t->arrayLayers,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
     s->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     t->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
@@ -2181,13 +2254,14 @@ bool VulkanDevice::Impl::recordImageUpload(
     VkCommandBuffer cb = uploadCbs[frame];
     transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
                      VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uploadQueueFlags);
     vkCmdCopyBufferToImage(cb, staging, image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            static_cast<u32>(regions.size()), regions.data());
     transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     uploadQueueFlags);
     return true;
 }
 
@@ -2339,6 +2413,20 @@ VulkanDevice::VulkanDevice() : impl { std::make_unique<Impl>() } {}
 VulkanDevice::~VulkanDevice() {
     if (impl->device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(impl->device);
+        // A frame cut short by the quit leaves its graphics / compute /
+        // upload command buffers RECORDING (begun, never submitted):
+        // destroying what they reference is illegal and freeing them
+        // took the driver down at exit. Idle reached, nothing is pending,
+        // so every pool resets cleanly.
+        for (VkCommandPool pool : { impl->commandPool, impl->computePool,
+                                    impl->transferPool, impl->uploadPool }) {
+            if (pool != VK_NULL_HANDLE) {
+                vkResetCommandPool(impl->device, pool, 0);
+            }
+        }
+        impl->frameActive = false;
+        impl->uploadRecording = false;
+        impl->computeRecording = false;
 
         for (auto& [id, fence] : impl->fences) {
             vkDestroyFence(impl->device, fence, nullptr);
@@ -3151,12 +3239,15 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
     info.usage = usage;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // Same CONCURRENT policy as buffers (async compute reads/writes).
-    const std::array<u32, 2> shareFamilies { d.graphicsFamily,
-                                             d.computeFamily };
+    // Same CONCURRENT policy as buffers (async compute reads/writes, the
+    // upload queue writes): an EXCLUSIVE image touched from the upload
+    // family without an ownership transfer is undefined.
+    const std::array<u32, 3> shareFamilies { d.graphicsFamily,
+                                             d.computeFamily,
+                                             d.transferFamily };
     if (d.asyncComputeAvailable) {
         info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = 2;
+        info.queueFamilyIndexCount = d.uploadQueueAvailable ? 3 : 2;
         info.pQueueFamilyIndices = shareFamilies.data();
     }
 
@@ -4394,6 +4485,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                 asyncFamily = i;
             }
         }
+        d.computeQueueFlags = families[asyncFamily].queueFlags;
     }
     // Upload (transfer) family: transfer-capable and distinct from both
     // graphics and compute. Prefer a TRANSFER-ONLY family (a real DMA
@@ -4425,6 +4517,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                 uploadFamily = i;
             }
         }
+        d.uploadQueueFlags = families[uploadFamily].queueFlags;
     }
 
     // Timeline semaphores (core 1.2, an enable-gated feature) are the

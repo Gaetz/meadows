@@ -1064,3 +1064,33 @@ devient PAR ÉLÉMENT — l'Eau (sort d'élément Eau, ou script contenant
 avant tout coût ; une action Eau queue-ée par script est ignorée sans
 sim) ; Feu, Terre, Vent ne demandent que le sol (physique + terrain),
 dans tous les mondes. Les voyages de carte restent sandbox.
+
+### Crash au lancement du mode histoire (2026-10-01) — le driver Vulkan, pas le feu
+Rapport dev : `VkResult -4` (DEVICE_LOST) en rafale puis 0xC0000005 à
+l'entrée du mode histoire, juste après le bake de brume au village. Pour
+reproduire sans la main du dev : override de boot
+`MEADOWS_BOOT=story|sandbox` (le clic « Entrer dans le monde » scripté
+au moment où le warmup révèle : `setSandboxMode` + `enterPlayMode`) et
+`MEADOWS_BOOT_SECONDS=N` (quitte N s après). Pièges rencontrés : le jeu
+démarre en sandbox et c'est le clic Story qui bascule et téléporte au
+village ; le build DEBUG bake les 17 AO de végétation (≥ 2 min chacun
+ici) faute de cache `data/cache/ao` à côté de l'exe — le dev lance la
+RELEASE (101 entrées de cache) ; recopier le cache suffit.
+Diagnostic : 1 run release sur 4 plante dans `nvoglv64.dll` à l'offset
+`e100f4` — le MÊME que quatre dumps des 14/09, 15/09 et 28/09 (journal
+d'événements Windows), donc antérieur à tout le chantier ESPRITS ; le
+crash du dev (offset `fa1025`, device lost) en est une variante. La
+couche de validation (build debug) le disait depuis le début : sur la
+file d'upload (famille transfer-only) les transitions d'image d'upload
+portaient des stages FRAGMENT/COMPUTE et les images, CONCURRENT
+graphics+compute seulement, y étaient écrites sans transfert de
+propriété ; sur la file compute, des barrières tampon avec des stages
+VERTEX/FRAGMENT. Correctif backend : `clampStagesToQueue` (les stages
+que la famille ne sait pas exécuter tombent, avec leurs bits d'accès ;
+vide → ALL_COMMANDS), `transitionLayout(..., queueCaps)` partout,
+`VulkanCommandBuffer::queueCaps()` (compute vs graphics), images
+partagées avec la famille d'upload, et au teardown un reset des pools
+avant les frees (un cb resté en enregistrement à la fermeture). Après :
+validation propre en jeu (reste un avertissement d'attribut de vertex
+non consommé et deux messages de teardown dans vksmoke, préexistants).
+Réf. durable : docs/RENDERING.md §1.2 (file d'upload) et leçon 17.

@@ -23,6 +23,7 @@
 #include "game/scenes/LandscapeScene.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <unordered_set>
 #include <chrono> // Save/load timing baselines
@@ -1078,6 +1079,20 @@ void LandscapeScene::setupWorldAndStreaming() {
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
     mode = SceneMode::Spectator; // fresh on (re-)enter; Play set later if a save
     sceneEditor.deselect();
+    // The dev boot override (the header): the mode pick the menu would
+    // make, before the warmup arms.
+    if (const char* boot = std::getenv("MEADOWS_BOOT"); boot && *boot) {
+        const str pick { boot };
+        if (pick == "sandbox" || pick == "story") {
+            bootPlayPending = true;
+            bootSandbox = pick == "sandbox";
+            if (const char* seconds = std::getenv("MEADOWS_BOOT_SECONDS")) {
+                bootQuitSeconds = static_cast<f32>(std::atof(seconds));
+            }
+            LOG_INFO("Boot override: {} (quit after {:.0f} s)", pick,
+                     bootQuitSeconds);
+        }
+    }
     // The warmup re-arms on every (re-)enter — UNLESS the sandbox boot
     // above already armed it with the probed spawn: re-arming here
     // would clobber the PlaceSpawn step and skip the spawn validation.
@@ -1302,6 +1317,13 @@ void LandscapeScene::updateCameraFarPlane() {
 void LandscapeScene::update(f32 dt) {
     frameProbe.beginFrame(); // ends in render() — one probe per frame
     timeSeconds += dt;
+    if (bootQuitClock > 0.0f) {
+        bootQuitClock -= dt;
+        if (bootQuitClock <= 0.0f) {
+            LOG_INFO("Boot override: time is up, quitting");
+            engine->requestQuit();
+        }
+    }
     updateCameraFarPlane(); // tracks the live view-radius slider
     // Mesh path: pump async residency (worker decodes -> main-thread
     // uploads, §7), then extract this frame's snapshot from the world.
@@ -2765,6 +2787,19 @@ void LandscapeScene::updateWarmup(f32 rawDt) {
                 warmupPhase = WarmupPhase::Idle;
                 if (warmupSoft) {
                     softVeilCooldown = 3.0f; // no border strobing
+                }
+                if (bootPlayPending && !warmupSoft) {
+                    // The scripted "Enter the world" click (UiRouter's
+                    // play-story / play-sandbox, verbatim).
+                    bootPlayPending = false;
+                    setSandboxMode(bootSandbox);
+                    screenStack.closeAll();
+                    if (mode != SceneMode::Play) {
+                        enterPlayMode();
+                    }
+                    if (bootQuitSeconds > 0.0f) {
+                        bootQuitClock = bootQuitSeconds;
+                    }
                 }
             }
         }

@@ -922,6 +922,15 @@ private:
     // Consumed (queued into the SaveController, file deleted) on the
     // first onEnter — see the constructor.
     str bootLoadSlot;
+    // Dev boot override, from the environment: MEADOWS_BOOT = "story" |
+    // "sandbox" enters Play by itself the moment the warmup reveals the
+    // world (the main-menu click, scripted), MEADOWS_BOOT_SECONDS = N
+    // quits N seconds later — the smoke of the REAL scene, no hand on
+    // the mouse (the headless suite never reaches the GPU paths).
+    bool bootPlayPending { false };
+    bool bootSandbox { false };
+    f32 bootQuitSeconds { 0.0f };
+    f32 bootQuitClock { 0.0f };
 
     // World warmup — the ONE state machine behind every loading veil
     // (boot, sandbox entry, travel, the spectator catch-up). Phases run
