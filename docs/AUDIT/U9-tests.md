@@ -25,13 +25,13 @@ MasterNetwork, FluvialErosion, HeightField, DungeonSpace.
 
 | Commande | Contenu | Debug | Release |
 |---|---|---|---|
-| `meadows-tests -tse=slow` (ctest `meadows-fast`) | tout sauf la suite slow — **la course par brique** | ~9 s | ~3 s |
+| `meadows-tests -tse=slow` (ctest `meadows-fast`) | tout sauf la suite slow — **avant chaque commit** | ~9 s | ~3 s |
 | `meadows-tests -ts=slow` (ctest `meadows-slow`) | les bakes et les sims | ~10 min | ~65 s |
-| `meadows-tests` (ctest `meadows`) | tout — avant commit | ~10 min | **~67 s** |
+| `meadows-tests` (ctest `meadows`) | tout — **avant un push** | ~10 min | **~67 s** |
 | `meadows-tests -sf=*Fire*,*Spirit*` | filtre par fichier source (doctest) | selon | selon |
 
-Règle : la suite complète reste le passage obligé AVANT COMMIT, lancée
-depuis l'exécutable **Release** (`cmake-build-release-visual-studio/
+Règle (dev, 2026-10-01) : la rapide avant chaque COMMIT, la complète
+avant un PUSH, lancée depuis l'exécutable **Release** (`cmake-build-release-visual-studio/
 tests/meadows-tests.exe`, 67 s mesurés contre 618 s en Debug : le bake de
 donjon est dix fois plus lent non optimisé). Un nouveau test qui
 dépasse quelques secondes va dans la suite slow, ou mieux, réduit sa
