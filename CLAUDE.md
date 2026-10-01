@@ -250,6 +250,11 @@ buildable at all times. macOS optional later.
 Keep `gameplay/`, `world/`, `quest/`, `script/`, `data/` free of any
 `rhi/`, `render/`, or backend includes; `engine/*` never includes `data/*`
 (Forms are mapped to plain params in world/gameplay/runtime code).
+The real dependency stack, measured: `data` -> `gameplay` -> `world` ->
+`script`/`quest` -> `game` (the spawner wires GAS components, so world
+sits ABOVE gameplay). Layer audit against Gregory's runtime architecture
+and the remaining cycles: `docs/ARCHITECTURE-LAYERS.md`, replayable with
+`python tools/scripts/layers_audit.py`.
 
 ---
 
