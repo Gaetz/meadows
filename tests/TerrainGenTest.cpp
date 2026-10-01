@@ -5,6 +5,10 @@
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // Stage S1 (macro synthesis): elevation tiers, terracing, coast profile.
 // Everything here must be deterministic — the sandbox bakes tiles from
 // these functions and caches the bytes.
@@ -782,3 +786,5 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
         }
     }
 }
+
+TEST_SUITE_END();

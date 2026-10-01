@@ -19,6 +19,10 @@
 #include "world/dungeon/DungeonRecords.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 using namespace world;
 
 namespace {
@@ -321,3 +325,5 @@ TEST_CASE("dungeon records: re-Accept updates live records and disables "
     }
     CHECK(listedIn == 1);
 }
+
+TEST_SUITE_END();

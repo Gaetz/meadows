@@ -12,6 +12,33 @@ zéro `sleep`). Les trous réels sont : le **seam RenderSnapshot** à peine
 effleuré, **aucun garde-fou sur l'ordre des ordinaux de réflexion** dans le
 binaire cuit, et de la **duplication de fixtures** massive.
 
+## Deux vitesses : la suite « slow » (2026-10-01)
+
+Mesure (`--duration=true`, Debug, machine libre) : 778 cas, 618 s, dont
+748 cas sous la seconde qui totalisent **19 s** ; les trois TU de
+donjon (bake, nav, records) font 505 s à eux seuls (un cas, « same seed
+replays bit for bit », 240 s), terrain/eau ~60 s. Les dix TU qui
+dépassent 3 s sont donc enveloppés dans une **doctest suite `"slow"`**
+(`TEST_SUITE_BEGIN("slow")` … `TEST_SUITE_END()`) : DungeonBake,
+DungeonNav, DungeonRecords, TileBake, WaterSim, TerrainGen,
+MasterNetwork, FluvialErosion, HeightField, DungeonSpace.
+
+| Commande | Contenu | Debug | Release |
+|---|---|---|---|
+| `meadows-tests -tse=slow` (ctest `meadows-fast`) | tout sauf la suite slow — **la course par brique** | ~9 s | ~3 s |
+| `meadows-tests -ts=slow` (ctest `meadows-slow`) | les bakes et les sims | ~10 min | ~65 s |
+| `meadows-tests` (ctest `meadows`) | tout — avant commit | ~10 min | **~67 s** |
+| `meadows-tests -sf=*Fire*,*Spirit*` | filtre par fichier source (doctest) | selon | selon |
+
+Règle : la suite complète reste le passage obligé AVANT COMMIT, lancée
+depuis l'exécutable **Release** (`cmake-build-release-visual-studio/
+tests/meadows-tests.exe`, 67 s mesurés contre 618 s en Debug : le bake de
+donjon est dix fois plus lent non optimisé). Un nouveau test qui
+dépasse quelques secondes va dans la suite slow, ou mieux, réduit sa
+géométrie (`voxelSize` grossier, grille 6×6) comme `mineParams`. Piste
+non prise : partager un bake de donjon par graine entre les cas des
+trois TU (505 s → ~150 s).
+
 ## Points forts (pas d'action)
 
 - **Déterminisme §8** : chaque système probabiliste seed explicitement —

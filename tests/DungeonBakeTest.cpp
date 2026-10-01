@@ -4,6 +4,10 @@
 
 #include "engine/dungeon/DungeonBake.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 using namespace dungeon;
 
 namespace {
@@ -116,3 +120,5 @@ TEST_CASE("dungeon bake: the exit door hugs the entrance room's outer wall") {
     CHECK(r.entrancePos.y < 1.0f);
     CHECK(r.entrancePos.y > -1.0f);
 }
+
+TEST_SUITE_END();

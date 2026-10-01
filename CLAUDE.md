@@ -424,6 +424,11 @@ bespoke faction subsystem parallel to tags.
   serialized) so saves and replays are reproducible.
 - Tests for the data model, plugin resolver, and save layering are
   **mandatory** — these are the systems where silent bugs are most expensive.
+- **Two test speeds** (`docs/AUDIT/U9-tests.md`): `meadows-tests
+  -tse=slow` (~9 s in Debug) per brick; the whole suite before a commit,
+  run from the **Release** build (the "slow" doctest suite holds the
+  dungeon bakes and the terrain/water sims, minutes in Debug). A new
+  test that takes seconds joins the `slow` suite or shrinks its geometry.
 
 ---
 

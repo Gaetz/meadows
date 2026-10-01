@@ -5,6 +5,10 @@
 
 #include "engine/terrain/generation/FluvialErosion.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // Stage S2 (fastscape stream power): the implicit solver must be
 // deterministic, respect base level, and grow dendritic drainage out of a
 // smooth uplift bump — the property that separates eroded ranges from
@@ -337,3 +341,5 @@ TEST_CASE("sediment keeps a floor under deep flooded cells") {
     }
     CHECK(violations == 0);
 }
+
+TEST_SUITE_END();

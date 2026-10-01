@@ -6,6 +6,10 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/render/landscape/HeightField.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // The shared height pyramid (chantier économie, E3): worker-filled
 // camera-centered grids the coarse visual consumers sample instead of
 // pointwise terrain::height(). Contracts pinned here: exact equality at
@@ -121,3 +125,5 @@ TEST_CASE("height field: content events re-fill the touched level") {
     }
     CHECK(field.snapshot() != before);
 }
+
+TEST_SUITE_END();

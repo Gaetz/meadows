@@ -4,6 +4,10 @@
 
 #include "engine/dungeon/SpaceGraph.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 using namespace dungeon;
 
 namespace {
@@ -134,3 +138,5 @@ TEST_CASE("dungeon space: an impossible fit returns an empty graph, no crash") {
     const SpaceGraph g = buildSpaceGraph(mission, p);
     CHECK(g.rooms.empty());
 }
+
+TEST_SUITE_END();

@@ -163,6 +163,11 @@ target_precompile_headers(meadows-tests PRIVATE
 # Main.cpp defines DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN before the include.
 set_source_files_properties(Main.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 add_test(NAME meadows COMMAND meadows-tests)
+# The suite in two speeds (docs/AUDIT/U9-tests.md): "fast" = everything
+# but the "slow" doctest suite (bakes and sims, minutes in Debug), the
+# per-brick run; "slow" = those alone. `meadows` stays the whole thing.
+add_test(NAME meadows-fast COMMAND meadows-tests -tse=slow)
+add_test(NAME meadows-slow COMMAND meadows-tests -ts=slow)
 
 # The §2.10 link lock (audit U9-3): links the ENTIRE sim (whole-archive)
 # WITHOUT meadows-render — any sim object referencing a render/rhi/GL symbol

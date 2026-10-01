@@ -4,6 +4,10 @@
 
 #include "engine/terrain/generation/MasterNetwork.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // Stage 0 — the regional master hydrology (fleuve courses with TRUE
 // drainage areas, routed on the analytic macro). Purity and the
 // structural contracts; the seed-1337 look lives in the hidden
@@ -189,3 +193,5 @@ TEST_CASE("master imprint: carves a channel, never dams, protects it") {
     CHECK(m.height == m2.height);
     CHECK(keep == keep2);
 }
+
+TEST_SUITE_END();

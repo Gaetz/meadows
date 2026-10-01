@@ -8,6 +8,10 @@
 #include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // Sandbox tiles: deterministic bakes, the stage-1/stage-2 seam, and
 // adjacent tiles that blend smoothly through their shared margin ring
 // inside height().
@@ -720,3 +724,5 @@ TEST_CASE("map slices agree in their shared band") {
         }
     }
 }
+
+TEST_SUITE_END();

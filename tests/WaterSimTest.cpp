@@ -5,6 +5,10 @@
 
 #include "engine/terrain/WaterSim.hpp"
 
+// Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
+// the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
+TEST_SUITE_BEGIN("slow");
+
 // The real-time windowed water sim (option C): kernel physics, scroll
 // mechanics, determinism, and the perf premise — all headless on
 // synthetic HeightFns. The offline solveSteadyWater is the equilibrium
@@ -1117,3 +1121,5 @@ TEST_CASE("water sim: a draining source releases the pin on its disc, an inflow 
     stepWindow(state, params, {}, 10);
     CHECK(state.depth[center] == doctest::Approx(full));
 }
+
+TEST_SUITE_END();
