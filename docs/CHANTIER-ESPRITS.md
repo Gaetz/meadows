@@ -1094,3 +1094,18 @@ avant les frees (un cb resté en enregistrement à la fermeture). Après :
 validation propre en jeu (reste un avertissement d'attribut de vertex
 non consommé et deux messages de teardown dans vksmoke, préexistants).
 Réf. durable : docs/RENDERING.md §1.2 (file d'upload) et leçon 17.
+
+### Crash à la fermeture (2026-10-01) — un free une frame trop tôt
+Les deux messages de teardown restants (« vkDestroyBuffer : buffer in
+use by VkCommandBuffer », « vkFreeCommandBuffers : in use ») et le
+segfault de sortie de vksmoke / des runs debug (dans la couche de
+validation elle-même) avaient une seule cause : `createTexture` avec
+pixels soumet sa copie en asynchrone SANS fence (`immediateSubmit(wait
+= false)`) et parque son staging et son cb sous `frameCounter` ; quand
+l'appel tombe ENTRE deux frames (chargement de scène, atlas de police du
+smoke), la fence de ce compteur est déjà soumise et ne couvre pas la
+copie — libérée au cycle suivant pendant qu'elle s'exécute encore.
+`Impl::asyncParkFrame()` parque une frame plus tard hors frame (dans une
+frame, la fence de la frame courante suit la copie sur la même file).
+Avec le reset des pools au teardown : vksmoke passe de 18 PASS +
+segfault à 40 PASS et « Vulkan validation: clean run (0 message) ».

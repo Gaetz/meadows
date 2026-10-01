@@ -890,6 +890,16 @@ the `GpuOcclusion … clip` warning must never appear.
     is never noise; read the first one. And `MEADOWS_BOOT=story|sandbox`
     + `MEADOWS_BOOT_SECONDS=N` boot the real scene unattended, so a
     crash seen in play can be reproduced and stress-run from a shell.
+    Second half of the same lesson: **an unfenced async submit made
+    BETWEEN frames is covered only by the NEXT frame's fence.** The
+    deferred-free queue parked such a copy's staging and command buffer
+    under the current frame counter, whose slot fence had already been
+    submitted — freed one frame too early at every scene load ("buffer
+    in use"), and the validation layer itself crashed at exit on it.
+    `asyncParkFrame()` parks one frame later outside a frame; the pools
+    are reset after the teardown idle (a buffer left recording by a
+    quit). vksmoke went from a segfault halfway through to 40 PASS and
+    a clean validation run.
 
 ## 6. Roadmap (consolidated next steps)
 

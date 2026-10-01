@@ -920,6 +920,16 @@ struct VulkanDevice::Impl {
                            u64 size, vector<VkBufferImageCopy> regions);
     bool recordUpload(VkBuffer dst, const void* data, u64 size,
                       u64 dstOffset);
+    // The frame a resource consumed by an UNFENCED async submit is parked
+    // under. Inside a frame, this frame's fence (submitted after it on
+    // the same queue) covers it. BETWEEN frames the last fence was
+    // already submitted: only the NEXT frame's fence orders behind it,
+    // so the park moves one frame later — freeing under the previous
+    // one raced the copy (the layer's "buffer in use" at every scene
+    // load, and a driver crash at exit).
+    u64 asyncParkFrame() const {
+        return frameActive ? frameCounter : frameCounter + 1;
+    }
 
     bool multiDrawIndirect { false }; // device feature, mirrored in caps
     bool textureCompressionBC { false }; // device feature, mirrored in caps
@@ -2081,7 +2091,7 @@ bool VulkanDevice::Impl::immediateSubmit(F&& record, bool wait) {
                                            VK_NULL_HANDLE),
                              "vkQueueSubmit(transfer)");
         if (ok) {
-            pendingCmds.push_back({ cb, frameCounter });
+            pendingCmds.push_back({ cb, asyncParkFrame() });
         } else {
             vkFreeCommandBuffers(device, transferPool, 1, &cb);
         }
@@ -3340,7 +3350,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
                         },
                         /*wait=*/false);
                     d.pendingBuffers.push_back(
-                        { staging, stagingAlloc, d.frameCounter });
+                        { staging, stagingAlloc, d.asyncParkFrame() });
                     tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                     tex.offlineMips = true;
                 }
@@ -3408,7 +3418,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
                 },
                 /*wait=*/false);
             d.pendingBuffers.push_back(
-                { staging, stagingAlloc, d.frameCounter });
+                { staging, stagingAlloc, d.asyncParkFrame() });
             tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
         }
