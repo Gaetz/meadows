@@ -1446,6 +1446,48 @@ void LandscapeScene::update(f32 dt) {
     // the (still open) pause menu kept the stale sun.
     renderer.skySystem().timeOfDay =
         static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
+    // Map crossing (chantier PAYSAGE N1): the focus left the active
+    // rect — switch maps through the travel path (veil, background
+    // bake if the neighbour is cold). Checked every frame, cheap;
+    // never while a warmup or a travel is pending. NOT inside the
+    // simPaused gate: the spectator camera flies across lines with
+    // the sim paused — only an open menu holds it.
+    if (!uiPaused && sandboxActive && bakeStreamer && !pendingMapTravel &&
+        warmupPhase == WarmupPhase::Idle) {
+        const auto& sandbox = renderer.terrainParams().sandbox;
+        if (sandbox && sandbox->grid.valid) {
+            const Vec3 at =
+                (mode == SceneMode::Play) && playerController.body()
+                    ? playerController.body()->position()
+                    : flyCamera.camera.position;
+            const f32 size = sandbox->grid.mapSize;
+            const f32 minX = static_cast<f32>(activeMapX) * size;
+            const f32 minZ = static_cast<f32>(activeMapZ) * size;
+            const f32 out = 8.0f; // hysteresis past the line
+            const i32 dx = at.x < minX - out          ? -1
+                           : at.x > minX + size + out ? 1
+                                                      : 0;
+            const i32 dz = at.z < minZ - out          ? -1
+                           : at.z > minZ + size + out ? 1
+                                                      : 0;
+            if (dx != 0 || dz != 0) {
+                pendingMapTravel = PendingMapTravel {
+                    activeMapX + dx, activeMapZ + dz, true,
+                    Vec2 { at.x, at.z }
+                };
+            }
+        }
+    }
+    // A queued crossing (the check above, a pass trigger's Lua, the
+    // console): execute at this safe point, outside any ECS iteration,
+    // in every mode — the sim-paused section below only reaches it in
+    // Play.
+    if (pendingMapTravel && !uiPaused) {
+        const PendingMapTravel travel = *pendingMapTravel;
+        pendingMapTravel.reset();
+        travelToMap(travel.mapX, travel.mapZ,
+                    travel.hasArrival ? &travel.arrival : nullptr);
+    }
     if (!simPaused) {
         // Interaction prompts + the travel fade state machine.
         interaction.update(dt, makeInteractionContext());
@@ -1543,36 +1585,6 @@ void LandscapeScene::update(f32 dt) {
                                           minZ + 2.0f * size);
                     ++tp.contentStamp;
                     tp.sandbox = next;
-                }
-            }
-        }
-        // Map crossing (chantier PAYSAGE N1): the focus left the
-        // active rect — switch maps through the travel path (veil,
-        // background bake if the neighbour is cold). Checked every
-        // frame, cheap; never while a warmup or a travel is pending.
-        if (sandboxActive && bakeStreamer && !pendingMapTravel &&
-            warmupPhase == WarmupPhase::Idle) {
-            const auto& sandbox = renderer.terrainParams().sandbox;
-            if (sandbox && sandbox->grid.valid) {
-                const Vec3 at =
-                    (mode == SceneMode::Play) && playerController.body()
-                        ? playerController.body()->position()
-                        : flyCamera.camera.position;
-                const f32 size = sandbox->grid.mapSize;
-                const f32 minX = static_cast<f32>(activeMapX) * size;
-                const f32 minZ = static_cast<f32>(activeMapZ) * size;
-                const f32 out = 8.0f; // hysteresis past the line
-                const i32 dx = at.x < minX - out          ? -1
-                               : at.x > minX + size + out ? 1
-                                                          : 0;
-                const i32 dz = at.z < minZ - out          ? -1
-                               : at.z > minZ + size + out ? 1
-                                                          : 0;
-                if (dx != 0 || dz != 0) {
-                    pendingMapTravel = PendingMapTravel {
-                        activeMapX + dx, activeMapZ + dz, true,
-                        Vec2 { at.x, at.z }
-                    };
                 }
             }
         }
