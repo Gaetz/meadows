@@ -1412,6 +1412,34 @@ design à chaque brique de génération et se ré-épingle.
   masquées tous les 1-2 km. Jugement dev en jeu : EN ATTENTE. L'eau
   (lacs + étangs) reste le sujet suivant.
 
+- **2026-10-05 (nuit) — « Tu as mesuré les montées et descentes du mode
+  histoire ? » Non : mesuré maintenant.** Nouvel instrument `rhythm
+  diagnostic` (pente moyenne par pas de 10 m, inversions par km avec
+  1,5 m d'hystérésis, relief médian par 250 m, montée sur 100 m p95/p5,
+  amplitude par km, part du sol > 100 m au-dessus de son minimum local
+  à 2 km), sur quatre transects de 6 km. **Le mode histoire autour de
+  son départ (32, 400)** : pente 24,8 %, 6,5 inversions/km, relief 38,8 m,
+  montée p95 +36 / p5 −39 m, amplitude/km 97 m (max 187), **32 % du sol
+  à > 100 m de son minimum local** — c'est une région riche en montagnes
+  masquées (ailleurs le même mode histoire donne 19 %, 28 m, 6,6 %).
+  Sandbox v72 autour du spawn, avant retouche : 17,6 %, 9,3/km, 23,7 m,
+  70 m, 9,7 %. Deux retouches : masque des montagnes histoire 0,45-0,75
+  → **0,36-0,62** (la densité du départ histoire, pas sa moyenne), et le
+  comblement des creux plafonné à **20 m** (un creux entre deux crêtes
+  est une vallée qu'on descend, pas un étang). Après : **pente 20,6 %,
+  7,3/km, relief 30,2 m, montée p95 +32 / p5 −38, amplitude/km 91 m (max
+  195), 19 % du sol > 100 m** ; carte entière : versant 97,8 %, relief
+  médian 68 m, colline ≤ 1,5 km **8/9**, ouvert ≥ 30 azimuts 3/9 (les
+  montagnes ferment les vues), 107 lacs + 66 étangs, spawn 7,2 m / 30 m.
+  Hash 10607966812941411636 (v72 inchangé). Tests : calme > 25 %, bande
+  partagée des tuiles fenêtrées < 10 m (le comblement lit une moyenne de
+  fenêtre : la divergence qui compte est celle des lignes de carte, à
+  mesurer en N4). Reste pour le feel : l'écart résiduel avec le départ
+  histoire (pente 21 vs 25 %, prominence 19 vs 32 %) se règle par
+  `storyMountainMask*` et `storyMountainAmplitude` ; **l'eau est le
+  sujet suivant** (107 lacs : les creux conservés deviennent des lacs
+  faute de drainage — une passe de percée d'exutoires, pas un remplissage).
+
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 
 **Arbitrages** : cartes **2×2 tranches = 8 192 m** (échelle Skyrim), bandes

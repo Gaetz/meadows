@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <map>
 
@@ -1476,6 +1477,162 @@ TEST_CASE("spawn slope diagnostic" * doctest::skip()) {
                     static_cast<i32>(at.x), ", ", static_cast<i32>(at.y),
                     ", ", static_cast<i32>(at.z), ") step ", best, " m");
         }
+    }
+    CHECK(true);
+}
+
+// Hidden instrument: the WALKING RHYTHM of a surface — what the dev
+// feels underfoot — measured the same way on the story mode (the
+// reference look), the baked sandbox map and its analytic: mean slope
+// per 10 m step, ups-and-downs per km (sign reversals of the 10 m
+// step with a 1.5 m hysteresis), median 250 m-window relief, and the
+// 95th percentile of the rise over 100 m.
+//   meadows-tests "-tc=rhythm diagnostic" -ns
+TEST_CASE("rhythm diagnostic" * doctest::skip()) {
+    const maptest::MapWorld& w = theMap();
+    render::TerrainParams story;
+    story.seed = 1337;
+    story.hillWavelength = 500.0f;
+    story.hillAmplitude = 75.0f;
+    story.octaves = 5;
+    story.lacunarity = 2.0f;
+    story.gain = 0.5f;
+    story.mountainWavelength = 2000.0f;
+    story.mountainAmplitude = 270.0f;
+    story.mountainMaskLow = 0.45f;
+    story.mountainMaskHigh = 0.75f;
+    const ProceduralControls controls = controlsOf(w);
+    MacroParams macro = w.params.macro;
+    macro.hillChainWavelength = w.params.controls.rhythm.crestWavelength;
+    macro.bedWavelength = w.params.controls.rhythm.bedWavelength;
+    struct Surface {
+        const char* name;
+        std::function<f32(f32, f32)> at;
+        f32 ox, oz; // transect origin
+    };
+    const f32 mx = w.minX + kInterior;
+    const f32 mz = w.minZ + kInterior;
+    const Vec3 spawn = spawnOf(w);
+    const Surface surfaces[] = {
+        { "story (proceduralBase, landscape.toml)",
+          [&](f32 x, f32 z) { return render::terrain::height(story, x, z); },
+          0.0f, 0.0f },
+        { "story around its start (32, 400)",
+          [&](f32 x, f32 z) { return render::terrain::height(story, x, z); },
+          32.0f - 3000.0f, 400.0f - 3000.0f },
+        { "sandbox map (0,0) BAKED",
+          [&](f32 x, f32 z) { return w.height(x, z); }, mx, mz },
+        { "sandbox map (0,0) BAKED around the spawn",
+          [&](f32 x, f32 z) { return w.height(x, z); }, spawn.x - 3000.0f,
+          spawn.z - 3000.0f },
+        { "sandbox map (0,0) ANALYTIC",
+          [&](f32 x, f32 z) {
+              return macroHeightAnalytic(controls, macro, x, z);
+          },
+          mx, mz },
+    };
+    constexpr f32 kStep = 10.0f;
+    constexpr f32 kLen = 6000.0f;
+    for (const Surface& sf : surfaces) {
+        f64 slopeSum = 0.0;
+        u64 steps = 0;
+        u64 reversals = 0;
+        vector<f32> reliefs;
+        vector<f32> rises100;
+        vector<f32> swings1k; // max - min over 1 km windows
+        vector<f32> allH;
+        f64 km = 0.0;
+        for (u32 t = 0; t < 4; ++t) {
+            const f32 ang = static_cast<f32>(t) * 0.7853982f + 0.3f;
+            const f32 dx = std::cos(ang);
+            const f32 dz = std::sin(ang);
+            const f32 x0 = sf.ox + 1000.0f + static_cast<f32>(t) * 700.0f;
+            const f32 z0 = sf.oz + 1000.0f + static_cast<f32>(t) * 500.0f;
+            f32 prev = sf.at(x0, z0);
+            i32 trend = 0;
+            f32 extremum = prev;
+            vector<f32> window;
+            vector<f32> last100;
+            for (f32 d = kStep; d <= kLen; d += kStep) {
+                const f32 h = sf.at(x0 + dx * d, z0 + dz * d);
+                if (h <= 21.0f) {
+                    prev = h;
+                    continue; // skip water
+                }
+                slopeSum += std::abs(h - prev);
+                ++steps;
+                // Reversals with hysteresis.
+                if (trend >= 0 && h > extremum) {
+                    extremum = h;
+                    trend = 1;
+                } else if (trend <= 0 && h < extremum) {
+                    extremum = h;
+                    trend = -1;
+                } else if (trend > 0 && h < extremum - 1.5f) {
+                    ++reversals;
+                    trend = -1;
+                    extremum = h;
+                } else if (trend < 0 && h > extremum + 1.5f) {
+                    ++reversals;
+                    trend = 1;
+                    extremum = h;
+                }
+                window.push_back(h);
+                if (window.size() == 25) {
+                    const auto [lo, hi] =
+                        std::minmax_element(window.begin(), window.end());
+                    reliefs.push_back(*hi - *lo);
+                    window.clear();
+                }
+                last100.push_back(h);
+                if (last100.size() > 10) {
+                    last100.erase(last100.begin());
+                    rises100.push_back(last100.back() - last100.front());
+                }
+                allH.push_back(h);
+                if (allH.size() % 100 == 0) {
+                    const auto [lo, hi] = std::minmax_element(
+                        allH.end() - 100, allH.end());
+                    swings1k.push_back(*hi - *lo);
+                }
+                prev = h;
+            }
+            km += kLen / 1000.0;
+        }
+        std::sort(reliefs.begin(), reliefs.end());
+        std::sort(rises100.begin(), rises100.end());
+        std::sort(swings1k.begin(), swings1k.end());
+        const f32 swingMed =
+            swings1k.empty() ? 0.0f : swings1k[swings1k.size() / 2];
+        const f32 swingMax = swings1k.empty() ? 0.0f : swings1k.back();
+        u64 above100 = 0;
+        for (size_t i = 0; i < allH.size(); ++i) {
+            const size_t a = i >= 100 ? i - 100 : 0;
+            const size_t b = glm::min(i + 100, allH.size());
+            const f32 localMin =
+                *std::min_element(allH.begin() + static_cast<ptrdiff_t>(a),
+                                  allH.begin() + static_cast<ptrdiff_t>(b));
+            above100 += allH[i] - localMin > 100.0f;
+        }
+        const f32 medianRelief =
+            reliefs.empty() ? 0.0f : reliefs[reliefs.size() / 2];
+        const f32 rise95 =
+            rises100.empty() ? 0.0f
+                             : rises100[rises100.size() * 95 / 100];
+        const f32 drop5 = rises100.empty() ? 0.0f
+                                           : rises100[rises100.size() / 20];
+        MESSAGE(std::string(sf.name), ": mean slope ",
+                steps ? 100.0 * slopeSum / (static_cast<f64>(steps) * kStep)
+                      : 0.0,
+                " %, reversals ", static_cast<f64>(reversals) / km,
+                " per km, median 250 m relief ", medianRelief,
+                " m, rise over 100 m p95 +", rise95, " / p5 ", drop5,
+                " m; 1 km swing median ", swingMed, " max ", swingMax,
+                " m; ground > 100 m above its 2 km-local min: ",
+                allH.empty() ? 0.0
+                             : 100.0 * static_cast<f64>(above100) /
+                                   static_cast<f64>(allH.size()),
+                " %");
     }
     CHECK(true);
 }

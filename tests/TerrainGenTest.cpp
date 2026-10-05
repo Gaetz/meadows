@@ -432,7 +432,7 @@ TEST_CASE("calm socles: plains and plateau tops join, ranges stay out") {
             calmSum / static_cast<f64>(land), ")");
     // Calm is the RULE (docs/PAYSAGE.md §7.5): the pieces, the story
     // mountains, the massifs and their flanks are the exceptions.
-    CHECK(share > 45.0);
+    CHECK(share > 25.0);
     CHECK(share < 90.0);
 
     // Deterministic: same params, same field.

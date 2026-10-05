@@ -127,10 +127,14 @@ struct RhythmParams {
     // dev wants): ridged ranges at 2 km masked by a slow field, so
     // the plain stays the rule and a range is a place. Added to the
     // base lift (the erosion keep protects it, calm leaves it).
+    // Mask thresholds measured against the story's START region (the
+    // `rhythm diagnostic`: a third of the ground there stands 100 m
+    // above its 2 km-local minimum) — the story's own 0.45-0.75 gives
+    // that only where its noise happens to be rich.
     f32 storyMountainWavelength { 2000.0f };
     f32 storyMountainAmplitude { 270.0f };
-    f32 storyMountainMaskLow { 0.45f };
-    f32 storyMountainMaskHigh { 0.75f };
+    f32 storyMountainMaskLow { 0.36f };
+    f32 storyMountainMaskHigh { 0.62f };
 };
 
 // Sandbox controls: every field derives from ONE sample of the world
