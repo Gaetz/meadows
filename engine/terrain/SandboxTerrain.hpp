@@ -2,12 +2,14 @@
 
 #include "engine/terrain/generation/TerrainGen.hpp"
 
-// Sandbox world identity: the seed-derived control/macro parameters.
-// When TerrainParams.sandbox is set, the procedural fallback OUTSIDE
-// baked tiles becomes the analytic S1 macro (macroHeightAnalytic), so
-// FarTerrain silhouettes and not-yet-baked ground agree with the tiles
-// the streamer will bake there. Null = the legacy demo noise (the
-// existing world stays bit-identical).
+// Generated-world identity ("sandbox" = generated, as opposed to the
+// story demo noise): the seed-derived control/macro parameters, the map
+// lattice and the active map's overview. When TerrainParams.sandbox is
+// set, the procedural fallback OUTSIDE published slices becomes the
+// map overview where it exists, else the analytic S1 macro
+// (macroHeightAnalytic) — so FarTerrain silhouettes, unbaked maps and
+// not-yet-streamed ground agree with what the bake produces. Null = the
+// legacy demo noise (the story world stays bit-identical).
 
 namespace render {
 

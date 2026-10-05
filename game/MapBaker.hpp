@@ -37,8 +37,7 @@ struct MapBakeStats {
 // Bakes map (mapX, mapZ) into <cacheDir>/map_<mx>_<mz>/ (created).
 // `params` is the game's TileBakeParams (tileSize = the slice size);
 // the map window derives from it (tileSize * tilesPerSide, apron =
-// kBasinResolveMargin so every slice's canonical-basin window is
-// covered). Slices run on `jobs` workers when given (the map stage-1
+// kMapApron). Slices run on `jobs` workers when given (the map stage-1
 // is shared read-only), synchronously otherwise. `progress` (nullable)
 // is called from the calling thread as slices land: (done, total).
 // Cancellation: the JobSystem stop flag — a cancelled bake writes no

@@ -91,7 +91,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
 
 ```
 [étage 0] computeMasterNetwork — 128 m, super-cellule = LA carte (24 576 + apron 8 192 m = 321²), sur macroHeightAnalytic, mémo process
-[stage 1] bakeTileStage1 — 16 m, carte + apron kBasinResolveMargin 3 072 m = 1921² (~80 s)
+[stage 1] bakeTileStage1 — 16 m, carte + apron kMapApron 3 072 m = 1921² (~80 s)
    synthesizeMacro (contrôles sur lattice 64 m, biome par texel) → applyMapGridShape → imprintMasterChannels (fleuves CONSTRUITS avant érosion)
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
@@ -662,7 +662,7 @@ vérifiés par grep ; rien de proposé ici.
 | 4 | Champs eau de `TerrainRegion` (TRG3 : `waterSurface/Depth/Vel*/Flux`) | `TerrainBase.hpp`, `TerrainRegions.cpp` | « no writer, no reader » ; encore sérialisés/validés (`validWater`) ; lane `waterReserved0`, bindings 5/6 gelés ; `WaterSolve.hpp` dit « real-time NOT built » (faux) ; `WaterBodies.hpp` renvoie à `WaterInfoMap.cpp` (supprimé) |
 | 5 | `WorldspaceForm.edgeNorth/East/South/West` | `WorldForms.hpp` | mort-né (design v1 des bordures) ; `mapSize/mapSeed/seaLevel/snowLine/dominantBiome` écrits par `stageMapRecords` ou déclarés, **jamais lus** (le « tuning par worldspace » n'est pas câblé) |
 | 6 | `MacroParams.hillChainWavelength = 0` | `TerrainGen.hpp` | toujours écrasé ; doublon |
-| 7 | `kBasinResolveMargin`, `TileBakeParams.apron = 1536` + commentaires de tête de `TileBake.hpp`, `TerrainGen.hpp` (« two providers »), `TerrainBakeStreamer.hpp`, `SandboxTerrain.hpp` | — | vivants mais décrivent le composite 3×3 / les tuiles indépendantes / un second fournisseur de contrôles qui n'existent plus |
+| 7 | `kBasinResolveMargin` (nom), `TileBakeParams.apron = 1536` + commentaires de tête de `TileBake.hpp`, `TerrainGen.hpp` (« two providers »), `TerrainBakeStreamer.hpp`, `SandboxTerrain.hpp` | — | vivants mais décrivent le composite 3×3 / les tuiles indépendantes / un second fournisseur de contrôles qui n'existent plus |
 | 8 | `BiomeMapForm` / `.tbm` / `paintedIndexAt` | `BiomeMap.hpp`, `BiomeMapBuilder` | mécanisme complet, 0 record, aucun outil de peinture — dormant |
 | 9 | `startMeadowRadius/Fade` (distance à l'origine (0,0)) | `TerrainGen.cpp` | vestige du monde infini : le centre de la carte (0,0) est à 17,4 km de l'origine ; la sonde fait le travail par `biome == 0` |
 | 10 | `cooker terrain-pad` | `Main.cpp` | pad contre le **bruit démo story**, inapplicable aux cartes |
@@ -887,7 +887,7 @@ tuile et golden scatter inchangés) :
 - A1 génération : supprimer `kStage1Version` (orphelin) et réécrire le
   bloc de versions ; rafraîchir les en-têtes qui décrivent le composite
   3×3, les tuiles indépendantes et le « second fournisseur » de
-  contrôles ; renommer `kBasinResolveMargin` en apron de carte ; retirer
+  contrôles ; renommer `kBasinResolveMargin` en `kMapApron` ; retirer
   `WorldspaceForm.edge*` (mort-né) ; garder `mapSize/mapSeed/seaLevel/
   snowLine/dominantBiome` pour le palier C.
 - A2 eau : retirer `simMapA`/`uWaterSimA`/`waterSimUv()`/`display` ;
@@ -955,7 +955,7 @@ interactif → calibration en jeu.
 | `macroHeightAnalytic`, `proceduralBase` | macro S1 sans érosion (fallback, condition aux limites, étage 0) / fallback runtime (overview puis analytique) |
 | `MapGridSpec`, `applyMapGridShape`, `mapBorderStyleResolved`, `kMapBorder*` | grille de cartes, bordures v2 (lignes hachées Mer/Montagnes, méandre, veto) |
 | `kTileBakeVersion` 68 / `kMapBakeVersion` 1 / `kStage1Version` (orphelin) | versions du cache ; TRG3, TWB3, MOV1, TER1, TBM1 = formats |
-| `kBasinResolveMargin` 3 072 m | apron de la carte (nom hérité) ; `kFineErosionHalo` 192 m |
+| `kMapApron` 3 072 m (ex-`kBasinResolveMargin`) | apron de production de la carte ; `kFineErosionHalo` 192 m |
 | `tier`, `tierSpread` 0,35, `uplift`, `plateau`, `hardness` | étages, rampe de tier, orogenèse, dessus de plateau, lithologie |
 | `calm` / `gentle` / `trunk` / `reliefScale` | socle calme [0,1] / corridors + cols / fond de vallée maîtresse / multiplicateur des porteuses (clairières) |
 | `ValleyField` (φ, ψ), `trunkSpacing` 9 500, `colSpacing` 4 000, `rangeNeed` | vallées orientées, maîtresses (strates), cols garantis |

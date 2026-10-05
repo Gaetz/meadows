@@ -13,12 +13,7 @@
 
 namespace game {
 
-// E4a: the far-water provider's data pass — the lakes/rivers of every
-// cached .twb inside the square (visited tiles keep their REAL water
-// even far away), plus the master-network fleuves wherever no tile
-// was ever baked. Pure and worker-callable: file reads + the memoized
-// master network. Lakes are downsampled to ~64 m coarse masks.
-// Water sidecar next to a tile's .trg (lakes with their basin masks +
+// Water sidecar next to a slice's .trg (lakes with their basin masks +
 // river polylines) — the streamer's cache format, shared with the map
 // baker (docs/PAYSAGE.md §1.1).
 bool writeWaterFile(const std::filesystem::path& path,
@@ -28,6 +23,11 @@ bool readWaterFile(const std::filesystem::path& path,
                    vector<render::terraingen::Lake>& lakes,
                    vector<render::terraingen::River>& rivers);
 
+// The far-water provider's data pass: the lakes/rivers of every cached
+// .twb of the active map inside the square (baked slices keep their
+// REAL water even far away), plus the master-network fleuves wherever
+// no slice is cached yet. Pure and worker-callable: file reads + the
+// memoized master network. Lakes are downsampled to ~64 m coarse masks.
 // `grid`: the border-transition lattice — master-fleuve ribbons are
 // cut where a border reshaped the analytic ground they were routed on
 // (a sea arm drowned it, or a range buried it), so no course floats

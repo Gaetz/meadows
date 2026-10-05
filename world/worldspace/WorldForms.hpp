@@ -41,12 +41,9 @@ struct WorldspaceForm : data::Form {
     f32 snowLine { -1.0f };
     // Per-map character (phase-1 procedural maps): a BiomeForm guid.
     core::Guid dominantBiome;
-    // Edge style per side (0 = sea, 1 = ridges) — the generation mask
-    // the map bake imposes on its rim.
-    i32 edgeNorth { 0 };
-    i32 edgeEast { 0 };
-    i32 edgeSouth { 0 };
-    i32 edgeWest { 0 };
+    // Border styles are NOT per map: each border LINE is hashed from
+    // (seed, line identity) by the generator (TerrainGen
+    // mapBorderStyleResolved), so two neighbours agree by construction.
 
     REFLECT_BEGIN(WorldspaceForm, data::Form)
         REFLECT_FIELD(cellSize)
@@ -61,10 +58,6 @@ struct WorldspaceForm : data::Form {
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(snowLine)
         REFLECT_FIELD(dominantBiome)
-        REFLECT_FIELD(edgeNorth)
-        REFLECT_FIELD(edgeEast)
-        REFLECT_FIELD(edgeSouth)
-        REFLECT_FIELD(edgeWest)
     REFLECT_END()
 };
 

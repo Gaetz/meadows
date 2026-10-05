@@ -619,7 +619,7 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
     // A 1x1-slice map: the tile IS the map rect, so the map pipeline
     // applies unchanged — one stage-1, one hydrology, one finalize.
     // The apron only needs to COVER the hydrology window (rect +
-    // waterMargin); production maps widen it to kBasinResolveMargin
+    // waterMargin); production maps widen it to kMapApron
     // (game::bakeMap) so rim basins resolve fully — a bench tile
     // accepts window-clipped rim basins instead of a 6 km sim.
     TileBakeParams solo = params;

@@ -121,13 +121,12 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         return stats;
     }
 
-    // The global stage-1: same recipe, map-sized window. The apron must
-    // cover the widest per-slice composite request (the canonical-basin
-    // window, slice + kBasinResolveMargin) for every slice of the map.
+    // The global stage-1: same recipe, map-sized window, the production
+    // apron (rim basins resolve inside it; its rim is the base level).
     TileBakeParams mapParams = params;
     mapParams.tileSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
-    mapParams.apron = kBasinResolveMargin;
+    mapParams.apron = kMapApron;
     // The border-transition grid: pure function of the world seed and
     // the map lattice — nothing per-map to fill.
     if (mapParams.mapGrid.valid) {

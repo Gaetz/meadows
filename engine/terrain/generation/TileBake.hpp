@@ -12,23 +12,27 @@
 #include "engine/terrain/generation/ThermalErosion.hpp"
 #include "engine/terrain/generation/WaterSolve.hpp"
 
-// The pipeline for ONE sandbox tile, in TWO ORDERED STAGES (the
-// Peytavie 2019 / UE Water lesson: water is a LATER pass over the FINAL
-// terrain):
-//   stage 1 — terrain only, per tile, deterministic, cached;
-//   stage 2 — hydrology on the COMPOSED 3x3 neighbourhood terrain (the
-//   same blend the runtime shows), then carve/masks/ownership for the
-//   center tile. Two neighbours derive their shared-band water from the
-//   SAME composite, so levels and courses agree by construction —
-//   per-tile provisional hydrology floated over the blended ground.
+// The bake pipeline of ONE BOUNDED MAP (docs/PAYSAGE.md §1.3), in
+// ordered passes over the whole map (the Peytavie 2019 / UE Water
+// lesson: water is a LATER pass over the FINAL terrain):
+//   stage 1 — bakeTileStage1: macro + erosion on the map window
+//     (map rect + apron), once per map, deterministic;
+//   hydrology — extractMapHydrology: lakes/rivers/tiers routed ONCE on
+//     that single surface, so every slice carves toward the same water;
+//   slices — bakeMapSlice: fine upsample, fine erosion, carves, masks
+//     and the lake/river reconcile for ONE slice rect, in parallel.
+// bakeSoloTile is the same pipeline on a 1x1-slice map (benches/tests).
 //
-// Vocabulary: a baked "tile" ships as a runtime render::TerrainRegion
-// (tile + overlapMargin rect); the three halo widths are, inside out:
+// Vocabulary: a baked "slice" (historically "tile") ships as a runtime
+// render::TerrainRegion (slice + overlapMargin rect); the halo widths
+// are, inside out:
 //   overlapMargin — ring KEPT in the published region, shared with the
-//     neighbour bakes (height() blends it away by edge weight);
-//   waterMargin — how far past the tile the stage-2 hydrology window
-//     extends, so rivers/lakes continue across borders;
-//   apron — stage-1 simulation ring, cropped away.
+//     neighbour slices (height() blends it away by edge weight; slices
+//     of one map are bit-identical there by construction);
+//   waterMargin — how far past the map rect the hydrology window
+//     extends;
+//   apron — stage-1 simulation ring past the map rect, cropped away
+//     (kMapApron in production, see below).
 
 namespace render::terraingen {
 
@@ -48,9 +52,9 @@ struct BiomeErosion {
 struct TileBakeParams {
     u32 worldSeed { 1337 };
     f32 tileSize { 4096.0f };
-    // Extra simulated ring, cropped away. Sized against the RANGE
-    // wavelength: big massifs span tiles, the apron is what makes both
-    // sides carve (almost) the same valleys.
+    // Extra simulated ring past the map rect, cropped away; its rim is
+    // the erosion base level. This default is the bench/test value —
+    // game::bakeMap overrides it with kMapApron.
     f32 apron { 1536.0f };
     f32 overlapMargin { 64.0f };  // kept ring shared with neighbours
     // Erosion/hydrology grid resolution. This is the FREQUENCY of the
@@ -187,10 +191,10 @@ struct MapHydrology {
 };
 
 // `mapS1.sim` must cover `window` (bake the map stage-1 with apron >=
-// kBasinResolveMargin). No canonical basin resolution: there is no
-// cross-slice truncation inside a map — basins clipped at the MAP
-// window rim are identical for every slice (the edge mask makes the
-// rim sea/ridge).
+// waterMargin; production uses kMapApron). There is no cross-slice
+// truncation inside a map — basins clipped at the MAP window rim are
+// identical for every slice (the border transitions make the rim
+// sea/ridge).
 MapHydrology extractMapHydrology(const TileBakeParams& params,
                                  const TileStage1& mapS1, i32 mapX,
                                  i32 mapZ, i32 tilesPerSide,
@@ -248,21 +252,18 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
 // the spawn col).
 bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 
-// Cache identity, split by stage so a hydrology/finalize change does not
-// invalidate the expensive stage-1 terrain caches:
-//   kStage1Version   — bump when stage-1 output changes (S1 macro, S2
-//     fluvial, S3 thermal, or their defaults);
-//   kTileBakeVersion — bump when ANY published output changes (stage-2
-//     included; a stage-1 bump implies bumping this one too).
-// Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 46;
+// Cache identity of the published slices (.trg/.twb file names and the
+// map manifest): bump when ANY published output changes — a stage-1,
+// hydrology, finalize or default-parameter change alike. Miss it and
+// stale caches keep the old landscape. The cache key is otherwise the
+// world seed alone: a changed default needs this bump (or a cleared
+// terrain-cache) to reach the player.
 constexpr u32 kTileBakeVersion = 68;
 
-// Wider flood window for CANONICAL BASIN resolution: a lake touching
-// the hydrology-window rim is re-flooded on tile +/- this margin so its
-// true spill level and full mask replace the truncated view. Must stay
-// within the 3x3 stage-1 coverage (< tileSize).
-constexpr f32 kBasinResolveMargin = 3072.0f;
+// The production stage-1 apron of a map (game::bakeMap): the ring past
+// the map rect that the erosion simulates and the rim basins resolve
+// in, cropped away. Must cover the hydrology window (>= waterMargin).
+constexpr f32 kMapApron = 3072.0f;
 
 // Extra fine-window ring past the kept rect: the fine-erosion pass has
 // bounded support (reach + receiver drift + thermal), and this halo

@@ -294,8 +294,7 @@ TEST_CASE("worldspace map fields reflect and default to inherit") {
     CHECK(type.findField("seaLevel") != nullptr);
     CHECK(type.findField("snowLine") != nullptr);
     CHECK(type.findField("dominantBiome") != nullptr);
-    CHECK(type.findField("edgeNorth") != nullptr);
-    CHECK(type.findField("edgeWest") != nullptr);
+    CHECK(type.findField("edgeNorth") == nullptr); // border styles are per line, not per map
 }
 
 TEST_CASE("map bounds current pushes inward past the rim only") {

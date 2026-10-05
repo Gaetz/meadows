@@ -8,10 +8,11 @@
 // on the render side. docs/PAYSAGE.md §1.3 holds the pipeline overview.
 //
 // The pipeline consumes CONTROL FIELDS (elevation tier, uplift, sea,
-// biome) through the ControlSource seam. Two providers exist by design:
-// ProceduralControls (sandbox mode — everything derived from the world
-// seed) and painted control maps (scenario/editor mode, later brick). The
-// stages downstream never know which one fed them.
+// biome, calm, gentle, trunk...) through the ControlSource seam. The one
+// production provider is ProceduralControls (everything derived from
+// the world seed); the seam exists so painted/authored control maps can
+// feed the same stages later (docs/PAYSAGE.md §6.1) — nothing downstream
+// knows which provider fed it.
 
 namespace render::terraingen {
 
