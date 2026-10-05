@@ -292,7 +292,7 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
             mean += h;
         }
         mean /= glm::max<size_t>(above.size(), 1);
-        MESSAGE(label, ": max=", maxH, " mean-above-sea=", mean);
+        MESSAGE(std::string(label), ": max=", maxH, " mean-above-sea=", mean);
         MESSAGE("  p10=", pct(0.10f), " p25=", pct(0.25f),
                 " p40=", pct(0.40f), " p50=", pct(0.50f),
                 " p60=", pct(0.60f), " p75=", pct(0.75f),
@@ -1380,17 +1380,17 @@ TEST_CASE("rock uv diagnostic" * doctest::skip()) {
                 ++stretched;
             }
         }
-        MESSAGE("  ", tag, ": ", tris, " tris, uv x[", uvMinX, ",",
+        MESSAGE("  ", std::string(tag), ": ", tris, " tris, uv x[", uvMinX, ",",
                 uvMaxX, "] y[", uvMinY, ",", uvMaxY, "], degenerate ",
                 degenerate, ", stretched ", stretched);
     };
     for (const char* path : kRocks) {
         auto mesh = assets::loadGltfMesh(path);
         if (!mesh) {
-            MESSAGE(path, ": LOAD FAILED");
+            MESSAGE(std::string(path), ": LOAD FAILED");
             continue;
         }
-        MESSAGE(path, ":");
+        MESSAGE(std::string(path), ":");
         stats(*mesh, "source");
         render::MeshData simplified = *mesh;
         assets::simplifyMesh(simplified, 700);

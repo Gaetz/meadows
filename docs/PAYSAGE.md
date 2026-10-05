@@ -974,6 +974,48 @@ interactif → calibration en jeu.
   de `docs/CPU-PERF.md` date d'avant CARTES (bakeSoloTile fenêtré) et
   n'est plus un comparateur. Non fait : la suite complète en Release
   (gate de push).
+- **2026-10-05 — Palier B livré.** B1 : `render::sandboxFallbackHeight`
+  (UNE implémentation du sol de repli : overview puis analytique +
+  bordures, consommée par `proceduralBase`, bit-exact), `spawnCandidateOk`
+  + `probeMapSpawn` (la sonde du jeu extraite en headless, la scène
+  l'appelle), `tests/MapWorldFixture.hpp` (la carte bornée derrière
+  `TerrainParams`, depuis `MEADOWS_MAP_CACHE`, le cache du jeu s'il est
+  valide, sinon un bake temporaire), `tests/MapBakerTest` (suite slow,
+  carte 2×2 de 8 km avec bordures : manifest, overview, tranches,
+  streamer headless, dérive overview/sol 23,9 m, **hash de contenu
+  6429626604634228367** — MSVC, Debug == Release, v68 ; 23 s en Release,
+  3 min en Debug). B2 : les 14 instruments de `SpawnDiagnosticTest`
+  re-basés sur la carte (0,0) (spawn = la sonde partagée, census de
+  l'intérieur hors bande de chaîne 2 560 m, vista sur l'overview érodé,
+  `fleuve continuity` = continuation des runs aux lignes de tranche).
+  **B3 — BASELINE de la carte (0,0), seed 1337, v68 (Release, cache du
+  jeu, spawn (14559, 32, 11023))** — le point zéro de tout réglage :
+
+  | Instrument | Mesure | Cible §4 |
+  |---|---|---|
+  | family census (intérieur, fenêtres 250 m) | **socle 3,0 % (plateau 0,4) / versant 81,6 % / drame 15,5 %** ; relief médian **114 m** (socle 12 m, versant 100 m) ; 1 275 fenêtres en eau, 3 440 en bande de bordure | 40 / 35 / 25 ; 20-40 m |
+  | variety transect E-O (16 km par le spawn) | socle 16 % / versant 51 % / drame 32 % ; médian 64 m ; plates 2,7 % ; > 30° 18,7 % ; infranchissable 625 m ; événements tous les 257 m (pire trou 1 025 m), type dominant 77 % (relief) ; 0,32 croisement d'eau/km | plates 15-35 %, > 30° < 15 %, ≤ 400 m, types alternés |
+  | variety transect N-S | socle 34 % (plateau 14) / versant 63 % / drame 3 % ; médian 24 m ; plates 17 % ; > 30° 4,4 % ; événements tous les 412 m (pire 1 250 m), dominant 68 % | idem |
+  | calm coverage (stage-1 de carte, intérieur) | calm > 0,6 : **60,9 %** des cellules sèches (contrôles seuls 51,4 %) ; calm > 0,3 : 71,2 % | ~40 % de socle |
+  | vista (5 points de voyage retenus sur 9) | horizon ouvert ≥ 30/72 : **3/5** ; amer > 2° à > 3 km : 5/5 ; sommet alpin ≤ 8 km : 5/5 (à 0,25-1,4 km) ; colline marquante ≤ 4 km : 5/5 (0,8-1,3 km) | ouvert sur la majorité ; objectifs à 3 et 6 km |
+  | erosion calibration (publié − analytique, par bande d'altitude) | +2 m sous 100 m ; **−60 m (100-200), −122 (200-300), −194 (300-400), −230 (400-500), −242 (500-600), −241 (600-700), −194 (700-800), −196 (800-900), −360 (900-1000), −398, −452 (1100-1200)** ; keep 0,04 → 0,50 | miroir à refitter (palier C/réglage) |
+  | erosion strength (tranche (5,5), max publié 1 749 m, solo sans bordures) | défaut : max 1 259, moyenne au-dessus de la mer 318 m (p50 272, p90 522) ; sans arrondi : 318 ; **sans érosion ni arrondi : 745 m** (p50 638, p90 1 340) ; fluvial 60 it : 355 ; 40 it : 437 | — |
+  | lake census (carte entière) | **772 lacs naturels = 20,5 par 4×4 km** (+ 114 étangs placés) : < 0,1 ha 11, 0,1-0,5 ha 224, 0,5-2 ha 261, 2-10 ha 171, > 10 ha 105 (le plus profond 200 m) ; runs : ruisseau 579 / rivière 89 / fleuve 56 (24,8 km) ; 43 gués | lacs = destinations, critère qualité |
+  | river wetness | 724 runs, 291,7 km, 86 runs < 100 m ; axe à sec 1,9 % (pire 232 m) ; plus long bief plat de fleuve 169 m | — |
+  | fleuve continuity (lignes de tranche intérieures) | 22 bouts de runs, **22 continués, 0 orphelin, 0 écart de tier** | — |
+  | fleuve locator | 22 cours maîtres touchent la carte ; le plus long 17 km ; le plus proche à 871 m du spawn | un fleuve par région |
+  | biome locator (intérieur, terre) | **alpin 46,2 %**, tempéré 30,2 %, toundra 9,9 %, subalpin 7,8 %, aride 3,1 %, steppe 2,8 % | — |
+  | snow coverage (adopté 900/+150/−180/−300) | plein 1,6 %, touché 6,1 % ; par bande : 600-900 m 16 %, 900-1 200 m 56 %, > 1 200 m 88 % | — |
+  | proportion (contrôles, carte) | mer 23,5 % de la carte ; terre : plaines 16,5 %, collines+plateaux 55,6 %, montagnes 27,8 % | mer ~20-25 % |
+  | coast (analytique) | 351 échantillons de rivage, 6 % en mode falaise (48 % d'entre eux > 40 m de rebord) | — |
+
+  **Lecture** : le socle calme existe dans le stage-1 (61 % de calm) mais
+  n'arrive **pas** au sol publié (3 % de fenêtres socle, relief médian
+  114 m) — la dissection des versants mange tout, les « sommets » sont
+  partout (à 0,25-1,4 km de chaque point de voyage), 20 lacs par 4×4 km,
+  le miroir analytique surestime de 200 à 450 m au-dessus de 300 m. C'est
+  le diagnostic que le réglage doit attaquer, dans l'ordre socle → lacs →
+  miroir. Les instruments sont maintenant comparables entre deux bakes.
 
 ---
 
