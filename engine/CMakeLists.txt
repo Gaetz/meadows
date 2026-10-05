@@ -38,6 +38,7 @@ add_library(meadows STATIC
     terrain/FireField.cpp
     terrain/WindField.cpp
     terrain/WaterSim.cpp
+    terrain/SandboxTerrain.cpp
     terrain/generation/Authoring.cpp
     terrain/generation/Finalize.cpp
     terrain/generation/FineErosion.cpp

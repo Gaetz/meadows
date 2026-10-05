@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Generated-world identity ("sandbox" = generated, as opposed to the
@@ -29,5 +31,27 @@ struct SandboxTerrain {
     terraingen::GridSpec overviewGrid;
     vector<f32> overview;
 };
+
+// The fallback ground of the generated world at (x, z): the map's 64 m
+// overview (bilinear) inside its coverage, else the analytic S1 macro
+// shaped by the border lattice. ONE implementation shared by the
+// runtime height seam (TerrainNoise::proceduralBase), the spawn probe
+// below and the headless diagnostics — they must never disagree.
+f32 sandboxFallbackHeight(const SandboxTerrain& sb, f32 x, f32 z);
+
+// The start criterion of a generated map: low, gentle, TEMPERATE land
+// (the start is a green meadow by decree — temperate is the default
+// biome, always findable). Shared by the game's probe and the hidden
+// `biome locator` diagnostic so the two never drift apart.
+bool spawnCandidateOk(f32 h, f32 seaLevel, u8 biome);
+
+// Probes the start of map (mapX, mapZ): a spiral anchored on the map
+// centre, staying inside the rim band, returning the first candidate
+// that passes spawnCandidateOk on the fallback ground (the overview
+// when the map is baked — the analytic drifts by hundreds of meters
+// against a global erosion, a spot picked on it can sit in a real
+// lake). nullopt = nothing found; the caller starts at the centre.
+std::optional<Vec3> probeMapSpawn(const SandboxTerrain& sb, i32 mapX,
+                                  i32 mapZ, f32 seaLevel);
 
 } // namespace render

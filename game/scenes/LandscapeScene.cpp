@@ -2000,68 +2000,19 @@ void LandscapeScene::placeStartCamera() {
     }
 }
 
-// A pleasant start on the ACTIVE map: probe for low, gentle TEMPERATE
-// land (the start is a green meadow by decree — temperate is the
-// default biome, always findable; mirrored by the hidden `biome
-// locator` diagnostic, keep the criteria in sync). The spiral anchors
-// on the map center and stays inside the rim band.
+// A pleasant start on the ACTIVE map: the headless probe shared with
+// the diagnostics (render::probeMapSpawn — criterion, spiral and
+// fallback ground live there); the map centre when nothing qualifies.
 Vec3 LandscapeScene::probeSandboxSpawn() const {
     const render::TerrainParams& params = renderer.terrainParams();
     const auto& sandbox = params.sandbox;
-    const render::terraingen::ProceduralControls controls {
-        sandbox->controls
-    };
-    const f32 size = sandbox->grid.mapSize;
-    const f32 mapMid = (static_cast<f32>(activeMapX) + 0.5f) * size;
-    const f32 mapMidZ = (static_cast<f32>(activeMapZ) + 0.5f) * size;
-    const f32 mapReach =
-        size * 0.5f - render::terraingen::kMapBorderMountainHalf;
-    Vec3 start { mapMid, 0.0f, mapMidZ };
-    for (f32 radius = 2600.0f; radius <= glm::min(24000.0f, mapReach);
-         radius += 700.0f) {
-        for (u32 step = 0; step < 16; ++step) {
-            const f32 angle =
-                radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
-            const f32 x = mapMid + std::cos(angle) * radius;
-            const f32 z = mapMidZ + std::sin(angle) * radius;
-            // The overview is the truth when the map is baked (the
-            // analytic drifts by hundreds of meters against a global
-            // erosion — a spawn picked on it can sit in a real lake).
-            f32 h;
-            if (!sandbox->overview.empty() &&
-                sandbox->overviewGrid.n >= 2) {
-                const auto& g = sandbox->overviewGrid;
-                const f32 u = glm::clamp(
-                    (x - g.originX) / g.texelSize, 0.0f,
-                    static_cast<f32>(g.n - 1));
-                const f32 v = glm::clamp(
-                    (z - g.originZ) / g.texelSize, 0.0f,
-                    static_cast<f32>(g.n - 1));
-                const u32 c0 = glm::min(static_cast<u32>(u), g.n - 2);
-                const u32 r0 = glm::min(static_cast<u32>(v), g.n - 2);
-                const f32 tu = u - static_cast<f32>(c0);
-                const f32 tv = v - static_cast<f32>(r0);
-                const auto at = [&](u32 c, u32 r) {
-                    return sandbox
-                        ->overview[static_cast<size_t>(r) * g.n + c];
-                };
-                h = glm::mix(
-                    glm::mix(at(c0, r0), at(c0 + 1, r0), tu),
-                    glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu),
-                    tv);
-            } else {
-                h = render::terraingen::applyMapGridShape(
-                    controls, sandbox->macro, sandbox->grid, x, z,
-                    render::terraingen::macroHeightAnalytic(
-                        controls, sandbox->macro, x, z));
-            }
-            if (h > tuning.seaLevel + 8.0f && h < 95.0f &&
-                controls.at(x, z).biome == 0) {
-                return { x, h, z };
-            }
-        }
+    if (const auto spot = render::probeMapSpawn(
+            *sandbox, activeMapX, activeMapZ, tuning.seaLevel)) {
+        return *spot;
     }
-    return start;
+    const f32 size = sandbox->grid.mapSize;
+    return { (static_cast<f32>(activeMapX) + 0.5f) * size, 0.0f,
+             (static_cast<f32>(activeMapZ) + 0.5f) * size };
 }
 
 // Map-to-map travel core (chantier CARTES M4.1): the whole-world swap

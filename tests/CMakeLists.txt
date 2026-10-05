@@ -81,6 +81,7 @@
     LocTextTest.cpp
     MapRasterTest.cpp
     MapRecordsTest.cpp
+    MapBakerTest.cpp
     MasterNetworkTest.cpp
     MeleeStrikeTest.cpp
     MeleeSwingTest.cpp
