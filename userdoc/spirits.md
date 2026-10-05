@@ -123,7 +123,10 @@ their `moisture` and shaped by the wind: calm air spreads at
 `fireCalmSpread` of that rate all round, a full wind at `fireWindSpread`
 straight downwind and `fireUpwindSpread` against it (the weather's wind
 at strength 1 is half a full wind; the breath and a gust are a full one),
-so a fire creeps on its own and runs where the wind sends it; bare rock, sand and snow carry no fuel, standing water
+so a fire creeps on its own and runs where the wind sends it — and a
+cell cools by the spirit's `decayPerSecond` every tick, so the trickle
+reaching the upwind side of a driven front never catches (blow on a fire
+and it will not climb your breath); bare rock, sand and snow carry no fuel, standing water
 puts a burning cell out and keeps it out. Rain counts as moisture (the
 wetter of the two) and, from half strength up, soaks burning cells out
 in a few seconds. Burnt ground stays charred and its grass is gone; the

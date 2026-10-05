@@ -288,7 +288,12 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
             const auto state = static_cast<FireState>(grid.state[i]);
             switch (state) {
             case FireState::Dormant: {
-                grid.heat[i] += dealt[i];
+                // The cell cools EVERY tick: a trickle of heat below the
+                // decay (the upwind side of a driven front, a lone
+                // neighbour across a damp patch) never accumulates into
+                // an ignition — only a flux above it does.
+                grid.heat[i] = glm::max(0.0f, grid.heat[i] + dealt[i] -
+                                                  params.heatDecay * dt);
                 if (grid.heat[i] >= params.ignitionPoints) {
                     sampleCell(grid, i, col, row, fuel);
                     if (grid.fuel[i] > 0.0f && budget > 0) {
@@ -299,8 +304,6 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                         grid.heat[i] = 0.0f; // nothing to burn: the heat is lost
                     }
                     // Over budget: the heat stays, it ignites next tick.
-                } else if (dealt[i] <= 0.0f) {
-                    grid.heat[i] = glm::max(0.0f, grid.heat[i] - params.heatDecay * dt);
                 }
                 break;
             }

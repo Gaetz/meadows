@@ -430,3 +430,50 @@ TEST_CASE("fire kernel: calm air creeps, the wind drives the front downwind") {
     CHECK(windWest <= calmEast);         // and holds the upwind side back
     CHECK(windEast > 3 * windWest);
 }
+
+TEST_CASE("fire kernel: a driven front never climbs the wind (shipped tuning)") {
+    // The base game's figures: a trickle upwind stays under the decay.
+    FireParams p;
+    p.dt = 0.1f;
+    p.spreadRate = 1.0f;
+    p.ignitionPoints = 1.0f;
+    p.heatDecay = 0.35f;
+    p.burnRate = 1.0f / 8.0f;
+    p.spreadBudgetPerTick = 100000;
+    p.wind = { 1.0f, 0.0f };
+    FireGrid g;
+    fireInitWindow(g, spec65());
+    fireIgnite(g, 64.0f, 64.0f, 2.5f, 2.0f, grass); // the spell's disc
+    fireStep(g, p, grass, nullptr); // the disc itself catches
+    i32 west0 = 0;
+    const i32 n = 65;
+    for (i32 c = 32; c >= 0; --c) {
+        if (g.state[32 * n + c] != 0) west0 = 32 - c;
+    }
+    for (int t = 0; t < 150; ++t) { // 15 s
+        fireStep(g, p, grass, nullptr);
+    }
+    i32 east = 0, west = 0;
+    for (i32 c = 32; c < n; ++c) {
+        if (g.state[32 * n + c] != 0) east = c - 32;
+    }
+    for (i32 c = 32; c >= 0; --c) {
+        if (g.state[32 * n + c] != 0) west = 32 - c;
+    }
+    CHECK(west == west0);  // not one cell gained against the wind
+    CHECK(east > west0 + 4); // while it ran downwind
+    // And the same tuning still creeps in calm air.
+    FireParams calm = p;
+    calm.wind = { 0.0f, 0.0f };
+    FireGrid c;
+    fireInitWindow(c, spec65());
+    fireIgnite(c, 64.0f, 64.0f, 2.5f, 2.0f, grass);
+    for (int t = 0; t < 150; ++t) {
+        fireStep(c, calm, grass, nullptr);
+    }
+    i32 calmEast = 0;
+    for (i32 k = 32; k < n; ++k) {
+        if (c.state[32 * n + k] != 0) calmEast = k - 32;
+    }
+    CHECK(calmEast > west0 + 1);
+}

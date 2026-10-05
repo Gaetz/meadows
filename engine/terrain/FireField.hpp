@@ -54,7 +54,13 @@ struct FireParams {
     f32 ignitionPoints { 1.0f };   // heat a cell takes before it burns
     u32 spreadBudgetPerTick { 64 };
     f32 burnRate { 1.0f };         // fuel/s consumed while burning
-    f32 heatDecay { 0.5f };        // heat/s lost by a cell not burning
+    // Heat/s a dormant cell sheds, every tick: the ignition threshold in
+    // flux terms. A neighbour deals spreadRate x its wind factor per
+    // second, so the inequality that shapes the fire is: calmSpread x
+    // spreadRate > heatDecay (a lone burning neighbour spreads in calm
+    // air) and upwindSpread x spreadRate x 3 < heatDecay (three burning
+    // neighbours cannot push a driven front upwind).
+    f32 heatDecay { 0.5f };
     // The FRONT's width in time: a cell glows (and carries flames) for
     // this long after ignition, then burns on darkly; a burnt cell's
     // embers cool over the same span. At the front's speed this is its

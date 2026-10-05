@@ -134,7 +134,9 @@ fireWindSpread = 1.6
 fireUpwindSpread = 0.1
 ignitionPoints = 1.0
 spreadBudgetPerTick = 64
-decayPerSecond = 0.5
+# Between 3 x upwind (0.3: a driven front never climbs the wind) and the
+# calm figure (0.4: a lone neighbour still spreads in still air).
+decayPerSecond = 0.35
 emberSeconds = 3.0
 regrowSeconds = 360.0
 treeIgnitionSeconds = 9.0

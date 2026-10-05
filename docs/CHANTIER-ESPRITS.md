@@ -1188,3 +1188,20 @@ Test : au calme le front rampe (> 2 cellules en 4 s), sous le vent il
 atteint ≥ 2× plus loin sous le vent et retient le côté contre le vent ;
 l'ancien test de forme (ratio d'axes > 1,1) devient > 0,8 — le cône sous
 le vent s'élargit en avançant, la boîte englobante reste carrée.
+
+### « Le Souffle n'empêche pas le feu d'avancer vers moi » (2026-10-05)
+Le champ est additif (météo 5 m/s + rafale 14 m/s : la rafale domine
+localement, la question de l'override ne se pose pas). Le défaut était
+dans le noyau : contre le vent une cellule reçoit encore 0,1 × spreadRate
+par voisin brûlant, et la décroissance de chaleur ne s'appliquait qu'aux
+cellules qui ne reçoivent RIEN — un filet s'accumulait donc sans fin et
+finissait par allumer ; le front remontait le vent, lentement mais
+sûrement. Fait : une cellule dormante refroidit À CHAQUE tick
+(`heat = max(0, heat + dealt − heatDecay·dt)`) ; l'allumage demande un
+FLUX au-dessus de la décroissance. L'inégalité qui façonne le feu est
+dès lors écrite dans FireParams : `calmSpread × spreadRate > heatDecay`
+(un voisin seul propage au calme) et `3 × upwindSpread × spreadRate <
+heatDecay` (trois voisins ne remontent pas un vent plein) ; data du jeu :
+spreadRate 1, calm 0,4, upwind 0,1, `decayPerSecond` 0,5 → 0,35. Test
+avec les chiffres livrés : en 15 s sous un vent plein, pas une cellule
+gagnée contre le vent, > 4 sous le vent ; au calme le disque rampe.
