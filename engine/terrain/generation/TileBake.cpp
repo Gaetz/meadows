@@ -337,6 +337,16 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     if (cancelled()) {
         return out; // partial, discarded by the caller
     }
+    // The socle keeps the RAW story relief: the thermal pass (and the
+    // rounding below) only sculpt the rough ground — massifs, pieces'
+    // flanks, versants. Blended back per texel on the control calm.
+    vector<f32> roughW(macro.calm.size());
+    for (size_t i = 0; i < roughW.size(); ++i) {
+        roughW[i] = 1.0f - glm::smoothstep(0.25f, 0.75f, macro.calm[i]);
+    }
+    for (size_t i = 0; i < out.eroded.size(); ++i) {
+        out.eroded[i] = glm::mix(eroded.height[i], out.eroded[i], roughW[i]);
+    }
     // Round the knife edges the orogeny built. Uplift-gated: hill tops
     // and mesa rims keep their edge, peaks and aretes lose theirs.
     {
@@ -347,8 +357,11 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             crestWeight[i] =
                 glm::smoothstep(0.15f, 0.5f, macro.uplift[i]);
         }
-        out.eroded =
+        const vector<f32> rounded =
             roundRidges(out.sim, out.eroded, rounding, &crestWeight);
+        for (size_t i = 0; i < out.eroded.size(); ++i) {
+            out.eroded[i] = glm::mix(out.eroded[i], rounded[i], roughW[i]);
+        }
     }
     // One sediment field: thermal scree + fluvial alluvium.
     out.deposit = std::move(relaxed.deposit);

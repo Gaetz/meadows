@@ -123,6 +123,14 @@ struct RhythmParams {
     f32 bedDepthByEtage[4] { 14.0f, 22.0f, 20.0f, 35.0f };
     f32 colSpacing { 2500.0f };         // guaranteed passes in massifs
     f32 hardnessWavelength { 4000.0f };
+    // The story-mode mountains (docs/PAYSAGE.md §7.5.2: the look the
+    // dev wants): ridged ranges at 2 km masked by a slow field, so
+    // the plain stays the rule and a range is a place. Added to the
+    // base lift (the erosion keep protects it, calm leaves it).
+    f32 storyMountainWavelength { 2000.0f };
+    f32 storyMountainAmplitude { 270.0f };
+    f32 storyMountainMaskLow { 0.45f };
+    f32 storyMountainMaskHigh { 0.75f };
 };
 
 // Sandbox controls: every field derives from ONE sample of the world
@@ -168,17 +176,19 @@ struct TierLevel {
 // province of the world layer (WorldLayerParams::etageAltitude indexes
 // it through ControlSample::tier). With a world floor the altitude
 // column is unused — it is the ABSOLUTE floor of painted/test sources
-// only; the relief columns are the province's own walking rhythm:
-// plains roll +/-25 m over 700 m, hills +/-45 m, the plateau is flat
-// and terraced, the high mountain carries the big waves the massif
-// crests and the erosion sculpt.
+// only; the relief columns are the province's own walking rhythm, the
+// STORY-MODE one (§7.5.2): hills of +/-75 m over 500 m, stylized and
+// raw — a hill is crossed in a minute, nothing is a slope for long.
 struct MacroParams {
     vector<TierLevel> tiers {
-        { 40.0f, 25.0f, 700.0f, 0.0f },     // plains: gentle hills
-        { 150.0f, 45.0f, 900.0f, 0.0f },    // hills
-        { 450.0f, 28.0f, 750.0f, 0.5f },    // plateau (terraced)
-        { 1200.0f, 120.0f, 1100.0f, 0.0f }, // high mountain
+        { 40.0f, 75.0f, 500.0f, 0.0f },     // plains: story hills
+        { 150.0f, 90.0f, 500.0f, 0.0f },    // hills
+        { 450.0f, 60.0f, 500.0f, 0.3f },    // plateau (terraced)
+        { 1200.0f, 150.0f, 700.0f, 0.0f },  // high mountain
     };
+    // Octaves of the tier relief (the story mode's 5: the fine
+    // octaves are the stylized crumple of its hills).
+    i32 reliefOctaves { 5 };
     f32 seaLevel { kDefaultSeaLevel };
     // Two-stage ocean: shore ramp -> luminous COASTAL PLATEAU (the
     // bright turquoise band the player reads as swimmable) -> talus ->

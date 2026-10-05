@@ -142,9 +142,11 @@ TEST_CASE("beach coasts ramp to the waterline, cliff coasts hold the rim") {
     // Deep water is deep, the far shore side reaches land height, and the
     // waterline sits at shoreHeight above sea level.
     CHECK(at(rb, -496.0f, 0.0f) < params.seaLevel - 4.0f);
+    // The first beach texel rides the story relief's slope (+/-75 m
+    // over 500 m): within a few meters of the waterline.
     CHECK(at(rb, 8.0f, 0.0f) ==
           doctest::Approx(params.seaLevel + params.shoreHeight)
-              .epsilon(0.15));
+              .epsilon(0.3));
     CHECK(at(rb, 496.0f, 0.0f) > params.seaLevel + 0.5f);
 
     FixedControls cliff;
@@ -355,7 +357,8 @@ TEST_CASE("the analytic macro matches the tier floors away from shore") {
             const RhythmParams& rhythm = controls.params().rhythm;
             CHECK(a <= world.etageAltitude[3] + world.massifLift +
                            params.tiers.back().reliefAmplitude +
-                           rhythm.pieceHeightByEtage[3][1] +
+                           glm::max(rhythm.pieceHeightByEtage[3][1],
+                                    rhythm.storyMountainAmplitude) +
                            rhythm.crestAmplitudeByEtage[3] + 1.0f);
             maxSeen = std::max(maxSeen, a);
         }
@@ -427,9 +430,9 @@ TEST_CASE("calm socles: plains and plateau tops join, ranges stay out") {
     const f64 share = 100.0 * calmish / static_cast<f64>(land);
     MESSAGE("control-level calm>0.6: ", share, "% of land (mean ",
             calmSum / static_cast<f64>(land), ")");
-    // Calm is the RULE (docs/PAYSAGE.md §7.5): the pieces, massifs and
-    // their flanks are the exceptions.
-    CHECK(share > 55.0);
+    // Calm is the RULE (docs/PAYSAGE.md §7.5): the pieces, the story
+    // mountains, the massifs and their flanks are the exceptions.
+    CHECK(share > 45.0);
     CHECK(share < 90.0);
 
     // Deterministic: same params, same field.
@@ -849,10 +852,11 @@ TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
     }
 }
 
-TEST_CASE("controls v3: a dozen pieces per map") {
-    // Local maxima of the piece lift above 40 m, counted per 8 km
-    // cell over 64 x 64 km: the jittered 2.4 km grid with its 85 %
-    // chance gives ~10 per map, spread (never an empty map).
+TEST_CASE("controls v3: landmark summits on every map") {
+    // Local maxima of the base lift above 30 m (the pieces of the
+    // jittered 2.4 km grid plus the story mountains' ridges), counted
+    // per 8 km cell over 64 x 64 km: a lump every kilometer or two,
+    // spread (never an empty land map), never a wall of them.
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
@@ -911,10 +915,10 @@ TEST_CASE("controls v3: a dozen pieces per map") {
             static_cast<f64>(peaks) / 64.0, " per map), land maps ",
             landMaps, " min ", least, ", any map max ", worst);
     CHECK(static_cast<f64>(peaks) / 64.0 >= 5.0);
-    CHECK(static_cast<f64>(peaks) / 64.0 <= 16.0);
+    CHECK(static_cast<f64>(peaks) / 64.0 <= 60.0);
     CHECK(landMaps >= 20);
     CHECK(least >= 1); // never an empty land map
-    CHECK(worst <= 20);
+    CHECK(worst <= 90);
 }
 
 TEST_CASE("the analytic macro is the pointwise synthesis, bounded") {

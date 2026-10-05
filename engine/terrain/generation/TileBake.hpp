@@ -105,7 +105,7 @@ struct TileBakeParams {
     // walking rhythm survives), `roughCut` elsewhere (the versants
     // and massifs dissect), blended on the control calm; the fleuve
     // imprint and the border ridges' cols get the rough budget.
-    f32 calmCut { 6.0f };
+    f32 calmCut { 0.5f }; // the socle is the raw story relief
     f32 roughCut { 250.0f };
     //   keepCrestFade: 0 = keep as-is; else the erosion keep fades to
     //     keep*(1-fade) OFF the local crests (crest = stands above the
@@ -264,7 +264,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The cache key is otherwise the
 // world seed alone: a changed default needs this bump (or a cleared
 // terrain-cache) to reach the player.
-constexpr u32 kTileBakeVersion = 71;
+constexpr u32 kTileBakeVersion = 72;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

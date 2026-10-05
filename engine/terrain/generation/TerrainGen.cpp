@@ -25,6 +25,8 @@ constexpr u32 kSaltRidgeCol = 0x51d9ec01u;
 constexpr u32 kSaltCol = 0xc0110000u;
 constexpr u32 kSaltAxialWarp = 0x51deca5eu;
 constexpr u32 kSaltBed = 0xbed0bed0u;
+constexpr u32 kSaltStoryMask = 0x51ed270bu;
+constexpr u32 kSaltStoryRidge = 0xc2b2ae35u;
 
 struct TierBlend {
     f32 altitude;
@@ -198,7 +200,8 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         awz += s.axisSin * slide;
     }
     const f32 relief = (noise::fbm(seed ^ kSaltRelief, awx, awz,
-                                   1.0f / t.reliefWavelength, 4, 2.0f,
+                                   1.0f / t.reliefWavelength,
+                                   glm::max(p.reliefOctaves, 1), 2.0f,
                                    0.5f) *
                             2.0f -
                         1.0f) *
@@ -378,7 +381,17 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     // off the beach so no shore rises into a wall.
     const PieceSample piece = pieceLayer(p, x, z);
     const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, s.base);
-    s.plateau = piece.add * shoreGate;
+    // The story-mode mountains: ridged ranges where a slow mask fires.
+    const f32 storyMask = noise::smoothstep01(
+        r.storyMountainMaskLow, r.storyMountainMaskHigh,
+        noise::fbm(p.seed ^ kSaltStoryMask, x, z,
+                   1.0f / r.storyMountainWavelength, 3, 2.0f, 0.5f));
+    const f32 storyMountain =
+        storyMask * r.storyMountainAmplitude *
+        noise::ridgedFbm(p.seed ^ kSaltStoryRidge, x, z,
+                         2.0f / r.storyMountainWavelength, 4, 2.0f, 0.5f);
+    const f32 lift = glm::max(piece.add, storyMountain);
+    s.plateau = lift * shoreGate;
     s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
     // Massif belts: ridged crests sized by the étage, and the uplift
     // that feeds the stream power — never on a mesa top.
@@ -404,7 +417,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     }
     // Calm is the RULE: everything that is neither a piece, a massif
     // nor a piece's flank is habitable ground; corridors are members.
-    const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, piece.add)) *
+    const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, lift)) *
                      (1.0f - noise::smoothstep01(0.35f, 0.7f, w.massif)) *
                      (1.0f - 0.5f * piece.ridgeFlank);
     s.calm = glm::max(calm, s.gentle);

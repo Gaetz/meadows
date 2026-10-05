@@ -1380,6 +1380,38 @@ design à chaque brique de génération et se ré-épingle.
   `minLakeDepth`/`minLakeCells` 0,6 m / 12 cellules) à faire AVANT N4.
   Idem les étangs posés (une règle de rendu des rubans, 77 sur 8 km).
 
+- **2026-10-05 (soir) — Retour dev sur N2b+N3 : « ça reste trop plat et
+  trop réaliste, je t'avais donné comme exemple le monde story » ; et
+  « tu as supprimé les features qui servaient à construire les maps
+  avant ? » (oui : layout continental, porteuse, régimes, houle, grilles
+  d'amers, champ de vallées, trunks — remplacés par la couche monde et
+  les pièces, comme §7.5.3 l'écrivait ; le mode histoire ne les a
+  jamais utilisées, il n'a ni érosion ni structure : `proceduralBase`).
+  **Brique « rythme histoire »** : la table d'étages prend le rythme
+  du mode histoire — plaines **±75 m / 500 m sur 5 octaves** (au lieu
+  de ±25 m / 700 m sur 4, l'arbitrage du plan qui a donné la plaine
+  plate), collines ±90, plateau ±60 terrassé 0,3, haute montagne ±150 /
+  700 ; les **montagnes du mode histoire** (ridged 2 km, 270 m,
+  masque 0,45-0,75) entrent dans la levée de base (`max(pièce,
+  montagne)`, le keep les protège, le calme les laisse) ; le socle
+  garde le relief BRUT : `calmCut` 0,5 m, thermique et arrondi
+  rebranchés par texel sur le terrain rude seulement (`roughW` = 1 −
+  calme) ; le comblement des creux locaux reste. `kTileBakeVersion` 72,
+  hash 13401478122622314894. Tests : plafond analytique avec la
+  montagne histoire, « landmark summits » 5-60 par carte, calme > 45 %,
+  tolérance du premier texel de plage 30 %.
+  **Baseline 8 km « rythme histoire »** (carte (0,0), 17 s) : hauteurs
+  60-297 m ; census intérieur **socle 5,9 % / versant 93,6 % / drame
+  0,5 %**, relief médian **38 m** (le roulis ±75 m, partout) ; transects
+  plats 14-29 %, médian 11-14 m ; vista : ouvert 6/9, colline ≤ 1,5 km
+  **4/9**, amer > 2° 8/9 ; calibration analytique − baké : 0-100 m
+  +13 m, 100-200 −6, 200-300 −5 (la macro survit telle que dessinée) ;
+  **79 lacs** naturels (19 par 4×4 km, 129 avant) + 84 étangs posés ;
+  137 ruisseaux, 15 rivières, 3 runs fleuve ; spawn (3 881, 93, 4 656).
+  Rendus 10/24 km : le froissé du mode histoire, pièces et montagnes
+  masquées tous les 1-2 km. Jugement dev en jeu : EN ATTENTE. L'eau
+  (lacs + étangs) reste le sujet suivant.
+
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 
 **Arbitrages** : cartes **2×2 tranches = 8 192 m** (échelle Skyrim), bandes

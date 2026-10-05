@@ -152,7 +152,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     const u64 hash = maptest::heightsHash(world);
     MESSAGE("map heights hash: ", hash);
 #if defined(_MSC_VER)
-    CHECK(hash == 6716548419360545234ull); // MSVC (Debug == Release), kTileBakeVersion 71
+    CHECK(hash == 13401478122622314894ull); // MSVC (Debug == Release), kTileBakeVersion 72
 #endif
 
     // Without its manifest the map is not a map (bake cancelled or
