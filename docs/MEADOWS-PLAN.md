@@ -1,6 +1,31 @@
 # MEADOWS-PLAN — Fonctionnalités moteur & outils pour le Skyrim-like
 
-## OÙ ON EN EST (mis à jour 2026-07-22)
+> **POINT D'ENTRÉE DE TOUS LES CHANTIERS.** Avant toute session : lire le
+> tableau ci-dessous, ouvrir le journal du chantier COURANT, et seulement
+> lui. Chaque chantier a un journal `docs/*.md` qui tient son état, ses
+> décisions et ses prochaines briques ; ce fichier dit lequel est ouvert,
+> lesquels sont en pause et ce qui vient après.
+
+## CHANTIERS — état au 2026-10-05
+
+| Chantier | État | Journal / reprise |
+|---|---|---|
+| **PAYSAGE** — repasser la génération du terrain elle-même (érosion par gouttelettes dévetotée par le solve global de CARTES), le scatter qui spawne des objets interactifs (rochers, troncs, buissons = références), le peuplement | 🔨 **COURANT** depuis le 2026-10-05 — **pas encore commencé** : sa planification en briques se fait à l'ouverture de sa session (règle : état des lieux total d'abord) | `docs/TERRAIN-MAPS.md` §9 (la passation de CARTES et la demande « scatter interactif »), `docs/WATER-RENDER.md` §3 (leçons eau à relire avant toute retouche), `docs/CPU-PERF.md` (budgets). Journal à créer : `docs/CHANTIER-PAYSAGE.md` |
+| **ESPRITS** — le monde manipulé par les 9 esprits | ⏸ **EN PAUSE** depuis le 2026-10-05 (décision dev) — 4 esprits sur 9 livrés et poussés (Eau, Terre, Flamme, Vent + rendu du feu, torches/foyers, PNJ, pluie, persistance) | `docs/CHANTIER-ESPRITS.md`, dernière section « Prochaines étapes » (les 5 esquisses restantes, Foudre conseillée en premier, validations en jeu ouvertes, dette) ; `docs/SPELLS.md`, `docs/FIRE-RENDER.md` |
+| **CARTES** (ex-FRONTIÈRES) — monde = graphe de cartes bornées | ✅ CLOS 2026-09-26 | `docs/TERRAIN-MAPS.md` |
+| **ÉCONOMIE (CPU)** | ✅ CLOS 2026-09-13 | `docs/CPU-PERF.md` |
+| **Terrain — EAU (E1-E7)** | ✅ CLOS 2026-08-31 | `docs/WATER-RENDER.md` |
+| Tous les chantiers antérieurs (1-9, GI, Vulkan, FOLLOWERS, perf GPU…) | ✅ voir le tableau historique ci-dessous | leurs journaux `docs/CHANTIER-*.md`, `docs/RENDERING.md` |
+
+**Après PAYSAGE** (ordre acté) : reprise d'ESPRITS (les cinq esprits
+restants), puis les P1 par valeur du catalogue A-K ci-dessous (stats
+avancées, quêtes 3D outillées, économie/crime, éditeurs, musique, polish
+renderer). Transverse, toujours valable : `docs/ARCHITECTURE-LAYERS.md`
+(couches mesurées, dette d'`engine/`), `docs/AUDIT/U9-tests.md` (la
+suite en deux vitesses : rapide avant commit, complète en Release avant
+push).
+
+## OÙ ON EN EST — tableau historique (mis à jour 2026-10-05)
 
 | Piste | État |
 |---|---|
@@ -26,7 +51,7 @@
 | **Arbres par colonisation d'espace + cartes de feuillage** | ✅ FAIT 2026-07-19→20 : génération par colonisation d'espace, feuillage en cartes billboard (gradient de densité vers l'extérieur), échelle réaliste, LOD 3 niveaux (V8f) ; tuning live au panneau Tree builder, **moddable §5**. Les chiffres perf V8f/V8g sont à re-mesurer après cette refonte |
 | **Passe commentaires (politique §8)** | ✅ FAITE 2026-07-22 : historique code → journaux `docs/`, purge des commentaires changelog, sommaire des headers piliers ; politique actée dans CLAUDE.md §8 |
 | **Chantier ÉCONOMIE (CPU)** (remise d'aplomb des calculs temps réel : instrumentation JobProbe, dédups bit-exact, hygiène des triggers/contentStamp, pyramide de hauteurs partagée `render::HeightField`, cas isolés) | ✅ **CLOS 2026-09-13 (décision dev)** — journal + baseline + chiffres par brique : `docs/CPU-PERF.md`. Résultats clés : lightmap atterrit ~10 s après boot et suit la marche (vs jamais, 131-250 s/bake), coût de marche −45 %/distance, rcTile ÷4-5, publish sans copie de régions (« pas de hard bake », dev), fermeture < 1 s. Reste : la grande session F6 comme mesure de vérité |
-| **Chantier ESPRITS** (le monde manipulé par les 9 esprits — trois triades en shifumi ; eau → terre → feu → vent → les autres ; champs élémentaires branchés sur les statuts GAS existants) | 🔨 **E1 (eau) LIVRÉE 2026-09-27** — E1.a sources runtime dans la sim d'eau, E1.b données/directeur/persistance (`SpiritSourceForm` = le même record autoré ou sauvé), E1.c le seam ability→monde (`AbilityForm.script` enfin exécuté : `aim()` + `spirit.spawn`, Q/RB) — **validation dev en jeu EN ATTENTE** ; plan E1-E5 + recherche (BotW chimie, Far Cry 2 feu, From Dust, Portal 2/Splatoon) + journal : `docs/CHANTIER-ESPRITS.md` ; doc moddeur : `userdoc/spirits.md`. PAYSAGE reste au backlog |
+| **Chantier ESPRITS** (le monde manipulé par les 9 esprits — trois triades en shifumi ; eau → terre → feu → vent → les autres ; champs élémentaires branchés sur les statuts GAS existants) | ⏸ **EN PAUSE 2026-10-05** (décision dev : PAYSAGE repasse courant) — Eau (E1), Terre (E2), Flamme (E3 + F1-F3 + garniture), Vent (E4), liste de fin (E5), torches/foyers, feu lent au calme/poussé par le vent : LIVRÉS et poussés (`…48f9589`) ; 4 esprits sur 9 ; reprise = `docs/CHANTIER-ESPRITS.md` « Prochaines étapes » |
 
 > **CE FICHIER EST LA ROADMAP UNIQUE.** Les phases 0-8 du CLAUDE.md §9 sont
 > de l'histoire (journaux `docs/PHASE-*.md`) ; les phases 8.5-14 ont été

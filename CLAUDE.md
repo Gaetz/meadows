@@ -539,7 +539,9 @@ touching the corresponding systems.
 >    À lire avant de toucher `engine/rhi/`, `engine/render/` (dont
 >    `render::WorldRenderer`) ou `LandscapeScene`.
 >
-> 4. **`docs/CHANTIER-ESPRITS.md`** — le chantier en cours (2026-09-27) :
+> 4. **`docs/CHANTIER-ESPRITS.md`** — chantier **EN PAUSE** depuis le
+>    2026-10-05 (4 esprits sur 9 ; le chantier COURANT est **PAYSAGE** —
+>    point d'entrée `docs/MEADOWS-PLAN.md`, tableau « CHANTIERS ») :
 >    la manipulation du monde par les **9 esprits** (trois triades en
 >    shifumi, sources placées `SpiritSourceForm`, règles BotW « un
 >    matériau ne change jamais un matériau », `AbilityForm.script` exécuté
