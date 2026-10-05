@@ -944,8 +944,11 @@ private:
     script::ScriptContext playerScriptContext();
     f32 mapPrefetchCooldown { 0.0f };
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
-    // NPC-side viewpoint.
+    // NPC-side viewpoint. `sandboxKeepHeading`: an automatic map
+    // crossing re-seats the position only -- the traveler walked
+    // through the line and keeps looking where they were going.
     void placeStartCamera();
+    bool sandboxKeepHeading { false };
     // farPlane follows the live terrain view radius (slider up to 45
     // chunks = 2880 m; the old fixed 1600 clipped everything past it).
     void updateCameraFarPlane();

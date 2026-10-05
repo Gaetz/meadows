@@ -2034,8 +2034,10 @@ void LandscapeScene::placeStartCamera() {
         flyCamera.camera.position =
             sandboxSpawn +
             Vec3 { 0.0f, statsTuning.eyeHeight + 1.0f, 0.0f };
-        flyCamera.camera.pitch = -0.12f;
-        flyCamera.camera.yaw = 3.1415927f;
+        if (!sandboxKeepHeading) {
+            flyCamera.camera.pitch = -0.12f;
+            flyCamera.camera.yaw = 3.1415927f;
+        }
         return;
     }
     // Story: start beside the NPC (slightly above, looking at it) — never
@@ -2155,6 +2157,11 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
         followerController.repositionActiveFollowers(
             makeFollowerContext(), sandboxSpawn);
     }
+    // A crossing is walked through, not teleported to: keep the look
+    // direction (the start pose faced -Z, which read as "turning
+    // around" at every line). The flag also covers the warmup's
+    // re-placement once the slices land.
+    sandboxKeepHeading = arrival != nullptr;
     placeStartCamera();
     streaming.snapCellEntities(makeStreamingContext());
 }
@@ -2166,6 +2173,9 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
 // travel puts the player at its marker, a mode switch at the start
 // camera).
 void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
+    // A crossing (a sandbox map was already streaming) keeps the
+    // previous map's resident slices and water -- see the base below.
+    const bool crossing = sandboxActive && bakeStreamer != nullptr;
     activeMapX = mapX;
     activeMapZ = mapZ;
     render::TerrainParams& params = renderer.terrainParams();
@@ -2258,12 +2268,82 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
                                        cz, halfSpan);
             });
     }
-    // Fresh base: authored regions only -- the previous map's slices
-    // drop; the streamer reloads this map's from its cache.
-    terrainBase = world::buildTerrainBase(forms, assetDb);
-    params.base = terrainBase;
-    sandboxLakes.clear();
-    sandboxRivers.clear();
+    // The base: the authored regions, plus -- on a crossing -- the
+    // previous map's resident slices and water outside the new rect.
+    // The ground behind the traveler stays the SAME ground (heights,
+    // masks, hence materials and scatter), not the neighbour's 64 m
+    // overview; the distance eviction in publishBakedTiles prunes
+    // them like the active map's own tiles. Slices inside the new
+    // rect are dropped: the fresh streamer republishes them from the
+    // cache (its published set starts empty).
+    {
+        const f32 size = sandbox->grid.mapSize;
+        const f32 minX = static_cast<f32>(mapX) * size;
+        const f32 minZ = static_cast<f32>(mapZ) * size;
+        const auto inNewRect = [&](f32 cx, f32 cz) {
+            return cx >= minX && cx < minX + size && cz >= minZ &&
+                   cz < minZ + size;
+        };
+        const sptr<const render::TerrainBase> authored =
+            world::buildTerrainBase(forms, assetDb);
+        auto base = std::make_shared<render::TerrainBase>();
+        base->regions = authored->regions;
+        if (crossing && terrainBase) {
+            const auto isAuthored = [&](const render::TerrainRegion& r) {
+                for (const auto& a : authored->regions) {
+                    if (a->originX == r.originX &&
+                        a->originZ == r.originZ && a->width == r.width &&
+                        a->height == r.height) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            u32 kept = 0;
+            for (const auto& rp : terrainBase->regions) {
+                const render::TerrainRegion& r = *rp;
+                if (isAuthored(r) ||
+                    inNewRect(r.originX + r.spanX() * 0.5f,
+                              r.originZ + r.spanZ() * 0.5f)) {
+                    continue;
+                }
+                base->regions.push_back(rp);
+                ++kept;
+            }
+            std::erase_if(sandboxLakes,
+                          [&](const render::terraingen::Lake& lake) {
+                              return inNewRect(
+                                  (lake.minX + lake.maxX) * 0.5f,
+                                  (lake.minZ + lake.maxZ) * 0.5f);
+                          });
+            std::erase_if(
+                sandboxRivers,
+                [&](const render::terraingen::River& river) {
+                    if (river.points.empty()) {
+                        return true;
+                    }
+                    f32 lo = 1.0e30f, hi = -1.0e30f;
+                    f32 loZ = 1.0e30f, hiZ = -1.0e30f;
+                    for (const render::terraingen::RiverPoint& pt :
+                         river.points) {
+                        lo = glm::min(lo, pt.x);
+                        hi = glm::max(hi, pt.x);
+                        loZ = glm::min(loZ, pt.z);
+                        hiZ = glm::max(hiZ, pt.z);
+                    }
+                    return inNewRect((lo + hi) * 0.5f, (loZ + hiZ) * 0.5f);
+                });
+            LOG_INFO("Sandbox terrain: {} slices of the previous map "
+                     "stay resident across the line",
+                     kept);
+        } else {
+            sandboxLakes.clear();
+            sandboxRivers.clear();
+        }
+        base->buildIndex();
+        terrainBase = base;
+        params.base = terrainBase;
+    }
     publishWaterBodies();
     interiorEscapes.clear();
     params.snowLine = activeSnowLine;
@@ -2346,6 +2426,7 @@ void LandscapeScene::setSandboxMode(bool enable) {
                 *physics, params, &engine->getJobSystem());
         }
     }
+    sandboxKeepHeading = false;
     placeStartCamera();
     streaming.snapCellEntities(makeStreamingContext());
 }

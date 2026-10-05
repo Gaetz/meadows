@@ -1212,6 +1212,25 @@ design à chaque brique de génération et se ré-épingle.
   calibration : analytique +180 à +217 m SOUS le baké à 100-200 m,
   −100 à −390 m au-dessus de 400 m. Non vérifié en jeu : le passage
   automatique de carte (validation dev).
+- **2026-10-05 — N1, retours dev sur le passage de carte.** (1) Le
+  passage ne se déclenchait pas en spectateur : le test de sortie du
+  rect vivait sous `simPaused` — sorti du bloc, gardé par `uiPaused`
+  seul. (2) « On a l'air de se retourner » : `placeStartCamera` remettait
+  la pose de départ (yaw π) à chaque passage — un passage automatique
+  (arrivée fournie) ne re-seate plus que la position
+  (`sandboxKeepHeading`, couvre aussi le re-placement du warmup).
+  (3) « La végétation et la nature du sol changent » : `applyMapWorld`
+  repartait d'une base vide (régions d'auteur seules) — le sol derrière
+  le voyageur tombait sur l'overview de 64 m de la carte quittée, et
+  matériaux/scatter se recalculaient sur ces hauteurs. Désormais les
+  tranches (et lacs/rivières) de la carte précédente **hors du nouveau
+  rect restent résidentes** ; l'éviction par distance de
+  `publishBakedTiles` les élague comme celles de la carte active ; les
+  tranches DANS le nouveau rect sont lâchées et rechargées du cache par
+  le streamer neuf (son ensemble publié part vide — pas de doublon).
+  C'est le « passage sans couture » minimal ; la divergence réelle des
+  deux bakes DE PART ET D'AUTRE de la ligne (sol et végétation
+  différents à la ligne même) reste le sujet de N3/N4.
 
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 
