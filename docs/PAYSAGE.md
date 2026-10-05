@@ -932,6 +932,23 @@ peuplement), le mode story, l'identité des instances de scatter
 (refonte « un scatter exécuté une fois, partagé rendu/collision/GI »,
 fondation du scatter interactif, après D).
 
+**Révision du 2026-10-05 (après B, décision dev)** : le dev veut, après
+cette passe de réparation, **revoir la manière de générer les cartes**
+(trop de bugs, paysages qui ne lui conviennent pas). Les paliers C et D
+tels qu'écrits exposent et figent le générateur ACTUEL : ils sont
+**remis à plus tard** — la promotion en Form vient quand le nouveau
+générateur se fige (le précédent GRASS-REDO : « promotion des espèces en
+Form quand le tuning se fige »), le bump TRG4 attend la refonte pour
+n'être payé qu'une fois. Ne restent de C/D que deux briques
+d'infrastructure, utiles quel que soit le générateur : **C'1 la clé de
+cache = hash des entrées de données** (`mapBakeKey` dans le manifest,
+`kMapBakeVersion` 2) et **C'2 le tier des rivières dans l'export**
+(`RiverForm.tier`, `flowSpeed` dérivé par la loi unique
+`riverFlowSpeedForTier`). Les gués restent côté bake (`.twb`) : ce sont
+du terrain carvé, sans consommateur runtime — un record sans lecteur
+serait la donnée morte purgée en A3. Après ça : **la refonte s'ouvre par
+un document de design avant tout code** (§7.5).
+
 **Ensuite, le réglage** : gouttelettes (passe séquentielle sur le
 stage 1 global, dépôt = éboulis V2) → cible §4 re-mesurée →
 embouchures → scoring de sites + pads (brancher `Authoring`, miroir
@@ -1016,6 +1033,31 @@ interactif → calibration en jeu.
   le miroir analytique surestime de 200 à 450 m au-dessus de 300 m. C'est
   le diagnostic que le réglage doit attaquer, dans l'ordre socle → lacs →
   miroir. Les instruments sont maintenant comparables entre deux bakes.
+- **2026-10-05 — C'1 + C'2 livrées, assainissement CLOS.** C'1 : le
+  manifest de carte porte `key` = FNV de (`kTileBakeVersion`,
+  tilesPerSide, seed, tileSize, seaLevel, recurve ×3, bordures) ;
+  `mapBakedAndValid(..., &params)` le compare — streamer, éditeur
+  (« Accept cached map »), `cooker pre-bake` (bordures posées AVANT le
+  test de validité : un pre-bake et le jeu ont la même clé) et la fixture
+  passent leurs params. `kMapBakeVersion` 1 → 2 : **les caches existants
+  sont re-bakés une fois** (≈ 94 s en fond au prochain boot sandbox).
+  C'2 : `RiverForm.tier` exporté, `flowSpeed` dérivé par
+  `riverFlowSpeedForTier` (la scène et l'export partagent la loi) ;
+  `MapRecordsTest` vérifie le round-trip d'un fleuve.
+
+### 7.5 La refonte de la génération (ouverte le 2026-10-05) — document de design À ÉCRIRE avant tout code
+
+Entrées déjà sur la table : l'inventaire (§5), la baseline (§7.4) et ses
+instruments (B2), le hash de carte (B1). Manquent, **à fournir par le
+dev** : la liste des bugs vus en jeu et ce qui ne convient pas dans les
+paysages, en ses mots. Le document tiendra en quatre parties : (1) bugs
+et reproches ; (2) les cibles du §4 confirmées ou révisées ; (3) ce qui
+survit tel quel (noyaux fastscape/thermique/priority-flood/hydrologie/
+finalize — grid-agnostiques, survivants de CARTES —, le pipeline par
+carte, les bordures, l'eau) et ce qui est refait (contrôles analytiques,
+macro S1, budget d'érosion par famille, éventuellement les gouttelettes) ;
+(4) la méthode : banc offline, instruments B2 avant/après, hash B1,
+validation visuelle dev avec A/B. Puis les briques.
 
 ---
 
