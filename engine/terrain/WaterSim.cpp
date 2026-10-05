@@ -917,7 +917,6 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
     out.depth.assign(cells, 0.0f);
     out.velX.assign(cells, 0.0f);
     out.velZ.assign(cells, 0.0f);
-    out.display.resize(cells);
     out.meshVerts.clear();
     out.meshIndices.clear();
     const f32 texel = spec.texelSize;
@@ -1016,13 +1015,11 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
     // --- Pass 3: publish fields for the retained cells.
     for (size_t i = 0; i < cells; ++i) {
         const f32 d = state.depth[i];
-        out.display[i] = state.terrain[i] - 0.25f; // dry (texture path)
         if (!state.wetMask[i]) {
             continue;
         }
         out.depth[i] = d;
         out.surface[i] = state.terrain[i] + d;
-        out.display[i] = out.surface[i];
         const f32 flowX = state.fE[i] - state.fW[i];
         const f32 flowZ = state.fS[i] - state.fN[i];
         const f32 div = glm::max(d, 0.05f) * texel;

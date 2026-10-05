@@ -14,9 +14,11 @@
 // inputs give the same fields bit for bit — bake-cacheable like every
 // other stage.
 //
-// Real-time variant deliberately NOT built (dev arbitration): the same
-// solver windowed around the camera would enable dynamic water; kept
-// as a documented option for future water-creation spells.
+// The real-time variant IS engine/terrain/WaterSim (the same kernel,
+// windowed around the camera, docs/PAYSAGE.md §1.5); the per-tile baked
+// solve was purged. This solver survives in two roles: the sim window's
+// PRE-ROLL (a fast settle before the live steps) and the test ORACLE
+// (`cooker water-solve` renders it for the bench).
 
 namespace render::terraingen {
 

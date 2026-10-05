@@ -15,20 +15,11 @@ layout(binding = 3) uniform sampler2D uPoolDepth;
 // Main-view volumetric sky clouds (rgb + transmittance a, last frame's
 // display buffer) — reprojected into the mirror, see below.
 layout(binding = 4) uniform sampler2D uSkyClouds;
-// Bindings 5/6: retired with the WaterInfoMap (E5) — frozen slots.
-// Live sim window (WaterSystem::updateSim): A = display level (wet
-// surface, or ground minus a tuck where dry), B = depth / current XZ /
-// spare. uWaterSimMapInfo maps world -> window uv.
-layout(binding = 7) uniform sampler2D uWaterSimA;
+// Bindings 5/6 (WaterInfoMap) and 7 (the sim display plane) are
+// retired — frozen slots, never renumbered. Live sim window
+// (WaterSystem::updateSim): B = depth / current XZ / spare, sampled at
+// the mesh's own uv (vSimUv); the surface itself IS the mesh.
 layout(binding = 8) uniform sampler2D uWaterSimB;
-
-// World XZ -> texel-centered uv of the sim textures (n nodes = n
-// texels over the window span).
-vec2 waterSimUv(vec2 worldXz) {
-    vec2 rel = (worldXz - uWaterSimMapInfo.xy) * uWaterSimMapInfo.z;
-    vec2 texSize = vec2(textureSize(uWaterSimB, 0));
-    return (rel * (texSize - 1.0) + 0.5) / texSize;
-}
 
 #ifdef WATER_LOCAL
 // Water material presets (WaterSystem::rebuildMaterials — std140

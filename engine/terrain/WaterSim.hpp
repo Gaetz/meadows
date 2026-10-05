@@ -35,8 +35,11 @@ struct WaterSimParams {
     // Open borders, expressed PER SECOND (the offline 0.05/iter at
     // dt 0.1 is keep 0.6/s); converted per substep inside the kernel.
     f32 borderDrainPerSecond { 0.4f };
-    // Applied at snapshot EXTRACTION only — the live state keeps its
-    // thin films (drying in-state oscillates wet/dry every step).
+    // Wet/dry threshold of the REPLAY STATISTICS (cooker water-replay)
+    // only. The live state keeps its thin films (drying in-state
+    // oscillates wet/dry every step), and extractSnapshot publishes by
+    // its own hysteretic thresholds (on/hold per film class, see the
+    // kernel) — this value is NOT read there.
     f32 dryThreshold { 0.02f };
     // Trusted inset (cells): rendering and queries stay this far from
     // the window border; entering strips settle inside the margin.
@@ -96,9 +99,6 @@ struct WaterSimSnapshot {
     vector<f32> depth;   // 0 where dry
     vector<f32> velX;    // m/s, depth-averaged
     vector<f32> velZ;
-    // Render displacement plane: the wet surface, or the local ground
-    // minus a tuck where dry (kept for texture-side consumers).
-    vector<f32> display;
     // The ONE render geometry (docs/PAYSAGE.md §1.5): a closed
     // skin built on the worker by MARCHING SQUARES on the dual grid
     // (cell centers as samples) — tops cover the wet-region polygon

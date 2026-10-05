@@ -420,8 +420,7 @@ private:
                    f32 replaceRadius, bool pushIfNoMatch);
     void simFrozenClearNow(rhi::Device& device);
     rhi::PipelineHandle simFrozenPipeline {};
-    rhi::TextureHandle simMapA {};
-    rhi::TextureHandle simMapB {};
+    rhi::TextureHandle simMapB {}; // depth / current XZ / spare (binding 8)
     // The ONE closed water mesh (built worker-side in extractSnapshot,
     // uploaded verbatim per tick).
     rhi::BufferHandle simVertexBuffer {};

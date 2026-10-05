@@ -220,7 +220,9 @@ struct FurnitureRef {
 // Kinematic floating prop: the entity rides the local water surface and
 // drifts with the current (world/scene/Floaters.hpp ticks it). v1 is
 // deliberately NOT dynamic physics — real buoyancy through the Jolt
-// facade is a named deferred.
+// facade is a named deferred (docs/PAYSAGE.md §6.3). No spawner, Form
+// or script sets it yet: the component and its tick are the kept
+// support of that brick, exercised by FloatersTest only.
 struct Floater {
     f32 driftFactor { 1.0f }; // fraction of the current applied
     f32 draft { 0.12f };      // meters the body sits below the surface

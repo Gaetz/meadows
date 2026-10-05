@@ -210,14 +210,8 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                      .usage = rhi::TextureUsage_Sampled },
                                    &kDeep);
     const f32 kZeros[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Sim placeholders: dry everywhere until the first pre-roll lands
+    // Sim placeholder: dry everywhere until the first pre-roll lands
     // (created before the first bind-group build below).
-    const f32 kTuck = -1.0e6f;
-    simMapA = device.createTexture({ .width = 1,
-                                     .height = 1,
-                                     .format = rhi::TextureFormat::R32F,
-                                     .usage = rhi::TextureUsage_Sampled },
-                                   &kTuck);
     simMapB =
         device.createTexture({ .width = 1,
                                .height = 1,
@@ -247,7 +241,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterLocalShader,
                  { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
@@ -255,7 +248,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimShader,
                  { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
@@ -263,7 +255,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimFrozenShader,
                  { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
@@ -271,7 +262,6 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
-                   { "uWaterSimA", 7 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimBoxShader, { { "FrameUbo", 0 } }, {});
     buildPipeline(device, shaders);
@@ -322,7 +312,6 @@ void WaterSystem::destroy(rhi::Device& device) {
     bodiesStamp = 0;
     bodiesDirty = false;
     // Sim window teardown (in-flight jobs die on arrival by generation).
-    device.destroyTexture(simMapA);
     device.destroyTexture(simMapB);
     device.destroyBuffer(simVertexBuffer);
     device.destroyBuffer(simIndexBuffer);
@@ -335,7 +324,6 @@ void WaterSystem::destroy(rhi::Device& device) {
     device.destroyBuffer(simBoxVertexBuffer);
     device.destroyBuffer(simBoxIndexBuffer);
     device.destroyBuffer(simBoxInstanceBuffer);
-    simMapA = {};
     simMapB = {};
     simVertexBuffer = {};
     simIndexBuffer = {};
@@ -1108,15 +1096,7 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
         wet += d > 0.0f ? 1u : 0u;
     }
     simWetCells = wet;
-    device.destroyTexture(simMapA);
     device.destroyTexture(simMapB);
-    simMapA = device.createTexture(
-        { .width = n,
-          .height = n,
-          .format = rhi::TextureFormat::R32F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled },
-        snap.display.data());
     vector<f32> extras(static_cast<size_t>(n) * n * 4);
     for (size_t i = 0; i < snap.depth.size(); ++i) {
         extras[i * 4 + 0] = snap.depth[i];
@@ -1737,11 +1717,9 @@ void WaterSystem::rebuildMapGroup(rhi::Device& device) {
                        { .binding = 3,
                          .texture = poolMap,
                          .sampler = poolMapSampler },
-                       // Bindings 5/6: retired with the WaterInfoMap
-                       // (E5) — frozen, never renumbered.
-                       { .binding = 7,
-                         .texture = simMapA,
-                         .sampler = poolMapSampler },
+                       // Bindings 5/6 (WaterInfoMap) and 7 (the sim
+                       // display plane, never read) are retired —
+                       // frozen, never renumbered.
                        { .binding = 8,
                          .texture = simMapB,
                          .sampler = poolMapSampler } } });
@@ -1986,15 +1964,16 @@ void WaterSystem::draw(rhi::CommandBuffer& cmd,
             cmd.setIndexBuffer(fz.indexBuffer, rhi::IndexFormat::U32);
             cmd.drawIndexed(fz.indexCount);
         }
-        if (simCfg.debugMode == 3 && simBoxInstances > 0) {
-            // Debug volume columns: "where the water IS".
-            cmd.setPipeline(simBoxPipeline);
-            cmd.setBindGroup(0, frameBindGroup);
-            cmd.setVertexBuffer(0, simBoxVertexBuffer);
-            cmd.setVertexBuffer(1, simBoxInstanceBuffer);
-            cmd.setIndexBuffer(simBoxIndexBuffer, rhi::IndexFormat::U16);
-            cmd.drawIndexed(36, simBoxInstances);
-        }
+    }
+    if (simCfg.debugMode == 3 && simBoxInstances > 0) {
+        // Debug volume columns of the LIVE window: "where the water IS"
+        // (independent of any frozen window existing).
+        cmd.setPipeline(simBoxPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setVertexBuffer(0, simBoxVertexBuffer);
+        cmd.setVertexBuffer(1, simBoxInstanceBuffer);
+        cmd.setIndexBuffer(simBoxIndexBuffer, rhi::IndexFormat::U16);
+        cmd.drawIndexed(36, simBoxInstances);
     }
 }
 

@@ -144,9 +144,10 @@ f32 waterDepthAt(const WaterBodies& bodies,
 // One river's contribution to the current at (x, z): flow in m/s (XZ),
 // a bank-distance weight in [0,1] (0 at the bank, 1 mid-channel) and
 // the local surface level. weight == 0 = the point is off this river.
-// NOTE: the water-info raster (WaterInfoMap.cpp) re-implements this
-// projection/profile for its per-texel pass — a change here must be
-// mirrored there, or the felt current and the rendered current drift.
+// NOTE: the shader-side ribbon profile (water_surface.glsl, baked
+// ribbons beyond the sim window) mirrors this projection/profile — a
+// change here must be mirrored there, or the felt current and the
+// rendered current drift.
 struct RiverFlowSample {
     Vec2 flow { 0.0f, 0.0f };
     f32 weight { 0.0f };
