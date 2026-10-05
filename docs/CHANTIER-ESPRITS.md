@@ -1,10 +1,11 @@
 # Chantier ESPRITS — un monde manipulé par les neuf esprits
 
 > Journal du chantier (ouvert le 2026-09-27, après la clôture de CARTES —
-> `docs/TERRAIN-MAPS.md`). Plan approuvé :
-> `~/.claude/plans/ce-sont-de-spistes-stateful-truffle.md` (cadre, briques
-> E1-E5, décisions). Doc utilisateur/moddeur : `userdoc/spirits.md` (à la
-> livraison de la brique 1).
+> `docs/TERRAIN-MAPS.md`). Le cadre et les briques E1-E4 sont dans les
+> sections ci-dessous ; **ce qui reste à faire est tenu à jour dans la
+> dernière section, « Prochaines étapes »**. Doc utilisateur/moddeur :
+> `userdoc/spirits.md`. L'ordre des chantiers après celui-ci :
+> `docs/MEADOWS-PLAN.md` (ordre macro) et `docs/TERRAIN-MAPS.md` (PAYSAGE).
 
 ## 1. Pourquoi
 
@@ -1226,3 +1227,80 @@ rien. Data : torche — eau, vent 9 m/s (une rafale ou le Souffle), pluie
 0,7 ; foyer — eau, vent 13 m/s (le Souffle de près seulement), pluie 0,9.
 Pas de test headless (logique de scène) ; vérifié par la suite rapide et
 le boot story.
+
+## Prochaines étapes (état au 2026-10-05, à tenir à jour ici)
+
+**Livré** : Eau (E1), Terre (E2), Flamme (E3 + rendu F1-F3 + garniture),
+Vent (E4), la liste de fin de chantier (E5), torches et foyers qui
+s'éteignent et se rallument, le feu lent au calme et poussé par le vent.
+Quatre esprits sur neuf.
+
+**Validations dev en jeu encore ouvertes** : crépitement 3D des foyers,
+torche qui allume une caisse ou un arbre, distorsion de chaleur, feu
+persisté dans une save, extinction/rallumage des torches, feu sous
+Souffle (le bord au vent figé).
+
+### Les cinq esprits restants — esquisses (preuve de généralité)
+Chaque esquisse = data (`SpiritForm` + règles `SpiritRuleForm` +
+sorts `SpellForm`) + un petit noyau headless à côté de `FireField` /
+`WindField`, branché par `SpiritDirector`. Ordre conseillé : la Foudre
+d'abord (elle ferme le triangle avec l'Eau et la Terre déjà là).
+
+- **Foudre** (esprit Lame, tranchant) : `ConductionField::spark(x, z,
+  durée)` — un BFS borné par le rayon sur mouillé ∪ eau > 1 cm ∪ props
+  conducteurs ; cellules atteintes → contact `buildupType =
+  "electrocution"` (existe) et dégâts tranchants ; règles `Eau→Foudre
+  conduct`, `Foudre→Flamme ignite` (sec, faible : un départ de feu),
+  `Terre block` (shifumi Terre > Foudre : un mur de pierre coupe l'arc).
+  Rendu : éclair = particules additives + une lumière transitoire d'une
+  frame.
+- **Végétation** (esprit Arbre) : un canal `growth` de couverture (le
+  modèle du feu : grille 2 m, job, masque) ; `Eau/Lumière→Végétation
+  grow`, `Flamme→Végétation consume` (déjà la repousse du feu — à
+  unifier : le `regrow` de `FireGrid` EST ce canal), `Végétation→Lumière`
+  (l'ombre du couvert atténue le champ radiatif). Rendu : densité
+  d'herbe (canal du masque) et gate de buissons au scatter.
+- **Lumière** : `RadianceField` (soleil + orbes posés) → `radianceAt` ;
+  consommateurs : perception PNJ (voir dans le noir), `Lumière→Végétation
+  grow` ; rendu = une entrée transitoire dans `RenderSnapshot.lights`
+  (existe).
+- **Ténèbres** (esprit Noir) : le même champ en émetteurs négatifs ;
+  `Ténèbres→Flamme extinguish` (lent), `Ténèbres→Végétation` flétrissure
+  (shifumi Ténèbres > Végétation), `Lumière > Ténèbres` dissipation ;
+  contact `buildupType = "curse"` / mental ; rendu = brume/teinte locale
+  (le volume de brume existe).
+- **Psy** (esprit Miroir, perçant) : pas de champ spatial — une impulsion
+  `activate` sur ce qui porte un tag « activable » dans le rayon
+  (mécanismes, `TriggerForm` scriptés, consciences PNJ via `callBrain`) ;
+  contact `buildupType = "mental"` ; shifumi Psy > Terre, Foudre > Psy. À
+  inventer au playtest ; le cadre le porte sans code nouveau côté champs.
+- **Eau froide (le même esprit que l'Eau)** : la glace = couverture `ice`
+  sur les cellules d'eau, override côté `WaterQuery` (surface marchable,
+  flux 0, aucun changement du noyau d'eau) ; `Flamme→Eau melt/evaporate`,
+  contact `buildupType = "glaciation"` sur l'eau froide.
+
+### Chantiers notés pour plus tard
+- **Transformer × tout** (la forme de sort « transformer » pour chaque
+  élément : peindre la pierre existe en Terre, le reste à décider).
+- **Le vent pousse des objets rigides** : demande des corps dynamiques
+  Jolt poussés par impulsion (la façade n'a que `addDynamicConvex` pour
+  les rochers) — hors démo, le vent ne pousse que du cinématique.
+- **Le scatter spawne des objets interactifs** (emprise de pierre sur les
+  rochers du scatter) — noté dans `docs/TERRAIN-MAPS.md`, chantier
+  PAYSAGE.
+
+### Dette technique connue (non bloquante)
+- Les deux cycles d'inclusion de la moitié haute d'`engine/` (racine ↔
+  render ↔ ui, assets → anim) — `docs/ARCHITECTURE-LAYERS.md` §3, à
+  défaire quand RENDERER-EXTRACT (`docs/RENDERING.md` §7) touchera ces
+  fichiers.
+- Partager un bake de donjon par graine entre les trois TU de donjon
+  (505 s → ~150 s en Debug) — `docs/AUDIT/U9-tests.md`.
+- L'avertissement de validation « vertex attribute at location 2 not
+  consumed » du caster d'ombre.
+
+### Après le chantier
+L'ordre acté par le dev : **PAYSAGE** (la suite de CARTES, le peuplement
+B10-B13 — `docs/TERRAIN-MAPS.md`), puis les P1 par valeur de
+`docs/MEADOWS-PLAN.md` (stats avancées, quêtes 3D outillées, économie et
+crime, éditeurs, musique dynamique, polish renderer).
