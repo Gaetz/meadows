@@ -23,21 +23,22 @@ namespace {
 
 using namespace render::terraingen;
 
+// The budget variants (docs/PAYSAGE.md §7.5, N3): the cut budget on
+// calm and rough ground, the iteration count and the uplift rate.
 struct Variant {
     const char* name;
-    f32 calmGateLow, calmGateHigh; // 0/0 = legacy damp
-    f32 slopeReturn;
-    f32 relaxGateLow, relaxGateHigh;
-    f32 crestFade;
+    f32 calmCut, roughCut;
+    i32 iterations;
+    f32 upliftRate;
 };
 
 constexpr Variant kVariants[] = {
-    { "v0_reference", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
-    { "v1_halo", 0.35f, 0.7f, 0.0f, 0.5f, 0.85f, 0.0f },
-    { "v2_halo_pente", 0.35f, 0.7f, 0.35f, 0.5f, 0.85f, 0.0f },
-    { "v3_halo_crete", 0.35f, 0.7f, 0.0f, 0.5f, 0.85f, 0.35f },
-    { "v4_complet_leger", 0.35f, 0.7f, 0.35f, 0.5f, 0.85f, 0.35f },
-    { "v5_complet_moyen", 0.35f, 0.7f, 0.6f, 0.5f, 0.85f, 0.5f },
+    { "v0_unbounded", 1.0e9f, 1.0e9f, 80, 8.0f },
+    { "v1_budget", 6.0f, 250.0f, 48, 1.5f },
+    { "v2_rough120", 6.0f, 120.0f, 48, 1.5f },
+    { "v3_calm12", 12.0f, 250.0f, 48, 1.5f },
+    { "v4_iter64_up3", 6.0f, 250.0f, 64, 3.0f },
+    { "v5_calm3_rough400", 3.0f, 400.0f, 48, 1.5f },
 };
 
 } // namespace
@@ -61,12 +62,10 @@ int erosionBench(char** argv, int argc) {
     for (const Variant& variant : kVariants) {
         TileBakeParams params;
         params.worldSeed = seed;
-        params.fineCalmGateLow = variant.calmGateLow;
-        params.fineCalmGateHigh = variant.calmGateHigh;
-        params.fineSlopeReturn = variant.slopeReturn;
-        params.relaxGateLow = variant.relaxGateLow;
-        params.relaxGateHigh = variant.relaxGateHigh;
-        params.keepCrestFade = variant.crestFade;
+        params.calmCut = variant.calmCut;
+        params.roughCut = variant.roughCut;
+        params.fluvial.iterations = variant.iterations;
+        params.fluvial.upliftRate = variant.upliftRate;
         const TileBakeResult baked = bakeSoloTile(params, tx, tz);
         const render::TerrainRegion& region = baked.region;
 

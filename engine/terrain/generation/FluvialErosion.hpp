@@ -15,9 +15,10 @@
 namespace render::terraingen {
 
 struct FluvialParams {
-    // Dissection budget: deep valley systems kept, some walkable high
-    // ground preserved. Hand-tuned — see docs/PAYSAGE.md §1.3.
-    i32 iterations { 80 };
+    // Dissection budget: the macro carries the altitude (the world
+    // layer's floor), the erosion sculpts within the per-texel cut
+    // budget (`maxCut`) — see docs/PAYSAGE.md §7.5.
+    i32 iterations { 48 };
     f32 dt { 1.0f };
     // Stream-power erodibility: dh/dt = -k * A^m * slope, with A in m².
     // Sets the equilibrium slope S = upliftRate / (k * A^m): at A = 1e4 m²
@@ -26,9 +27,9 @@ struct FluvialParams {
     f32 k { 8.0e-2f };
     f32 areaExponent { 0.5f }; // m of A^m
     // Meters of rock raised per iteration where the uplift field is 1:
-    // x iterations = the orogeny budget the erosion carves into
-    // (~800 m over the macro base at the defaults).
-    f32 upliftRate { 8.0f };
+    // x iterations = what the massif crests regain against the stream
+    // power (~70 m at the defaults — the étage carries the altitude).
+    f32 upliftRate { 1.5f };
     // Base level: nodes at/below the sea (and the grid rim) are fixed —
     // erosion carves toward them and never below.
     f32 seaLevel { kDefaultSeaLevel };
@@ -88,15 +89,21 @@ struct FluvialResult {
 // survive full stream-power dissection (plateauKeep). `erodibility` and
 // `capacityScale`, if given, scale k and the sediment capacity per texel
 // (biome character: hard rock vs sediment, cohesive vs loose cover).
-// `cancel`, when set and raised, aborts between iterations and returns
-// the partial surface — shutdown only (callers must DISCARD the
-// result: never cache or publish a partially eroded tile).
+// `maxCut`, if given, is the HARD cut budget per texel (m): the implicit
+// sweep never solves a cell below its input height minus the budget —
+// the donors of a floored receiver resolve against the floored value,
+// so a knickpoint stops at the budget instead of propagating upstream.
+// nullptr = unbounded (bit-exact legacy). `cancel`, when set and raised,
+// aborts between iterations and returns the partial surface — shutdown
+// only (callers must DISCARD the result: never cache or publish a
+// partially eroded tile).
 FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const vector<f32>& uplift,
                            const FluvialParams& params,
                            const vector<f32>* keep = nullptr,
                            const vector<f32>* erodibility = nullptr,
                            const vector<f32>* capacityScale = nullptr,
+                           const vector<f32>* maxCut = nullptr,
                            const std::atomic<bool>* cancel = nullptr);
 
 // Priority-flood depression fill (Barnes et al. 2014, epsilon variant):

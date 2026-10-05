@@ -107,13 +107,15 @@ struct RhythmParams {
     // of interest (the open-world rule of thumb, docs/PAYSAGE.md §7.5).
     f32 pieceCellSize { 2400.0f };
     f32 pieceChance { 0.85f };
-    f32 pieceRadiusMin { 300.0f };
-    f32 pieceRadiusMax { 900.0f };
-    // [étage][min, max] meters of lift at the piece's summit.
-    f32 pieceHeightByEtage[4][2] { { 40.0f, 140.0f },
-                                   { 60.0f, 200.0f },
-                                   { 50.0f, 160.0f },
-                                   { 150.0f, 400.0f } };
+    f32 pieceRadiusMin { 350.0f };
+    f32 pieceRadiusMax { 1000.0f };
+    // [étage][min, max] meters of lift at the piece's summit: a
+    // landmark reads from the next one (a 40 m knoll vanished behind
+    // the rolling plain).
+    f32 pieceHeightByEtage[4][2] { { 80.0f, 220.0f },
+                                   { 100.0f, 280.0f },
+                                   { 80.0f, 220.0f },
+                                   { 200.0f, 500.0f } };
     f32 ridgeColWavelength { 1300.0f }; // saddles along a ridge piece
     f32 crestWavelength { 1800.0f };    // massif ridged crests
     f32 crestAmplitudeByEtage[4] { 30.0f, 60.0f, 90.0f, 200.0f };
@@ -250,11 +252,6 @@ struct MacroResult {
 // re-blends back, so swelled highlands survive the stream power.
 constexpr f32 kPlateauKeepCoef = 0.0008f; // per meter of base lift
 constexpr f32 kPlateauKeepMax = 0.5f;
-// High calm socles (plateau tops, elevated plains) also resist the
-// carve: keep fraction added per unit of altitude-gated calm, so the
-// habitable high ground stays high instead of being dissected back to
-// base level. Shared by TileBake stage 1 and the analytic mirror.
-constexpr f32 kCalmKeep = 0.25f;
 
 // The MacroParams elevation recurve applied to one land height (meters):
 // monotone PCHIP through (0,0), (1/4, low), (1/2, mid), (3/4, high),
@@ -307,7 +304,7 @@ constexpr f32 kMapBorderMountainLift = 260.0f;  // max crest above base
 constexpr f32 kMapBorderSeaHalf = 900.0f;       // coast, each side
 constexpr f32 kMapBorderSeaDepth = 40.0f;       // channel floor
 constexpr f32 kMapBorderCrestWavelength = 2000.0f; // peaks/saddles
-constexpr f32 kMapBorderRidgeKeep = 0.8f; // stage-1 erosion keep
+constexpr f32 kMapBorderRidgeKeep = 0.6f; // stage-1 erosion keep
 // The line itself MEANDERS: its position is warped by a long-range
 // wave along the line (the terrain's own domain-warp idea), so coasts
 // and ranges wander instead of ruling straight. Both maps and the

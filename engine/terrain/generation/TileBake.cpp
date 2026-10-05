@@ -99,6 +99,64 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             }
         }
     }
+    // Sediment fills the socle's LOCAL closed basins BEFORE the
+    // erosion: with the hard cut budget the fastscape can no longer
+    // breach every dimple of the relief carrier, and each one became a
+    // lake (141 on the first budgeted map). The dimples are found on
+    // the HIGH-PASS of a 64 m copy (a ~1 km box mean removed — the
+    // lowland enclosed by its province is not a dimple, a flood of the
+    // raw surface drowned the whole map to its far spill), flooded to
+    // their local spill with a draining slope; the fill depth comes
+    // back bilinearly, on calm ground. The versants keep their basins
+    // (the erosion dissects them, the budget is wide there).
+    {
+        const u32 step = glm::max(
+            1u, static_cast<u32>(std::lround(64.0f / out.sim.texelSize)));
+        const GridSpec coarse { out.sim.originX, out.sim.originZ,
+                                out.sim.texelSize * static_cast<f32>(step),
+                                (out.sim.n - 1) / step + 1 };
+        vector<f32> h(coarse.cells());
+        for (u32 row = 0; row < coarse.n; ++row) {
+            for (u32 col = 0; col < coarse.n; ++col) {
+                h[static_cast<size_t>(row) * coarse.n + col] =
+                    macro.height[static_cast<size_t>(row * step) *
+                                     out.sim.n +
+                                 col * step];
+            }
+        }
+        vector<f32> low = h;
+        for (u32 pass = 0; pass < 60; ++pass) { // ~1 km box mean
+            low = boxBlur3(coarse, low);
+        }
+        vector<f32> hp(coarse.cells());
+        for (size_t i = 0; i < hp.size(); ++i) {
+            hp[i] = h[i] - low[i];
+        }
+        const vector<f32> filled =
+            priorityFloodFill(coarse, hp, -1.0e9f, 1.0e-3f);
+        vector<f32> depth(coarse.cells());
+        for (size_t i = 0; i < depth.size(); ++i) {
+            depth[i] = glm::max(filled[i] - hp[i], 0.0f);
+        }
+        for (u32 row = 0; row < out.sim.n; ++row) {
+            for (u32 col = 0; col < out.sim.n; ++col) {
+                const size_t i = static_cast<size_t>(row) * out.sim.n + col;
+                if (macro.height[i] <= params.macro.seaLevel) {
+                    continue;
+                }
+                const f32 w = glm::smoothstep(0.25f, 0.75f, macro.calm[i]);
+                if (w <= 0.0f) {
+                    continue;
+                }
+                macro.height[i] +=
+                    w * bilinearGrid(coarse, depth,
+                                     static_cast<f32>(col) /
+                                         static_cast<f32>(step),
+                                     static_cast<f32>(row) /
+                                         static_cast<f32>(step));
+            }
+        }
+    }
     // The fleuve imprint — the "authored -> S1 before erosion" slot: the
     // master courses carve their channel, plain and monotone bed into
     // the macro BEFORE the fastscape, which then sculpts around them
@@ -150,7 +208,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                  glm::smoothstep(30.0f, 90.0f, macro.hillRelief[i])) *
                 (1.0f -
                  glm::smoothstep(60.0f, 180.0f, macro.plateau[i]));
-            character.erodibility[i] *= 1.0f + plain;
+            character.erodibility[i] *= 1.0f + 0.3f * plain;
             // Lithology: hard pockets erode slow and hold steeper
             // scree, soft pockets roll — neutralized where a corridor
             // runs (a pass is a promise) and clamped so the stacked
@@ -164,20 +222,16 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                     glm::mix(1.6f, 0.55f, hard);
                 character.talusScale[i] *= glm::mix(0.9f, 1.25f, hard);
             }
-            // Calm socles equilibrate flat and shed gentle: HIGHER
-            // erodibility lowers the fastscape equilibrium slope
-            // (S = U/(k*A^m) — same direction as the corridor and
-            // plain factors), a softer talus rounds what remains.
-            // LOW socles only — high calm ground is protected by the
-            // kCalmKeep instead (its keep is often already capped, so
-            // extra erodibility would only pull the plateau down).
+            // Calm socles shed gentle (a softer talus rounds what the
+            // budget leaves) and fill flat; their erodibility is NOT
+            // boosted any more — the cut budget below is what keeps
+            // the walking rhythm, a soft socle only eroded faster.
             if (i < macro.calm.size()) {
                 const f32 calm = macro.calm[i];
                 const f32 low =
                     1.0f - glm::smoothstep(
                                150.0f, 400.0f,
                                macro.height[i] - params.macro.seaLevel);
-                character.erodibility[i] *= 1.0f + 0.8f * calm * low;
                 character.talusScale[i] *= 1.0f - 0.2f * calm;
                 // Sediment fills the low socle floors flat: LOWER
                 // capacity makes the flux drop its load here
@@ -213,17 +267,14 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                                        macro.height[i] - mean[i]);
         }
     }
+    // The ridge factor of the border ranges, kept for the budget.
+    vector<f32> ridgeFactor(macro.plateau.size(), 0.0f);
     for (size_t i = 0; i < macro.plateau.size(); ++i) {
-        // High calm socles resist the carve too (kCalmKeep) — the
-        // habitable high ground survives; the analytic mirror in
-        // macroHeightAnalytic applies the same formula.
-        const f32 calmHigh =
-            macro.calm[i] *
-            glm::smoothstep(150.0f, 400.0f,
-                            macro.height[i] - params.macro.seaLevel);
+        // The pieces' lift resists the carve (the summit survives,
+        // the flanks dissect); the socles are protected by the cut
+        // budget instead.
         keep[i] = glm::min(kPlateauKeepMax,
-                           macro.plateau[i] * kPlateauKeepCoef +
-                               calmHigh * kCalmKeep);
+                           macro.plateau[i] * kPlateauKeepCoef);
         if (!crest.empty()) {
             keep[i] *= glm::mix(1.0f - params.keepCrestFade, 1.0f,
                                 crest[i]);
@@ -234,25 +285,42 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         if (params.mapGrid.valid) {
             const u32 col = static_cast<u32>(i % out.sim.n);
             const u32 row = static_cast<u32>(i / out.sim.n);
-            keep[i] = glm::max(
-                keep[i],
-                kMapBorderRidgeKeep *
-                    mapGridRidgeFactor(controls, params.macro,
-                                       params.mapGrid, out.sim.x(col),
-                                       out.sim.z(row),
-                                       macro.height[i]));
+            ridgeFactor[i] = mapGridRidgeFactor(
+                controls, params.macro, params.mapGrid, out.sim.x(col),
+                out.sim.z(row), macro.height[i]);
+            keep[i] = glm::max(keep[i],
+                               kMapBorderRidgeKeep * ridgeFactor[i]);
         }
         // The imprinted fleuve channel/plain resists the fastscape: the
         // constructed course must survive erosion like a pad would.
         keep[i] = glm::max(keep[i], imprintKeep[i]);
     }
+    // The HARD cut budget: calm socles keep their macro (the walking
+    // rhythm), everything else dissects; the imprinted channels and
+    // the border ridges' cols take the rough budget (the fleuve wins
+    // its bed, a col gets carved walkable).
+    vector<f32> maxCut(macro.height.size());
+    for (size_t i = 0; i < maxCut.size(); ++i) {
+        f32 cut = glm::mix(params.roughCut, params.calmCut,
+                           glm::smoothstep(0.25f, 0.75f, macro.calm[i]));
+        // A piece is a DESIGNED landmark: its flanks get a light
+        // dissection, never a carve to the plain.
+        cut = glm::mix(cut, 4.0f * params.calmCut,
+                       glm::smoothstep(30.0f, 80.0f, macro.plateau[i]));
+        if (imprintKeep[i] > 0.0f || ridgeFactor[i] > 0.2f) {
+            cut = params.roughCut;
+        }
+        maxCut[i] = cut;
+    }
+    out.macroHeight = macro.height;
+    out.budget = maxCut;
     const FluvialResult eroded = erodeFluvial(
         out.sim, macro.height, macro.uplift, fluvial,
         keep.empty() ? nullptr : &keep,
         character.erodibility.empty() ? nullptr : &character.erodibility,
         character.capacityScale.empty() ? nullptr
                                         : &character.capacityScale,
-        cancel);
+        &maxCut, cancel);
     if (cancelled()) {
         out.eroded = eroded.height;
         return out; // partial, discarded by the caller
@@ -287,31 +355,6 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     if (!eroded.deposit.empty()) {
         for (size_t i = 0; i < out.deposit.size(); ++i) {
             out.deposit[i] += eroded.deposit[i];
-        }
-    }
-    // Calm relaxation: the socle family is calm at the COARSE scale
-    // too — the erodibility hooks only tilt the fastscape slopes, they
-    // never remove the ravines. Blend toward the ~160 m box mean where
-    // the CONTROL family claims the ground (the derived valley-floor
-    // calm would be circular here); versants keep full dissection.
-    // Sibling of roundRidges: a weighted relaxation, gathers only.
-    {
-        vector<f32> mean = out.eroded;
-        for (u32 pass = 0; pass < 10; ++pass) {
-            mean = boxBlur3(out.sim, mean);
-        }
-        for (size_t i = 0; i < out.eroded.size(); ++i) {
-            if (out.eroded[i] <= params.macro.seaLevel) {
-                continue;
-            }
-            const f32 gate =
-                params.relaxGateHigh > 0.0f
-                    ? glm::smoothstep(params.relaxGateLow,
-                                      params.relaxGateHigh,
-                                      macro.calm[i])
-                    : macro.calm[i];
-            out.eroded[i] =
-                glm::mix(out.eroded[i], mean[i], 0.75f * gate);
         }
     }
     // Valley floors join the calm-socle family here: they only exist

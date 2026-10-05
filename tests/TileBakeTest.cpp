@@ -683,6 +683,31 @@ TEST_CASE("stage-1 calm: valley floors join the family, deterministic") {
     }
 }
 
+TEST_CASE("stage-1 budget: a calm texel never loses more than its cut") {
+    // The hard budget holds through the whole stage-1 chain (fluvial
+    // within the budget, thermal and rounding only move material
+    // locally): on calm ground off the imprint, macro - eroded stays
+    // under calmCut plus a small thermal/rounding slack.
+    TileBakeParams params = testParams();
+    params.fluvial.iterations = 48;
+    const TileStage1 s1 = bakeTileStage1(params, 3, 5);
+    REQUIRE(s1.macroHeight.size() == s1.sim.cells());
+    REQUIRE(s1.budget.size() == s1.sim.cells());
+    u64 calmCells = 0;
+    f32 worst = 0.0f;
+    for (size_t i = 0; i < s1.budget.size(); ++i) {
+        if (s1.macroHeight[i] <= params.macro.seaLevel + 5.0f ||
+            s1.budget[i] > params.calmCut + 1.0e-3f) {
+            continue; // sea, imprint, rough ground
+        }
+        ++calmCells;
+        worst = glm::max(worst, s1.macroHeight[i] - s1.eroded[i]);
+    }
+    MESSAGE("calm-budget cells: ", calmCells, ", worst loss ", worst, " m");
+    CHECK(calmCells > 100);
+    CHECK(worst <= params.calmCut + 2.0f);
+}
+
 TEST_CASE("map slices agree in their shared band") {
     // Chantier CARTES: one stage-1 + one hydrology for the whole map —
     // adjacent slices derive from the same surface AND the same routed

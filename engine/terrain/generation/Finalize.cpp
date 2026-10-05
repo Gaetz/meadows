@@ -496,7 +496,10 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
     // sheet with no water under it). Carve-only.
     if (params.lakeDepthCoef > 0.0f) {
         for (const Lake& lake : hydro.lakes) {
-            if (lake.dug || lake.mask.empty() || lake.maskWidth < 3) {
+            // Both mask dims: the bilinear shore read below taps
+            // (mx + 1, mz + 1) — a one-row mask indexed off its end.
+            if (lake.dug || lake.mask.empty() || lake.maskWidth < 3 ||
+                lake.maskHeight < 3) {
                 continue;
             }
             // Chamfer distance to the nearest DRY mask cell, in mask

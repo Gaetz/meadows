@@ -100,11 +100,13 @@ struct TileBakeParams {
     //   fineSlopeReturn: extra fineScale on steep, non-calm ground
     //     (x(1 + r*steep*(1-calmGated))). 0 = off.
     f32 fineSlopeReturn { 0.35f };
-    //   relaxGate*: the calm relaxation strength reads
-    //     smoothstep01(low, high, calm) instead of raw calm — the
-    //     mid-slopes keep their carve. high <= 0 = legacy.
-    f32 relaxGateLow { 0.5f };
-    f32 relaxGateHigh { 0.85f };
+    // The HARD erosion budget (docs/PAYSAGE.md §7.5): meters a texel
+    // may lose to the fastscape — `calmCut` on the calm socles (the
+    // walking rhythm survives), `roughCut` elsewhere (the versants
+    // and massifs dissect), blended on the control calm; the fleuve
+    // imprint and the border ridges' cols get the rough budget.
+    f32 calmCut { 6.0f };
+    f32 roughCut { 250.0f };
     //   keepCrestFade: 0 = keep as-is; else the erosion keep fades to
     //     keep*(1-fade) OFF the local crests (crest = stands above the
     //     ~500 m mean), matching the measured profile: erosion belongs
@@ -136,6 +138,10 @@ struct TileStage1 {
                          //   post-erosion valley floors (erosion damp)
     vector<f32> trunk;   // master-valley floorness (fleuve promotion,
                          //   site scoring)
+    // Diagnostics (never persisted): the pre-erosion macro the
+    // budget applied to, and the per-texel cut budget itself.
+    vector<f32> macroHeight;
+    vector<f32> budget;
 };
 
 struct TileBakeResult {
@@ -258,7 +264,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The cache key is otherwise the
 // world seed alone: a changed default needs this bump (or a cleared
 // terrain-cache) to reach the player.
-constexpr u32 kTileBakeVersion = 70;
+constexpr u32 kTileBakeVersion = 71;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

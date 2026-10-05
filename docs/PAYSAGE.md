@@ -1316,6 +1316,70 @@ design à chaque brique de génération et se ré-épingle.
   recompilation dans les dossiers VS2026 : purge des .obj après tout
   changement d'en-tête partagé).
 
+- **2026-10-05 — Retour dev sur N2 : « tout est plat, une plaine aqueuse
+  morne ; je veux des paysages qui changent souvent et qui donnent envie
+  d'aller de point d'intérêt en point d'intérêt. »** Deux causes dans
+  N2 : le décret de départ aplatissait TOUTE la carte (rayon 6 km +
+  fondu 16 km → un disque bas en pays haut = un bassin fermé que le
+  priority-flood du réseau maître remplit : fleuves rectilignes, lacs)
+  et les pièces étaient rares (une par 7 km). **N2b** (`424cd30`) :
+  le champ d'étage est **re-basé sur le départ** (`etageAnchorShift`,
+  décalage constant mémoïsé par seed qui s'efface entre 12 et 36 km —
+  le pays autour garde sa propre variation, aucune cuvette), la prairie
+  n'est que les premiers 1,2 km (fondu 4 km), l'anneau de pays bas
+  (4-12 km) n'impose que terre / pas de massif / climat tempéré ;
+  **bancs** à 7 km (±20 % du plancher) ; **pièces tous les 2,4 km**
+  (85 %, rayon 350-1 000 m, hauteurs par étage 80-220 / 100-280 /
+  80-220 / 200-500 m — à 40-140 m une butte disparaissait derrière le
+  roulis de la plaine), visibles jusqu'au rivage (porte 2-12 m) ;
+  rampe côtière sur la porteuse seule. Monde mesuré (200 km hors
+  ancre) : mer 34,9 %, bas 51 / collines 31 / plateau 14,5 / haut
+  3,7 %, massif 13 %, calme 77 %, pièces 7 par carte (jamais 0 sur une
+  carte terrestre), pente de plancher intérieure ≤ 13 %. Rendus 10/24/
+  100 km : roulis vert, pièces tous les 2-3 km, rivières qui méandrent.
+- **2026-10-05 — N3 livrée : le budget d'érosion dur.** `erodeFluvial`
+  prend `maxCut` (plancher par texel dans le sweep implicite : un
+  receveur plancher résout ses donneurs contre la valeur plancher, le
+  knickpoint s'arrête ; `nullptr` = legacy bit-exact, testé). Stage-1 :
+  `calmCut` 6 m sur le calme, `roughCut` 250 m ailleurs (fondu sur
+  `calm` 0,25-0,75), 24 m sur les pièces (un amer dessiné se dissèque
+  légèrement, jamais jusqu'à la plaine), rough sur l'empreinte et les
+  cols de crête de bordure ; boost d'érodabilité des plaines ×1,3 (au
+  lieu de ×2), **érodabilité calme ×(1+0,8·calm) retirée, relaxation
+  calme SUPPRIMÉE, `kCalmKeep` supprimé**, `kMapBorderRidgeKeep` 0,6 ;
+  fluvial 48 it. / uplift 1,5 (l'étage porte l'altitude). **Comblement
+  des creux locaux** avant l'érosion : sur une copie à 64 m, passe-haut
+  (moyenne ~1 km retirée — un flood de la surface brute noyait la carte
+  entière jusqu'à son déversoir lointain), priority-flood des creux à
+  leur déversoir local, profondeur rendue bilinéairement sur le calme
+  (142 → 108 lacs seulement : les lacs ne viennent pas des creux de la
+  macro). `TileStage1 += macroHeight, budget` (diag). Banc
+  `erosion-bench` : variantes {calmCut, roughCut, it., uplift}. Tests :
+  « maxCut floors the carve » (colline sans uplift), « stage-1 budget »
+  (pire perte sur le calme = 6 m), bug corrigé au passage : `Finalize`
+  lisait hors d'un masque de lac d'UNE ligne (`maskHeight < 3` non
+  gardé — l'assert vector ne se voyait qu'en Debug ; la suite complète
+  tourne en Release, qui ne vérifie pas les indices : à garder en tête).
+  `kTileBakeVersion` 71, hash `MapBakerTest` 6716548419360545234.
+  **Baseline 8 km « budget »** (carte (0,0), 14 s Release) : hauteurs
+  41-154 m (plancher 40-80 + pièces), census intérieur **socle 17,9 % /
+  versant 81,9 % / drame 0,2 %**, relief médian **21,9 m** (socle 13,
+  versant 25 — le roulis ±25 m / 700 m survit : 12,5 m → 22 m), transect
+  N-S plat 27 %, E-W 54 % ; vista : ouvert 8/9, amer > 2° à 3 km 7/9,
+  **colline ≤ 1,5 km 3/9** (0/9 avant), sommet alpin 0/9 (carte basse
+  par décret) ; calibration analytique − baké : 0-100 m +2 m, 100-200 m
+  −26 m, 200-300 m −46 m (les pièces perdent un cinquième, plus 150 m) ;
+  spawn (3 881, 68, 4 656), 5,2 m / 30 m ; 20 runs fleuve (7,9 km), 90
+  ruisseaux. **Reste rouge : l'eau** — 129 lacs naturels (31 par
+  4×4 km, surtout 0,5-10 ha, 7-9 m de profondeur) + 77 étangs posés
+  (confluences/épingles) pour une cible §4 de 3-6 lacs par carte. Ce
+  n'est pas N3 (33 lacs avant le budget, 60-68 en N1/N2, 21 par 4×4 km
+  sur la carte 24 km) : les bassins naissent dans la surface ÉRODÉE
+  (dépôt, thermique, arrondi ?) et pas dans la macro — enquête dédiée
+  (banc : variantes sans transport sédimentaire, sans thermique, seuils
+  `minLakeDepth`/`minLakeCells` 0,6 m / 12 cellules) à faire AVANT N4.
+  Idem les étangs posés (une règle de rendu des rubans, 77 sur 8 km).
+
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 
 **Arbitrages** : cartes **2×2 tranches = 8 192 m** (échelle Skyrim), bandes

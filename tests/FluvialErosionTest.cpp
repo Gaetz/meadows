@@ -197,6 +197,40 @@ TEST_CASE("plateauKeep re-blends mesas out of the dissection") {
               .epsilon(0.05));
 }
 
+TEST_CASE("maxCut floors the carve against the input grid") {
+    // A 100 m hill with no uplift: the free run carves it down, the
+    // budget stops every texel at its own floor.
+    FluvialParams params;
+    params.iterations = 40;
+    const auto bump = gaussianUplift();
+    auto h = flatHeights();
+    for (size_t i = 0; i < h.size(); ++i) {
+        h[i] += 100.0f * bump[i];
+    }
+    const vector<f32> uplift(spec().cells(), 0.0f);
+    const FluvialResult free = erodeFluvial(spec(), h, uplift, params);
+    // Unbounded pointer = the free run, bit-exact.
+    const FluvialResult none =
+        erodeFluvial(spec(), h, uplift, params, nullptr, nullptr, nullptr,
+                     nullptr);
+    CHECK(none.height == free.height);
+    // A 2 m budget: no texel ends more than 2 m under its input, and
+    // the surface differs from the free run (which carves deeper).
+    vector<f32> budget(spec().cells(), 2.0f);
+    const FluvialResult capped =
+        erodeFluvial(spec(), h, uplift, params, nullptr, nullptr, nullptr,
+                     &budget);
+    f32 deepestCut = 0.0f;
+    f32 deepestFree = 0.0f;
+    for (size_t i = 0; i < h.size(); ++i) {
+        deepestCut = glm::max(deepestCut, h[i] - capped.height[i]);
+        deepestFree = glm::max(deepestFree, h[i] - free.height[i]);
+    }
+    CHECK(deepestCut <= 2.0f + 1.0e-4f);
+    CHECK(deepestFree > 2.0f);
+    CHECK(capped.height != free.height);
+}
+
 TEST_CASE("sediment transport: flats fill and flatten, peaks stand, "
           "drainage survives") {
     FluvialParams off;

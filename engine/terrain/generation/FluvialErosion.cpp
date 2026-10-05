@@ -127,6 +127,7 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const vector<f32>* keep,
                            const vector<f32>* erodibility,
                            const vector<f32>* capacityScale,
+                           const vector<f32>* maxCut,
                            const std::atomic<bool>* cancel) {
     const size_t cells = spec.cells();
     const f32 cellArea = spec.texelSize * spec.texelSize;
@@ -174,7 +175,11 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                           flow.recvDist[i];
             const f32 raised =
                 out.height[i] + params.dt * params.upliftRate * uplift[i];
-            const f32 solved = (raised + f * out.height[r]) / (1.0f + f);
+            f32 solved = (raised + f * out.height[r]) / (1.0f + f);
+            if (maxCut) {
+                // The budget floors the carve against the INPUT grid.
+                solved = glm::max(solved, height[i] - (*maxCut)[i]);
+            }
             if (transport) {
                 eroded[i] = glm::max(raised - solved, 0.0f);
             }
