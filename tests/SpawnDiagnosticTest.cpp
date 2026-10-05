@@ -4,39 +4,82 @@
 #include <cmath>
 #include <map>
 
-#include "engine/terrain/SandboxTerrain.hpp"
-#include "engine/terrain/WaterBodies.hpp"
-#include "engine/terrain/generation/TileBake.hpp"
-#include "engine/render/landscape/TerrainNoise.hpp"
-#include "engine/render/landscape/VegetationSystem.hpp"
+#include "MapWorldFixture.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshSimplify.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 
 // Hidden landscape INSTRUMENTS (every case is doctest::skip — run one
 // explicitly, e.g. meadows-tests '-tc=variety transect*' -ns): the
 // headless twins of "walk the world and look" that measure the target
-// of docs/PAYSAGE.md §4 (transects, vistas, family/calm/snow census,
-// lakes, rivers, fleuves, erosion calibration) plus asset QA (rock uv).
-// DEBT (docs/PAYSAGE.md §7.3 B2): they still bake ISOLATED tiles of
-// the seed-1337 world around the historical spawn (8197, 230); the
-// game now runs bounded maps (global erosion, border ranges, spawn
-// probed from the map centre) — re-base them before trusting a number.
+// of docs/PAYSAGE.md §4 on THE BOUNDED MAP the game plays — map (0, 0)
+// of seed 1337, read from a map cache through MapWorldFixture (global
+// erosion, border ranges, one hydrology; the spawn probed like the
+// game does). Cache: MEADOWS_MAP_CACHE=<terrain-cache/<seed>> when set,
+// else the game's cache next to the binary, else a temp bake (minutes
+// in Debug — point MEADOWS_MAP_CACHE at a baked one). Transects,
+// vistas, family/calm/snow census, lakes, rivers, fleuves, erosion
+// calibration, plus asset QA (rock uv). The numbers they print are the
+// baseline of docs/PAYSAGE.md §7.4.
 
 using namespace render::terraingen;
 
-// Land-type budget: how the land (sea excluded) splits into plains /
-// hills+plateaus / mountains, sampled from the control fields.
+namespace {
+
+constexpr u32 kSeed = 1337;
+constexpr i32 kMapX = 0;
+constexpr i32 kMapZ = 0;
+// Past the rim ranges: where the census of the INTERIOR runs.
+constexpr f32 kInterior = kMapBorderMountainHalf;
+
+const maptest::MapWorld& theMap() {
+    static const maptest::MapWorld world = [] {
+        const TileBakeParams params = maptest::gameLikeParams(kSeed);
+        const auto root = maptest::diagnosticsCacheRoot(kSeed, kMapX, kMapZ);
+        MESSAGE("map (", kMapX, ", ", kMapZ, ") from ", root.string());
+        maptest::MapWorld w = maptest::loadOrBakeMap(
+            params, kMapX, kMapZ, game::kMapTilesPerSide, root);
+        MESSAGE("  ", w.slicesLoaded, " slices, ", w.lakes.size(),
+                " lakes, ", w.rivers.size(), " river runs, overview ",
+                w.sandbox->overviewGrid.n, "^2");
+        return w;
+    }();
+    return world;
+}
+
+ProceduralControls controlsOf(const maptest::MapWorld& w) {
+    return ProceduralControls { w.controlParams };
+}
+
+// The game's start on this map (shared probe), the centre otherwise.
+Vec3 spawnOf(const maptest::MapWorld& w) {
+    if (const auto spot = render::probeMapSpawn(*w.sandbox, w.mapX, w.mapZ,
+                                                w.seaLevel())) {
+        return *spot;
+    }
+    return { w.centreX(), w.overviewHeight(w.centreX(), w.centreZ()),
+             w.centreZ() };
+}
+
+// The analytic mirror with the border shaping — what the bake started
+// from (and what the far fallback shows where no overview exists).
+f32 analyticHeight(const maptest::MapWorld& w, const ProceduralControls& c,
+                   f32 x, f32 z) {
+    return applyMapGridShape(c, w.params.macro, w.sandbox->grid, x, z,
+                             macroHeightAnalytic(c, w.params.macro, x, z));
+}
+
+} // namespace
+
+// Land-type budget of the map: how its land (sea excluded) splits into
+// plains / hills+plateaus / mountains, sampled from the control fields.
 //   meadows-tests '-tc=proportion diagnostic' -ns
 TEST_CASE("proportion diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
     u64 sea = 0, plains = 0, hills = 0, mountains = 0;
-    for (f32 z = -60000.0f; z <= 60000.0f; z += 200.0f) {
-        for (f32 x = -60000.0f; x <= 60000.0f; x += 200.0f) {
+    for (f32 z = w.minZ; z <= w.maxZ; z += 200.0f) {
+        for (f32 x = w.minX; x <= w.maxX; x += 200.0f) {
             const ControlSample s = controls.at(x, z);
             if (s.sea) {
                 ++sea;
@@ -50,31 +93,28 @@ TEST_CASE("proportion diagnostic" * doctest::skip()) {
         }
     }
     const f64 land = static_cast<f64>(plains + hills + mountains);
-    MESSAGE("sea ", 100.0 * sea / (land + sea), "% of world; of land: ",
+    MESSAGE("sea ", 100.0 * sea / (land + sea), "% of the map; of land: ",
             "plains ", 100.0 * plains / land, "%, hills+plateaus ",
             100.0 * hills / land, "%, mountains ",
             100.0 * mountains / land, "%");
-    CHECK(true);
+    CHECK(land > 0.0);
 }
 
-// Coastline census: how much of the shore runs in cliff mode, how high
-// the rims stand, and where the best existing sea-cliffs are.
+// Coastline census of the map: how much of the shore runs in cliff
+// mode, how high the rims stand, where the best sea-cliffs are — and
+// whether the rim survives the real (global) erosion.
 //   meadows-tests '-tc=coast diagnostic' -ns
 TEST_CASE("coast diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const f32 sea = params.macro.seaLevel;
-
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    const f32 sea = w.seaLevel();
     struct Spot {
         f32 x, z, rim, cliff;
     };
     vector<Spot> shore;
     const f32 step = 200.0f;
-    for (f32 z = -60000.0f; z <= 60000.0f; z += step) {
-        for (f32 x = -60000.0f; x <= 60000.0f; x += step) {
+    for (f32 z = w.minZ; z <= w.maxZ; z += step) {
+        for (f32 x = w.minX; x <= w.maxX; x += step) {
             const ControlSample s = controls.at(x, z);
             if (s.sea) {
                 continue;
@@ -86,14 +126,11 @@ TEST_CASE("coast diagnostic" * doctest::skip()) {
             if (!coastal) {
                 continue;
             }
-            // The coastProfile cliff blend, replicated.
             const f32 cliff = glm::max(
-                glm::smoothstep(params.macro.cliffTierStart,
-                                params.macro.cliffTierEnd, s.tier),
+                glm::smoothstep(w.params.macro.cliffTierStart,
+                                w.params.macro.cliffTierEnd, s.tier),
                 glm::smoothstep(0.62f, 0.8f, s.hardness));
-            // Rim height: the land just inland of the ramp band.
-            const f32 rim =
-                macroHeightAnalytic(controls, params.macro, x, z) - sea;
+            const f32 rim = analyticHeight(w, controls, x, z) - sea;
             shore.push_back({ x, z, rim, cliff });
         }
     }
@@ -107,13 +144,13 @@ TEST_CASE("coast diagnostic" * doctest::skip()) {
         }
     }
     MESSAGE("shore samples: ", shore.size(), "; cliff-mode ",
-            100.0 * cliffy / shore.size(), "%, of which rim>40m ",
-            cliffy ? 100.0 * tall / cliffy : 0.0, "%");
+            shore.empty() ? 0.0 : 100.0 * cliffy / shore.size(),
+            "%, of which rim>40m ", cliffy ? 100.0 * tall / cliffy : 0.0,
+            "%");
     std::sort(shore.begin(), shore.end(),
               [](const Spot& a, const Spot& b) {
                   return a.rim * a.cliff > b.rim * b.cliff;
               });
-    u32 shown = 0;
     vector<Spot> kept;
     for (const Spot& s : shore) {
         bool near = false;
@@ -129,32 +166,14 @@ TEST_CASE("coast diagnostic" * doctest::skip()) {
         kept.push_back(s);
         MESSAGE("cliff coast at (", s.x, ", ", s.z, "): rim ", s.rim,
                 " m, cliff ", s.cliff);
-        if (++shown >= 5) {
+        if (kept.size() >= 5) {
             break;
         }
     }
-    // Bake the top spot's tile and walk a transect through it: does
-    // the rim survive the real erosion?
+    // Walk a transect through the top spot on the PUBLISHED ground:
+    // does the rim survive the erosion?
     if (!kept.empty()) {
         const Spot& top = kept.front();
-        const i32 tx =
-            static_cast<i32>(std::floor(top.x / params.tileSize));
-        const i32 tz =
-            static_cast<i32>(std::floor(top.z / params.tileSize));
-        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
-        const auto h = [&](f32 x, f32 z) {
-            const auto& r = baked.region;
-            const i32 col = static_cast<i32>(
-                std::lround((x - r.originX) / r.texelSize));
-            const i32 row = static_cast<i32>(
-                std::lround((z - r.originZ) / r.texelSize));
-            if (col < 0 || row < 0 || col >= static_cast<i32>(r.width) ||
-                row >= static_cast<i32>(r.height)) {
-                return -9999.0f;
-            }
-            return r.heights[static_cast<size_t>(row) * r.width + col];
-        };
-        // Seaward direction: the neighbour that was sea in the scan.
         f32 dx = 0.0f, dz = 0.0f;
         if (controls.at(top.x - step, top.z).sea) {
             dx = -1.0f;
@@ -167,82 +186,85 @@ TEST_CASE("coast diagnostic" * doctest::skip()) {
         }
         for (f32 d = -600.0f; d <= 600.0f; d += 150.0f) {
             MESSAGE("  transect ", d, " m seaward: baked h = ",
-                    h(top.x + dx * d, top.z + dz * d));
+                    w.height(top.x + dx * d, top.z + dz * d));
         }
     }
     CHECK(true);
 }
 
 // Calibration data for the erosion-aware analytic (far silhouettes):
-// bakes a mountain tile and a lowland tile, then buckets baked-minus-
-// analytic by analytic height-above-sea, with the mean keep fraction.
+// buckets published-minus-analytic over the whole map by analytic
+// height-above-sea, with the mean keep fraction — the re-fit
+// instrument of the analytic mirror.
 //   meadows-tests '-tc=erosion calibration' -ns
 TEST_CASE("erosion calibration" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const f32 sea = params.macro.seaLevel;
-
-    const auto sampleTile = [&](i32 tx, i32 tz) {
-        const TileBakeResult r = bakeSoloTile(params, tx, tz);
-        struct Bucket {
-            f64 delta { 0.0 };
-            f64 keep { 0.0 };
-            u32 count { 0 };
-        };
-        constexpr u32 kBuckets = 12;
-        constexpr f32 kBand = 100.0f;
-        array<Bucket, kBuckets> buckets {};
-        const u32 w = r.region.width;
-        for (u32 row = 0; row < r.region.height; row += 8) {
-            for (u32 col = 0; col < w; col += 8) {
-                const f32 x = r.region.originX +
-                              static_cast<f32>(col) * r.region.texelSize;
-                const f32 z = r.region.originZ +
-                              static_cast<f32>(row) * r.region.texelSize;
-                const f32 ha =
-                    macroHeightAnalytic(controls, params.macro, x, z);
-                if (ha <= sea) {
-                    continue;
-                }
-                const u32 b = glm::min(
-                    kBuckets - 1,
-                    static_cast<u32>((ha - sea) / kBand));
-                const f32 hb =
-                    r.region.heights[static_cast<size_t>(row) * w + col];
-                const ControlSample s = controls.at(x, z);
-                buckets[b].delta += hb - ha;
-                buckets[b].keep +=
-                    glm::min(0.5f, s.plateau * 0.0008f);
-                ++buckets[b].count;
-            }
-        }
-        MESSAGE("tile (", tx, ", ", tz, "):");
-        for (u32 b = 0; b < kBuckets; ++b) {
-            if (buckets[b].count < 8) {
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    const f32 sea = w.seaLevel();
+    struct Bucket {
+        f64 delta { 0.0 };
+        f64 keep { 0.0 };
+        u32 count { 0 };
+    };
+    constexpr u32 kBuckets = 16;
+    constexpr f32 kBand = 100.0f;
+    array<Bucket, kBuckets> buckets {};
+    for (f32 z = w.minZ + kInterior; z <= w.maxZ - kInterior; z += 48.0f) {
+        for (f32 x = w.minX + kInterior; x <= w.maxX - kInterior;
+             x += 48.0f) {
+            const f32 ha = analyticHeight(w, controls, x, z);
+            if (ha <= sea) {
                 continue;
             }
-            MESSAGE("  h-sea [", b * 100, ",", (b + 1) * 100,
-                    "): mean delta ",
-                    buckets[b].delta / buckets[b].count, " keep ",
-                    buckets[b].keep / buckets[b].count, " (n=",
-                    buckets[b].count, ")");
+            const u32 b =
+                glm::min(kBuckets - 1, static_cast<u32>((ha - sea) / kBand));
+            const f32 hb = w.height(x, z);
+            const ControlSample s = controls.at(x, z);
+            buckets[b].delta += hb - ha;
+            buckets[b].keep += glm::min(0.5f, s.plateau * 0.0008f);
+            ++buckets[b].count;
         }
-    };
-    sampleTile(-7, -3); // the tallest measured massif (adopted world)
-    sampleTile(2, 0); // the spawn tile (adopted world)
+    }
+    for (u32 b = 0; b < kBuckets; ++b) {
+        if (buckets[b].count < 8) {
+            continue;
+        }
+        MESSAGE("  h-sea [", b * 100, ",", (b + 1) * 100, "): mean delta ",
+                buckets[b].delta / buckets[b].count, " keep ",
+                buckets[b].keep / buckets[b].count, " (n=",
+                buckets[b].count, ")");
+    }
     CHECK(true);
 }
 
-// How much relief does each erosion stage take? Bakes the tallest
-// massif tile with stages toggled off and reports the height stats —
-// the answer to "does erosion flatten everything".
+// How much relief does each erosion stage take? Bakes the map's
+// tallest slice ALONE (a 1x1 map, no borders) with stages toggled off
+// and reports the height stats — the answer to "does erosion flatten
+// everything".
 //   meadows-tests '-tc=erosion strength*' -ns
 TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
-    const auto stats = [](const char* label, TileBakeParams params) {
-        const TileBakeResult r = bakeSoloTile(params, -7, -3);
+    const maptest::MapWorld& w = theMap();
+    // The tallest slice of the published map.
+    i32 bestTx = w.mapX * w.tilesPerSide;
+    i32 bestTz = w.mapZ * w.tilesPerSide;
+    f32 bestH = -1.0e9f;
+    for (const auto& region : w.tp.base->regions) {
+        f32 maxH = -1.0e9f;
+        for (size_t i = 0; i < region->heights.size(); i += 7) {
+            maxH = glm::max(maxH, region->heights[i]);
+        }
+        if (maxH > bestH) {
+            bestH = maxH;
+            bestTx = static_cast<i32>(std::floor(
+                (region->originX + 100.0f) / w.params.tileSize));
+            bestTz = static_cast<i32>(std::floor(
+                (region->originZ + 100.0f) / w.params.tileSize));
+        }
+    }
+    MESSAGE("tallest slice (", bestTx, ", ", bestTz, "): ", bestH, " m");
+    const auto stats = [&](const char* label, TileBakeParams params) {
+        params.mapGrid.valid = false;
+        const TileBakeResult r = bakeSoloTile(params, bestTx, bestTz);
         vector<f32> above;
         const f32 sea = params.macro.seaLevel;
         f32 maxH = 0.0f;
@@ -277,8 +299,7 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
                 " p90=", pct(0.90f), " p95=", pct(0.95f),
                 " p99=", pct(0.99f));
     };
-    TileBakeParams base;
-    base.worldSeed = 1337;
+    const TileBakeParams base = w.params;
     stats("default            ", base);
     TileBakeParams noRound = base;
     noRound.rounding.strength = 0.0f;
@@ -287,7 +308,7 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
     noErosion.fluvial.iterations = 0;
     noErosion.thermal.iterations = 0;
     stats("erosion+rounding OFF", noErosion);
-    for (const i32 iterations : { 80, 60, 40 }) {
+    for (const i32 iterations : { 60, 40 }) {
         TileBakeParams softer = base;
         softer.fluvial.iterations = iterations;
         stats("fluvial reduced     ", softer);
@@ -295,90 +316,36 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
-// Variety along a walk: bakes two 16 km transects through the spawn
-// (E-W and N-S), then scores 250 m windows — the distance a player runs
-// in ~45 s (movementSpeed ~110 x 1/20 = 5.5 m/s). A window is an
+// Variety along a walk: two 16 km transects through the map's spawn
+// (E-W and N-S) on the published ground, scored by 250 m windows —
+// the distance a player runs in ~45 s (5.5 m/s). A window is an
 // "event" when the relief regime flips, water is crossed, or local
-// relief exceeds 25 m. Answers "does the landscape change often enough
-// while walking".
+// relief exceeds 25 m. Samples in the rim ranges (and off the map) are
+// skipped: the census is of the interior.
 //   meadows-tests '-tc=variety transect*' -ns
 TEST_CASE("variety transect diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const f32 seaLevel = params.macro.seaLevel;
-    const f32 px = 8196.77f; // the game's confirmed spawn (adopted world)
-    const f32 pz = 230.072f;
-
-    struct BakedTiles {
-        render::TerrainParams tp;
-        render::WaterBodies bodies;
-        vector<River> rivers;
-    };
-    // Bake every tile the two transects touch, share (0, 0).
-    std::map<std::pair<i32, i32>, TileBakeResult> tiles;
-    const auto tileOf = [&](f32 x, f32 z) {
-        return std::make_pair(
-            static_cast<i32>(std::floor(x / params.tileSize)),
-            static_cast<i32>(std::floor(z / params.tileSize)));
-    };
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    const f32 seaLevel = w.seaLevel();
+    const Vec3 spawn = spawnOf(w);
+    const f32 px = spawn.x;
+    const f32 pz = spawn.z;
+    MESSAGE("spawn (", px, ", ", spawn.y, ", ", pz, ")");
     const f32 kHalf = 8000.0f;
     const f32 kStep = 25.0f;
-    for (f32 d = -kHalf; d <= kHalf; d += kStep) {
-        for (const auto& key : { tileOf(px + d, pz), tileOf(px, pz + d) }) {
-            if (!tiles.count(key)) {
-                MESSAGE("baking tile (", key.first, ", ", key.second, ")");
-                tiles.emplace(key,
-                              bakeSoloTile(params, key.first, key.second));
-            }
-        }
-    }
-    BakedTiles world;
-    auto base = std::make_shared<render::TerrainBase>();
-    world.bodies.seaLevel = seaLevel;
-    for (const auto& [key, baked] : tiles) {
-        MESSAGE("tile (", key.first, ", ", key.second, "): ",
-                baked.lakes.size(), " lakes, ", baked.rivers.size(),
-                " rivers");
-        base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(baked.region));
-        for (const Lake& lake : baked.lakes) {
-            render::LakeSurface surface;
-            surface.level = lake.level;
-            surface.minX = lake.minX;
-            surface.minZ = lake.minZ;
-            surface.maxX = lake.maxX;
-            surface.maxZ = lake.maxZ;
-            surface.maskWidth = lake.maskWidth;
-            surface.maskHeight = lake.maskHeight;
-            surface.maskTexel = lake.maskTexel;
-            surface.mask = lake.mask;
-            world.bodies.lakes.push_back(std::move(surface));
-        }
-        world.rivers.insert(world.rivers.end(), baked.rivers.begin(),
-                            baked.rivers.end());
-    }
-    world.tp.base = base;
-    auto sandbox = std::make_shared<render::SandboxTerrain>();
-    sandbox->controls = controlParams;
-    sandbox->macro = params.macro;
-    world.tp.sandbox = sandbox;
 
     const auto wetAt = [&](f32 x, f32 z, f32 h) {
         if (h < seaLevel + 0.5f) {
             return true;
         }
-        if (render::terrain::waterSurfaceAt(world.bodies, x, z, h + 1.0f)
+        if (render::terrain::waterSurfaceAt(w.bodies, x, z, h + 1.0f)
                 .has_value()) {
             return true;
         }
-        for (const River& river : world.rivers) {
+        for (const River& river : w.rivers) {
             for (const RiverPoint& p : river.points) {
                 const f32 reach = glm::max(p.halfWidth, 4.0f);
-                if (std::abs(p.x - x) < reach &&
-                    std::abs(p.z - z) < reach) {
+                if (std::abs(p.x - x) < reach && std::abs(p.z - z) < reach) {
                     return true;
                 }
             }
@@ -405,16 +372,13 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         constexpr f32 kTan30 = 0.5774f;
         f32 minH = 1.0e9f, maxH = -1.0e9f;
         f64 meanH = 0.0;
-        u32 samples = 0, steep15 = 0, steep30 = 0;
+        u32 samples = 0, steep15 = 0, steep30 = 0, skipped = 0;
         vector<f32> windowRelief;
         u32 flatWindows = 0, reliefEvents = 0, regimeEvents = 0,
             waterEvents = 0;
-        // Terrain-family census of the 250 m windows (the 40/35/25
-        // target): socle = gentle and low-relief, drame = wall-steep.
         u32 socleWindows = 0, versantWindows = 0, drameWindows = 0;
         u32 plateauWindows = 0;
         u32 seaWindows = 0;
-        // Longest stretch containing a >30° step and no <15° foothold.
         f32 maxImpassable = 0.0f, sinceFoothold = 0.0f;
         bool wallInRun = false;
         vector<u8> eventTypes; // 0 relief, 1 regime, 2 water
@@ -427,15 +391,21 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         f32 wMin = 1.0e9f, wMax = -1.0e9f;
         u32 inWindow = 0;
         f32 prevH = 0.0f;
+        bool havePrev = false;
         vector<f32> windowSlopes;
         for (f32 d = -kHalf; d <= kHalf; d += kStep) {
             const f32 x = px + dirX * d;
             const f32 z = pz + dirZ * d;
-            const f32 h = render::terrain::height(world.tp, x, z);
+            if (!w.inside(x, z, kInterior)) {
+                ++skipped;
+                havePrev = false;
+                continue;
+            }
+            const f32 h = w.height(x, z);
             minH = glm::min(minH, h);
             maxH = glm::max(maxH, h);
             meanH += h;
-            if (samples > 0) {
+            if (havePrev) {
                 const f32 slope = std::abs(h - prevH) / kStep;
                 if (slope > kTan30) {
                     ++steep30;
@@ -456,6 +426,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 }
             }
             prevH = h;
+            havePrev = true;
             ++samples;
             wMin = glm::min(wMin, h);
             wMax = glm::max(wMax, h);
@@ -481,9 +452,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
             windowRelief.push_back(relief);
             std::sort(windowSlopes.begin(), windowSlopes.end());
             const f32 medianSlope =
-                windowSlopes.empty()
-                    ? 0.0f
-                    : windowSlopes[windowSlopes.size() / 2];
+                windowSlopes.empty() ? 0.0f
+                                     : windowSlopes[windowSlopes.size() / 2];
             windowSlopes.clear();
             const f32 cx = px + dirX * (d - 125.0f);
             const f32 cz = pz + dirZ * (d - 125.0f);
@@ -491,9 +461,6 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 ++drameWindows;
             } else if (medianSlope < kTan10 && relief < 15.0f) {
                 ++socleWindows;
-                // The dev likes his plateaus: count the high socles
-                // apart so the budget shows them instead of melting
-                // them into the plains.
                 if (controls.at(cx, cz).plateau > 80.0f) {
                     ++plateauWindows;
                 }
@@ -501,8 +468,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 ++versantWindows;
             }
             const int regime = regimeOf(cx, cz);
-            const bool wet =
-                wetAt(cx, cz, render::terrain::height(world.tp, cx, cz));
+            const bool wet = wetAt(cx, cz, w.height(cx, cz));
             bool event = false;
             if (relief < 8.0f) {
                 ++flatWindows;
@@ -541,20 +507,22 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         }
         std::sort(windowRelief.begin(), windowRelief.end());
         const f32 medianRelief =
-            windowRelief.empty()
-                ? 0.0f
-                : windowRelief[windowRelief.size() / 2];
-        const u32 windows = static_cast<u32>(windowRelief.size());
+            windowRelief.empty() ? 0.0f
+                                 : windowRelief[windowRelief.size() / 2];
+        const u32 windows =
+            glm::max(1u, static_cast<u32>(windowRelief.size()));
         u32 typeCounts[3] = { 0, 0, 0 };
         for (const u8 type : eventTypes) {
             ++typeCounts[type];
         }
         const u32 dominantType =
             glm::max(typeCounts[0], glm::max(typeCounts[1], typeCounts[2]));
+        const u32 n = glm::max(samples, 1u);
         MESSAGE(std::string(label), ": h [", minH, ", ", maxH, "] mean ",
-                meanH / samples, " (sea ", seaLevel, ")");
-        MESSAGE("  windows(250m)=", windows, " land (", seaWindows,
-                " sea)  flat(<8m relief) ",
+                meanH / n, " (sea ", seaLevel, ")  samples ", samples,
+                " (", skipped, " skipped: rim band / off map)");
+        MESSAGE("  windows(250m)=", windowRelief.size(), " land (",
+                seaWindows, " sea)  flat(<8m relief) ",
                 100.0f * static_cast<f32>(flatWindows) / windows,
                 "%  median relief ", medianRelief, " m");
         MESSAGE("  families: socle ",
@@ -576,12 +544,12 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                     : 100.0f * static_cast<f32>(dominantType) /
                           static_cast<f32>(eventTypes.size()),
                 "%");
-        MESSAGE("  slope: >15° ",
-                100.0f * static_cast<f32>(steep15) / samples, "%, >30° ",
-                100.0f * static_cast<f32>(steep30) / samples,
+        MESSAGE("  slope: >15° ", 100.0f * static_cast<f32>(steep15) / n,
+                "%, >30° ", 100.0f * static_cast<f32>(steep30) / n,
                 "%  | max impassable stretch ", maxImpassable,
                 " m  | water crossings/km ",
-                static_cast<f32>(waterEvents) / (2.0f * kHalf / 1000.0f));
+                static_cast<f32>(waterEvents) /
+                    (static_cast<f32>(samples) * kStep / 1000.0f));
     };
     runTransect("E-W", 1.0f, 0.0f);
     runTransect("N-S", 0.0f, 1.0f);
@@ -589,28 +557,23 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
 }
 
 // Distant views from TRAVEL POINTS (a deterministic jittered grid of
-// walkable spots, not just the spawn): per point, the analytic horizon
-// on 72 azimuths to 18 km, plus the two objective layers of the target
+// walkable spots over the map interior): per point, the horizon on 72
+// azimuths to 18 km on the ERODED overview (the map's own truth, the
+// far fallback beyond it), plus the two objective layers of the target
 // (an alpine summit reachable at ~6 km, a marked hill at ~3 km).
 // Acceptance: >= 30/72 open azimuths, a landmark > 2° beyond 3 km,
 // both layers present from most points.
 //   meadows-tests '-tc=vista diagnostic' -ns
 TEST_CASE("vista diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const f32 sea = params.macro.seaLevel;
-    const auto ha = [&](f32 x, f32 z) {
-        return macroHeightAnalytic(controls, params.macro, x, z);
-    };
+    const maptest::MapWorld& w = theMap();
+    const f32 sea = w.seaLevel();
+    const auto ha = [&](f32 x, f32 z) { return w.overviewHeight(x, z); };
     // Deterministic per-cell hash (splitmix-style; std::hash is not
     // portable across toolchains).
     const auto hash01 = [&](i32 cx, i32 cz, u32 salt) {
         u64 v = (static_cast<u64>(static_cast<u32>(cx)) << 32) ^
                 static_cast<u32>(cz) ^ (static_cast<u64>(salt) << 17) ^
-                params.worldSeed;
+                kSeed;
         v ^= v >> 30;
         v *= 0xbf58476d1ce4e5b9ull;
         v ^= v >> 27;
@@ -619,30 +582,33 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
         return static_cast<f32>(v & 0xffffffu) / 16777215.0f;
     };
 
-    // Travel points: jittered 8 km cells over +/-16 km around the
-    // spawn, kept when they land on walkable ground (dry, below the
-    // alpine band) — where a player actually journeys.
+    // Travel points: jittered 6 km cells over the map interior, kept
+    // when they land on walkable ground (dry, below the alpine band).
     struct Travel {
         f32 x, z, h;
     };
     vector<Travel> points;
-    for (i32 cz = -2; cz <= 1 && points.size() < 12; ++cz) {
-        for (i32 cx = -2; cx <= 1 && points.size() < 12; ++cx) {
-            const f32 x = 8196.77f +
-                          (static_cast<f32>(cx) + 0.2f +
-                           0.6f * hash01(cx, cz, 11)) *
-                              8000.0f;
-            const f32 z = 230.072f +
-                          (static_cast<f32>(cz) + 0.2f +
-                           0.6f * hash01(cx, cz, 23)) *
-                              8000.0f;
+    const f32 cell = 6000.0f;
+    const f32 x0 = w.minX + kInterior;
+    const f32 z0 = w.minZ + kInterior;
+    const i32 cells = static_cast<i32>((w.mapSize - 2.0f * kInterior) / cell);
+    u32 considered = 0;
+    for (i32 cz = 0; cz < cells; ++cz) {
+        for (i32 cx = 0; cx < cells; ++cx) {
+            ++considered;
+            const f32 x = x0 + (static_cast<f32>(cx) + 0.2f +
+                                0.6f * hash01(cx, cz, 11)) *
+                                   cell;
+            const f32 z = z0 + (static_cast<f32>(cz) + 0.2f +
+                                0.6f * hash01(cx, cz, 23)) *
+                                   cell;
             const f32 h = ha(x, z);
             if (h > sea + 8.0f && h < sea + 450.0f) {
                 points.push_back({ x, z, h });
             }
         }
     }
-    MESSAGE("travel points kept: ", points.size(), "/16");
+    MESSAGE("travel points kept: ", points.size(), "/", considered);
 
     u32 openOk = 0, landmarkOk = 0, summitOk = 0, hillOk = 0;
     for (const Travel& p : points) {
@@ -677,8 +643,7 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
         for (f32 sz = -8000.0f; sz <= 8000.0f; sz += 250.0f) {
             for (f32 sx = -8000.0f; sx <= 8000.0f; sx += 250.0f) {
                 if (ha(p.x + sx, p.z + sz) > sea + 500.0f) {
-                    dSummit =
-                        glm::min(dSummit, std::hypot(sx, sz));
+                    dSummit = glm::min(dSummit, std::hypot(sx, sz));
                 }
             }
         }
@@ -689,8 +654,6 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
                 if (top < sea + 60.0f) {
                     continue;
                 }
-                // A MARKED hill dominates its 500 m disc (not a ravine
-                // rim) and stands 120 m over its 1 km ring.
                 f32 ring = 0.0f;
                 bool localMax = true;
                 for (u32 k = 0; k < 8; ++k) {
@@ -700,8 +663,8 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
                     const f32 kz = std::sin(angle);
                     ring += ha(p.x + sx + kx * 1000.0f,
                                p.z + sz + kz * 1000.0f);
-                    if (ha(p.x + sx + kx * 500.0f,
-                           p.z + sz + kz * 500.0f) > top) {
+                    if (ha(p.x + sx + kx * 500.0f, p.z + sz + kz * 500.0f) >
+                        top) {
                         localMax = false;
                         break;
                     }
@@ -721,78 +684,81 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
         MESSAGE("point (", p.x, ", ", p.z, ") h=", p.h, ": open az ",
                 openAzimuths, "/72",
                 std::string(landmark ? "" : "  NO-LANDMARK"), "  summit ",
-                dSummit < 1.0e9f ? dSummit / 1000.0f : -1.0f,
-                " km  hill ",
+                dSummit < 1.0e9f ? dSummit / 1000.0f : -1.0f, " km  hill ",
                 dHill < 1.0e9f ? dHill / 1000.0f : -1.0f, " km");
     }
     const u32 n = glm::max<u32>(1, static_cast<u32>(points.size()));
     MESSAGE("summary: open>=30az ", openOk, "/", n, "  landmark>2°@3km ",
-            landmarkOk, "/", n, "  alpine summit<=8km ", summitOk, "/",
-            n, "  marked hill<=4km ", hillOk, "/", n);
+            landmarkOk, "/", n, "  alpine summit<=8km ", summitOk, "/", n,
+            "  marked hill<=4km ", hillOk, "/", n);
     CHECK(true);
 }
 
-// 2-D family census on the spawn tile: every 250 m window of the baked
-// region classified socle/versant/drame with its relief — the fair
-// instrument for the 40/35/25 budget (a straight transect over- or
-// under-samples one family), and the proof that calm ground is calm.
+// 2-D family census of the map interior: every 250 m window of the
+// published slices classified socle/versant/drame with its relief —
+// the fair instrument for the 40/35/25 budget (a straight transect
+// over- or under-samples one family), and the proof that calm ground
+// is calm.
 //   meadows-tests '-tc=family census*' -ns
 TEST_CASE("family census diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const TileBakeResult baked = bakeSoloTile(params, 2, 0);
-    const auto& r = baked.region;
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
     constexpr f32 kWindow = 250.0f;
-    const u32 stride = static_cast<u32>(kWindow / r.texelSize);
-    u32 socle = 0, versant = 0, drame = 0, wet = 0, plateau = 0;
+    u32 socle = 0, versant = 0, drame = 0, wet = 0, plateau = 0, rim = 0;
     vector<f32> socleRelief, versantRelief, allRelief;
-    for (u32 wz = 0; wz + stride < r.height; wz += stride) {
-        for (u32 wx = 0; wx + stride < r.width; wx += stride) {
-            f32 minH = 1.0e9f, maxH = -1.0e9f;
-            vector<f32> slopes;
-            for (u32 row = wz; row < wz + stride; row += 2) {
-                for (u32 col = wx; col < wx + stride; col += 2) {
-                    const size_t i =
-                        static_cast<size_t>(row) * r.width + col;
-                    const f32 h = r.heights[i];
-                    minH = glm::min(minH, h);
-                    maxH = glm::max(maxH, h);
-                    if (col + 2 < wx + stride) {
-                        slopes.push_back(
-                            std::abs(r.heights[i + 2] - h) /
-                            (2.0f * r.texelSize));
+    for (const auto& regionPtr : w.tp.base->regions) {
+        const render::TerrainRegion& r = *regionPtr;
+        const u32 stride = static_cast<u32>(kWindow / r.texelSize);
+        // The kept ring (overlapMargin) belongs to the neighbour too:
+        // census the slice's own rect only.
+        const u32 skip = static_cast<u32>(w.params.overlapMargin / r.texelSize);
+        for (u32 wz = skip; wz + stride <= r.height - skip; wz += stride) {
+            for (u32 wx = skip; wx + stride <= r.width - skip; wx += stride) {
+                const f32 cx =
+                    r.originX + (static_cast<f32>(wx) + stride * 0.5f) *
+                                    r.texelSize;
+                const f32 cz =
+                    r.originZ + (static_cast<f32>(wz) + stride * 0.5f) *
+                                    r.texelSize;
+                if (!w.inside(cx, cz, kInterior)) {
+                    ++rim;
+                    continue;
+                }
+                f32 minH = 1.0e9f, maxH = -1.0e9f;
+                vector<f32> slopes;
+                for (u32 row = wz; row < wz + stride; row += 2) {
+                    for (u32 col = wx; col < wx + stride; col += 2) {
+                        const size_t i =
+                            static_cast<size_t>(row) * r.width + col;
+                        const f32 h = r.heights[i];
+                        minH = glm::min(minH, h);
+                        maxH = glm::max(maxH, h);
+                        if (col + 2 < wx + stride) {
+                            slopes.push_back(std::abs(r.heights[i + 2] - h) /
+                                             (2.0f * r.texelSize));
+                        }
                     }
                 }
-            }
-            if (maxH < params.macro.seaLevel + 0.5f) {
-                ++wet;
-                continue;
-            }
-            const f32 relief = maxH - minH;
-            allRelief.push_back(relief);
-            std::sort(slopes.begin(), slopes.end());
-            const f32 medianSlope = slopes[slopes.size() / 2];
-            if (medianSlope > 0.5774f) {
-                ++drame;
-            } else if (medianSlope < 0.1763f && relief < 15.0f) {
-                ++socle;
-                socleRelief.push_back(relief);
-                if (controls
-                        .at(r.originX +
-                                (static_cast<f32>(wx) + stride * 0.5f) *
-                                    r.texelSize,
-                            r.originZ +
-                                (static_cast<f32>(wz) + stride * 0.5f) *
-                                    r.texelSize)
-                        .plateau > 80.0f) {
-                    ++plateau;
+                if (maxH < w.seaLevel() + 0.5f) {
+                    ++wet;
+                    continue;
                 }
-            } else {
-                ++versant;
-                versantRelief.push_back(relief);
+                const f32 relief = maxH - minH;
+                allRelief.push_back(relief);
+                std::sort(slopes.begin(), slopes.end());
+                const f32 medianSlope = slopes[slopes.size() / 2];
+                if (medianSlope > 0.5774f) {
+                    ++drame;
+                } else if (medianSlope < 0.1763f && relief < 15.0f) {
+                    ++socle;
+                    socleRelief.push_back(relief);
+                    if (controls.at(cx, cz).plateau > 80.0f) {
+                        ++plateau;
+                    }
+                } else {
+                    ++versant;
+                    versantRelief.push_back(relief);
+                }
             }
         }
     }
@@ -803,77 +769,69 @@ TEST_CASE("family census diagnostic" * doctest::skip()) {
         std::sort(v.begin(), v.end());
         return v[v.size() / 2];
     };
-    const f32 land = static_cast<f32>(socle + versant + drame);
-    MESSAGE("spawn tile 250m windows: socle ", 100.0f * socle / land,
+    const f32 land = glm::max(1.0f, static_cast<f32>(socle + versant + drame));
+    MESSAGE("map interior 250m windows: socle ", 100.0f * socle / land,
             "% (dont plateau ", 100.0f * plateau / land, "%), versant ",
-            100.0f * versant / land, "%, drame ",
-            100.0f * drame / land, "%  (", wet,
-            " wet)  target 40/35/25, land only");
+            100.0f * versant / land, "%, drame ", 100.0f * drame / land,
+            "%  (", wet, " wet, ", rim, " rim-band)  target 40/35/25, "
+            "land only");
     MESSAGE("median relief: all ", median(allRelief), " m, socle ",
             median(socleRelief), " m, versant ", median(versantRelief),
             " m");
     CHECK(land > 0.0f);
 }
 
-// Calm-family coverage on a REAL tile: how much of the spawn tile's dry
-// ground the stage-1 `calm` field claims (control level + valley-floor
-// fusion) — the input B2 damps erosion with. Watch it against the ~40%
-// socle budget.
+// Calm-family coverage of the map: how much of its dry stage-1 ground
+// the `calm` field claims (control level + valley-floor fusion) — the
+// input the erosion damps with. Re-bakes the map stage-1 (the field is
+// not persisted; palier D1). Watch it against the ~40% socle budget.
 //   meadows-tests '-tc=calm coverage*' -ns
 TEST_CASE("calm coverage diagnostic" * doctest::skip()) {
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    const TileStage1 s1 = bakeTileStage1(params, 2, 0);
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    // The map stage-1 as game::bakeMap runs it.
+    TileBakeParams mp = w.params;
+    mp.tileSize = w.mapSize;
+    mp.apron = kMapApron;
+    mp.mapGrid.seed = w.params.worldSeed;
+    mp.mapGrid.mapSize = w.mapSize;
+    mp.mapGrid.seaLevel = w.seaLevel();
+    const TileStage1 s1 = bakeTileStage1(mp, w.mapX, w.mapZ);
     u64 dry = 0, calm06 = 0, calm03 = 0, fromControl = 0;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
     for (u32 row = 0; row < s1.sim.n; row += 2) {
         for (u32 col = 0; col < s1.sim.n; col += 2) {
+            const f32 x = s1.sim.x(col);
+            const f32 z = s1.sim.z(row);
+            if (!w.inside(x, z, kInterior)) {
+                continue;
+            }
             const size_t i = static_cast<size_t>(row) * s1.sim.n + col;
-            if (s1.eroded[i] <= params.macro.seaLevel) {
+            if (s1.eroded[i] <= w.seaLevel()) {
                 continue;
             }
             ++dry;
             calm06 += s1.calm[i] > 0.6f;
             calm03 += s1.calm[i] > 0.3f;
-            fromControl +=
-                controls.at(s1.sim.x(col), s1.sim.z(row)).calm > 0.6f;
+            fromControl += controls.at(x, z).calm > 0.6f;
         }
     }
-    MESSAGE("spawn tile stage-1: dry cells ", dry, "  calm>0.6 ",
-            100.0 * calm06 / dry, "%  calm>0.3 ", 100.0 * calm03 / dry,
-            "%  control-only calm>0.6 ", 100.0 * fromControl / dry, "%");
+    const f64 d = static_cast<f64>(glm::max<u64>(dry, 1));
+    MESSAGE("map stage-1 (interior): dry cells ", dry, "  calm>0.6 ",
+            100.0 * calm06 / d, "%  calm>0.3 ", 100.0 * calm03 / d,
+            "%  control-only calm>0.6 ", 100.0 * fromControl / d, "%");
     CHECK(dry > 0);
 }
 
 TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
-    // Snow-line calibration instrument: bakes the spawn tile and its two
-    // N-S neighbours, then measures the snow WEIGHT coverage of the land
-    // under several (base snow line, biome offsets) configs through the
-    // real materialWeightsAt path (blended attributes + wander field
-    // included). "full" = weight > 0.5, "touched" = the deposition
-    // overlay's band has begun (h > line - 90). Altitude bands locate
-    // where the snow lives.
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const f32 seaLevel = params.macro.seaLevel;
-
-    auto base = std::make_shared<render::TerrainBase>();
-    for (const i32 tz : { -1, 0, 1 }) {
-        MESSAGE("baking tile (2, ", tz, ")");
-        base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(bakeSoloTile(params, 2, tz).region));
-    }
-    render::TerrainParams tp;
-    tp.base = base;
-    tp.seed = params.worldSeed;
-    auto sandbox = std::make_shared<render::SandboxTerrain>();
-    sandbox->controls = controlParams;
-    sandbox->macro = params.macro;
-    tp.sandbox = sandbox;
+    // Snow-line calibration instrument: measures the snow WEIGHT
+    // coverage of the map interior under several (base snow line,
+    // biome offsets) configs through the real materialWeightsAt path
+    // (blended attributes + wander field included). "full" = weight >
+    // 0.5, "touched" = the deposition overlay's band has begun (h >
+    // line - 90). Altitude bands locate where the snow lives.
+    const maptest::MapWorld& w = theMap();
+    const f32 seaLevel = w.seaLevel();
+    render::TerrainParams tp = w.tp;
 
     struct Config {
         const char* label;
@@ -882,11 +840,9 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
         f32 alpine;
         f32 tundra;
     };
-    // "avant-M4" is the pre-M4 look the calibration targets (~6 % full
-    // snow); "adopte" is the shipped landscape.toml config, the others
-    // bracket it one notch either way for future retuning.
+    // "adopte" is the shipped landscape.toml config, the others bracket
+    // it one notch either way for future retuning.
     const Config configs[] = {
-        { "avant-M4", 1100.0f, 400.0f, -300.0f, -650.0f },
         { "adopte  ", 900.0f, 150.0f, -180.0f, -300.0f },
         { "var-950 ", 950.0f, 150.0f, -150.0f, -250.0f },
         { "var-850 ", 850.0f, 200.0f, -200.0f, -350.0f },
@@ -928,38 +884,30 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
         u32 touched = 0;
         u32 bandLand[5] = {};
         u32 bandFull[5] = {};
-        for (const sptr<const render::TerrainRegion>& regionPtr :
-             base->regions) {
-            const render::TerrainRegion& region = *regionPtr;
-            for (f32 z = region.originZ + 200.0f;
-                 z < region.originZ + region.spanZ() - 200.0f;
-                 z += 32.0f) {
-                for (f32 x = region.originX + 200.0f;
-                     x < region.originX + region.spanX() - 200.0f;
-                     x += 32.0f) {
-                    const f32 h = render::terrain::height(tp, x, z);
-                    if (h < seaLevel + 0.5f) {
-                        continue;
-                    }
-                    ++land;
-                    const Vec3 n = render::terrain::normal(tp, x, z);
-                    const auto w = render::terrain::materialWeightsAt(
-                        tp, x, z, h, n);
-                    const auto fields =
-                        render::terrain::regionFieldsAt(tp, x, z);
-                    const f32 line = c.snowLine + fields.snowLineOffset;
-                    u32 band = 0;
-                    while (band < 4 && h >= kBandEdges[band]) {
-                        ++band;
-                    }
-                    ++bandLand[band];
-                    if (w.snow > 0.5f) {
-                        ++full;
-                        ++bandFull[band];
-                    }
-                    if (h > line - 90.0f) {
-                        ++touched;
-                    }
+        for (f32 z = w.minZ + kInterior; z < w.maxZ - kInterior; z += 48.0f) {
+            for (f32 x = w.minX + kInterior; x < w.maxX - kInterior;
+                 x += 48.0f) {
+                const f32 h = render::terrain::height(tp, x, z);
+                if (h < seaLevel + 0.5f) {
+                    continue;
+                }
+                ++land;
+                const Vec3 n = render::terrain::normal(tp, x, z);
+                const auto wts =
+                    render::terrain::materialWeightsAt(tp, x, z, h, n);
+                const auto fields = render::terrain::regionFieldsAt(tp, x, z);
+                const f32 line = c.snowLine + fields.snowLineOffset;
+                u32 band = 0;
+                while (band < 4 && h >= kBandEdges[band]) {
+                    ++band;
+                }
+                ++bandLand[band];
+                if (wts.snow > 0.5f) {
+                    ++full;
+                    ++bandFull[band];
+                }
+                if (h > line - 90.0f) {
+                    ++touched;
                 }
             }
         }
@@ -970,29 +918,31 @@ TEST_CASE("snow coverage diagnostic" * doctest::skip()) {
         };
         MESSAGE(std::string(c.label), " base ", c.snowLine, " offsets(",
                 c.arid, "/", c.alpine, "/", c.tundra, "): full ",
-                pct(full, land), "%  touched ", pct(touched, land),
-                "%  (", land, " land texels)");
+                pct(full, land), "%  touched ", pct(touched, land), "%  (",
+                land, " land samples)");
         MESSAGE("   full by band  <300m ", pct(bandFull[0], bandLand[0]),
-                "%  300-600 ", pct(bandFull[1], bandLand[1]),
-                "%  600-900 ", pct(bandFull[2], bandLand[2]),
-                "%  900-1200 ", pct(bandFull[3], bandLand[3]),
-                "%  >1200 ", pct(bandFull[4], bandLand[4]), "%");
+                "%  300-600 ", pct(bandFull[1], bandLand[1]), "%  600-900 ",
+                pct(bandFull[2], bandLand[2]), "%  900-1200 ",
+                pct(bandFull[3], bandLand[3]), "%  >1200 ",
+                pct(bandFull[4], bandLand[4]), "%");
     }
     CHECK(true);
 }
 
 TEST_CASE("biome locator diagnostic" * doctest::skip()) {
-    // Where is each biome? Scans the control fields around the spawn
-    // (controls only — no bake) and prints, per palette id, the nearest
-    // LAND occurrence plus a far alternate, with the analytic height so
-    // the console/fly coordinate can be pasted directly (x, y, z).
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    const f32 px = 8196.77f;
-    const f32 pz = 230.072f;
+    // Where is each biome on the map? Scans the control fields over the
+    // map rect (controls only — no bake) and prints, per palette id,
+    // the nearest LAND occurrence to the spawn plus a far alternate,
+    // with the overview height so the console/fly coordinate can be
+    // pasted directly (x, y, z). The spawn is THE game's (shared probe).
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    const Vec3 spawn = spawnOf(w);
+    const f32 px = spawn.x;
+    const f32 pz = spawn.z;
+    MESSAGE("spawn (shared probe): (", static_cast<i32>(px), ", ",
+            static_cast<i32>(spawn.y + 2.0f), ", ", static_cast<i32>(pz),
+            ")");
     const char* names[] = { "temperate", "arid",      "alpine",
                             "tundra",    "subalpine", "steppe" };
     struct Hit {
@@ -1002,12 +952,17 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
     };
     Hit nearest[6];
     Hit alternate[6]; // nearest beyond 6 km — a second spot to try
-    for (f32 z = pz - 24000.0f; z <= pz + 24000.0f; z += 96.0f) {
-        for (f32 x = px - 24000.0f; x <= px + 24000.0f; x += 96.0f) {
+    u64 counts[6] = {};
+    u64 landSamples = 0;
+    for (f32 z = w.minZ + kInterior; z <= w.maxZ - kInterior; z += 96.0f) {
+        for (f32 x = w.minX + kInterior; x <= w.maxX - kInterior;
+             x += 96.0f) {
             const ControlSample s = controls.at(x, z);
             if (s.sea || s.biome >= 6) {
                 continue;
             }
+            ++landSamples;
+            ++counts[s.biome];
             const f32 dx = x - px;
             const f32 dz = z - pz;
             const f32 d = dx * dx + dz * dz;
@@ -1019,35 +974,12 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             }
         }
     }
-    // Spawn-probe mirror (LandscapeScene setSandbox — keep the criteria
-    // in sync): where the game will actually start, temperate decree
-    // included.
-    {
-        f32 sx = 2600.0f;
-        f32 sz = 0.0f;
-        f32 sy = 0.0f;
-        bool found = false;
-        for (f32 radius = 2600.0f; radius <= 24000.0f && !found;
-             radius += 700.0f) {
-            for (u32 step = 0; step < 16 && !found; ++step) {
-                const f32 angle =
-                    radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
-                const f32 x = std::cos(angle) * radius;
-                const f32 z = std::sin(angle) * radius;
-                const f32 h = macroHeightAnalytic(controls, params.macro,
-                                                  x, z);
-                if (h > params.macro.seaLevel + 8.0f && h < 95.0f &&
-                    controls.at(x, z).biome == 0) {
-                    sx = x;
-                    sz = z;
-                    sy = h;
-                    found = true;
-                }
-            }
-        }
-        MESSAGE("spawn probe mirror: (", static_cast<i32>(sx), ", ",
-                static_cast<i32>(sy + 2.0f), ", ", static_cast<i32>(sz),
-                ")  found=", found);
+    for (u32 b = 0; b < 6; ++b) {
+        MESSAGE(std::string(names[b]), ": ",
+                landSamples ? 100.0 * static_cast<f64>(counts[b]) /
+                                  static_cast<f64>(landSamples)
+                            : 0.0,
+                "% of the interior land");
     }
     // Patch geometry at the nearest steppe hit: how big is the zone the
     // player is sent to, and how strong does the blended sandiness (the
@@ -1065,36 +997,32 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
                 ++total;
                 steppe += s.biome == 5 ? 1 : 0;
                 arid += s.biome == 1 ? 1 : 0;
-                // The runtime cross-blend, approximated at control level.
                 f32 sand = 0.0f;
                 for (const Vec2 o : { Vec2 { 0, 0 }, Vec2 { 32, 0 },
                                       Vec2 { -32, 0 }, Vec2 { 0, 32 },
                                       Vec2 { 0, -32 } }) {
                     const u8 id = controls.at(x + o.x, z + o.y).biome;
-                    const f32 w = (o.x == 0.0f && o.y == 0.0f) ? 2.0f
-                                                               : 1.0f;
-                    sand += w * (id == 1 ? 0.7f : id == 5 ? 0.35f : 0.0f);
+                    const f32 wgt = (o.x == 0.0f && o.y == 0.0f) ? 2.0f
+                                                                 : 1.0f;
+                    sand += wgt * (id == 1 ? 0.7f : id == 5 ? 0.35f : 0.0f);
                 }
                 maxSand = glm::max(maxSand, sand / 6.0f);
             }
         }
         MESSAGE("steppe patch @nearest: steppe ",
-                100.0f * static_cast<f32>(steppe) /
-                    static_cast<f32>(total),
+                100.0f * static_cast<f32>(steppe) / static_cast<f32>(total),
                 "%  arid ",
                 100.0f * static_cast<f32>(arid) / static_cast<f32>(total),
                 "% of the 1.5 km box, max blended sandiness ", maxSand);
     }
     for (u32 b = 0; b < 6; ++b) {
         const auto report = [&](const char* tag, const Hit& hit) {
-            const std::string label =
-                std::string(names[b]) + " " + tag;
+            const std::string label = std::string(names[b]) + " " + tag;
             if (hit.d >= 1.0e18f) {
-                MESSAGE(label, ": none within 24 km");
+                MESSAGE(label, ": none on the map interior");
                 return;
             }
-            const f32 y = macroHeightAnalytic(controls, params.macro,
-                                              hit.x, hit.z);
+            const f32 y = w.overviewHeight(hit.x, hit.z);
             MESSAGE(label, ": (", static_cast<i32>(hit.x), ", ",
                     static_cast<i32>(y + 40.0f), ", ",
                     static_cast<i32>(hit.z), ")  a ",
@@ -1107,11 +1035,11 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
 }
 
 TEST_CASE("lake census diagnostic" * doctest::skip()) {
-    // Lake size distribution over the spawn neighbourhood: where does
-    // the puddle tail end and the real lakes begin? Areas from the
-    // flooded masks (never the bbox), max depth from level - min ground.
-    TileBakeParams params;
-    params.worldSeed = 1337;
+    // Lake size distribution over the whole map: where does the puddle
+    // tail end and the real lakes begin? Areas from the flooded masks
+    // (never the bbox), max depth from level - min published ground.
+    // Plus the river runs by tier and the fords.
+    const maptest::MapWorld& w = theMap();
     struct Bucket {
         f32 maxArea; // m²
         const char* label;
@@ -1122,203 +1050,174 @@ TEST_CASE("lake census diagnostic" * doctest::skip()) {
         { 1000.0f, "<0.1ha  " },
         { 5000.0f, "0.1-0.5 " },
         { 20000.0f, "0.5-2ha " },
-        { 1.0e18f, ">2ha    " },
+        { 100000.0f, "2-10ha  " },
+        { 1.0e18f, ">10ha   " },
     };
     u32 total = 0;
     u32 dug = 0;
     u32 tierCount[3] = {};
     u32 fordCount = 0;
-    for (const auto [tx, tz] : { std::pair { 2, -1 }, { 2, 0 }, { 2, 1 },
-                                 { 1, 0 }, { 3, 0 } }) {
-        MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
-        for (const River& river : baked.rivers) {
-            ++tierCount[glm::min<u32>(river.tier, 2)];
-            fordCount += static_cast<u32>(river.fords.size());
-            if (river.tier == 2 && !river.points.empty()) {
-                const RiverPoint& mid =
-                    river.points[river.points.size() / 2];
-                MESSAGE("  fleuve run: mid (", static_cast<i32>(mid.x),
-                        ", ", static_cast<i32>(mid.surface), ", ",
-                        static_cast<i32>(mid.z), "), hw ",
-                        mid.halfWidth, ", ", river.points.size(),
-                        " pts");
+    f32 fleuveLength = 0.0f;
+    for (const River& river : w.rivers) {
+        ++tierCount[glm::min<u32>(river.tier, 2)];
+        fordCount += static_cast<u32>(river.fords.size());
+        if (river.tier == 2 && river.points.size() >= 2) {
+            for (size_t s = 0; s + 1 < river.points.size(); ++s) {
+                fleuveLength += std::hypot(
+                    river.points[s + 1].x - river.points[s].x,
+                    river.points[s + 1].z - river.points[s].z);
+            }
+            const RiverPoint& mid = river.points[river.points.size() / 2];
+            MESSAGE("  fleuve run: mid (", static_cast<i32>(mid.x), ", ",
+                    static_cast<i32>(mid.surface), ", ",
+                    static_cast<i32>(mid.z), "), hw ", mid.halfWidth, ", ",
+                    river.points.size(), " pts");
+        }
+    }
+    for (const Lake& lake : w.lakes) {
+        if (lake.dug) {
+            ++dug; // placed ponds: design features, never filtered
+            continue;
+        }
+        u32 wet = 0;
+        f32 depth = 0.0f;
+        for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+            for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                if (!lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
+                               mx]) {
+                    continue;
+                }
+                ++wet;
+                const f32 x =
+                    lake.minX + (static_cast<f32>(mx) + 0.5f) * lake.maskTexel;
+                const f32 z =
+                    lake.minZ + (static_cast<f32>(mz) + 0.5f) * lake.maskTexel;
+                depth = glm::max(depth, lake.level - w.height(x, z));
             }
         }
-        auto base = std::make_shared<render::TerrainBase>();
-        base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(baked.region));
-        render::TerrainParams tp;
-        tp.base = base;
-        for (const Lake& lake : baked.lakes) {
-            if (lake.dug) {
-                ++dug; // placed ponds: design features, never filtered
-                continue;
-            }
-            u32 wet = 0;
-            f32 depth = 0.0f;
-            for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
-                for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
-                    if (!lake.mask[static_cast<size_t>(mz) *
-                                       lake.maskWidth +
-                                   mx]) {
-                        continue;
-                    }
-                    ++wet;
-                    const f32 x = lake.minX + (static_cast<f32>(mx) +
-                                               0.5f) *
-                                                  lake.maskTexel;
-                    const f32 z = lake.minZ + (static_cast<f32>(mz) +
-                                               0.5f) *
-                                                  lake.maskTexel;
-                    depth = glm::max(
-                        depth,
-                        lake.level - render::terrain::height(tp, x, z));
-                }
-            }
-            const f32 area =
-                static_cast<f32>(wet) * lake.maskTexel * lake.maskTexel;
-            ++total;
-            for (Bucket& b : buckets) {
-                if (area <= b.maxArea) {
-                    ++b.count;
-                    b.deepest = glm::max(b.deepest, depth);
-                    break;
-                }
+        const f32 area =
+            static_cast<f32>(wet) * lake.maskTexel * lake.maskTexel;
+        ++total;
+        for (Bucket& b : buckets) {
+            if (area <= b.maxArea) {
+                ++b.count;
+                b.deepest = glm::max(b.deepest, depth);
+                break;
             }
         }
     }
-    MESSAGE("natural lakes over 5 tiles: ", total, "  (+ ", dug,
-            " placed ponds, never filtered)");
+    const f32 landKm2 = w.mapSize * w.mapSize / 1.0e6f;
+    MESSAGE("natural lakes on the map: ", total, " (", total / landKm2 * 16.0f,
+            " per 4x4 km)  (+ ", dug, " placed ponds, never filtered)");
     MESSAGE("river runs by tier: ruisseau ", tierCount[0], "  riviere ",
-            tierCount[1], "  fleuve ", tierCount[2], "  | fords ",
-            fordCount);
+            tierCount[1], "  fleuve ", tierCount[2], " (", fleuveLength / 1000.0f,
+            " km)  | fords ", fordCount);
     for (const Bucket& b : buckets) {
-        MESSAGE("  ", std::string(b.label), ": ", b.count,
-                "  (deepest ", b.deepest, " m)");
+        MESSAGE("  ", std::string(b.label), ": ", b.count, "  (deepest ",
+                b.deepest, " m)");
     }
     CHECK(true);
 }
 
 TEST_CASE("river wetness diagnostic" * doctest::skip()) {
-    // The ground truth of "l'eau est continue dans les creusements" :
-    // walks every published river run's centerline at 2 m and probes the
-    // baked terrain against the ribbon surface — DRY means the water
-    // sheet is clipped under the ground there. Also lists the run ends
-    // (each end is a place the ribbon dissolves — too many of them and
-    // the course reads as broken puddles).
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    for (const auto [tx, tz] : { std::pair { 2, 0 }, { 2, 1 } }) {
-        MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
-        auto base = std::make_shared<render::TerrainBase>();
-        base->regions.push_back(
-        std::make_shared<render::TerrainRegion>(baked.region));
-        render::TerrainParams tp;
-        tp.base = base;
-        u32 samples = 0;
-        u32 dry = 0;
-        f32 worstDryRun = 0.0f;
-        f32 totalLen = 0.0f;
-        u32 runs = 0;
-        u32 shortRuns = 0; // < 100 m: crop confetti, all ends dissolving
-        f32 worstFlat = 0.0f; // longest LEVEL surface stretch, tier 2 —
-                              // the "fleuve reads as a lake" measure
-        for (const River& river : baked.rivers) {
-            if (river.points.size() < 2) {
-                continue;
-            }
-            ++runs;
-            if (river.tier == 2) {
-                f32 flat = 0.0f;
-                for (size_t s = 0; s + 1 < river.points.size(); ++s) {
-                    const f32 len = std::hypot(
-                        river.points[s + 1].x - river.points[s].x,
-                        river.points[s + 1].z - river.points[s].z);
-                    if (river.points[s].surface -
-                            river.points[s + 1].surface <
-                        0.01f) {
-                        flat += len;
-                        worstFlat = glm::max(worstFlat, flat);
-                    } else {
-                        flat = 0.0f;
-                    }
-                }
-            }
-            f32 runLen = 0.0f;
-            f32 dryStretch = 0.0f;
-            for (size_t s = 0; s + 1 < river.points.size(); ++s) {
-                const RiverPoint& a = river.points[s];
-                const RiverPoint& b = river.points[s + 1];
-                const f32 len = std::hypot(b.x - a.x, b.z - a.z);
-                runLen += len;
-                const i32 n =
-                    glm::max(static_cast<i32>(len / 2.0f), 1);
-                for (i32 i = 0; i < n; ++i) {
-                    const f32 t =
-                        static_cast<f32>(i) / static_cast<f32>(n);
-                    const f32 x = glm::mix(a.x, b.x, t);
-                    const f32 z = glm::mix(a.z, b.z, t);
-                    const f32 surface =
-                        glm::mix(a.surface, b.surface, t);
-                    const f32 h = render::terrain::height(tp, x, z);
-                    ++samples;
-                    if (h > surface - 0.05f) {
-                        ++dry;
-                        dryStretch += 2.0f;
-                        if (dryStretch > worstDryRun) {
-                            worstDryRun = dryStretch;
-                            MESSAGE("    dry at (",
-                                    static_cast<i32>(x), ", ",
-                                    static_cast<i32>(z), "): terrain ",
-                                    h, " vs surface ", surface,
-                                    " (hw ",
-                                    glm::mix(a.halfWidth, b.halfWidth,
-                                             t),
-                                    ", stretch ", dryStretch, " m)");
-                        }
-                    } else {
-                        dryStretch = 0.0f;
-                    }
-                }
-            }
-            totalLen += runLen;
-            shortRuns += runLen < 100.0f ? 1 : 0;
+    // The ground truth of "l'eau est continue dans les creusements":
+    // walks every published river run's centerline at 2 m and probes
+    // the published terrain against the ribbon surface — DRY means the
+    // water sheet is clipped under the ground there. Also lists the run
+    // ends (each end is a place the ribbon dissolves — too many of them
+    // and the course reads as broken puddles).
+    const maptest::MapWorld& w = theMap();
+    u32 samples = 0;
+    u32 dry = 0;
+    f32 worstDryRun = 0.0f;
+    f32 totalLen = 0.0f;
+    u32 runs = 0;
+    u32 shortRuns = 0; // < 100 m: crop confetti, all ends dissolving
+    f32 worstFlat = 0.0f; // longest LEVEL surface stretch, tier 2 —
+                          // the "fleuve reads as a lake" measure
+    for (const River& river : w.rivers) {
+        if (river.points.size() < 2) {
+            continue;
         }
-        MESSAGE("  ", runs, " runs, ", totalLen / 1000.0f,
-                " km total, ", shortRuns, " runs < 100 m");
-        MESSAGE("  centerline dry: ",
-                100.0f * static_cast<f32>(dry) /
-                    static_cast<f32>(glm::max(samples, 1u)),
-                "%  worst continuous dry stretch ", worstDryRun, " m");
-        MESSAGE("  longest LEVEL fleuve surface: ", worstFlat, " m");
+        ++runs;
+        if (river.tier == 2) {
+            f32 flat = 0.0f;
+            for (size_t s = 0; s + 1 < river.points.size(); ++s) {
+                const f32 len =
+                    std::hypot(river.points[s + 1].x - river.points[s].x,
+                               river.points[s + 1].z - river.points[s].z);
+                if (river.points[s].surface - river.points[s + 1].surface <
+                    0.01f) {
+                    flat += len;
+                    worstFlat = glm::max(worstFlat, flat);
+                } else {
+                    flat = 0.0f;
+                }
+            }
+        }
+        f32 runLen = 0.0f;
+        f32 dryStretch = 0.0f;
+        for (size_t s = 0; s + 1 < river.points.size(); ++s) {
+            const RiverPoint& a = river.points[s];
+            const RiverPoint& b = river.points[s + 1];
+            const f32 len = std::hypot(b.x - a.x, b.z - a.z);
+            runLen += len;
+            const i32 n = glm::max(static_cast<i32>(len / 2.0f), 1);
+            for (i32 i = 0; i < n; ++i) {
+                const f32 t = static_cast<f32>(i) / static_cast<f32>(n);
+                const f32 x = glm::mix(a.x, b.x, t);
+                const f32 z = glm::mix(a.z, b.z, t);
+                const f32 surface = glm::mix(a.surface, b.surface, t);
+                const f32 h = w.height(x, z);
+                ++samples;
+                if (h > surface - 0.05f) {
+                    ++dry;
+                    dryStretch += 2.0f;
+                    if (dryStretch > worstDryRun) {
+                        worstDryRun = dryStretch;
+                        MESSAGE("    dry at (", static_cast<i32>(x), ", ",
+                                static_cast<i32>(z), "): terrain ", h,
+                                " vs surface ", surface, " (hw ",
+                                glm::mix(a.halfWidth, b.halfWidth, t),
+                                ", stretch ", dryStretch, " m)");
+                    }
+                } else {
+                    dryStretch = 0.0f;
+                }
+            }
+        }
+        totalLen += runLen;
+        shortRuns += runLen < 100.0f ? 1 : 0;
     }
+    MESSAGE("  ", runs, " runs, ", totalLen / 1000.0f, " km total, ",
+            shortRuns, " runs < 100 m");
+    MESSAGE("  centerline dry: ",
+            100.0f * static_cast<f32>(dry) /
+                static_cast<f32>(glm::max(samples, 1u)),
+            "%  worst continuous dry stretch ", worstDryRun, " m");
+    MESSAGE("  longest LEVEL fleuve surface: ", worstFlat, " m");
     CHECK(true);
 }
 
 TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
-    // Where are the fleuves? Master-network courses around the spawn
-    // (no bake needed — the promotion follows these very polylines).
-    // Prints, per course, its nearest point to the spawn and its
-    // biggest-area node, as pasteable (x, y, z).
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    ProceduralControlParams controlParams = params.controls;
-    controlParams.seed = params.worldSeed;
-    const ProceduralControls controls { controlParams };
-    MasterNetworkParams network = params.network;
-    network.seaLevel = params.macro.seaLevel;
-    const f32 px = 8196.77f;
-    const f32 pz = 230.072f;
-    const auto rivers = masterRiversNear(
-        controls, params.macro, network, px - 30000.0f, pz - 30000.0f,
-        px + 30000.0f, pz + 30000.0f);
-    MESSAGE("master courses in +/-30 km: ", rivers.size());
+    // Where are the fleuves? Master-network courses of the map's
+    // super-region (no bake needed — the promotion follows these very
+    // polylines). Prints, per course, its nearest point to the spawn and
+    // its biggest-area node, as pasteable (x, y, z) on the overview.
+    const maptest::MapWorld& w = theMap();
+    const ProceduralControls controls = controlsOf(w);
+    MasterNetworkParams network = w.params.network;
+    network.seaLevel = w.seaLevel();
+    const Vec3 spawn = spawnOf(w);
+    const f32 px = spawn.x;
+    const f32 pz = spawn.z;
+    const auto rivers = masterRiversNear(controls, w.params.macro, network,
+                                         w.minX, w.minZ, w.maxX, w.maxZ);
+    MESSAGE("master courses touching the map: ", rivers.size());
     struct Entry {
         f32 dist;
-        f32 nx, nz;   // nearest node to spawn
-        f32 bx, bz;   // biggest-area node (the wide stretch)
+        f32 nx, nz; // nearest node to spawn
+        f32 bx, bz; // biggest-area node (the wide stretch)
         f32 area;
         f32 length;
     };
@@ -1351,71 +1250,88 @@ TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
         entries.push_back(e);
     }
     std::sort(entries.begin(), entries.end(),
-              [](const Entry& a, const Entry& b) {
-                  return a.dist < b.dist;
-              });
-    for (size_t i = 0; i < glm::min<size_t>(entries.size(), 6); ++i) {
+              [](const Entry& a, const Entry& b) { return a.dist < b.dist; });
+    for (size_t i = 0; i < glm::min<size_t>(entries.size(), 8); ++i) {
         const Entry& e = entries[i];
-        const f32 yn = macroHeightAnalytic(controls, params.macro, e.nx,
-                                           e.nz);
-        const f32 yb = macroHeightAnalytic(controls, params.macro, e.bx,
-                                           e.bz);
+        const f32 yn = w.overviewHeight(e.nx, e.nz);
+        const f32 yb = w.overviewHeight(e.bx, e.bz);
         MESSAGE("fleuve ", i, ": ", static_cast<i32>(e.length / 1000),
                 " km, nearest (", static_cast<i32>(e.nx), ", ",
-                static_cast<i32>(yn + 30.0f), ", ",
-                static_cast<i32>(e.nz), ") a ",
-                static_cast<i32>(e.dist), " m du spawn | large a (",
-                static_cast<i32>(e.bx), ", ",
-                static_cast<i32>(yb + 30.0f), ", ",
-                static_cast<i32>(e.bz), ")");
+                static_cast<i32>(yn + 30.0f), ", ", static_cast<i32>(e.nz),
+                ") a ", static_cast<i32>(e.dist), " m du spawn | large a (",
+                static_cast<i32>(e.bx), ", ", static_cast<i32>(yb + 30.0f),
+                ", ", static_cast<i32>(e.bz), ")");
     }
     CHECK(true);
 }
 
 TEST_CASE("fleuve continuity diagnostic" * doctest::skip()) {
-    // Repro of the vanished-fleuve report: the flagged spot (8192, 6656)
-    // sits ON the tile border (1,1)|(2,1). Bake both owners and list
-    // every river run passing within 800 m — do the two sides agree on
-    // the course's existence, tier and width where they meet?
-    TileBakeParams params;
-    params.worldSeed = 1337;
-    struct Spot {
-        i32 tx, tz;
-        f32 fx, fz;
+    // Seam continuity of the published water: a run cut by an interior
+    // slice line must continue in the neighbour slice (one hydrology,
+    // clipped per slice). Lists every run end on a slice line without a
+    // matching end across it.
+    const maptest::MapWorld& w = theMap();
+    const f32 t = w.params.tileSize;
+    const auto onSliceLine = [&](f32 x, f32 z) {
+        const f32 fx = x - std::round(x / t) * t;
+        const f32 fz = z - std::round(z / t) * t;
+        const bool interiorX =
+            x > w.minX + t * 0.5f && x < w.maxX - t * 0.5f;
+        const bool interiorZ =
+            z > w.minZ + t * 0.5f && z < w.maxZ - t * 0.5f;
+        return (std::abs(fx) < 6.0f && interiorX) ||
+               (std::abs(fz) < 6.0f && interiorZ);
     };
-    const Spot spots[] = {
-        { 1, 1, 8192.0f, 6656.0f }, // the vanished-fleuve report
-        { 2, 1, 8192.0f, 6656.0f },
-        { 2, 4, 10240.0f, 17536.0f }, // the far mouth stretch
+    struct End {
+        f32 x, z;
+        u8 tier;
+        f32 hw;
+        size_t run;
     };
-    for (const auto& [tx, tz, fx, fz] : spots) {
-        MESSAGE("baking tile (", tx, ", ", tz, ")");
-        const TileBakeResult baked = bakeSoloTile(params, tx, tz);
-        u32 shown = 0;
-        for (const River& river : baked.rivers) {
-            f32 best = 1.0e30f;
-            for (const RiverPoint& pt : river.points) {
-                const f32 dx = pt.x - fx;
-                const f32 dz = pt.z - fz;
-                best = glm::min(best, dx * dx + dz * dz);
+    vector<End> ends;
+    for (size_t r = 0; r < w.rivers.size(); ++r) {
+        const River& river = w.rivers[r];
+        if (river.points.size() < 2) {
+            continue;
+        }
+        for (const RiverPoint* p : { &river.points.front(),
+                                     &river.points.back() }) {
+            if (onSliceLine(p->x, p->z)) {
+                ends.push_back({ p->x, p->z, river.tier, p->halfWidth, r });
             }
-            if (best > 800.0f * 800.0f) {
+        }
+    }
+    u32 matched = 0, unmatched = 0, tierMismatch = 0;
+    for (size_t i = 0; i < ends.size(); ++i) {
+        const End& a = ends[i];
+        bool found = false;
+        for (size_t j = 0; j < ends.size(); ++j) {
+            if (i == j || ends[j].run == a.run) {
                 continue;
             }
-            const RiverPoint& head = river.points.front();
-            const RiverPoint& tail = river.points.back();
-            MESSAGE("  run tier ", static_cast<u32>(river.tier), " (",
-                    river.points.size(), " pts, hw ",
-                    head.halfWidth, " -> ", tail.halfWidth,
-                    "): head (", static_cast<i32>(head.x), ", ",
-                    static_cast<i32>(head.z), ") tail (",
-                    static_cast<i32>(tail.x), ", ",
-                    static_cast<i32>(tail.z), "), a ",
-                    static_cast<i32>(std::sqrt(best)), " m du point");
-            ++shown;
+            const End& b = ends[j];
+            if (std::hypot(a.x - b.x, a.z - b.z) < 12.0f) {
+                found = true;
+                if (a.tier != b.tier) {
+                    ++tierMismatch;
+                }
+                break;
+            }
         }
-        MESSAGE("  -> ", shown, " run(s) near the spot");
+        if (found) {
+            ++matched;
+        } else {
+            ++unmatched;
+            if (unmatched <= 12) {
+                MESSAGE("  run end on a slice line without a continuation: (",
+                        static_cast<i32>(a.x), ", ", static_cast<i32>(a.z),
+                        ") tier ", static_cast<u32>(a.tier), " hw ", a.hw);
+            }
+        }
     }
+    MESSAGE("run ends on interior slice lines: ", ends.size(), "  matched ",
+            matched, "  unmatched ", unmatched, "  tier mismatch ",
+            tierMismatch);
     CHECK(true);
 }
 
