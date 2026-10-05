@@ -388,7 +388,8 @@ void TerrainBakeStreamer::drain(
 }
 
 render::WaterSystem::FarWaterSet collectFarWater(
-    const std::filesystem::path& cacheDir, f32 tileSize,
+    const std::filesystem::path& cacheRoot, i32 mapX, i32 mapZ,
+    f32 tileSize,
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
@@ -403,6 +404,15 @@ render::WaterSystem::FarWaterSet collectFarWater(
         f32 x0, z0, x1, z1;
     };
     vector<Rect> covered;
+    // The active map's slice dir and its cached neighbours' (the
+    // square reaches into them at 8 km maps); a missing dir is skipped.
+    vector<std::filesystem::path> dirs;
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            dirs.push_back(mapCacheDir(cacheRoot, mapX + dx, mapZ + dz));
+        }
+    }
+    for (const std::filesystem::path& cacheDir : dirs) {
     std::error_code ec;
     for (std::filesystem::directory_iterator it { cacheDir, ec }, end;
          !ec && it != end; it.increment(ec)) {
@@ -506,6 +516,7 @@ render::WaterSystem::FarWaterSet collectFarWater(
             flush();
         }
     }
+    } // neighbour map dirs
     // Master fleuves wherever nothing was ever baked: the imprint (S1)
     // carved their valleys into the analytic ground the FarTerrain
     // shows, so the routed surfaces sit plausibly in them.

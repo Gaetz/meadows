@@ -9,6 +9,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/landscape/WaterSystem.hpp"
+#include "game/MapBaker.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 
 namespace game {
@@ -33,7 +34,8 @@ bool readWaterFile(const std::filesystem::path& path,
 // (a sea arm drowned it, or a range buried it), so no course floats
 // over a channel the fallback terrain shows drowned.
 render::WaterSystem::FarWaterSet collectFarWater(
-    const std::filesystem::path& cacheDir, f32 tileSize,
+    const std::filesystem::path& cacheRoot, i32 mapX, i32 mapZ,
+    f32 tileSize,
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
@@ -65,7 +67,7 @@ public:
     // active map rect are dropped (the M3.2 clamp — ringStatus counts
     // only in-rect tiles or the warmup gate never completes at a rim).
     struct MapStreamConfig {
-        i32 tilesPerSide { 6 };
+        i32 tilesPerSide { kMapTilesPerSide };
         i32 mapX { 0 }; // the active map
         i32 mapZ { 0 };
         // Border transitions on (the grid spec derives from the

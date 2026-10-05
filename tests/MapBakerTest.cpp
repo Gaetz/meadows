@@ -49,7 +49,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     // can never be judged on this cache.
     CHECK(game::mapBakedAndValid(root, 0, 0, kTps));
     CHECK(game::mapBakedAndValid(root, 0, 0, kTps, &params));
-    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, game::kMapTilesPerSide));
+    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, 3)); // another layout
     CHECK_FALSE(game::mapBakedAndValid(root, 1, 0, kTps));
     {
         TileBakeParams other = params;
@@ -152,7 +152,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     const u64 hash = maptest::heightsHash(world);
     MESSAGE("map heights hash: ", hash);
 #if defined(_MSC_VER)
-    CHECK(hash == 6429626604634228367ull); // MSVC (Debug == Release), kTileBakeVersion 68
+    CHECK(hash == 13372118313942275723ull); // MSVC (Debug == Release), kTileBakeVersion 69
 #endif
 
     // Without its manifest the map is not a map (bake cancelled or

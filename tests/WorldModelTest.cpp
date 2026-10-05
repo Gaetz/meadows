@@ -279,7 +279,7 @@ TEST_CASE("worldspace map fields reflect and default to inherit") {
     // "inherit the tuning singleton".
     world::WorldspaceForm space;
     CHECK_FALSE(space.bounded);
-    CHECK(space.mapSize == doctest::Approx(24576.0f));
+    CHECK(space.mapSize == doctest::Approx(8192.0f));
     CHECK(space.seaLevel < 0.0f);
     CHECK(space.snowLine < 0.0f);
     CHECK_FALSE(space.dominantBiome.isValid());

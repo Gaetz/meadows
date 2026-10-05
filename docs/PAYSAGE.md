@@ -1181,34 +1181,61 @@ dev avec la carte 2×2 (23 s), un commit par brique, suite rapide avant
 commit, complète en Release avant push. Le golden de la carte bouge par
 design à chaque brique de génération et se ré-épingle.
 
-#### 7.5.6 Briques proposées (R = refonte) — À ARBITRER
+#### 7.5.5 bis — Journal de la passe « nouvelle base »
 
-- **R0 — Décisions** : taille de carte (2×2 recommandé, 3×3 possible),
-  sort du mode story (fusion ou maintien), cibles §4 révisées à l'échelle
-  (familles 40/35/25 gardées ; relief médian 20-40 m gardé ; sommet
-  « héroïque » = 300-500 m au-dessus de la plaine, 1 par carte ; lacs :
-  3-6 par carte).
-- **R1 — La carte 2×2 comme monde par défaut** (`kMapTilesPerSide`,
-  manifest, streamer, voyage, écran M, pre-bake) sans toucher à la macro :
-  baseline B2 rejouée à cette échelle — c'est la mesure de ce que la
-  taille seule change.
-- **R2 — Les bugs d'eau et de continuité**, à cette échelle : overview
-  chargeable à chaud, pre-bake complet avant le premier pas, rubans/far-
-  water sans analytique, profil rebâti sur le sol complet ; instruments
-  `river wetness` et un nouveau `ground continuity` (saut overview→tranche
-  mesuré en jeu).
-- **R3 — S1 v3, le plan de carte** : pièces macro posées par seed + fond
-  de collines histoire ; érosion avec keep dur sur le calme ; `family
-  census` comme juge (socle ≥ 40 %).
-- **R4 — Eau à l'échelle** : lacs rares, un fleuve, ruisseaux à 500-800 m ;
-  `lake census`.
-- **R5 — Vues et objectifs** : crêtes-amers et cols du plan, belvédères ;
-  `vista`.
-- **R6 — Sites et peuplement** (ex-B10-B13) : pads réservés par le plan,
-  `Authoring` enfin branché, hameaux/villages/POI par règles, chemins.
-- **R7 — Promotion en données** (l'ex-palier C, au bon moment) : le plan
-  de carte et ses knobs en Form, le panneau, puis le bump TRG4 (D1) une
-  fois pour toutes.
+- **2026-10-05 — N1 livrée : la carte de 8 km.** `kMapTilesPerSide` 6 → 2
+  (une source, le streamer la lit), `WorldspaceForm.mapSize` 8 192,
+  bandes de bordure rescalées (chaîne 900 m / lift 260 m, mer 900 m,
+  méandre ±300 m / 3 km, crête 2 km, fondu 900 m), sonde de spawn en
+  anneaux de 350 m depuis 600 m (la spirale était VIDE à 8 km), écran M
+  sur la carte active (clé de raster = carte, plus l'id de worldspace),
+  **passage de carte automatique** (sortie du rect de 8 m → `travelToMap`
+  + voile ; triggers du Col de l'Est retirés, `passes.toml` reste pour
+  les mods), prefetch des diagonales, **overviews des voisines**
+  (`SandboxTerrain::neighbourOverviews`, lus par `sandboxFallbackHeight`
+  après l'active, chargés à `applyMapWorld` et toutes les 2 s quand un
+  prefetch atterrit, avec un événement de contenu sur ce rect),
+  far-water sur les dossiers des 3×3 cartes, `masterRiversNear` élargi
+  de l'apron, `kTileBakeVersion` 69, hash `MapBakerTest`
+  13372118313942275723 (MSVC). Bake de la carte (0,0) : **18 s en Release**
+  (stage-1 14 s + 4 tranches 2,3 s), 126 s en Debug. Smoke-run Debug :
+  overview 225² chargé, 4 tranches publiées, 0 erreur de validation.
+  **Baseline 8 km « taille seule »** (carte (0,0) seed 1337, même macro) :
+  la carte est un **plateau de 334 à 1 026 m sans mer** (spawn au centre
+  (4096, 608) — aucun candidat tempéré bas : le décret de départ vient
+  en N2) ; socle **10,9 %** / versant 79,4 % / drame 9,8 %, relief médian
+  **69 m** (socle 10, versant 71) ; calm stage-1 63 % ; transects E-O
+  33/42/25 (médian 29 m), N-S 29/71/0 (33 m) ; 60 lacs naturels (14 par
+  4×4 km) ; 65 runs, 23 km, fleuve 5 runs (1 km), 4 gués ; axe à sec
+  1,4 % ; vista 6 points : ouvert 4/6, sommet ≤ 3 km 6/6 (à 0,5-2 km),
+  colline ≤ 1,5 km 4/6 ; alpin 68 % de la terre, tempéré 22 % ;
+  calibration : analytique +180 à +217 m SOUS le baké à 100-200 m,
+  −100 à −390 m au-dessus de 400 m. Non vérifié en jeu : le passage
+  automatique de carte (validation dev).
+
+#### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
+
+**Arbitrages** : cartes **2×2 tranches = 8 192 m** (échelle Skyrim), bandes
+de bordure rescalées ; **étage monde large** (mer → haute montagne
+~1 500 m) ; **carte (0,0) = prairie tempérée basse garantie** ; **plaines =
+collines douces ±25 m / 700 m** (la cible §4 « socle < 15 m / 250 m » est
+gardée, le relief vivant vient des pièces locales et des crêtes de massif).
+
+**Le plan** (fichier de plan de la session, approuvé ; un commit par
+brique, `kTileBakeVersion` bumpé par brique, hash `MapBakerTest`
+ré-épinglé, A/B visuel dev) :
+
+| # | Brique | Contenu | Mesure de sortie |
+|---|---|---|---|
+| N1 | Carte 8 km (plomberie, macro inchangée) | `kMapTilesPerSide` 2, bandes 900 m / lift 260 m / méandre ±300 m, sonde de spawn rescalée, écran M sur la carte active, **passage de carte automatique** (sortie du rect → `travelToMap` + voile ; les triggers du Col de l'Est retirés), overviews et far-water des voisines, `masterRiversNear` élargi de l'apron | baseline 8 km « taille seule » |
+| N2 | Étage monde + rythme local | `WorldLayer` (9 fbm : continent 45 km, côte 5 km, étage 22 km, massif 26 km, climat 9 km + lapse, décret de départ sur (4096, 4096)), `ProceduralControls` v3 (champs dérivés de l'étage ; layout continental, grilles d'amers, champ de vallées supprimés), `landHeight` v3 (plancher = base de l'étage, table d'étages, pièces 7 km, crêtes, lits), analytique sans compression | distribution des étages, continuité, census « macro seule » |
+| N3 | Budget d'érosion dur | `maxCut` par cellule dans `erodeFluvial` (plancher dans le sweep implicite : 6 m sur le calme, 250 m ailleurs), calme plus érodable retiré, relaxation supprimée, 48 itérations / uplift 1,5 ; banc `erosion-bench` sur ces variantes | socle ≥ 40 %, relief médian 20-40 m |
+| N4 | Frontières lues sur l'étage | poids `ridge`/`sea` continus le long de la ligne depuis `worldSampleAt` (hash, veto, mémo, cross-fade supprimés), Ouvert ailleurs ; `cooker bake-map --pair` (divergence par style, runs orphelins) | divergence des lignes ouvertes |
+| N5 | Réglage + instruments | amplitudes, pièces, lits, climat ; `proportion` en étages ; journal | jeu d'instruments vs cibles §4 |
+
+Ordre imposé : N3 avant N4. Hors passe : Form/UI des paramètres, bump
+TRG4, passage sans couture (cartes voisines résidentes), peuplement/POI,
+gouttelettes, mode histoire.
 
 ---
 

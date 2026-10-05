@@ -6,34 +6,55 @@
 
 namespace render {
 
+namespace {
+
+// Bilinear read of a 64 m overview; false outside its coverage.
+bool overviewHeight(const terraingen::GridSpec& g, const vector<f32>& heights,
+                    f32 x, f32 z, f32& out) {
+    if (heights.empty() || g.n < 2) {
+        return false;
+    }
+    const f32 u = (x - g.originX) / g.texelSize;
+    const f32 v = (z - g.originZ) / g.texelSize;
+    if (u < 0.0f || v < 0.0f || u > static_cast<f32>(g.n - 1) ||
+        v > static_cast<f32>(g.n - 1)) {
+        return false;
+    }
+    const u32 c0 = glm::min(static_cast<u32>(u), g.n - 2);
+    const u32 r0 = glm::min(static_cast<u32>(v), g.n - 2);
+    const f32 tu = u - static_cast<f32>(c0);
+    const f32 tv = v - static_cast<f32>(r0);
+    const auto at = [&](u32 c, u32 r) {
+        return heights[static_cast<size_t>(r) * g.n + c];
+    };
+    const f32 a = glm::mix(at(c0, r0), at(c0 + 1, r0), tu);
+    const f32 b = glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu);
+    out = glm::mix(a, b, tv);
+    return true;
+}
+
+} // namespace
+
 f32 sandboxFallbackHeight(const SandboxTerrain& sb, f32 x, f32 z) {
     // Inside a baked map's coverage the fallback is the map's own 64 m
     // overview (bilinear) — the analytic mirror cannot follow a
-    // globally carved valley network.
-    if (!sb.overview.empty() && sb.overviewGrid.n >= 2) {
-        const terraingen::GridSpec& g = sb.overviewGrid;
-        const f32 u = (x - g.originX) / g.texelSize;
-        const f32 v = (z - g.originZ) / g.texelSize;
-        if (u >= 0.0f && v >= 0.0f && u <= static_cast<f32>(g.n - 1) &&
-            v <= static_cast<f32>(g.n - 1)) {
-            const u32 c0 = glm::min(static_cast<u32>(u), g.n - 2);
-            const u32 r0 = glm::min(static_cast<u32>(v), g.n - 2);
-            const f32 tu = u - static_cast<f32>(c0);
-            const f32 tv = v - static_cast<f32>(r0);
-            const auto at = [&](u32 c, u32 r) {
-                return sb.overview[static_cast<size_t>(r) * g.n + c];
-            };
-            const f32 a = glm::mix(at(c0, r0), at(c0 + 1, r0), tu);
-            const f32 b = glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu);
-            return glm::mix(a, b, tv);
+    // globally carved valley network. The active map first, then the
+    // cached neighbours (the horizon past the rim).
+    f32 h = 0.0f;
+    if (overviewHeight(sb.overviewGrid, sb.overview, x, z, h)) {
+        return h;
+    }
+    for (const SandboxTerrain::Overview& o : sb.neighbourOverviews) {
+        if (overviewHeight(o.grid, o.heights, x, z, h)) {
+            return h;
         }
     }
     const terraingen::ProceduralControls controls { sb.controls };
-    const f32 h = terraingen::macroHeightAnalytic(controls, sb.macro, x, z);
+    const f32 ha = terraingen::macroHeightAnalytic(controls, sb.macro, x, z);
     // Bounded-map border transitions: the same pure border-line shaping
     // the bakes use (identity when grid.valid is false).
     return terraingen::applyMapGridShape(controls, sb.macro, sb.grid, x, z,
-                                         h);
+                                         ha);
 }
 
 bool spawnCandidateOk(f32 h, f32 seaLevel, u8 biome) {
@@ -47,8 +68,10 @@ std::optional<Vec3> probeMapSpawn(const SandboxTerrain& sb, i32 mapX,
     const f32 mapMid = (static_cast<f32>(mapX) + 0.5f) * size;
     const f32 mapMidZ = (static_cast<f32>(mapZ) + 0.5f) * size;
     const f32 mapReach = size * 0.5f - terraingen::kMapBorderMountainHalf;
-    for (f32 radius = 2600.0f; radius <= glm::min(24000.0f, mapReach);
-         radius += 700.0f) {
+    // From the centre outward in 350 m rings, stopping short of the rim
+    // band (an 8 km map leaves ~3 km of reach).
+    for (f32 radius = 600.0f; radius <= mapReach - 200.0f;
+         radius += 350.0f) {
         for (u32 step = 0; step < 16; ++step) {
             const f32 angle =
                 radius * 0.0137f + static_cast<f32>(step) * 0.3927f;

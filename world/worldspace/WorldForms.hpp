@@ -33,7 +33,7 @@ struct WorldspaceForm : data::Form {
     // Map-graph coords: the rect derives (min = map{X,Z} * mapSize).
     i32 mapX { 0 };
     i32 mapZ { 0 };
-    f32 mapSize { 24576.0f }; // one MasterNetwork super-region
+    f32 mapSize { 8192.0f }; // 2x2 slices of 4096 m (game::kMapTilesPerSide)
     // 0 = derive from tuning.terrainSeed + (mapX, mapZ).
     u32 mapSeed { 0 };
     // < 0 = inherit the tuning singleton's value.

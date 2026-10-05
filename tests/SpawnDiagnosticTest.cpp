@@ -332,7 +332,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
     const f32 px = spawn.x;
     const f32 pz = spawn.z;
     MESSAGE("spawn (", px, ", ", spawn.y, ", ", pz, ")");
-    const f32 kHalf = 8000.0f;
+    const f32 kHalf = 3000.0f; // the transect stays inside an 8 km map
     const f32 kStep = 25.0f;
 
     const auto wetAt = [&](f32 x, f32 z, f32 h) {
@@ -589,7 +589,7 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
         f32 x, z, h;
     };
     vector<Travel> points;
-    const f32 cell = 6000.0f;
+    const f32 cell = 2000.0f;
     const f32 x0 = w.minX + kInterior;
     const f32 z0 = w.minZ + kInterior;
     const i32 cells = static_cast<i32>((w.mapSize - 2.0f * kInterior) / cell);
@@ -638,19 +638,19 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
             }
         }
         // Objective layer 1: an alpine summit (>500 m over sea) within
-        // 8 km. Layer 2: a marked hill (>120 m over its 1 km ring)
-        // within 4 km.
+        // 3 km. Layer 2: a marked hill (>120 m over its 1 km ring)
+        // within 1.5 km (the §4 distances scaled to an 8 km map).
         f32 dSummit = 1.0e9f;
-        for (f32 sz = -8000.0f; sz <= 8000.0f; sz += 250.0f) {
-            for (f32 sx = -8000.0f; sx <= 8000.0f; sx += 250.0f) {
+        for (f32 sz = -3000.0f; sz <= 3000.0f; sz += 250.0f) {
+            for (f32 sx = -3000.0f; sx <= 3000.0f; sx += 250.0f) {
                 if (ha(p.x + sx, p.z + sz) > sea + 500.0f) {
                     dSummit = glm::min(dSummit, std::hypot(sx, sz));
                 }
             }
         }
         f32 dHill = 1.0e9f;
-        for (f32 sz = -4000.0f; sz <= 4000.0f; sz += 250.0f) {
-            for (f32 sx = -4000.0f; sx <= 4000.0f; sx += 250.0f) {
+        for (f32 sz = -1500.0f; sz <= 1500.0f; sz += 125.0f) {
+            for (f32 sx = -1500.0f; sx <= 1500.0f; sx += 125.0f) {
                 const f32 top = ha(p.x + sx, p.z + sz);
                 if (top < sea + 60.0f) {
                     continue;
@@ -676,8 +676,8 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
             }
         }
         const bool open = openAzimuths >= 30;
-        const bool summit = dSummit <= 8000.0f;
-        const bool hill = dHill <= 4000.0f;
+        const bool summit = dSummit <= 3000.0f;
+        const bool hill = dHill <= 1500.0f;
         openOk += open;
         landmarkOk += landmark;
         summitOk += summit;
@@ -690,8 +690,8 @@ TEST_CASE("vista diagnostic" * doctest::skip()) {
     }
     const u32 n = glm::max<u32>(1, static_cast<u32>(points.size()));
     MESSAGE("summary: open>=30az ", openOk, "/", n, "  landmark>2°@3km ",
-            landmarkOk, "/", n, "  alpine summit<=8km ", summitOk, "/", n,
-            "  marked hill<=4km ", hillOk, "/", n);
+            landmarkOk, "/", n, "  alpine summit<=3km ", summitOk, "/", n,
+            "  marked hill<=1.5km ", hillOk, "/", n);
     CHECK(true);
 }
 
@@ -970,7 +970,7 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             if (d < nearest[s.biome].d) {
                 nearest[s.biome] = { x, z, d };
             }
-            if (d > 6000.0f * 6000.0f && d < alternate[s.biome].d) {
+            if (d > 2000.0f * 2000.0f && d < alternate[s.biome].d) {
                 alternate[s.biome] = { x, z, d };
             }
         }

@@ -381,18 +381,18 @@ struct MapGridSpec {
     f32 seaLevel { kDefaultSeaLevel };
 };
 
-constexpr f32 kMapBorderMountainHalf = 2560.0f; // rise, each side
-constexpr f32 kMapBorderMountainLift = 620.0f;  // max crest above base
-constexpr f32 kMapBorderSeaHalf = 2048.0f;      // coast, each side
+constexpr f32 kMapBorderMountainHalf = 900.0f; // rise, each side
+constexpr f32 kMapBorderMountainLift = 260.0f;  // max crest above base
+constexpr f32 kMapBorderSeaHalf = 900.0f;       // coast, each side
 constexpr f32 kMapBorderSeaDepth = 40.0f;       // channel floor
-constexpr f32 kMapBorderCrestWavelength = 3000.0f; // peaks/saddles
+constexpr f32 kMapBorderCrestWavelength = 2000.0f; // peaks/saddles
 constexpr f32 kMapBorderRidgeKeep = 0.8f; // stage-1 erosion keep
 // The line itself MEANDERS: its position is warped by a long-range
 // wave along the line (the terrain's own domain-warp idea), so coasts
 // and ranges wander instead of ruling straight. Both maps and the
 // fallback share the same pure warp — symmetry survives.
-constexpr f32 kMapBorderWander = 900.0f;            // max offset
-constexpr f32 kMapBorderWanderWavelength = 9000.0f; // long-range wave
+constexpr f32 kMapBorderWander = 300.0f;            // max offset
+constexpr f32 kMapBorderWanderWavelength = 3000.0f; // long-range wave
 // Coherence with the UNDERLYING terrain (the proximity rule): the
 // transition reads the ground it stands on, via the input height. A
 // range only rises from LAND (the gate fades across this band around
@@ -403,7 +403,7 @@ constexpr f32 kMapBorderLandFadeHigh = 24.0f; // full strength above
 // Styles are hashed per line SEGMENT; around a segment junction the
 // two styles cross-fade over this band along the line — a sea arm
 // closes into a bay while the range rises, never a dead-end channel.
-constexpr f32 kMapBorderStyleBlend = 1800.0f;
+constexpr f32 kMapBorderStyleBlend = 900.0f;
 // A Sea proposal needs at least this fraction of its segment's samples
 // under sea in the ANALYTIC world to stand; otherwise it demotes to
 // Ridges (no 4 km canal dug across a continent).

@@ -24,8 +24,10 @@ namespace game {
 // <cacheDir>/map_<mx>_<mz>/ next to a manifest, so the runtime can
 // stream a baked map with the existing machinery.
 constexpr u32 kMapBakeVersion = 2; // 2: manifest carries the bake key
-constexpr i32 kMapTilesPerSide = 6; // 6 x 4096 m = 24576 m — one
-                                    // MasterNetwork super-region
+constexpr i32 kMapTilesPerSide = 2; // 2 x 4096 m = 8192 m — the Skyrim
+                                    // scale (docs/PAYSAGE.md §7.5); a
+                                    // MasterNetwork super-region (24576 m)
+                                    // holds 3x3 maps
 
 struct MapBakeStats {
     f64 stage1Seconds { 0.0 };

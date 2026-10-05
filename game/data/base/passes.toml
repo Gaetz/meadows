@@ -1,52 +1,15 @@
-# Mountain passes between bounded maps (chantier CARTES M4.2): each pass
-# is a pair of PERSISTENT trigger volumes (no cell — they must exist
-# whatever the streaming does) whose Lua asks travelToMap with an
-# arrival point on the FAR side of the crossing, ~60 m past the twin
-# trigger's outer edge: outside both boxes (no bounce — the capsule
-# is static under the veil) yet seconds from re-crossing.
+# Mountain passes between bounded maps.
 #
-# Col de l'Est — a WALKABLE saddle of the border range on line
-# x = 24576 (map (0,0) <-> map (1,0), hashed style Ridges): crossing
-# ~454 m at z ~ 21088 (max transect grade ~0.4 — the saddle-scaled
-# erosion keep lets the fastscape carve real passes). The crest
-# MEANDERS ~325 m east of the nominal line there, so the trigger pair
-# sits ON the crest, not on the line — the fade fires at the top of
-# the climb, where a pass reads as one.
+# Crossing a map line is AUTOMATIC since chantier PAYSAGE N1: the scene
+# switches maps when the player (or the free camera) leaves the active
+# rect (LandscapeScene, the travel path with its veil). Authored passes
+# are no longer needed for travel; this plugin stays as the home of
+# hand-placed crossings a mod may still script with
+#   travelToMap(mapX, mapZ, arrivalX, arrivalZ)
+# from a persistent TriggerForm (no cell). The former « Col de l'Est »
+# pair sat on the old 24 576 m line x = 24576 and was removed with the
+# 8 km maps.
 
 [plugin]
 id = "c01dea55-0000-4000-8000-0000000000ff"
 name = "true-adventurer-passes"
-
-[[records]]
-form = "c01dea55-0000-4000-8000-000000000001"
-type = "TriggerForm"
-new = true
-[records.fields]
-editorId = "ColEstAller"
-halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(1, 0, 25121.0, 21088.0)"
-
-[[records]]
-form = "c01dea55-0000-4000-8000-000000000002"
-type = "ReferenceForm"
-new = true
-[records.fields]
-baseForm = "c01dea55-0000-4000-8000-000000000001"
-position = [24821.0, 450.0, 21088.0]
-
-[[records]]
-form = "c01dea55-0000-4000-8000-000000000003"
-type = "TriggerForm"
-new = true
-[records.fields]
-editorId = "ColEstRetour"
-halfExtents = [80.0, 350.0, 350.0]
-script = "travelToMap(0, 0, 24681.0, 21088.0)"
-
-[[records]]
-form = "c01dea55-0000-4000-8000-000000000004"
-type = "ReferenceForm"
-new = true
-[records.fields]
-baseForm = "c01dea55-0000-4000-8000-000000000003"
-position = [24981.0, 450.0, 21088.0]

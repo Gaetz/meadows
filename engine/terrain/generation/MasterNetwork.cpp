@@ -212,14 +212,19 @@ vector<MasterRiver> masterRiversNear(const ProceduralControls& controls,
                                      f32 minX, f32 minZ, f32 maxX,
                                      f32 maxZ) {
     vector<MasterRiver> out;
+    // A neighbour cell's course runs up to `apron` past its own core:
+    // widen the cell range by it, or a map smaller than a super-cell
+    // misses the tail its neighbour imprints (a fleuve on one side of a
+    // line, nothing on the other).
+    const f32 reach = params.apron;
     const i32 sx0 = static_cast<i32>(
-        std::floor(minX / params.superRegionSize));
+        std::floor((minX - reach) / params.superRegionSize));
     const i32 sx1 = static_cast<i32>(
-        std::floor(maxX / params.superRegionSize));
+        std::floor((maxX + reach) / params.superRegionSize));
     const i32 sz0 = static_cast<i32>(
-        std::floor(minZ / params.superRegionSize));
+        std::floor((minZ - reach) / params.superRegionSize));
     const i32 sz1 = static_cast<i32>(
-        std::floor(maxZ / params.superRegionSize));
+        std::floor((maxZ + reach) / params.superRegionSize));
     for (i32 sz = sz0; sz <= sz1; ++sz) {
         for (i32 sx = sx0; sx <= sx1; ++sx) {
             // Through the memo: the shared network is read in place,

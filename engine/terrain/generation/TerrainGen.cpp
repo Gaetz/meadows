@@ -968,7 +968,7 @@ f32 mountainProfile(f32 dist) {
 f32 seaProfile(f32 dist) {
     // Flat channel near the line, coasts descending over the half.
     const f32 t =
-        1.0f - glm::clamp((dist - 400.0f) / (kMapBorderSeaHalf - 400.0f),
+        1.0f - glm::clamp((dist - 200.0f) / (kMapBorderSeaHalf - 200.0f),
                           0.0f, 1.0f);
     return t * t * (3.0f - 2.0f * t);
 }

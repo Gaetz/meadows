@@ -52,17 +52,21 @@ void MapController::open(const MapContext& ctx) {
     f32 maxX = 0.0f;
     f32 minZ = 0.0f;
     f32 maxZ = 0.0f;
-    if (space->bounded) {
-        // A bounded map IS its own extent (procedural maps have only
-        // implicit cells — no authored bbox to scan); the margin shows
-        // the border transitions (range crests, sea arms) in full.
-        const f32 margin = 2048.0f;
-        minX = static_cast<f32>(space->mapX) * space->mapSize - margin;
-        maxX = static_cast<f32>(space->mapX + 1) * space->mapSize +
-               margin;
-        minZ = static_cast<f32>(space->mapZ) * space->mapSize - margin;
-        maxZ = static_cast<f32>(space->mapZ + 1) * space->mapSize +
-               margin;
+    // A bounded map IS its own extent (procedural maps have only
+    // implicit cells — no authored bbox to scan); the margin shows the
+    // border transitions (range crests, sea arms) in full. The sandbox
+    // tells which map is ACTIVE (every procedural map shares the one
+    // Overworld record); an authored bounded map carries its own coords.
+    const bool useActiveMap = ctx.sandboxMap && !ctx.interior;
+    const i32 mapX = useActiveMap ? ctx.mapX : space->mapX;
+    const i32 mapZ = useActiveMap ? ctx.mapZ : space->mapZ;
+    const f32 mapSize = useActiveMap ? ctx.mapSize : space->mapSize;
+    if (useActiveMap || space->bounded) {
+        const f32 margin = 1024.0f;
+        minX = static_cast<f32>(mapX) * mapSize - margin;
+        maxX = static_cast<f32>(mapX + 1) * mapSize + margin;
+        minZ = static_cast<f32>(mapZ) * mapSize - margin;
+        maxZ = static_cast<f32>(mapZ + 1) * mapSize + margin;
     } else {
         // Extent = bbox of the worldspace's authored cells (the world
         // has no stored bounds) + one cell of margin, padded square.
@@ -121,13 +125,18 @@ void MapController::open(const MapContext& ctx) {
     // Kick the raster to a worker when this exterior isn't the one on
     // screen (first open, worldspace changed) and it isn't already
     // baking. updateOpen() publishes it once done.
-    const bool baking = pending_ && pending_->worldspace == space->id;
-    if ((!hasRaster_ || rasterWorldspace_ != space->id) && !baking) {
+    const bool baking = pending_ && pending_->worldspace == space->id &&
+                        pending_->mapX == mapX && pending_->mapZ == mapZ;
+    const bool shown = hasRaster_ && rasterWorldspace_ == space->id &&
+                       rasterMapX_ == mapX && rasterMapZ_ == mapZ;
+    if (!shown && !baking) {
         auto job = std::make_shared<AsyncRaster>();
         job->params = ctx.terrain; // deep enough: patches ride an sptr
         job->desc = desc_;
         job->desc.terrain = &job->params;
         job->worldspace = space->id;
+        job->mapX = mapX;
+        job->mapZ = mapZ;
         pending_ = job;
         const str spaceName = space->editorId;
         ctx.jobs.enqueue([job, spaceName, jobsRef = &ctx.jobs] {
@@ -203,6 +212,8 @@ void MapController::updateOpen(const MapContext& ctx) {
         ctx.ui.setRuntimeTexture("map", pending_->pixels.data(),
                                  pending_->desc.size, pending_->desc.size);
         rasterWorldspace_ = pending_->worldspace;
+        rasterMapX_ = pending_->mapX;
+        rasterMapZ_ = pending_->mapZ;
         hasRaster_ = true;
         pending_.reset();
     }

@@ -629,9 +629,12 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
     MapGridSpec spec;
     spec.valid = true;
     spec.seed = 1337;
-    spec.mapSize = 24576.0f;
+    spec.mapSize = 8192.0f; // the game's 2x2 map
     spec.seaLevel = 21.0f;
     const f32 inland = 150.0f;
+    // Past the band + wander, a line is invisible: the farthest point
+    // that still belongs to this line's half of the map.
+    const f32 far = spec.mapSize * 0.5f - 100.0f;
     // Sample ALONG mid-cell so the perpendicular lines contribute 0.
     const f32 along = spec.mapSize * 0.5f;
 
@@ -686,39 +689,37 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
     {
         const f32 lineX = static_cast<f32>(ridgeLine) * spec.mapSize;
         f32 peak = 0.0f;
-        f32 previous = shape(lineX - 4200.0f, along, inland);
-        for (f32 x = lineX - 4196.0f; x <= lineX + 4200.0f; x += 4.0f) {
+        f32 previous = shape(lineX - 2200.0f, along, inland);
+        for (f32 x = lineX - 2196.0f; x <= lineX + 2200.0f; x += 4.0f) {
             const f32 h = shape(x, along, inland);
             CHECK(std::abs(h - previous) < 4.0f); // progressive rise
             peak = glm::max(peak, h - inland);
             previous = h;
         }
-        CHECK(peak >= 150.0f); // a real range on the line
-        CHECK(shape(lineX - 8000.0f, along, inland) ==
-              doctest::Approx(inland));
-        CHECK(shape(lineX + 8000.0f, along, inland) ==
-              doctest::Approx(inland));
+        CHECK(peak >= 60.0f); // a real range on the line (crest varied)
+        CHECK(shape(lineX - far, along, inland) == doctest::Approx(inland));
+        CHECK(shape(lineX + far, along, inland) == doctest::Approx(inland));
         // The erosion keep exists on the range and nowhere far away
         // (it follows the varied crest, so a saddle can dip to ~0.3
         // of the profile).
         CHECK(mapGridRidgeFactor(controls, macro, spec, lineX, along,
                                  inland) > 0.12f);
-        CHECK(mapGridRidgeFactor(controls, macro, spec, lineX + 8000.0f,
+        CHECK(mapGridRidgeFactor(controls, macro, spec, lineX + far,
                                  along, inland) == doctest::Approx(0.0f));
         // Crest height VARIES along the line (peaks and saddles — the
         // cols emerge from the system, they are not authored).
         f32 lo = 1.0e9f;
         f32 hi = -1.0e9f;
-        for (f32 zz = 2000.0f; zz <= 22000.0f; zz += 250.0f) {
+        for (f32 zz = 1000.0f; zz <= 7000.0f; zz += 100.0f) {
             f32 crest = 0.0f;
-            for (f32 x = lineX - 1400.0f; x <= lineX + 1400.0f;
+            for (f32 x = lineX - 1300.0f; x <= lineX + 1300.0f;
                  x += 50.0f) {
                 crest = glm::max(crest, shape(x, zz, inland));
             }
             lo = glm::min(lo, crest);
             hi = glm::max(hi, crest);
         }
-        CHECK(hi - lo > 80.0f);
+        CHECK(hi - lo > 40.0f);
     }
 
     // Sea line: a genuine channel — some point of the crossing sits at
@@ -726,16 +727,15 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
     {
         const f32 lineX = static_cast<f32>(seaLine) * spec.mapSize;
         f32 low = 1.0e9f;
-        f32 previous = shape(lineX - 3200.0f, along, inland);
-        for (f32 x = lineX - 3196.0f; x <= lineX + 3200.0f; x += 4.0f) {
+        f32 previous = shape(lineX - 2200.0f, along, inland);
+        for (f32 x = lineX - 2196.0f; x <= lineX + 2200.0f; x += 4.0f) {
             const f32 h = shape(x, along, inland);
             CHECK(std::abs(h - previous) < 4.0f);
             low = glm::min(low, h);
             previous = h;
         }
         CHECK(low <= spec.seaLevel + 26.01f);
-        CHECK(shape(lineX + 8000.0f, along, inland) ==
-              doctest::Approx(inland));
+        CHECK(shape(lineX + far, along, inland) == doctest::Approx(inland));
     }
 
     // Coherence with the underlying terrain (the proximity rule): over
@@ -746,7 +746,7 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
         const f32 ocean = spec.seaLevel - 120.0f;
         const f32 ridgeX = static_cast<f32>(ridgeLine) * spec.mapSize;
         const f32 seaX = static_cast<f32>(seaLine) * spec.mapSize;
-        for (f32 dx = -2400.0f; dx <= 2400.0f; dx += 80.0f) {
+        for (f32 dx = -1600.0f; dx <= 1600.0f; dx += 80.0f) {
             CHECK(shape(ridgeX + dx, along, ocean) ==
                   doctest::Approx(ocean));
             CHECK(shape(seaX + dx, along, ocean) ==
@@ -761,7 +761,7 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
         const f32 shallow = spec.seaLevel + 4.0f;
         f32 coastPeak = 0.0f;
         f32 inlandPeak = 0.0f;
-        for (f32 dx = -1600.0f; dx <= 1600.0f; dx += 40.0f) {
+        for (f32 dx = -1200.0f; dx <= 1200.0f; dx += 40.0f) {
             coastPeak = glm::max(
                 coastPeak, shape(ridgeX + dx, along, shallow) - shallow);
             inlandPeak = glm::max(

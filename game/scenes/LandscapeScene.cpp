@@ -1512,19 +1512,67 @@ void LandscapeScene::update(f32 dt) {
                 const f32 size = sandbox->grid.mapSize;
                 const f32 minX = static_cast<f32>(activeMapX) * size;
                 const f32 minZ = static_cast<f32>(activeMapZ) * size;
-                if (at.x - minX < near) {
-                    bakeStreamer->prefetchMap(activeMapX - 1,
-                                              activeMapZ);
-                } else if (minX + size - at.x < near) {
-                    bakeStreamer->prefetchMap(activeMapX + 1,
-                                              activeMapZ);
+                const i32 nx = at.x - minX < near          ? -1
+                               : minX + size - at.x < near ? 1
+                                                           : 0;
+                const i32 nz = at.z - minZ < near          ? -1
+                               : minZ + size - at.z < near ? 1
+                                                           : 0;
+                if (nx != 0) {
+                    bakeStreamer->prefetchMap(activeMapX + nx, activeMapZ);
                 }
-                if (at.z - minZ < near) {
-                    bakeStreamer->prefetchMap(activeMapX,
-                                              activeMapZ - 1);
-                } else if (minZ + size - at.z < near) {
-                    bakeStreamer->prefetchMap(activeMapX,
-                                              activeMapZ + 1);
+                if (nz != 0) {
+                    bakeStreamer->prefetchMap(activeMapX, activeMapZ + nz);
+                }
+                if (nx != 0 && nz != 0) {
+                    bakeStreamer->prefetchMap(activeMapX + nx,
+                                              activeMapZ + nz);
+                }
+                // Neighbour overviews landing (a prefetch finished):
+                // publish a new sandbox identity holding them — the
+                // horizon past the rim becomes the neighbour's own
+                // truth — and bump the content stamp on that rect.
+                auto next =
+                    std::make_shared<render::SandboxTerrain>(*sandbox);
+                if (loadNeighbourOverviews(*next, makeMapBakeParams()) >
+                    0) {
+                    render::TerrainParams& tp = renderer.terrainParams();
+                    tp.contentEvents.push(tp.contentStamp + 1,
+                                          minX - size, minZ - size,
+                                          minX + 2.0f * size,
+                                          minZ + 2.0f * size);
+                    ++tp.contentStamp;
+                    tp.sandbox = next;
+                }
+            }
+        }
+        // Map crossing (chantier PAYSAGE N1): the focus left the
+        // active rect — switch maps through the travel path (veil,
+        // background bake if the neighbour is cold). Checked every
+        // frame, cheap; never while a warmup or a travel is pending.
+        if (sandboxActive && bakeStreamer && !pendingMapTravel &&
+            warmupPhase == WarmupPhase::Idle) {
+            const auto& sandbox = renderer.terrainParams().sandbox;
+            if (sandbox && sandbox->grid.valid) {
+                const Vec3 at =
+                    (mode == SceneMode::Play) && playerController.body()
+                        ? playerController.body()->position()
+                        : flyCamera.camera.position;
+                const f32 size = sandbox->grid.mapSize;
+                const f32 minX = static_cast<f32>(activeMapX) * size;
+                const f32 minZ = static_cast<f32>(activeMapZ) * size;
+                const f32 out = 8.0f; // hysteresis past the line
+                const i32 dx = at.x < minX - out          ? -1
+                               : at.x > minX + size + out ? 1
+                                                          : 0;
+                const i32 dz = at.z < minZ - out          ? -1
+                               : at.z > minZ + size + out ? 1
+                                                          : 0;
+                if (dx != 0 || dz != 0) {
+                    pendingMapTravel = PendingMapTravel {
+                        activeMapX + dx, activeMapZ + dz, true,
+                        Vec2 { at.x, at.z }
+                    };
                 }
             }
         }
@@ -2000,6 +2048,46 @@ void LandscapeScene::placeStartCamera() {
     }
 }
 
+// Loads the overviews of the cached neighbour maps (3x3 around the
+// active one) that `sb` does not hold yet; returns how many landed.
+// Cheap (a manifest read per missing neighbour): polled every 2 s so a
+// background prefetch shows up on the horizon without a relaunch.
+u32 LandscapeScene::loadNeighbourOverviews(
+    render::SandboxTerrain& sb,
+    const render::terraingen::TileBakeParams& bakeParams) const {
+    const auto cacheRoot = platform::executableDir() / "terrain-cache" /
+                           std::to_string(tuning.terrainSeed);
+    u32 added = 0;
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dz == 0) {
+                continue;
+            }
+            const i32 mx = activeMapX + dx;
+            const i32 mz = activeMapZ + dz;
+            bool held = false;
+            for (const auto& o : sb.neighbourOverviews) {
+                held = held || (o.mapX == mx && o.mapZ == mz);
+            }
+            if (held || !mapBakedAndValid(cacheRoot, mx, mz,
+                                          kMapTilesPerSide, &bakeParams)) {
+                continue;
+            }
+            if (auto overview =
+                    loadMapOverview(mapCacheDir(cacheRoot, mx, mz))) {
+                sb.neighbourOverviews.push_back(
+                    { mx, mz, overview->grid, std::move(overview->heights) });
+                ++added;
+            }
+        }
+    }
+    if (added > 0) {
+        LOG_INFO("Sandbox terrain: {} neighbour overview(s) loaded ({} held)",
+                 added, sb.neighbourOverviews.size());
+    }
+    return added;
+}
+
 // A pleasant start on the ACTIVE map: the headless probe shared with
 // the diagnostics (render::probeMapSpawn — criterion, spiral and
 // fallback ground live there); the map centre when nothing qualifies.
@@ -2106,6 +2194,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
                  overview->grid.n, overview->grid.n,
                  overview->grid.texelSize);
     }
+    loadNeighbourOverviews(*sandbox, bakeParams);
     params.sandbox = sandbox;
     activeSnowLine = tuning.sandboxSnowLine;
     bakeStreamer = std::make_unique<TerrainBakeStreamer>(
@@ -2149,12 +2238,11 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
         renderer.waterSystem().setFarWater(
             [cp, macro, net, grid = sandbox->grid,
              sea = tuning.seaLevel, tileSize = bakeParams.tileSize,
-             cacheDir = mapCacheDir(
-                 platform::executableDir() / "terrain-cache" /
-                     std::to_string(tuning.terrainSeed),
-                 mapX, mapZ)](f32 cx, f32 cz, f32 halfSpan) {
-                return collectFarWater(cacheDir, tileSize, cp,
-                                       macro, net, grid, sea, cx,
+             cacheRoot = platform::executableDir() / "terrain-cache" /
+                         std::to_string(tuning.terrainSeed),
+             mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
+                return collectFarWater(cacheRoot, mapX, mapZ, tileSize,
+                                       cp, macro, net, grid, sea, cx,
                                        cz, halfSpan);
             });
     }
@@ -4065,6 +4153,8 @@ MapContext LandscapeScene::makeMapContext() {
         (mode == SceneMode::Play) && playerController.body()
             ? playerController.body()->position()
             : flyCamera.camera.position;
+    const auto& sandbox = renderer.terrainParams().sandbox;
+    const bool sandboxMap = sandboxActive && sandbox && sandbox->grid.valid;
     return MapContext { forms,
                         renderer.terrainParams(),
                         engine->getJobSystem(),
@@ -4073,7 +4163,11 @@ MapContext LandscapeScene::makeMapContext() {
                         activeWorldspace,
                         overworldHandle,
                         interiorMode,
-                        playerPos };
+                        playerPos,
+                        sandboxMap,
+                        activeMapX,
+                        activeMapZ,
+                        sandboxMap ? sandbox->grid.mapSize : 0.0f };
 }
 
 // The LIVE half of the language switch (the toggle already flipped
@@ -4633,7 +4727,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
                 const f32 size = sandbox->grid.mapSize;
                 flow += world::mapBoundsCurrent(
                     at.x, at.z, static_cast<f32>(activeMapX) * size,
-                    static_cast<f32>(activeMapZ) * size, size, 512.0f,
+                    static_cast<f32>(activeMapZ) * size, size, 256.0f,
                     6.0f);
             }
             return flow;

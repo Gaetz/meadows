@@ -39,7 +39,7 @@ cellSize = 64.0
 bounded = true
 mapX = 0
 mapZ = 0
-mapSize = 24576.0
+mapSize = 8192.0
 
 # The demo cell (x 0-64, z 320-384) holds the rocks, the NPC and its
 # patrol markers.

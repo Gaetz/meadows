@@ -58,7 +58,7 @@ editorId = "MyIsland"
 bounded = true
 mapX = 1          # grid coords: the rect is map(X,Z) * mapSize
 mapZ = 0
-mapSize = 24576.0
+mapSize = 8192.0
 mapSeed = 0       # 0 = derived from the world seed + coords
 ```
 

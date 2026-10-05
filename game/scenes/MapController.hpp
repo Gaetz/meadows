@@ -45,6 +45,12 @@ struct MapContext {
     data::FormHandle overworld;        // the exterior fallback
     bool interior;                     // active worldspace is an interior
     Vec3 playerPos;                    // Play focus (capsule feet)
+    // The ACTIVE bounded map (sandbox): procedural maps share one
+    // worldspace record, so the extent comes from here, not from it.
+    bool sandboxMap { false };
+    i32 mapX { 0 };
+    i32 mapZ { 0 };
+    f32 mapSize { 0.0f };
 };
 
 class MapController {
@@ -84,6 +90,8 @@ private:
         render::TerrainParams params;
         MapRasterDesc desc;
         core::Guid worldspace;
+        i32 mapX { 0 };
+        i32 mapZ { 0 };
         vector<u8> pixels;
         std::atomic<bool> done { false };
     };
@@ -91,6 +99,8 @@ private:
 
     MapRasterDesc desc_ {};       // extent of the current map (mapUv)
     core::Guid rasterWorldspace_; // which exterior the raster shows
+    i32 rasterMapX_ { 0 };        // ... and which bounded map of it
+    i32 rasterMapZ_ { 0 };
     bool hasRaster_ { false };    // pixels pushed to runtime://map
     bool extentValid_ { false };  // desc_ usable for markers
 };

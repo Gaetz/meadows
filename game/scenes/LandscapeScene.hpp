@@ -573,6 +573,9 @@ private:
     // of the map's probed spawn — the far side of a pass.
     void travelToMap(i32 mapX, i32 mapZ, const Vec2* arrival = nullptr);
     Vec3 probeSandboxSpawn() const;
+    u32 loadNeighbourOverviews(
+        render::SandboxTerrain& sb,
+        const render::terraingen::TileBakeParams& bakeParams) const;
     // The active bounded map (set by applyMapWorld; saved/restored).
     i32 activeMapX { 0 };
     i32 activeMapZ { 0 };

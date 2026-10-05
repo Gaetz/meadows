@@ -30,6 +30,18 @@ struct SandboxTerrain {
     // truth can. Empty = analytic fallback (legacy / unbaked map).
     terraingen::GridSpec overviewGrid;
     vector<f32> overview;
+    // The cached NEIGHBOUR maps' overviews: at 8 km maps the horizon is
+    // mostly neighbour ground, so the fallback reads them after the
+    // active one (loaded by the scene as neighbours bake; a map's own
+    // overview covers its rect + apron, the active one wins where they
+    // overlap).
+    struct Overview {
+        i32 mapX { 0 };
+        i32 mapZ { 0 };
+        terraingen::GridSpec grid;
+        vector<f32> heights;
+    };
+    vector<Overview> neighbourOverviews;
 };
 
 // The fallback ground of the generated world at (x, z): the map's 64 m
