@@ -823,8 +823,8 @@ private:
     // A water jet's lump passing through an actor shoves him along its
     // flight: this many m/s of shove gained per second in the stream,
     // capped (the stream flows at ~24 m/s; a character is not a leaf).
-    static constexpr f32 kWaterJetShoveRate = 14.0f;
-    static constexpr f32 kWaterJetShoveMax = 3.5f;
+    static constexpr f32 kWaterJetShoveRate = 24.0f;
+    static constexpr f32 kWaterJetShoveMax = 6.0f;
     void updateSpiritWind(f32 dt);
     // The breath (Create x Wind as a stream, held).
     struct SpiritBlow {
