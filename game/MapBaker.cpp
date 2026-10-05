@@ -65,8 +65,33 @@ std::optional<MapOverview> loadMapOverview(
     return out;
 }
 
+u64 mapBakeKey(const TileBakeParams& params, i32 tilesPerSide) {
+    u64 h = 1469598103934665603ull; // FNV-1a
+    const auto mix = [&](const void* data, size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            h ^= bytes[i];
+            h *= 1099511628211ull;
+        }
+    };
+    const auto mixF = [&](f32 v) { mix(&v, sizeof(v)); };
+    const auto mixU = [&](u32 v) { mix(&v, sizeof(v)); };
+    mixU(kTileBakeVersion);
+    mixU(static_cast<u32>(tilesPerSide));
+    mixU(params.worldSeed);
+    mixU(params.controls.seed);
+    mixF(params.tileSize);
+    mixF(params.macro.seaLevel);
+    mixF(params.macro.recurveLow);
+    mixF(params.macro.recurveMid);
+    mixF(params.macro.recurveHigh);
+    mixU(params.mapGrid.valid ? 1u : 0u);
+    return h;
+}
+
 bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
-                      i32 mapZ, i32 tilesPerSide) {
+                      i32 mapZ, i32 tilesPerSide,
+                      const TileBakeParams* params) {
     std::ifstream manifest {
         mapCacheDir(cacheDir, mapX, mapZ) / "manifest.txt"
     };
@@ -91,8 +116,14 @@ bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
           tileSize >> k5 >> tps >> k6 >> seed >> k7 >> bakeVersion)) {
         return false;
     }
+    str k8;
+    u64 storedKey = 0;
+    if (!(manifest >> k8 >> storedKey) || k8 != "key") {
+        return false;
+    }
     return mx == mapX && mz == mapZ && tps == tilesPerSide &&
-           bakeVersion == render::terraingen::kTileBakeVersion;
+           bakeVersion == render::terraingen::kTileBakeVersion &&
+           (!params || storedKey == mapBakeKey(*params, tilesPerSide));
 }
 
 std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
@@ -285,7 +316,8 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
              << "tileSize " << params.tileSize << "\n"
              << "tilesPerSide " << tilesPerSide << "\n"
              << "seed " << params.worldSeed << "\n"
-             << "bakeVersion " << kTileBakeVersion << "\n";
+             << "bakeVersion " << kTileBakeVersion << "\n"
+             << "key " << mapBakeKey(params, tilesPerSide) << "\n";
     for (i32 dz = 0; dz < tilesPerSide; ++dz) {
         for (i32 dx = 0; dx < tilesPerSide; ++dx) {
             manifest << "slice " << (tx0 + dx) << " " << (tz0 + dz)

@@ -81,8 +81,9 @@ inline TileBakeParams gameLikeParams(u32 seed = 1337) {
 // holds a VALID map (mapX, mapZ) (the dev's baked map — no bake at all,
 // and never a bake written into the game's directory), else a temp
 // cache the test bakes into.
-inline std::filesystem::path diagnosticsCacheRoot(u32 seed, i32 mapX = 0,
-                                                  i32 mapZ = 0) {
+inline std::filesystem::path diagnosticsCacheRoot(
+    const TileBakeParams& params, i32 mapX = 0, i32 mapZ = 0) {
+    const u32 seed = params.worldSeed;
     if (const char* env = std::getenv("MEADOWS_MAP_CACHE"); env && *env) {
         return std::filesystem::path { env };
     }
@@ -94,7 +95,7 @@ inline std::filesystem::path diagnosticsCacheRoot(u32 seed, i32 mapX = 0,
         std::error_code ec;
         if (std::filesystem::is_directory(candidate, ec) &&
             game::mapBakedAndValid(candidate, mapX, mapZ,
-                                   game::kMapTilesPerSide)) {
+                                   game::kMapTilesPerSide, &params)) {
             return std::filesystem::weakly_canonical(candidate, ec);
         }
     }
@@ -123,7 +124,8 @@ inline MapWorld loadOrBakeMap(const TileBakeParams& params, i32 mapX,
     world.controlParams = params.controls;
     world.controlParams.seed = params.worldSeed;
 
-    if (!game::mapBakedAndValid(cacheRoot, mapX, mapZ, tilesPerSide)) {
+    if (!game::mapBakedAndValid(cacheRoot, mapX, mapZ, tilesPerSide,
+                                &params)) {
         if (!bakeIfMissing) {
             return world;
         }

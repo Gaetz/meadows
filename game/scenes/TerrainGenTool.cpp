@@ -100,7 +100,7 @@ void TerrainGenTool::drawPanel(const GenContext& ctx) {
         // A map already in the cache can be accepted without rebaking.
         if ((!mapBake || !mapBake->ok.load()) &&
             mapBakedAndValid(ctx.mapCacheRoot, mapX, mapZ,
-                             kMapTilesPerSide)) {
+                             kMapTilesPerSide, &ctx.mapBakeParams)) {
             ImGui::SameLine();
             if (ImGui::Button("Accept cached map -> records")) {
                 auto job = std::make_shared<MapBake>();

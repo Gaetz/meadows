@@ -35,7 +35,7 @@ std::filesystem::path freshCacheRoot() {
 TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     const TileBakeParams params = maptest::gameLikeParams(1337);
     const auto root = freshCacheRoot();
-    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps));
+    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps, &params));
 
     const game::MapBakeStats stats =
         game::bakeMap(params, 0, 0, root, nullptr, kTps);
@@ -44,10 +44,25 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     MESSAGE("8 km map: stage-1 ", stats.stage1Seconds, " s, slices ",
             stats.sliceSeconds, " s");
 
-    // The manifest is the contract: coords, layout AND bake version.
+    // The manifest is the contract: coords, layout, bake version AND
+    // the bake key — a changed data input (sea level, recurve, seed)
+    // can never be judged on this cache.
     CHECK(game::mapBakedAndValid(root, 0, 0, kTps));
+    CHECK(game::mapBakedAndValid(root, 0, 0, kTps, &params));
     CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, game::kMapTilesPerSide));
     CHECK_FALSE(game::mapBakedAndValid(root, 1, 0, kTps));
+    {
+        TileBakeParams other = params;
+        other.macro.seaLevel += 1.0f;
+        CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps, &other));
+        other = params;
+        other.macro.recurveMid += 0.05f;
+        CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps, &other));
+        other = params;
+        other.mapGrid.valid = false;
+        CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps, &other));
+        CHECK(game::mapBakeKey(params, kTps) != game::mapBakeKey(params, 3));
+    }
 
     // The overview: the map stage-1 (map + apron) decimated to 64 m.
     const auto overview = game::loadMapOverview(game::mapCacheDir(root, 0, 0));
@@ -145,7 +160,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     std::error_code ec;
     std::filesystem::remove(game::mapCacheDir(root, 0, 0) / "manifest.txt",
                             ec);
-    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps));
+    CHECK_FALSE(game::mapBakedAndValid(root, 0, 0, kTps, &params));
     std::filesystem::remove_all(root.parent_path(), ec);
 }
 

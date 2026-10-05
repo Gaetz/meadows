@@ -35,7 +35,8 @@ constexpr f32 kInterior = kMapBorderMountainHalf;
 const maptest::MapWorld& theMap() {
     static const maptest::MapWorld world = [] {
         const TileBakeParams params = maptest::gameLikeParams(kSeed);
-        const auto root = maptest::diagnosticsCacheRoot(kSeed, kMapX, kMapZ);
+        const auto root =
+            maptest::diagnosticsCacheRoot(params, kMapX, kMapZ);
         MESSAGE("map (", kMapX, ", ", kMapZ, ") from ", root.string());
         maptest::MapWorld w = maptest::loadOrBakeMap(
             params, kMapX, kMapZ, game::kMapTilesPerSide, root);

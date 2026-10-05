@@ -23,7 +23,7 @@ namespace game {
 // cache format (tile_<tx>_<tz>_v<N>.trg + .twb) inside
 // <cacheDir>/map_<mx>_<mz>/ next to a manifest, so the runtime can
 // stream a baked map with the existing machinery.
-constexpr u32 kMapBakeVersion = 1;
+constexpr u32 kMapBakeVersion = 2; // 2: manifest carries the bake key
 constexpr i32 kMapTilesPerSide = 6; // 6 x 4096 m = 24576 m — one
                                     // MasterNetwork super-region
 
@@ -67,11 +67,26 @@ struct MapOverview {
 std::optional<MapOverview> loadMapOverview(
     const std::filesystem::path& mapDir);
 
+// The bake KEY of a map: every DATA input that can differ between two
+// bakes of the same binary — the world seed, the sea level, the recurve
+// knobs, the slice size and layout, the border lattice — plus
+// kTileBakeVersion for the C++ defaults. Stored in the manifest and
+// compared on read, so a changed landscape.toml can never be judged on
+// a stale cache (the seed-only cache key was the trap: a sea-level
+// change reached the player only after a hand-cleared terrain-cache).
+// Grows with the data inputs: when generation parameters become a
+// Form, that Form hashes in here.
+u64 mapBakeKey(const render::terraingen::TileBakeParams& params,
+               i32 tilesPerSide);
+
 // A map is usable only when its manifest MATCHES (coords, slice
-// layout, bake version) — a stale dir from another configuration must
-// re-bake, not half-load (existence alone lied: a 2x2 test map
-// masqueraded as a 6x6 production one).
+// layout, bake version, and the bake key when `params` is given) — a
+// stale dir from another configuration must re-bake, not half-load
+// (existence alone lied: a 2x2 test map masqueraded as a 6x6
+// production one).
 bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,
-                      i32 mapZ, i32 tilesPerSide);
+                      i32 mapZ, i32 tilesPerSide,
+                      const render::terraingen::TileBakeParams* params =
+                          nullptr);
 
 } // namespace game

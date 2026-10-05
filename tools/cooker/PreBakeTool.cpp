@@ -105,18 +105,19 @@ int preBake(char** argv, int argc) {
              tuning.terrainSeed, tuning.seaLevel, minX, minZ, maxX, maxZ,
              mx0, mz0, mx1, mz1, cacheDir.string());
 
+    params.mapGrid.valid = true; // borders on, like the game (bakeMap
+                                 // fills the lattice; part of the key)
     core::JobSystem jobs; // one worker per hardware thread
     const auto start = std::chrono::steady_clock::now();
     u32 baked = 0;
     for (i32 mz = mz0; mz <= mz1; ++mz) {
         for (i32 mx = mx0; mx <= mx1; ++mx) {
             if (game::mapBakedAndValid(cacheDir, mx, mz,
-                                       game::kMapTilesPerSide)) {
+                                       game::kMapTilesPerSide, &params)) {
                 LOG_INFO("pre-bake: map ({}, {}) already baked", mx,
                          mz);
                 continue;
             }
-            params.mapGrid.valid = true; // bakeMap fills the spec
             const game::MapBakeStats stats = game::bakeMap(
                 params, mx, mz, cacheDir, &jobs,
                 game::kMapTilesPerSide, [&](u32 landed, u32 total) {

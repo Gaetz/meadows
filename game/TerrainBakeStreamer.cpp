@@ -176,7 +176,7 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
         }
         const auto mapDir = mapCacheDir(cacheDir, map.mapX, map.mapZ);
         if (!mapBakedAndValid(cacheDir, map.mapX, map.mapZ,
-                              map.tilesPerSide)) {
+                              map.tilesPerSide, &params)) {
             deferredForMap.insert(keyOf(tx, tz));
             if (!mapBaking->exchange(true)) {
                 const auto work = [params = params, cacheDir = cacheDir,
@@ -238,7 +238,8 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
 }
 
 void TerrainBakeStreamer::prefetchMap(i32 mapX, i32 mapZ) {
-    if (mapBakedAndValid(cacheDir, mapX, mapZ, map.tilesPerSide)) {
+    if (mapBakedAndValid(cacheDir, mapX, mapZ, map.tilesPerSide,
+                         &params)) {
         return;
     }
     if (mapBaking->exchange(true)) {
@@ -358,7 +359,7 @@ void TerrainBakeStreamer::update(
         } else {
             manifestCheckCountdown = 30;
             if (mapBakedAndValid(cacheDir, map.mapX, map.mapZ,
-                                 map.tilesPerSide)) {
+                                 map.tilesPerSide, &params)) {
                 const auto deferred = std::move(deferredForMap);
                 deferredForMap.clear();
                 for (const u64 key : deferred) {
