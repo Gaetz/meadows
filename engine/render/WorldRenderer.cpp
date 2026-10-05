@@ -11,11 +11,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "engine/FrameContext.hpp"
-#include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshData.hpp" // render::MeshVertex / SkinnedVertex
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
-#include "engine/platform/Paths.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
 #include "engine/terrain/WaterQuery.hpp"
 #include "engine/render/Projection.hpp"
@@ -265,24 +263,9 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                   { { "FrameUbo", 0 }, { "ModelUbo", 1 },
                     { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
-    // Swap one procedural rock variant for an authored CC0 glTF
-    // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
-    if (auto rock = cfg.vegetation
-                        ? assets::loadGltfMesh(platform::executableDir() /
-                                               "data" / "base" / "models" /
-                                               "rock_cc0.gltf")
-                        : std::nullopt) {
-        assets::normalizeMesh(*rock, 2.2f);
-        for (render::MeshVertex& vertex : rock->vertices) {
-            vertex.uv = { 0.0f, 0.0f }; // rigid: no canopy sway
-            // The scan's albedo lives in a texture we don't sample; tint
-            // the white base color down to the procedural rocks' gray.
-            vertex.color *= Vec3 { 0.125f, 0.120f, 0.115f };
-        }
-        vegetation.overrideVariantMesh(
-            device, render::VegetationSystem::kFirstRock, std::move(*rock));
-        LOG_INFO("glTF rock loaded as rock variant 0");
-    }
+    // Rock variants: the scene overrides every rock slot with its
+    // scanned meshes (LandscapeScene); the procedural placeholder only
+    // shows in tool scenes that scatter no rocks.
     if (cfg.sky) {
         sky.create(device, *shaders);
     }

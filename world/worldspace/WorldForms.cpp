@@ -21,7 +21,6 @@ void registerWorldFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<RiverForm>();
     registry.registerFormType<RiverPointForm>();
     registry.registerFormType<BiomeForm>();
-    registry.registerFormType<BiomeVegetationForm>();
     registry.registerFormType<BiomeMapForm>();
     registry.registerFormType<NavGridForm>();
 }

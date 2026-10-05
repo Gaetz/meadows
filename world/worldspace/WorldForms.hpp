@@ -412,7 +412,6 @@ struct BiomeForm : data::Form {
     f32 detailAmplitudeScale { 1.0f };
     f32 temperature { 0.0f };
     f32 wetness { 0.0f };
-    i32 vegetationSet { 0 };
     str gameplayTag; // e.g. "Biome.Tundra" (GAS tags, later)
 
     REFLECT_BEGIN(BiomeForm, data::Form)
@@ -426,23 +425,13 @@ struct BiomeForm : data::Form {
         REFLECT_FIELD(detailAmplitudeScale)
         REFLECT_FIELD(temperature)
         REFLECT_FIELD(wetness)
-        REFLECT_FIELD(vegetationSet)
         REFLECT_FIELD(gameplayTag)
     REFLECT_END()
 };
-
-// Per-biome vegetation entry, child of BiomeForm (§C.1).
-struct BiomeVegetationForm : data::Form {
-    core::Guid parent; // BiomeForm
-    core::Guid species;
-    f32 density { 1.0f };
-
-    REFLECT_BEGIN(BiomeVegetationForm, data::Form)
-        REFLECT_FIELD(parent)
-        REFLECT_FIELD(species)
-        REFLECT_FIELD(density)
-    REFLECT_END()
-};
+// Species per biome are not data yet: the scatter's species/habitat
+// rules live in VegetationScatter.cpp and GrassSpecies.hpp. A per-biome
+// vegetation child record comes back the day species become Forms
+// (docs/PAYSAGE.md §6.2).
 
 // The painted biome index map (scenario mode; sandbox tiles derive their
 // ids from the seed instead). Asset: "TBM1" u8 grid.

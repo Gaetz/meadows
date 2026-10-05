@@ -182,7 +182,9 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             if (v >= kFirstPlant) {
                 continue; // plants: no GI injection boxes (small cutouts)
             }
-            // The compact CPU copy the GI injection boxes.
+            // The compact CPU copy for the GI injection boxes (and the
+            // tree-fire lookup): kind 0 = tree, 1 = rock-like solid
+            // (rocks AND forest-floor debris), 2 = bush.
             const u8 kind = v < kFirstRock                          ? 0
                             : (v < kFirstBush || v >= kFirstDebris) ? 1
                                                                     : 2;

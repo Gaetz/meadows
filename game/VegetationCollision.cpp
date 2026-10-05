@@ -72,13 +72,10 @@ VegetationCollision::CookedChunk VegetationCollision::cookColliders(
     }
     for (u32 v = render::VegetationSystem::kFirstRock;
          v < render::VegetationSystem::kFirstBush; ++v) {
+        // Pebbles live in their own variant slots (never iterated here):
+        // thousands of centimeter bodies per ring would be pure waste
+        // and blow the destroy path.
         for (const auto& prop : buckets[v]) {
-            // Pebble-scale clutter shares the boulder variants but never
-            // collides (centimeter debris — thousands per ring; bodies
-            // for them are pure waste and blow the destroy path).
-            if (prop.positionScale.w < 0.35f) {
-                continue;
-            }
             add(prop, kRockHalfXZ, kRockHalfY);
         }
     }

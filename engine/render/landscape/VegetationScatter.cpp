@@ -8,22 +8,11 @@
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
-#include "engine/core/Jobs.hpp"
-#include "engine/render/MeshVertexLayout.hpp"
-#include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
-#include "engine/assets/VertexAoCache.hpp"
-#include "engine/platform/Paths.hpp"
-#include "engine/render/landscape/TreeGenerator.hpp"
-#include "engine/rhi/CommandBuffer.hpp"
-#include "engine/rhi/Device.hpp"
-
 
 namespace render {
 
-
 namespace {
-constexpr const char* kPropCasterShader = "shadow_prop";
 // Realistic-scale trees: x8 height against the player,
 // so 2x the candidate spacing = 1/4 the density — giant forests, not
 // hedges of them.

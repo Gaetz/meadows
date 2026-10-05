@@ -384,7 +384,6 @@ BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
     BiomeParams blend;
     blend.grassPresence = 0.0f;
     blend.detailAmplitudeScale = 0.0f;
-    f32 wMax = -1.0f;
     for (u32 i = 0; i < 4; ++i) {
         const size_t clamped = glm::min<size_t>(
             region->biome[ids[i]], params.biomes->table.size() - 1);
@@ -396,10 +395,6 @@ BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
         blend.detailAmplitudeScale += w[i] * b.detailAmplitudeScale;
         blend.temperature += w[i] * b.temperature;
         blend.wetness += w[i] * b.wetness;
-        if (w[i] > wMax) {
-            wMax = w[i];
-            blend.vegetationSet = b.vegetationSet;
-        }
     }
     return blend;
 }

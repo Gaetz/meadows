@@ -290,7 +290,10 @@ public:
     // One placed prop. Layout mirrors tree.vert's instance attributes.
     struct Instance {
         Vec4 positionScale; // xyz = terrain point, w = uniform scale
-        Vec4 params;        // x = yaw, y = tint jitter, z = sway phase, w free
+        // x = yaw, y = tint jitter (also the thinning key), z = sway
+        // phase (negative = rigid prop), w = fade end in meters
+        // (negative = textured prop: uv are texture coordinates).
+        Vec4 params;
     };
 
     // Tool scenes (tree builder): when set, draw()/drawDepth() render
