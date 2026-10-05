@@ -4,7 +4,7 @@
 
 #include "engine/terrain/generation/WaterSolve.hpp"
 
-// Option-D water solve (docs/WATER-RESEARCH.md): rain on a tilted
+// Option-D water solve (docs/PAYSAGE.md §2.3): rain on a tilted
 // valley must gather into a flowing channel that drains to the low
 // edge, the sea stays pinned, and the whole thing is bit-deterministic.
 

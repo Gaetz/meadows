@@ -16,7 +16,7 @@ namespace render::terraingen {
 
 struct FluvialParams {
     // Dissection budget: deep valley systems kept, some walkable high
-    // ground preserved. Hand-tuned — see docs/TERRAIN-GEN.md.
+    // ground preserved. Hand-tuned — see docs/PAYSAGE.md §1.3.
     i32 iterations { 80 };
     f32 dt { 1.0f };
     // Stream-power erodibility: dh/dt = -k * A^m * slope, with A in m².

@@ -5,7 +5,7 @@
 
 // Terrain generation pipeline — stage S1 (macro synthesis). Headless
 // (lib meadows): the bake runs on JobSystem workers or in doctests, never
-// on the render side. docs/TERRAIN-GEN.md holds the pipeline overview.
+// on the render side. docs/PAYSAGE.md §1.3 holds the pipeline overview.
 //
 // The pipeline consumes CONTROL FIELDS (elevation tier, uplift, sea,
 // biome) through the ControlSource seam. Two providers exist by design:
@@ -349,7 +349,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                             u32 seed);
 
 // Bounded-map BORDER transitions (chantier CARTES v2,
-// docs/TERRAIN-MAPS.md — design dev): a transition belongs to the
+// docs/PAYSAGE.md §1.1 — design dev): a transition belongs to the
 // BORDER LINE, not to a map. Each border hashes (seed, line identity)
 // to Sea or Ridges — symmetric by construction, both neighbours agree.
 // The shape is a pure function of the distance to the line, applied

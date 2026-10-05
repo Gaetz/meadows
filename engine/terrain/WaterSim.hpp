@@ -4,7 +4,7 @@
 #include "engine/terrain/WaterBodies.hpp" // LakeSurface, HeightFn
 #include "engine/terrain/generation/WaterSolve.hpp"
 
-// Real-time windowed shallow-water simulation (docs/WATER-RESEARCH.md,
+// Real-time windowed shallow-water simulation (docs/PAYSAGE.md §2.3,
 // option C — the From Dust model, dev decision 2026-08-27): the SAME
 // virtual-pipes kernel as the offline solver, but stepped continuously
 // on a camera-following window laid on the RENDER-resolution terrain —
@@ -71,7 +71,7 @@ struct WaterSimState {
     // Persistent RENDER wetness with hysteresis (updated at
     // extraction): cells near the publish threshold flickered wet/dry
     // per tick, blinking whole surfaces out and popping orphan walls
-    // at their neighbours (docs/WATER-RENDER.md §1.3).
+    // at their neighbours (docs/PAYSAGE.md §1.5).
     vector<u8> wetMask;
     // Brook footprints (E4b): cells under a baked ribbon too narrow
     // to pin. Extraction publishes them at reduced thresholds so a
@@ -99,7 +99,7 @@ struct WaterSimSnapshot {
     // Render displacement plane: the wet surface, or the local ground
     // minus a tuck where dry (kept for texture-side consumers).
     vector<f32> display;
-    // The ONE render geometry (docs/WATER-RENDER.md §2): a closed
+    // The ONE render geometry (docs/PAYSAGE.md §1.5): a closed
     // skin built on the worker by MARCHING SQUARES on the dual grid
     // (cell centers as samples) — tops cover the wet-region polygon
     // per 2x2 block, one column-capped wall per contour segment; the
@@ -178,7 +178,7 @@ WaterSimState preRollWindow(const terraingen::GridSpec& spec,
                             const vector<terraingen::WaterSource>& sources);
 
 // Session LRU of evicted window states (the re-entry lever,
-// docs/WATER-RENDER.md §4): pick the cached window that best overlaps
+// docs/PAYSAGE.md §1.5): pick the cached window that best overlaps
 // the target, so the runtime resumes it via scrollWindow instead of
 // re-running the pre-roll solver — returning water is "already
 // flowing". Pure and headless; the cache itself lives with the

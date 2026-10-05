@@ -58,15 +58,15 @@ public:
     static constexpr u32 kRockVariants = 4;
     static constexpr u32 kBushVariants = 3;
     // Forest-floor debris (stumps, fallen trunks — scanned-prop
-    // overrides, docs/GRASS-REDO.md): rigid like rocks, scattered on the
+    // overrides, docs/PAYSAGE.md §1.7): rigid like rocks, scattered on the
     // forest floor only.
     static constexpr u32 kDebrisVariants = 2;
-    // Photoreal plant accents over the blade meadow (docs/GRASS-REDO.md
+    // Photoreal plant accents over the blade meadow (docs/PAYSAGE.md §1.7
     // palier 2): textured (per-variant albedo bind group, alpha cutout),
     // no shadow casting, no collision, no GI — fill-rate stays owned by
     // the opaque world. Slot order: tall grass, fern, dandelion, shrub.
     static constexpr u32 kPlantVariants = 4;
-    // Mass tier under the hero plants (docs/GRASS-REDO.md): the SAME
+    // Mass tier under the hero plants (docs/PAYSAGE.md §1.7): the SAME
     // four species as cheap clones (~200 tris) at high density and short
     // reach — the carpet the heroes sit on. Same habitat + colony noise.
     static constexpr u32 kMassVariants = 4;
@@ -207,7 +207,7 @@ public:
                           u32 normalWidth = 0, u32 normalHeight = 0,
                           vector<u8> normalRgba = {});
 
-    // Bark textures for the procedural trees (docs/GRASS-REDO.md): wood
+    // Bark textures for the procedural trees (docs/PAYSAGE.md §1.7): wood
     // vertices carry a flag (uv.y < -0.5) and tree.frag samples the
     // slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
     // oak/broadleaf default, 1 = spruce/conifer default); the tree

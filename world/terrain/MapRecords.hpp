@@ -3,7 +3,7 @@
 #include "data/plugins/EditSession.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
 
-// Chantier CARTES M5 (docs/TERRAIN-MAPS.md): a baked bounded map mapped
+// Chantier CARTES M5 (docs/PAYSAGE.md §1.1): a baked bounded map mapped
 // onto ORDINARY §5 records — the WorldspaceForm IS the map (its guid is
 // the map guid), the set of TerrainRegionForm records IS the slice
 // list, the water bodies are WaterBodyForm/RiverForm records. Every

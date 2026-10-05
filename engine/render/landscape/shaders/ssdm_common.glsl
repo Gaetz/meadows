@@ -1,4 +1,4 @@
-// Shared SSDM displacement math (docs/GRASS-REDO.md — the Lobel 2008
+// Shared SSDM displacement math (docs/PAYSAGE.md §1.7 — the Lobel 2008
 // scatter). The includer declares uSceneColor (binding 0) and
 // uSceneDepth (binding 1) and includes view_util.glsl first.
 // Returns the displaced uv DELTA (bounded to kSsdmMaxPx pixels);

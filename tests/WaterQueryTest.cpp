@@ -3,7 +3,7 @@
 #include "engine/terrain/WaterQuery.hpp"
 #include "engine/terrain/WaterSim.hpp"
 
-// R3 break-case suite (docs/WATER-RENDER.md): the unified gameplay
+// R3 break-case suite (docs/PAYSAGE.md §1.5): the unified gameplay
 // water sample must (1) let the SIM answer inside its trusted rect —
 // water AND dryness, (2) fall back to the baked bodies outside or
 // without a snapshot, (3) keep the sea swimmable in the authority

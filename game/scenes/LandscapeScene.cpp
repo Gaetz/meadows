@@ -357,7 +357,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     render::RendererConfig config;
     applyCookedTerrainPaths(config, forms, assetDb);
     renderer.create(device, engine->getJobSystem(), config);
-    // Scanned-prop overrides (docs/GRASS-REDO.md palier 1): CC0 scans
+    // Scanned-prop overrides (docs/PAYSAGE.md §1.7 palier 1): CC0 scans
     // replace the generated rock variants and fill the forest-debris
     // slots. Decimated to clutter budgets (the sources are 40-100k tris)
     // and footprint-normalized; the glTF loader bakes their textures'
@@ -455,7 +455,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
         }
     }
 
-    // Textured plant accents (docs/GRASS-REDO.md palier 2). Unlike the
+    // Textured plant accents (docs/PAYSAGE.md §1.7 palier 2). Unlike the
     // scans, the uv stays REAL texture coordinates (the negative fade
     // lane tells the shaders); the diffuse PNG (alpha = cutout where the
     // asset has one) binds per variant.
@@ -2304,7 +2304,7 @@ void LandscapeScene::publishWaterBodies() {
         *world::buildWaterBodies(forms, tuning.seaLevel));
     // Baked lakes + river ribbons are the OUTSIDE-WINDOW water (and
     // the fallback while the sim spins up): the real-time windowed
-    // sim (option C, docs/WATER-RESEARCH.md) owns everything near the
+    // sim (option C, docs/PAYSAGE.md §2.3) owns everything near the
     // camera and replaces these per fragment inside its trusted rect.
     for (const render::terraingen::Lake& lake : sandboxLakes) {
         render::LakeSurface surface;
@@ -7693,7 +7693,7 @@ void LandscapeScene::drawUi() {
                 [&] { drawGameplayUi(); });
     rightWindow("Terrain & streaming", uiTerrainOpen, [&] {
         RenderTuningPanels::drawTerrainPanel(renderer);
-        // Terrain material knobs (docs/TERRAIN-TEXTURING.md) live on the
+        // Terrain material knobs (docs/PAYSAGE.md §1.6) live on the
         // scene's tuning form and flow into the view every frame — live.
         // Tint changes regenerate grass and re-bake the GI tile on their
         // own sync hooks.

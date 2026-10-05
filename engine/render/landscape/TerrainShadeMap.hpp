@@ -12,7 +12,7 @@ class Device;
 namespace render {
 
 // The low-frequency "region shading" band of the terrain material system
-// (docs/TERRAIN-TEXTURING.md): biome attributes and baked masks resolved
+// (docs/PAYSAGE.md §1.6): biome attributes and baked masks resolved
 // to CONTINUOUS fields (ids never blend — the resolve happens here, so the
 // GPU's bilinear filtering is legitimate), worker-baked over the camera
 // ring as two RGBA8 maps (the TerrainLightMap pattern):

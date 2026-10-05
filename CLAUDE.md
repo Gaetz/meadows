@@ -541,7 +541,8 @@ touching the corresponding systems.
 >
 > 4. **`docs/CHANTIER-ESPRITS.md`** — chantier **EN PAUSE** depuis le
 >    2026-10-05 (4 esprits sur 9 ; le chantier COURANT est **PAYSAGE** —
->    point d'entrée `docs/MEADOWS-PLAN.md`, tableau « CHANTIERS ») :
+>    point d'entrée `docs/MEADOWS-PLAN.md`, tableau « CHANTIERS » ;
+>    référence et journal : `docs/PAYSAGE.md`, point 5 ci-dessous) :
 >    la manipulation du monde par les **9 esprits** (trois triades en
 >    shifumi, sources placées `SpiritSourceForm`, règles BotW « un
 >    matériau ne change jamais un matériau », `AbilityForm.script` exécuté
@@ -553,6 +554,20 @@ touching the corresponding systems.
 >    **`docs/FIRE-RENDER.md`** — la référence du rendu du feu et de son
 >    éclairage (quads de flamme, liseré de braises, lumières agrégées,
 >    briques F1-F4) : à lire avant de toucher aux flammes ou au scorch.
+>
+> 5. **`docs/PAYSAGE.md`** — LA référence du paysage généré (chantier
+>    **PAYSAGE**, COURANT depuis le 2026-10-05) : cartes bornées 24 km,
+>    pipeline de bake, contrôles analytiques, eau (sim option C), sol,
+>    scatter/arbres/herbe, peuplement ; décisions avec leur pourquoi,
+>    leçons mesurées, **état des lieux total du 2026-10-05** (§5), cible
+>    « Paysage & peuplement » (§4), backlog, périmètre et journal du
+>    chantier (§7). Consolide six journaux archivés sous `docs/archive/`
+>    (TERRAIN-GEN, TERRAIN-MAPS, TERRAIN-TEXTURING, WATER-RENDER,
+>    WATER-RESEARCH, GRASS-REDO). À lire avant de toucher
+>    `engine/terrain/`, `world/terrain/`, `game/MapBaker`,
+>    `game/TerrainBakeStreamer`, les systèmes Terrain/Water/Vegetation/
+>    Grass/Tree de `engine/render/landscape/` ou le panneau « Terrain
+>    generation ».
 >
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.

@@ -175,7 +175,7 @@ public:
     // spawn grounding all read it; the sculpt tool writes patches).
     render::TerrainParams& terrainParams() { return terrain.params; }
 
-    // Scanned-prop overrides (scene wiring, docs/GRASS-REDO.md): replaces
+    // Scanned-prop overrides (scene wiring, docs/PAYSAGE.md §1.7): replaces
     // one vegetation variant's mesh after create() — the scene resolves
     // the glTF through the VFS, decimates and normalizes it first.
     void overrideVegetationMesh(rhi::Device& device, u32 variant,

@@ -13,7 +13,7 @@ class JobSystem;
 
 namespace game {
 
-// The bounded-map baker (docs/TERRAIN-MAPS.md, chantier CARTES M1):
+// The bounded-map baker (docs/PAYSAGE.md §1.1, chantier CARTES M1):
 // ONE global erosion for the whole map — stage-1 on a map-sized window
 // — then every 4096 m slice finalized against that single shared
 // surface (the map stage-1 stands in for all nine 3x3 neighbours, so

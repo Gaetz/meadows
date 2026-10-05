@@ -173,7 +173,7 @@ void main() {
 #endif
 #if defined(WATER_SIM) && !defined(WATER_SIM_FROZEN)
     // Character from the sim textures. The EXTENT of the water is the
-    // MESH (docs/WATER-RENDER.md §1.2): no dryness discard here, ever
+    // MESH (docs/PAYSAGE.md §1.5): no dryness discard here, ever
     // — threshold discards blinked whole surfaces out (measured).
     // Every read of the sim textures is CLAMPED to physical ranges:
     // garbage samples (a recycled texture id read by an in-flight

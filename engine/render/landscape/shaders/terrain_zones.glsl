@@ -1,4 +1,4 @@
-// Grass-family ground variants (docs/GRASS-REDO.md): the semantic grass
+// Grass-family ground variants (docs/PAYSAGE.md §1.7): the semantic grass
 // layer is subdivided into 4 material variants by STOCHASTIC HEX-TILING
 // (below) — the discrete Voronoi zoning it replaces lived here before
 // (git history) and showed its borders. Mirrored by TerrainNoise.cpp
@@ -70,7 +70,7 @@ int hexVariantOf(ivec2 v) {
 // Distinct salts per family so the patchworks never correlate.
 // `bias` = the sand family's scree flip to layer 16 (rock-foot talus).
 // The variant flip is reserved for SAME-CHROMATIC-FAMILY layers
-// (docs/GRASS-REDO.md: the first ground-variant pass was rejected for
+// (docs/PAYSAGE.md §1.7: the first ground-variant pass was rejected for
 // off-family colors): any off-color transition ground — frost (21),
 // heath (22/23) — is a per-pixel DEPOSIT in terrain.frag instead, a
 // binary cell decision at high contrast paints the hex lattice

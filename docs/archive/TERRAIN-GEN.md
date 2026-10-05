@@ -1,3 +1,8 @@
+> **ARCHIVÉ (2026-10-05)** — remplacé par `docs/PAYSAGE.md` (état,
+> décisions, leçons, état des lieux, chantier). Conservé comme journal
+> détaillé brique par brique ; les numéros de § et de briques cités par
+> le code renvoient ici.
+
 # TERRAIN-GEN — génération de terrain réaliste (chantier 2026-07-31)
 
 Système de génération de terrain « post-démo » : montagnes érodées (fastscape),

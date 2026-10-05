@@ -667,7 +667,7 @@ TEST_CASE("water sim: scroll strips refill from breadcrumbs") {
 }
 
 TEST_CASE("water sim: chooseCachedWindow picks the best resumable state") {
-    // The session LRU lever (docs/WATER-RENDER.md §4): a cached
+    // The session LRU lever (docs/PAYSAGE.md §1.5): a cached
     // window resumes via scrollWindow when it overlaps the target
     // enough; knob changes (n/texel) disqualify; best overlap wins.
     const auto specAt = [](f32 ox, f32 oz, u32 n = 65, f32 t = 2.0f) {

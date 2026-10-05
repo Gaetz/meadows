@@ -1,3 +1,8 @@
+> **ARCHIVÉ (2026-10-05)** — remplacé par `docs/PAYSAGE.md` (état,
+> décisions, leçons, état des lieux, chantier). Conservé comme journal
+> détaillé brique par brique ; les numéros de § et de briques cités par
+> le code renvoient ici.
+
 # WATER-RESEARCH — refonte du système d'écoulement de l'eau
 
 > Étude des solutions existantes (2026-08-26), décidée après le constat

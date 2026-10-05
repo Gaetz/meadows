@@ -185,7 +185,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     // Species per Voronoi clump (jittered grid, ~2.4 m): neighboring
     // blades share species/shade and fan away from their clump center —
     // patches read as vegetation, not per-blade noise (the GoT model,
-    // docs/GRASS-REDO.md). Sites are resolved per blade (nearest of the
+    // docs/PAYSAGE.md §1.7). Sites are resolved per blade (nearest of the
     // 3x3 neighbor sites — pure arithmetic) and their pick is cached per
     // chunk build; per-species low-frequency noises make one species win
     // over several clumps at a time.
@@ -340,7 +340,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             const f32 hMid = 0.25f * (h00 + h10 + h01 + h11);
             // Density RAMP instead of the historical boolean cutoff: the
             // splat's grass/rock blend zone is ALSO the blade rarefaction
-            // zone (docs/GRASS-REDO.md — AAA transitions are never
+            // zone (docs/PAYSAGE.md §1.7 — AAA transitions are never
             // binary). materialCutoff keeps its meaning as the
             // full-density threshold; blades thin AND shrink below it.
             // Where the ramp dies on solid rock, sparse dwarf DRY tufts

@@ -364,7 +364,7 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
 
     const u32 layers = static_cast<u32>(materials->size());
     // Per-layer average albedo (display bytes) — CPU consumers can't
-    // decode the BC payload (blade root albedo, docs/GRASS-REDO.md).
+    // decode the BC payload (blade root albedo, docs/PAYSAGE.md §1.7).
     vector<u32> albedoAverages(layers, 0xff808080u);
     // [mip][layer] payload slices, assembled mip-major at the end (the
     // CookedTexture/createTexture layout contract).

@@ -189,7 +189,7 @@ int bakeMapCmd(char** argv, int argc) {
     // With the shared surface AND the shared map hydrology, the only
     // per-slice pass left is the fine erosion (support-bounded, max
     // depth 3.5 m) plus the ±1.1 m relief damp — the gate is their
-    // stack (docs/TERRAIN-MAPS.md; windowed tiles measured 200-441 m).
+    // stack (docs/PAYSAGE.md §1.1; windowed tiles measured 200-441 m).
     LOG_INFO("bake-map: worst interior band divergence {:.3f} m "
              "(acceptance <= 5 m — fine-erosion residual)",
              worst);

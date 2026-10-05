@@ -1,3 +1,8 @@
+> **ARCHIVÉ (2026-10-05)** — remplacé par `docs/PAYSAGE.md` (état,
+> décisions, leçons, état des lieux, chantier). Conservé comme journal
+> détaillé brique par brique ; les numéros de § et de briques cités par
+> le code renvoient ici.
+
 # TERRAIN-MAPS — l'architecture cartes bornées (étude TERRAIN-RECUL)
 
 > Étude du 2026-09-14, déclenchée par les falaises linéaires et lacs coupés

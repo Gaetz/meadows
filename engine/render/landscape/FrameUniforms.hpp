@@ -188,7 +188,7 @@ struct FrameUniforms {
     Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Per atlas slot: rgb = autumn tint, a = seasonality (0 = evergreen).
     Vec4 leafSeason[8] {};
-    // Splat material detail (docs/TERRAIN-TEXTURING.md): x = height-blend
+    // Splat material detail (docs/PAYSAGE.md §1.6): x = height-blend
     // band depth (0 = plain weighted blend), yzw reserved for the detail
     // fade / POM knobs of the later bricks.
     Vec4 splatDetailInfo { 0.15f, 0.0f, 0.0f, 0.0f };

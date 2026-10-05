@@ -1301,7 +1301,7 @@ TEST_CASE("calm coverage diagnostic" * doctest::skip()) {
     CHECK(dry > 0);
 }
 
-// UV health of the scanned rocks (docs/GRASS-REDO.md props): per model,
+// UV health of the scanned rocks (docs/PAYSAGE.md §1.7 props): per model,
 // the per-triangle texel-stretch distribution (world area vs uv area)
 // BEFORE and AFTER decimation — the striped-face hunt (the texture
 // not wrapping around the pale boulder).

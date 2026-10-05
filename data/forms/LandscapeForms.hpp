@@ -52,7 +52,7 @@ struct LandscapeTuningForm : Form {
     f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
     // Height-blend band depth between splat layers (0 = plain weighted
-    // blend; ~0.1-0.2 = crisp material interfaces). docs/TERRAIN-TEXTURING.md.
+    // blend; ~0.1-0.2 = crisp material interfaces). docs/PAYSAGE.md §1.6.
     f32 splatBlendDepth { 0.15f };
     // Macro-tint strength (0 = off; above ~0.4 the tint crushes the
     // materials' own variation — brief guardrail).

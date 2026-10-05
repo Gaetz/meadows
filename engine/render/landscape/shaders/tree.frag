@@ -134,7 +134,7 @@ void main() {
     // amp/2 (the "ça rentre" bug). Bark and disp-mapped props write
     // their real height.
     float reliefA = 0.745;
-    // Textured prop (docs/GRASS-REDO.md palier 2): group 1 holds the
+    // Textured prop (docs/PAYSAGE.md §1.7 palier 2): group 1 holds the
     // variant's albedo instead of the leaf atlas; alpha cutout at 0.5
     // (opaque scans never discard — their alpha is solid 1). The normal
     // map perturbs through a derivative cotangent frame (no mesh
@@ -255,7 +255,7 @@ void main() {
                              vec3(1.1, 1.0, 1.15), vTint);
     vec3 albedo = leafShade * baseColor * hueRoll;
 
-    // Ground anchor (the Battlefront contract, docs/GRASS-REDO.md): the
+    // Ground anchor (the Battlefront contract, docs/PAYSAGE.md §1.7): the
     // base 0..0.4 m of every prop fades toward the terrain's macro tint —
     // rocks and trunks sit IN the ground instead of on it. Strength
     // follows the terrain's own tint knob (uSplatDetailInfo.y).

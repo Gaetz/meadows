@@ -160,7 +160,7 @@ arrays with an A/B against the procedural tiles, height-based layer
 blending, per-layer normal mapping over the planar-UV tangent basis,
 POM on the dominant layer, bi-frequency anti-repetition, and the
 `TerrainShadeMap` region bands feeding biome rules + macro tint — is the
-TERRAIN-TEXTURING chantier, journal + knobs: `docs/TERRAIN-TEXTURING.md`),
+TERRAIN-TEXTURING chantier, journal + knobs: `docs/PAYSAGE.md §1.6`),
 `GrassSystem` (Quick_Grass blades,
 metric density prefix; blades **inherit the terrain albedo at their
 root** — the scatter bakes the splat blotch color per instance

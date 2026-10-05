@@ -1134,7 +1134,7 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
     rebuildMapGroup(device);
 
     // --- The ONE closed mesh, built worker-side in extractSnapshot
-    // (docs/WATER-RENDER.md §2): upload verbatim.
+    // (docs/PAYSAGE.md §1.5): upload verbatim.
     device.destroyBuffer(simVertexBuffer);
     device.destroyBuffer(simIndexBuffer);
     simVertexBuffer = {};

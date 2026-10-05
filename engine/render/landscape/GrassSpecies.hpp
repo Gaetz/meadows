@@ -8,7 +8,7 @@ namespace render {
 // CPU-side to positionScale.w) and the FrameUbo arrays grass.vert reads
 // (width/lean/profile/tints by aSpecies.x). Species are DATA on the same
 // blade (the Ghost of Tsushima model): a clump-level pick at scatter, no
-// new render system. Journal + selection rules: docs/GRASS-REDO.md.
+// new render system. Journal + selection rules: docs/PAYSAGE.md §1.7.
 constexpr u32 kGrassSpeciesCount = 6;
 
 enum GrassSpeciesId : u32 {
@@ -16,7 +16,7 @@ enum GrassSpeciesId : u32 {
     GrassSpecies_Dry = 1,    // short strawy tufts (arid drift, rock fringe)
     GrassSpecies_Oat = 2,    // tall pale wild oats, strongly leaning
     GrassSpecies_Flower = 3, // broad blade, colored tip (flower patches)
-    // Micro tier (docs/GRASS-REDO.md P4): the same blade squashed into
+    // Micro tier (docs/PAYSAGE.md §1.7 P4): the same blade squashed into
     // ground cover — the 0-10 cm layer between the POM texture and the
     // plants. Moss carpets shaded wet forest floor and the worn/dirt
     // ground variants; lichen shares the rock-crevice path with Dry.

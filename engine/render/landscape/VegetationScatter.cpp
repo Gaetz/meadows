@@ -213,7 +213,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
         }
     }
 
-    // --- Pebbles: the ground-clutter read (docs/GRASS-REDO.md) ---------------
+    // --- Pebbles: the ground-clutter read (docs/PAYSAGE.md §1.7) ---------------
     // The SAME boulder meshes at centimeter scale (§2.11 reuse — no new
     // variants, no new mesh): dense along the grass/rock blend band
     // (cross-scatter — stones spill into the fringe grass), sparse
@@ -370,7 +370,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
     }
 
     // --- Plants + mass tier: the photoreal understory ------------------------
-    // (docs/GRASS-REDO.md palier 2.) Textured cutout scans picked by
+    // (docs/PAYSAGE.md §1.7 palier 2.) Textured cutout scans picked by
     // HABITAT: fern inside forests, shrub on their edges, dandelion in
     // open meadow, tall grass anywhere grassy. The NEGATIVE fade lane
     // flags "textured" to tree.vert/frag (uv = texture coords, height

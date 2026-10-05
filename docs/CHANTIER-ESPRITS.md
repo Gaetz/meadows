@@ -1,11 +1,11 @@
 # Chantier ESPRITS — un monde manipulé par les neuf esprits
 
 > Journal du chantier (ouvert le 2026-09-27, après la clôture de CARTES —
-> `docs/TERRAIN-MAPS.md`). Le cadre et les briques E1-E4 sont dans les
+> `docs/PAYSAGE.md §1.1`). Le cadre et les briques E1-E4 sont dans les
 > sections ci-dessous ; **ce qui reste à faire est tenu à jour dans la
 > dernière section, « Prochaines étapes »**. Doc utilisateur/moddeur :
 > `userdoc/spirits.md`. L'ordre des chantiers après celui-ci :
-> `docs/MEADOWS-PLAN.md` (ordre macro) et `docs/TERRAIN-MAPS.md` (PAYSAGE).
+> `docs/MEADOWS-PLAN.md` (ordre macro) et `docs/PAYSAGE.md` (PAYSAGE).
 
 ## 1. Pourquoi
 
@@ -1286,7 +1286,7 @@ d'abord (elle ferme le triangle avec l'Eau et la Terre déjà là).
   Jolt poussés par impulsion (la façade n'a que `addDynamicConvex` pour
   les rochers) — hors démo, le vent ne pousse que du cinématique.
 - **Le scatter spawne des objets interactifs** (emprise de pierre sur les
-  rochers du scatter) — noté dans `docs/TERRAIN-MAPS.md`, chantier
+  rochers du scatter) — noté dans `docs/PAYSAGE.md §7`, chantier
   PAYSAGE.
 
 ### Dette technique connue (non bloquante)
@@ -1301,6 +1301,6 @@ d'abord (elle ferme le triangle avec l'Eau et la Terre déjà là).
 
 ### Après le chantier
 L'ordre acté par le dev : **PAYSAGE** (la suite de CARTES, le peuplement
-B10-B13 — `docs/TERRAIN-MAPS.md`), puis les P1 par valeur de
+B10-B13 — `docs/PAYSAGE.md §7`), puis les P1 par valeur de
 `docs/MEADOWS-PLAN.md` (stats avancées, quêtes 3D outillées, économie et
 crime, éditeurs, musique dynamique, polish renderer).

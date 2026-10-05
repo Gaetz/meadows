@@ -26,7 +26,7 @@ struct WorldspaceForm : data::Form {
     // out per POSITION (a cellar under a windowed house settles itself).
     // Default: far below everything = the rule is off.
     f32 buriedBelowY { -1.0e9f };
-    // Bounded map (chantier CARTES, docs/TERRAIN-MAPS.md): one map =
+    // Bounded map (chantier CARTES, docs/PAYSAGE.md §1.1): one map =
     // one worldspace, terrain eroded globally per map. false = legacy
     // unbounded exterior or interior.
     bool bounded { false };
@@ -87,7 +87,7 @@ struct CellForm : data::Form {
 };
 
 // Which map's records a world builder collects (chantier CARTES M2.2,
-// docs/TERRAIN-MAPS.md). Default (null worldspace) = every record —
+// docs/PAYSAGE.md §1.1). Default (null worldspace) = every record —
 // the legacy single-world behavior, kept for tools and tests. With a
 // worldspace set: records tagged with it, plus UNTAGGED records only
 // when `includeUntagged` (the migration rule: a record whose

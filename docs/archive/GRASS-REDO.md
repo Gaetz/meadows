@@ -1,3 +1,8 @@
+> **ARCHIVÉ (2026-10-05)** — remplacé par `docs/PAYSAGE.md` (état,
+> décisions, leçons, état des lieux, chantier). Conservé comme journal
+> détaillé brique par brique ; les numéros de § et de briques cités par
+> le code renvoient ici.
+
 # GRASS-REDO — sol réaliste : herbe variée & transition herbe/roche
 
 > Chantier du 2026-08-03 (branche `feature/realistic-textures`), suite du

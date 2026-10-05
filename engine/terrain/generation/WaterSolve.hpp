@@ -4,7 +4,7 @@
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
-// Steady-state water solve (docs/WATER-RESEARCH.md, option D): the
+// Steady-state water solve (docs/PAYSAGE.md §2.3, option D): the
 // virtual-pipes shallow-water model run OFFLINE to equilibrium — rain
 // falls on every cell, flows downhill through per-cell pipes, and
 // drains into the sea; what remains is a physically coherent water

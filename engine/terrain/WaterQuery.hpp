@@ -8,7 +8,7 @@
 
 namespace render::terrain {
 
-// R3 — the ONE gameplay water sample (docs/WATER-RENDER.md): what you
+// R3 — the ONE gameplay water sample (docs/PAYSAGE.md §1.5): what you
 // SEE is what you swim in. Inside the sim's trusted rect the SIM
 // snapshot is authoritative — its water counts, and its dryness
 // counts too (the baked bodies claiming water under a hillside gave

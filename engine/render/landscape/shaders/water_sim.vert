@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// The ONE closed sim-water mesh (docs/WATER-RENDER.md §2): world-space
+// The ONE closed sim-water mesh (docs/PAYSAGE.md §1.5): world-space
 // vertices built on the worker in extractSnapshot — top faces over wet
 // cells plus column-capped side faces at every wet/dry boundary. The
 // extent of the water IS this geometry; the fragment side only shades.

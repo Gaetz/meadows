@@ -16,7 +16,7 @@ name = "true-adventurer-landscape"
 "ed8af881-93d9-4c9f-964c-24714ff4473e" = "textures/terrain/terrain_normal.mtex"
 "a2d5eb11-1a53-441c-b04c-591fdadf59f2" = "textures/terrain/terrain_orm.mtex"
 "ee6aae6c-1520-4941-8e8c-29cca4857a97" = "textures/terrain/terrain_height.mtex"
-# Scanned props (Poly Haven CC0, docs/GRASS-REDO.md palier 1): override the
+# Scanned props (Poly Haven CC0, docs/PAYSAGE.md §1.7 palier 1): override the
 # vegetation rock/debris variants; decimated + normalized at load.
 "4f018fc5-80ee-4601-a74d-d1bff315ee76" = "models/scans/stone_01/stone_01.gltf"
 "65de4305-9eda-48ba-a87c-57aff4606164" = "models/scans/rock_moss_set_01/rock_moss_set_01.gltf"

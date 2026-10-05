@@ -20,7 +20,7 @@ namespace game {
 // master network. Lakes are downsampled to ~64 m coarse masks.
 // Water sidecar next to a tile's .trg (lakes with their basin masks +
 // river polylines) — the streamer's cache format, shared with the map
-// baker (docs/TERRAIN-MAPS.md).
+// baker (docs/PAYSAGE.md §1.1).
 bool writeWaterFile(const std::filesystem::path& path,
                     const vector<render::terraingen::Lake>& lakes,
                     const vector<render::terraingen::River>& rivers);
@@ -57,7 +57,7 @@ public:
         i32 tz { 0 };
     };
 
-    // Bounded-map streaming (chantier CARTES M1.4, docs/TERRAIN-MAPS.md):
+    // Bounded-map streaming (chantier CARTES M1.4, docs/PAYSAGE.md §1.1):
     // slices are READ from <cacheDir>/map_<mx>_<mz>/ — a request into an
     // unbaked map defers the tile and kicks ONE background map bake
     // (game::bakeMap on a worker; the deferred tiles occupy no worker,

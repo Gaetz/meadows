@@ -925,7 +925,7 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
         state.wetMask.assign(cells, 0);
     }
 
-    // --- Pass 1: HYSTERETIC wetness (docs/WATER-RENDER.md §1.3). A
+    // --- Pass 1: HYSTERETIC wetness (docs/PAYSAGE.md §1.5). A
     // cell turns wet above the high threshold and only dries below the
     // low one — cells hovering at one threshold blinked whole surfaces
     // out per tick. Fast films (a waterfall face runs centimeters)
@@ -1038,7 +1038,7 @@ void extractSnapshot(WaterSimState& state, const WaterSimParams& params,
     }
 
     // --- Pass 4: the ONE closed mesh — MARCHING SQUARES on the DUAL
-    // grid (docs/WATER-RENDER.md §2). Samples live at CELL CENTERS
+    // grid (docs/PAYSAGE.md §1.5). Samples live at CELL CENTERS
     // (wetness, surface, depth); every 2x2 block of cells is a dual
     // cell whose wet corners pick one of the 16 contour cases. Tops
     // cover the wet-region polygon; ONE wall follows every contour

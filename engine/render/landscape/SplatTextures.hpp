@@ -16,7 +16,7 @@ enum SplatLayer : u32 {
 
 constexpr u32 kSplatTileSize = 256; // texels per side, per layer
 
-// Grass-family ground variants (docs/GRASS-REDO.md): the semantic grass
+// Grass-family ground variants (docs/PAYSAGE.md §1.7): the semantic grass
 // layer has 4 texture variants zoned by terrain_zones.glsl / grassZoneAt.
 // Variant 0 IS the base grass layer; variants 1-3 live as extra array
 // layers after the semantic five. The semantic weights never change —
@@ -45,7 +45,7 @@ constexpr u32 kFrostGrassLayer = 21;
 // blended grass, under the frost — same recipe as the frost layer,
 // never a per-vertex variant flip (off-color cell decisions paint the
 // hex lattice; the variant flip is reserved for same-chromatic-family
-// layers, docs/GRASS-REDO.md). Deliberately NOT harmonized with grass:
+// layers, docs/PAYSAGE.md §1.7). Deliberately NOT harmonized with grass:
 // the color shift IS the transition.
 constexpr u32 kHeathLayerA = 22;
 constexpr u32 kHeathLayerB = 23;

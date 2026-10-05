@@ -1,3 +1,8 @@
+> **ARCHIVÉ (2026-10-05)** — remplacé par `docs/PAYSAGE.md` (état,
+> décisions, leçons, état des lieux, chantier). Conservé comme journal
+> détaillé brique par brique ; les numéros de § et de briques cités par
+> le code renvoient ici.
+
 # WATER-RENDER — le rendu de l'eau simulée (option C)
 
 > Référence du rendu de l'eau temps réel. À lire avant de toucher

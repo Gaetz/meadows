@@ -166,12 +166,12 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
 // exercise exactly what ships. (The windowed per-tile stage-2 — 3x3
 // composite, per-tile hydrology, canonical basin resolution, anchor
 // ownership — died with the windowed streamer path, chantier CARTES
-// M1.5b, docs/TERRAIN-MAPS.md.)
+// M1.5b, docs/PAYSAGE.md §1.1.)
 TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
                             i32 tz,
                             const std::atomic<bool>* cancel = nullptr);
 
-// --- Bounded-map path (chantier CARTES, docs/TERRAIN-MAPS.md). The
+// --- Bounded-map path (chantier CARTES, docs/PAYSAGE.md §1.1). The
 // map is eroded ONCE (a map-sized stage-1); its hydrology is derived
 // ONCE over the whole map window; every slice then finalizes against
 // that same surface AND the same routed water. Per-slice hydrology
