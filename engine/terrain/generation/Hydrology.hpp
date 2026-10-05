@@ -64,6 +64,14 @@ struct RiverPoint {
     f32 halfWidth { 0.0f }; // meters, grows with drainage area
 };
 
+// Tier character as the runtime current (m/s): the ruisseau ambles, the
+// rivière flows, the fleuve DRAGS (the swim controller multiplies by
+// swimDriftFactor — the fleuve is the obstacle tier). ONE law for the
+// baked sandbox rivers and the exported RiverForm records.
+inline f32 riverFlowSpeedForTier(u8 tier) {
+    return tier == 0 ? 0.6f : tier == 2 ? 1.8f : 1.0f;
+}
+
 struct River {
     vector<RiverPoint> points; // downstream order
     // Water tier (classifyRivers): 0 ruisseau (wadeable everywhere),

@@ -60,6 +60,7 @@ render::terraingen::River testRiver() {
     river.points = { { 5.0f, 5.0f, 52.0f, 3.0f },
                      { 15.0f, 8.0f, 51.0f, 4.0f },
                      { 25.0f, 12.0f, 50.0f, 5.0f } };
+    river.tier = 2; // a fleuve: the tier and its drag must round-trip
     return river;
 }
 
@@ -147,6 +148,9 @@ TEST_CASE("map records: bake -> stage -> export -> resolve -> "
     core::Guid riverGuid;
     data::forEach<RiverForm>(resolved, [&](const RiverForm& river) {
         CHECK(river.worldspace == kMapGuid);
+        CHECK(river.tier == 2);
+        CHECK(river.flowSpeed ==
+              doctest::Approx(render::terraingen::riverFlowSpeedForTier(2)));
         riverGuid = river.id;
     });
     data::forEach<RiverPointForm>(

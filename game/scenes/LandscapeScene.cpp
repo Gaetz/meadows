@@ -2272,12 +2272,8 @@ void LandscapeScene::publishWaterBodies() {
     }
     for (const render::terraingen::River& river : sandboxRivers) {
         render::RiverSurface surface;
-        // Tier character: the ruisseau ambles, the rivière flows, the
-        // fleuve DRAGS (the swim controller multiplies by
-        // swimDriftFactor — the fleuve is the obstacle tier).
-        surface.flowSpeed = river.tier == 0   ? 0.6f
-                            : river.tier == 2 ? 1.8f
-                                              : 1.0f;
+        surface.flowSpeed =
+            render::terraingen::riverFlowSpeedForTier(river.tier);
         surface.minX = surface.minZ = 1.0e30f;
         surface.maxX = surface.maxZ = -1.0e30f;
         for (const render::terraingen::RiverPoint& pt : river.points) {

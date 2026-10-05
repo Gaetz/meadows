@@ -370,13 +370,18 @@ struct RiverForm : data::Form {
     // RiverPointForm children inherit through `parent`.
     core::Guid worldspace;
     Vec3 tint { 0.10f, 0.30f, 0.34f };
-    f32 flowSpeed { 1.0f };
+    // Water tier (0 ruisseau, 1 rivière, 2 fleuve — the generator's
+    // classifyRivers): the course's CHARACTER, kept through the map
+    // export so a mod's river stays the obstacle it was baked as.
+    i32 tier { 0 };
+    f32 flowSpeed { 1.0f }; // m/s; the export derives it from the tier
     core::Guid material; // WaterMaterialForm; null = default water
 
     REFLECT_BEGIN(RiverForm, data::Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(worldspace)
         REFLECT_FIELD(tint)
+        REFLECT_FIELD(tier)
         REFLECT_FIELD(flowSpeed)
         REFLECT_FIELD(material)
     REFLECT_END()

@@ -135,6 +135,12 @@ MapStageResult stageMapRecords(
                           mapName.c_str(), r);
             st.ensure(riverType, riverGuid, editorId);
             st.set(riverType, riverGuid, "worldspace", mapGuid);
+            // The tier and its current survive the export (fords stay
+            // bake-side: they are TERRAIN, carved into the slices).
+            st.set(riverType, riverGuid, "tier",
+                   static_cast<i32>(river.tier));
+            st.set(riverType, riverGuid, "flowSpeed",
+                   render::terraingen::riverFlowSpeedForTier(river.tier));
             // Thin the course to record-tier fidelity (ends kept).
             vector<render::terraingen::RiverPoint> kept;
             kept.reserve(river.points.size());
