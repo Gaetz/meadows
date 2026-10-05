@@ -42,6 +42,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MapGridSpec& grid, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan);
 
+// Point query on a far-water set: inside a coarse lake mask or within
+// a fleuve ribbon's half-width. The spawn probe's water oracle before
+// any slice of the map is published (sea level is the caller's).
+bool farWaterWetAt(const render::WaterSystem::FarWaterSet& set, f32 x,
+                   f32 z);
+
 // Bounded-map slice streamer (chantier CARTES; the windowed per-tile
 // bake path died in M1.5b): slices of the ACTIVE map are READ from the
 // map cache on workers and handed to the scene for publication into

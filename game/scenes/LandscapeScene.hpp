@@ -573,6 +573,13 @@ private:
     // of the map's probed spawn — the far side of a pass.
     void travelToMap(i32 mapX, i32 mapZ, const Vec2* arrival = nullptr);
     Vec3 probeSandboxSpawn() const;
+    // The far-water provider of map (mapX, mapZ): cached .twb lakes and
+    // ribbons plus the master fleuves, pure and worker-callable (the
+    // water system's far layer, and the spawn probe's water oracle).
+    render::WaterSystem::FarWaterFn
+    makeFarWaterProvider(i32 mapX, i32 mapZ,
+                         const render::terraingen::TileBakeParams& bake,
+                         const render::terraingen::MapGridSpec& grid) const;
     u32 loadNeighbourOverviews(
         render::SandboxTerrain& sb,
         const render::terraingen::TileBakeParams& bakeParams) const;

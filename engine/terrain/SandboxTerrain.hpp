@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 
 #include "engine/terrain/generation/TerrainGen.hpp"
@@ -62,8 +63,14 @@ bool spawnCandidateOk(f32 h, f32 seaLevel, u8 biome);
 // that passes spawnCandidateOk on the fallback ground (the overview
 // when the map is baked — the analytic drifts by hundreds of meters
 // against a global erosion, a spot picked on it can sit in a real
-// lake). nullopt = nothing found; the caller starts at the centre.
-std::optional<Vec3> probeMapSpawn(const SandboxTerrain& sb, i32 mapX,
-                                  i32 mapZ, f32 seaLevel);
+// lake). With no such candidate (a plateau or alpine map), the
+// gentlest dry spot over the same rings -- never a slope. `wet`: the
+// caller's water oracle (the cached lakes/ribbons of the map; a lake
+// bed is the flattest ground of all and must never win); empty = sea
+// level only. nullopt = nothing dry at all; the caller starts at the
+// centre.
+std::optional<Vec3> probeMapSpawn(
+    const SandboxTerrain& sb, i32 mapX, i32 mapZ, f32 seaLevel,
+    const std::function<bool(f32 x, f32 z)>& wet = {});
 
 } // namespace render

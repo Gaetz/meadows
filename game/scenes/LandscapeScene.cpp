@@ -2108,11 +2108,18 @@ u32 LandscapeScene::loadNeighbourOverviews(
 Vec3 LandscapeScene::probeSandboxSpawn() const {
     const render::TerrainParams& params = renderer.terrainParams();
     const auto& sandbox = params.sandbox;
+    const f32 size = sandbox->grid.mapSize;
+    // The map's cached water (nothing is published yet): the probe
+    // must not pick a lake bed -- the flattest ground there is.
+    const render::WaterSystem::FarWaterSet water = makeFarWaterProvider(
+        activeMapX, activeMapZ, makeMapBakeParams(), sandbox->grid)(
+        (static_cast<f32>(activeMapX) + 0.5f) * size,
+        (static_cast<f32>(activeMapZ) + 0.5f) * size, size * 0.5f);
     if (const auto spot = render::probeMapSpawn(
-            *sandbox, activeMapX, activeMapZ, tuning.seaLevel)) {
+            *sandbox, activeMapX, activeMapZ, tuning.seaLevel,
+            [&water](f32 x, f32 z) { return farWaterWetAt(water, x, z); })) {
         return *spot;
     }
-    const f32 size = sandbox->grid.mapSize;
     return { (static_cast<f32>(activeMapX) + 0.5f) * size, 0.0f,
              (static_cast<f32>(activeMapZ) + 0.5f) * size };
 }
@@ -2164,6 +2171,23 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
     sandboxKeepHeading = arrival != nullptr;
     placeStartCamera();
     streaming.snapCellEntities(makeStreamingContext());
+}
+
+render::WaterSystem::FarWaterFn LandscapeScene::makeFarWaterProvider(
+    i32 mapX, i32 mapZ, const render::terraingen::TileBakeParams& bake,
+    const render::terraingen::MapGridSpec& grid) const {
+    render::terraingen::ProceduralControlParams cp = bake.controls;
+    cp.seed = bake.worldSeed;
+    render::terraingen::MasterNetworkParams net = bake.network;
+    net.seaLevel = bake.macro.seaLevel;
+    return [cp, macro = bake.macro, net, grid, sea = tuning.seaLevel,
+            tileSize = bake.tileSize,
+            cacheRoot = platform::executableDir() / "terrain-cache" /
+                        std::to_string(tuning.terrainSeed),
+            mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
+        return collectFarWater(cacheRoot, mapX, mapZ, tileSize, cp, macro,
+                               net, grid, sea, cx, cz, halfSpan);
+    };
 }
 
 // The ONE map-swap transaction (chantier CARTES M2.3): everything that
@@ -2255,18 +2279,8 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
             tuning.seaLevel;
         // Far water (E4a): distant lakes/rivers for the FarTerrain
         // — cached .twb + master fleuves, gathered on the worker.
-        // The active map's slice dir (the .twb scan is flat, not
-        // recursive).
         renderer.waterSystem().setFarWater(
-            [cp, macro, net, grid = sandbox->grid,
-             sea = tuning.seaLevel, tileSize = bakeParams.tileSize,
-             cacheRoot = platform::executableDir() / "terrain-cache" /
-                         std::to_string(tuning.terrainSeed),
-             mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
-                return collectFarWater(cacheRoot, mapX, mapZ, tileSize,
-                                       cp, macro, net, grid, sea, cx,
-                                       cz, halfSpan);
-            });
+            makeFarWaterProvider(mapX, mapZ, bakeParams, sandbox->grid));
     }
     // The base: the authored regions, plus -- on a crossing -- the
     // previous map's resident slices and water outside the new rect.

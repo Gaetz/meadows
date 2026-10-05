@@ -1231,6 +1231,23 @@ design à chaque brique de génération et se ré-épingle.
   C'est le « passage sans couture » minimal ; la divergence réelle des
   deux bakes DE PART ET D'AUTRE de la ligne (sol et végétation
   différents à la ligne même) reste le sujet de N3/N4.
+- **2026-10-05 — N1, le départ sur une pente (retour dev).** Sans
+  candidat tempéré bas (la carte (0,0) à 8 km est un plateau alpin),
+  la sonde renvoyait le centre : (4096, 608, 4096), une pente. Désormais
+  `probeMapSpawn` fait une seconde passe : **l'endroit sec le plus doux**
+  sur les mêmes anneaux (pire marche de hauteur sur 100 m en 8
+  directions, sur l'overview ; l'anneau proche gagne un quasi ex æquo).
+  Leçon mesurée au passage : sans oracle d'eau, la passe choisissait le
+  **fond du lac le plus bas** (332 m, le minimum de la carte — un lit de
+  lac est le sol le plus plat qui soit), et la relocalisation « sec »
+  du warmup posait le joueur sur sa rive à **17,7 m / 30 m**. La sonde
+  prend donc un oracle `wet` : en jeu, les lacs (masques grossiers) et
+  rubans de fleuve du cache `.twb` via `collectFarWater` (nouveau
+  `farWaterWetAt`, `makeFarWaterProvider` partagé avec la couche far du
+  WaterSystem) ; dans les instruments, les `WaterBodies` réels. Résultat
+  carte (0,0) : départ (5113, 605, 4353), sec, **2,9 m / 30 m**, à 1 km
+  du centre sur le plateau. Nouvel instrument `spawn slope diagnostic`
+  (sonde, relocalisation du jeu, pentes, plus doux par anneau).
 
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 

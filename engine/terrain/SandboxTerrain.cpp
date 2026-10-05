@@ -1,5 +1,6 @@
 #include "engine/terrain/SandboxTerrain.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -61,9 +62,11 @@ bool spawnCandidateOk(f32 h, f32 seaLevel, u8 biome) {
     return h > seaLevel + 8.0f && h < 95.0f && biome == 0;
 }
 
-std::optional<Vec3> probeMapSpawn(const SandboxTerrain& sb, i32 mapX,
-                                  i32 mapZ, f32 seaLevel) {
+std::optional<Vec3> probeMapSpawn(
+    const SandboxTerrain& sb, i32 mapX, i32 mapZ, f32 seaLevel,
+    const std::function<bool(f32 x, f32 z)>& wet) {
     const terraingen::ProceduralControls controls { sb.controls };
+    const auto wetAt = [&](f32 x, f32 z) { return wet && wet(x, z); };
     const f32 size = sb.grid.mapSize;
     const f32 mapMid = (static_cast<f32>(mapX) + 0.5f) * size;
     const f32 mapMidZ = (static_cast<f32>(mapZ) + 0.5f) * size;
@@ -78,12 +81,52 @@ std::optional<Vec3> probeMapSpawn(const SandboxTerrain& sb, i32 mapX,
             const f32 x = mapMid + std::cos(angle) * radius;
             const f32 z = mapMidZ + std::sin(angle) * radius;
             const f32 h = sandboxFallbackHeight(sb, x, z);
-            if (spawnCandidateOk(h, seaLevel, controls.at(x, z).biome)) {
+            if (spawnCandidateOk(h, seaLevel, controls.at(x, z).biome) &&
+                !wetAt(x, z)) {
                 return Vec3 { x, h, z };
             }
         }
     }
-    return std::nullopt;
+    // No meadow on this map: the gentlest dry spot over the same rings
+    // (a plateau, a valley floor), never a slope nor a lake shore.
+    // Flatness = the worst height step over 100 m in 8 directions on
+    // the fallback ground, every sample dry; the nearer ring wins a
+    // near-tie so the start stays central.
+    std::optional<Vec3> best;
+    f32 bestScore = 1.0e30f;
+    for (f32 radius = 0.0f; radius <= mapReach - 200.0f; radius += 350.0f) {
+        const u32 steps = radius > 0.0f ? 16u : 1u;
+        for (u32 step = 0; step < steps; ++step) {
+            const f32 angle =
+                radius * 0.0137f + static_cast<f32>(step) * 0.3927f;
+            const f32 x = mapMid + std::cos(angle) * radius;
+            const f32 z = mapMidZ + std::sin(angle) * radius;
+            const f32 h = sandboxFallbackHeight(sb, x, z);
+            if (h <= seaLevel + 8.0f || wetAt(x, z)) {
+                continue;
+            }
+            f32 worstStep = 0.0f;
+            bool shore = false;
+            for (u32 k = 0; k < 8 && !shore; ++k) {
+                const f32 a = static_cast<f32>(k) * 0.7853982f;
+                const f32 xk = x + std::cos(a) * 100.0f;
+                const f32 zk = z + std::sin(a) * 100.0f;
+                shore = wetAt(xk, zk);
+                worstStep = std::max(
+                    worstStep,
+                    std::abs(sandboxFallbackHeight(sb, xk, zk) - h));
+            }
+            if (shore) {
+                continue;
+            }
+            const f32 score = worstStep + radius * 0.002f;
+            if (score < bestScore) {
+                bestScore = score;
+                best = Vec3 { x, h, z };
+            }
+        }
+    }
+    return best;
 }
 
 } // namespace render

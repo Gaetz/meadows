@@ -387,6 +387,42 @@ void TerrainBakeStreamer::drain(
     }
 }
 
+bool farWaterWetAt(const render::WaterSystem::FarWaterSet& set, f32 x,
+                   f32 z) {
+    for (const render::WaterSystem::FarWaterSet::Lake& lake : set.lakes) {
+        const f32 fx = (x - lake.minX) / lake.cell;
+        const f32 fz = (z - lake.minZ) / lake.cell;
+        if (fx < 0.0f || fz < 0.0f) {
+            continue;
+        }
+        const u32 c = static_cast<u32>(fx);
+        const u32 r = static_cast<u32>(fz);
+        if (c < lake.w && r < lake.h &&
+            lake.mask[static_cast<size_t>(r) * lake.w + c]) {
+            return true;
+        }
+    }
+    for (const render::WaterSystem::FarWaterSet::Ribbon& ribbon :
+         set.ribbons) {
+        for (size_t i = 1; i < ribbon.nodes.size(); ++i) {
+            const auto& a = ribbon.nodes[i - 1];
+            const auto& b = ribbon.nodes[i];
+            const Vec2 ab { b.x - a.x, b.z - a.z };
+            const Vec2 ap { x - a.x, z - a.z };
+            const f32 len2 = glm::dot(ab, ab);
+            const f32 t = len2 > 0.0f
+                              ? glm::clamp(glm::dot(ap, ab) / len2, 0.0f, 1.0f)
+                              : 0.0f;
+            const Vec2 d = ap - ab * t;
+            const f32 halfWidth = glm::mix(a.halfWidth, b.halfWidth, t);
+            if (glm::dot(d, d) <= halfWidth * halfWidth) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 render::WaterSystem::FarWaterSet collectFarWater(
     const std::filesystem::path& cacheRoot, i32 mapX, i32 mapZ,
     f32 tileSize,

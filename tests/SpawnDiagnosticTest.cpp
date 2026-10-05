@@ -54,8 +54,13 @@ ProceduralControls controlsOf(const maptest::MapWorld& w) {
 
 // The game's start on this map (shared probe), the centre otherwise.
 Vec3 spawnOf(const maptest::MapWorld& w) {
+    const auto wet = [&w](f32 x, f32 z) {
+        const f32 h = w.height(x, z);
+        return render::terrain::waterSurfaceAt(w.bodies, x, z, h + 1.0f)
+            .has_value();
+    };
     if (const auto spot = render::probeMapSpawn(*w.sandbox, w.mapX, w.mapZ,
-                                                w.seaLevel())) {
+                                                w.seaLevel(), wet)) {
         return *spot;
     }
     return { w.centreX(), w.overviewHeight(w.centreX(), w.centreZ()),
@@ -1396,6 +1401,81 @@ TEST_CASE("rock uv diagnostic" * doctest::skip()) {
         render::MeshData simplified = *mesh;
         assets::simplifyMesh(simplified, 700);
         stats(simplified, "decimated 700");
+    }
+    CHECK(true);
+}
+
+TEST_CASE("spawn slope diagnostic" * doctest::skip()) {
+    // Where does the start land, and on what ground? The shared probe's
+    // spot (overview), the game's wet relocation (nearest dry on 60 m
+    // rings, like finalizeSandboxSpawn), and for both the steepest 30 m
+    // step in 8 directions on the BAKED ground -- then the gentlest dry
+    // spots on 300 m rings up to 1.5 km, to see what the probe missed.
+    const maptest::MapWorld& w = theMap();
+    const auto wet = [&](f32 x, f32 z) {
+        const f32 h = w.height(x, z);
+        return h < w.seaLevel() + 2.0f ||
+               render::terrain::waterSurfaceAt(w.bodies, x, z, h + 1.0f)
+                   .has_value();
+    };
+    const auto steepest = [&](f32 x, f32 z) {
+        const f32 h = w.height(x, z);
+        f32 worst = 0.0f;
+        for (u32 k = 0; k < 8; ++k) {
+            const f32 a = static_cast<f32>(k) * 0.7853982f;
+            worst = glm::max(worst, std::abs(w.height(x + std::cos(a) * 30.0f,
+                                                      z + std::sin(a) * 30.0f) -
+                                             h));
+        }
+        return worst;
+    };
+    const Vec3 spawn = spawnOf(w);
+    MESSAGE("probe: (", static_cast<i32>(spawn.x), ", ",
+            static_cast<i32>(spawn.y), ", ", static_cast<i32>(spawn.z),
+            ") wet=", wet(spawn.x, spawn.z), " steepest 30 m step ",
+            steepest(spawn.x, spawn.z), " m");
+    Vec3 dry = spawn;
+    if (wet(spawn.x, spawn.z)) {
+        bool found = false;
+        for (f32 radius = 60.0f; radius <= 6000.0f && !found;
+             radius += 60.0f) {
+            for (u32 k = 0; k < 12 && !found; ++k) {
+                const f32 a = static_cast<f32>(k) * (6.2831853f / 12.0f);
+                const f32 x = spawn.x + std::cos(a) * radius;
+                const f32 z = spawn.z + std::sin(a) * radius;
+                if (!wet(x, z)) {
+                    dry = { x, w.height(x, z), z };
+                    found = true;
+                }
+            }
+        }
+    }
+    MESSAGE("game start (after the wet relocation): (",
+            static_cast<i32>(dry.x), ", ", static_cast<i32>(dry.y), ", ",
+            static_cast<i32>(dry.z), ") steepest 30 m step ",
+            steepest(dry.x, dry.z), " m");
+    MESSAGE("gentlest dry spots per 300 m ring around the probe:");
+    for (f32 radius = 300.0f; radius <= 1500.0f; radius += 300.0f) {
+        f32 best = 1.0e30f;
+        Vec3 at { 0.0f };
+        for (u32 k = 0; k < 24; ++k) {
+            const f32 a = static_cast<f32>(k) * (6.2831853f / 24.0f);
+            const f32 x = spawn.x + std::cos(a) * radius;
+            const f32 z = spawn.z + std::sin(a) * radius;
+            if (!w.inside(x, z, kInterior) || wet(x, z)) {
+                continue;
+            }
+            const f32 s = steepest(x, z);
+            if (s < best) {
+                best = s;
+                at = { x, w.height(x, z), z };
+            }
+        }
+        if (best < 1.0e30f) {
+            MESSAGE("  ", static_cast<i32>(radius), " m: (",
+                    static_cast<i32>(at.x), ", ", static_cast<i32>(at.y),
+                    ", ", static_cast<i32>(at.z), ") step ", best, " m");
+        }
     }
     CHECK(true);
 }
