@@ -48,10 +48,16 @@ layout(location = 4) out vec3 vNormal1;
 layout(location = 5) out vec3 vNormal2;
 layout(location = 6) out vec3 vWorldPos;
 
+// Lattice hash on a 256-cell torus: the inputs are world metres scaled
+// and the wind clock, both climbing into the thousands, where a float
+// fract of (p * 435) keeps a few bits and the field steps ("snaps")
+// instead of flowing. Wrapped, every cell hashes at full precision and
+// the noise tiles every 256 cells.
 float hash21(vec2 p) {
-    p = fract(p * vec2(234.34, 435.345));
-    p += dot(p, p + 34.23);
-    return fract(p.x * p.y);
+    p = mod(p, 256.0);
+    p = fract(p * vec2(0.1031, 0.1030));
+    p += dot(p, p.yx + 33.33);
+    return fract((p.x + p.y) * p.x);
 }
 float vnoise(vec2 p) {
     vec2 i = floor(p);

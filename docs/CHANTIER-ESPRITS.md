@@ -1109,3 +1109,39 @@ copie — libérée au cycle suivant pendant qu'elle s'exécute encore.
 frame, la fence de la frame courante suit la copie sur la même file).
 Avec le reset des pools au teardown : vksmoke passe de 18 PASS +
 segfault à 40 PASS et « Vulkan validation: clean run (0 message) ».
+
+### Retours dev de la session de test des sortilèges (2026-10-05)
+- **« Les arbres prennent feu immédiatement »** → +50 % : `treeIgnitionSeconds`
+  6 → 9 s (plein feu autour), `kPropHeatRate` 0,6 → 0,4/s (une caisse en
+  plein feu prend en 2,5 s au lieu de 1,7).
+- **« Le bandit ne brûle pas sous le jet de flammes »** : le jet appelait
+  `fireTouch` et accumulait l'horloge de contact du PNJ, puis
+  `applyFireContact` (par job atterri) la remettait à zéro parce que le
+  sol sous lui ne brûlait pas. Fait : le jet ne fait que marquer les
+  acteurs dans son cône (`flameJetTouched`, par frame) et la passe de
+  contact lit « sol brûlant OU dans le jet ».
+- **« Les sorts d'eau ne répondent pas en story »** : la fenêtre de sim
+  attendait une RÉGION bakée sous la caméra (`params.base->regionAt`) —
+  la garde du streaming sandbox (« ne pas pré-rouler sur le terrain
+  analytique ») ; le monde autoré n'a pas de régions, donc jamais de
+  sim. Fait : la garde ne s'applique que si `params.sandbox` ; en story
+  la fenêtre démarre partout, sur les lacs autorés épinglés, la pluie et
+  les sources du joueur ; `setSandboxMode(false)` retire la closure des
+  entrées du réseau maître (`setSimSources({})`), qui répondrait pour un
+  autre monde. Vérifié en boot story : « Water sim: revealed » au village.
+- **« Diriger le vent change brutalement, et revient brutalement »** :
+  l'emprise de vent (`SpiritWindHold`) suit désormais sa cible par un
+  lissage exponentiel (`kWindHoldEase` 0,33 s ≈ 95 % en une seconde) sur
+  l'arc court ; au relâché elle passe en `releasing` et revient à la base
+  par le même lissage avant de se terminer (un recast annule le retour).
+  Calmer le vent remonte de la même façon (il descendait déjà en 1 s mais
+  remontait d'un coup).
+- **« La map de bruit du pliage de l'herbe snappe, elle devrait tiler »** :
+  le `hash21` de grass.vert faisait `fract(p × 435)` sur des entrées qui
+  grimpent dans les milliers (coordonnée monde × 0,25 + horloge de vent
+  accumulée, ou × 137 pour la variété par brin) — en float il ne reste
+  que quelques bits, la grille de bruit devient en escalier. Fait : hash
+  de maille sur un tore de 256 cellules (`mod(p, 256)` puis un hash à
+  petits coefficients) — précision pleine à toute phase, et le champ tile
+  toutes les 256 mailles (1024 m à l'échelle des rafales). Même correctif
+  dans fxhaze.frag, dont le défilement roule sur l'horloge de frame.

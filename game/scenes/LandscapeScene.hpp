@@ -719,6 +719,10 @@ private:
     void updateSpiritFireProps();
     f32 playerFireClock { 0.0f };
     std::unordered_map<u64, f32> npcFireClocks;
+    // Actors standing in the flame jet THIS frame: the contact pass reads
+    // it beside the ground's own fire (it would otherwise reset their
+    // contact clock every job, the ground under them being unlit).
+    std::unordered_set<u64> flameJetTouched;
     std::unordered_map<u64, f32> propFireHeat; // entity id -> heat 0..1
     struct BurningProp {
         ecs::Entity entity;
@@ -729,7 +733,7 @@ private:
         bool lit { false }; // the ground around it took its spark
     };
     vector<BurningProp> burningProps;
-    static constexpr f32 kPropHeatRate = 0.6f; // per second in full fire
+    static constexpr f32 kPropHeatRate = 0.4f; // per second in full fire
     // E3.e — the trees of the scatter in the fire: one state per tree
     // (keyed by its quantized base), heated by the burning cells around
     // its trunk, burning with flames, its canopy going through the mask's
@@ -833,7 +837,11 @@ private:
     struct SpiritWindHold {
         bool calm { false };
         bool direct { false };
+        // Released: the wind eases back to the weather's over ~1 s
+        // before the hold ends (a recast cancels the release).
+        bool releasing { false };
         f32 calmFactor { 1.0f };
+        f32 currentDeg { 0.0f }; // the eased heading (direct)
         f32 costPeriod { 1.0f };
         f32 costClock { 0.0f };
         f32 upkeepScale { 0.25f };
@@ -843,6 +851,7 @@ private:
     f32 windBaseStrength { 1.0f };
     f32 windBaseDirectionDeg { 20.0f };
     void updateSpiritWindHold(f32 dt);
+    static constexpr f32 kWindHoldEase = 0.33f; // s; ~95 % of the way in a second
     void endSpiritWindHold();
     void resetSpiritWind();
     static constexpr f32 kFlameJetSpeed = 14.0f;     // m/s, the flames' travel

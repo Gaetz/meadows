@@ -15,10 +15,13 @@ layout(location = 0) in vec2 vUv;    // -1..1 across the quad
 layout(location = 1) in vec4 vColor; // x = seed, y = age 0..1, z = strength
 layout(location = 0) out vec4 fragColor;
 
+// Same torus hash as grass.vert: the scroll runs on the frame clock,
+// which climbs for the whole session.
 float hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
+    p = mod(p, 256.0);
+    p = fract(p * vec2(0.1031, 0.1030));
+    p += dot(p, p.yx + 33.33);
+    return fract((p.x + p.y) * p.x);
 }
 
 float valueNoise(vec2 p) {

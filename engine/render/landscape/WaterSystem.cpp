@@ -1441,8 +1441,10 @@ void WaterSystem::updateSim(rhi::Device& device,
     if (!simState) {
         // Wait for the ground truth: pre-rolling before the camera's
         // tile is published would settle water on the analytic
-        // fallback terrain, meters off the baked one.
-        if (!params.base->regionAt(cameraPos.x, cameraPos.z)) {
+        // fallback terrain, meters off the baked one. The authored
+        // (story) world has no streamed tiles: its base is final, the
+        // window may start anywhere.
+        if (params.sandbox && !params.base->regionAt(cameraPos.x, cameraPos.z)) {
             return;
         }
         // Teleport / first entry: async pre-roll to equilibrium.

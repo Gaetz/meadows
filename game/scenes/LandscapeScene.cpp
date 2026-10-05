@@ -2272,6 +2272,10 @@ void LandscapeScene::setSandboxMode(bool enable) {
         terrainBase = world::buildTerrainBase(forms, assetDb);
         params.base = terrainBase;
         publishWaterBodies();
+        // The sim window runs here too (authored lakes pinned, rain,
+        // the player's springs) — without the sandbox's master-network
+        // inflows, which would answer for another world.
+        renderer.waterSystem().setSimSources({});
     }
     if (!enable) {
         // The story-world half of the swap (the sandbox half lives in
@@ -5031,7 +5035,9 @@ void LandscapeScene::applyPendingSpiritActions() {
                 spiritWindHold = SpiritWindHold {};
                 windBaseStrength = atmos.windStrength;
                 windBaseDirectionDeg = atmos.windDirectionDeg;
+                spiritWindHold->currentDeg = atmos.windDirectionDeg;
             }
+            spiritWindHold->releasing = false;
             spiritWindHold->calm = action.mode == PendingSpiritAction::Mode::WindCalm;
             spiritWindHold->direct = action.mode == PendingSpiritAction::Mode::WindDirect;
             spiritWindHold->costPeriod = action.costPeriod;
@@ -6020,7 +6026,8 @@ void LandscapeScene::applyFireContact(f32 dt) {
             }
             const Vec3& at = npc->entity.get<world::Transform>().position;
             fireTouch(npc->entity, npcFireClocks[npc->entity.id()], dt,
-                      spiritDirector.fireBurningAt(at.x, at.z));
+                      spiritDirector.fireBurningAt(at.x, at.z) ||
+                          flameJetTouched.contains(npc->entity.id()));
         }
     }
 }
@@ -6056,7 +6063,9 @@ void LandscapeScene::updateSpiritFlameJet(f32 dt) {
         fxSim.steerEmitter(jet.emitter, forward * kFlameJetSpeed,
                            jet.range / kFlameJetSpeed);
     }
-    // Whoever stands in the cone burns (the same contact as the field).
+    // Whoever stands in the cone burns (the same contact as the field,
+    // applied by applyFireContact with the ground's fire).
+    flameJetTouched.clear();
     if (!interiorMode) {
         const f32 cosHalf = std::cos(kFlameJetHalfAngle);
         for (const auto& npc : npcDirector.npcs()) {
@@ -6070,7 +6079,7 @@ void LandscapeScene::updateSpiritFlameJet(f32 dt) {
             const bool inCone = dist > 0.2f && dist <= jet.range &&
                                 glm::dot(to / dist, forward) >= cosHalf;
             if (inCone) {
-                fireTouch(npc->entity, npcFireClocks[npc->entity.id()], dt, true);
+                flameJetTouched.insert(npc->entity.id());
             }
         }
     }
@@ -6104,6 +6113,7 @@ void LandscapeScene::endSpiritFlameJet() {
         fxSim.stopEmitter(spiritFlameJet->emitter);
     }
     spiritFlameJet.reset();
+    flameJetTouched.clear();
 }
 
 void LandscapeScene::updateSpiritFireProps() {
@@ -6403,11 +6413,10 @@ void LandscapeScene::updateSpiritWindHold(f32 dt) {
     }
     const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
     if (!held || !playerEntity.is_alive()) {
-        endSpiritWindHold();
-        return;
+        hold.releasing = true; // the wind eases back before the hold ends
     }
-    hold.costClock += dt;
-    if (hold.costClock >= hold.costPeriod) {
+    hold.costClock += hold.releasing ? 0.0f : dt;
+    if (!hold.releasing && hold.costClock >= hold.costPeriod) {
         hold.costClock -= hold.costPeriod;
         const auto* ability = forms.find<gameplay::AbilityForm>(hold.ability);
         auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
@@ -6420,16 +6429,35 @@ void LandscapeScene::updateSpiritWindHold(f32 dt) {
             return;
         }
     }
+    // Both effects ease toward their target (the spell's while held, the
+    // weather's while releasing): the wind turns and dies over about a
+    // second, never snaps.
+    const f32 ease = 1.0f - std::exp(-dt / kWindHoldEase);
     if (hold.calm) {
-        // The wind dies over a second of concentration.
-        hold.calmFactor = glm::max(0.0f, hold.calmFactor - dt);
+        const f32 target = hold.releasing ? 1.0f : 0.0f;
+        hold.calmFactor += (target - hold.calmFactor) * ease;
         atmos.windStrength = windBaseStrength * hold.calmFactor;
     }
     if (hold.direct) {
+        f32 targetDeg = windBaseDirectionDeg;
         const Vec3 forward = flyCamera.camera.forward();
-        if (glm::length(Vec2 { forward.x, forward.z }) > 1e-3f) {
+        if (!hold.releasing && glm::length(Vec2 { forward.x, forward.z }) > 1e-3f) {
             // The compass of windDirectionFromDegrees: dir = (cos, -sin).
-            atmos.windDirectionDeg = glm::degrees(std::atan2(-forward.z, forward.x));
+            targetDeg = glm::degrees(std::atan2(-forward.z, forward.x));
+        }
+        // Along the short arc (350 -> 10 turns +20, never -340).
+        const f32 delta =
+            std::fmod(targetDeg - hold.currentDeg + 540.0f, 360.0f) - 180.0f;
+        hold.currentDeg += delta * ease;
+        atmos.windDirectionDeg = hold.currentDeg;
+    }
+    if (hold.releasing) {
+        const bool calmDone = !hold.calm || hold.calmFactor > 0.99f;
+        const f32 left =
+            std::fmod(windBaseDirectionDeg - hold.currentDeg + 540.0f, 360.0f) - 180.0f;
+        const bool directDone = !hold.direct || std::abs(left) < 0.5f;
+        if (calmDone && directDone) {
+            endSpiritWindHold(); // snaps the last fraction of a degree
         }
     }
 }
