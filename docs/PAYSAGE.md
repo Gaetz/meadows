@@ -967,7 +967,13 @@ interactif → calibration en jeu.
   instruments restent (en-tête du fichier = la dette B2). Vérification :
   suite rapide 684/684 après chaque brique, golden scatter inchangé,
   smoke-run Debug sandbox après A2 (Vulkan, 0 erreur de validation),
-  hash `region.heights` du banc tuile inchangé (voir fin de palier).
+  **A/B du banc tuile** (`-tc="*bake benchmark*"`, Debug/MSVC) : hash
+  `region.heights` **8562263924616419862** avant (`e3ae2b0`) et après
+  (`781d476`) le palier — bit-identique. Ce hash est la référence
+  Debug/MSVC du banc à `kTileBakeVersion` 68 ; le `4414106998705828656`
+  de `docs/CPU-PERF.md` date d'avant CARTES (bakeSoloTile fenêtré) et
+  n'est plus un comparateur. Non fait : la suite complète en Release
+  (gate de push).
 
 ---
 
