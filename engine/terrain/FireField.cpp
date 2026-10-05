@@ -264,9 +264,16 @@ void fireStep(FireGrid& grid, const FireParams& params, const FuelFn& fuel,
                 }
                 const Vec2 dir = glm::normalize(Vec2 { static_cast<f32>(off[0]),
                                                        static_cast<f32>(off[1]) });
-                const f32 windward =
-                    (1.0f - 0.75f * windLen) +
-                    0.75f * windLen * glm::max(0.0f, glm::dot(windDir, dir));
+                // Downwind takes windSpread, upwind upwindSpread, the
+                // crosswind ramps between from slightly behind the
+                // beam; the whole scaled from the calm figure by the
+                // wind's strength.
+                const f32 along = glm::dot(windDir, dir);
+                const f32 windy =
+                    params.upwindSpread +
+                    (params.windSpread - params.upwindSpread) *
+                        glm::clamp((along + 0.3f) / 1.3f, 0.0f, 1.0f);
+                const f32 windward = glm::mix(params.calmSpread, windy, windLen);
                 dealt[j] += params.spreadRate * windward * grid.flammability[j] *
                             (1.0f - glm::max(grid.moisture[j], params.rain)) * dt;
             }

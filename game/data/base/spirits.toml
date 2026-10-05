@@ -126,6 +126,12 @@ triad = 3
 channel = "amber"
 fieldKind = "coverage"
 spreadRate = 1.0
+# Slow on its own, driven by the wind: calm 0.4 x spreadRate all round,
+# full wind 1.6 x downwind and 0.1 x upwind (the weather's wind at
+# strength 1 is half a full wind; the Breath and a gust are a full one).
+fireCalmSpread = 0.4
+fireWindSpread = 1.6
+fireUpwindSpread = 0.1
 ignitionPoints = 1.0
 spreadBudgetPerTick = 64
 decayPerSecond = 0.5

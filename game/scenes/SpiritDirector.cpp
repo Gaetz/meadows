@@ -51,6 +51,9 @@ void SpiritDirector::build(const data::FormDatabase& forms) {
         }
         if (kind == render::terrain::SpiritKind::Fire) {
             fireParams.spreadRate = spirit.spreadRate;
+            fireParams.calmSpread = glm::max(spirit.fireCalmSpread, 0.0f);
+            fireParams.windSpread = glm::max(spirit.fireWindSpread, 0.0f);
+            fireParams.upwindSpread = glm::max(spirit.fireUpwindSpread, 0.0f);
             fireParams.ignitionPoints = glm::max(spirit.ignitionPoints, 0.01f);
             fireParams.spreadBudgetPerTick =
                 static_cast<u32>(glm::max(spirit.spreadBudgetPerTick, 1));

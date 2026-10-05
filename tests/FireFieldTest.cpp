@@ -82,10 +82,10 @@ TEST_CASE("fire: wind stretches the front downwind") {
         fireStep(g, p, grass, nullptr);
     }
     // The front is a cone opening downwind (the diagonal chains widen
-    // it), so the bounding box is only mildly elongated...
+    // it as it advances), so the bounding box stays about square...
     i32 ax = 0, az = 0;
     extent(g, &ax, &az);
-    CHECK(static_cast<f32>(ax) / static_cast<f32>(az) > 1.1f);
+    CHECK(static_cast<f32>(ax) / static_cast<f32>(az) > 0.8f);
     // ...but the burnt region reaches FAR further east than west of the
     // spark: that is the bell-shaped windward front.
     const i32 n = 65;
@@ -399,4 +399,34 @@ TEST_CASE("fire kernel: saved cells restore into a fresh window") {
     FireStats stats;
     fireStep(fresh, p, grass, {}, &stats);
     CHECK(stats.burning >= burning); // it burns on (and spreads: heat was not saved)
+}
+
+TEST_CASE("fire kernel: calm air creeps, the wind drives the front downwind") {
+    const FireParams calm = fast();
+    FireParams windy = fast();
+    windy.wind = { 1.0f, 0.0f }; // a full wind blowing +x
+    FireGrid a, b;
+    fireInitWindow(a, spec65());
+    fireInitWindow(b, spec65());
+    fireIgnite(a, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    fireIgnite(b, 64.0f, 64.0f, 1.0f, 2.0f, grass);
+    for (int t = 0; t < 40; ++t) {
+        fireStep(a, calm, grass, nullptr);
+        fireStep(b, windy, grass, nullptr);
+    }
+    const i32 n = 65;
+    const auto reach = [&](const FireGrid& g, i32 step) {
+        i32 r = 0;
+        for (i32 c = 32; c >= 0 && c < n; c += step) {
+            if (g.state[32 * n + c] != 0) r = std::abs(c - 32);
+        }
+        return r;
+    };
+    const i32 calmEast = reach(a, 1);
+    const i32 windEast = reach(b, 1);
+    const i32 windWest = reach(b, -1);
+    CHECK(calmEast > 2);                 // it does creep
+    CHECK(windEast >= 2 * calmEast);     // the wind drives it
+    CHECK(windWest <= calmEast);         // and holds the upwind side back
+    CHECK(windEast > 3 * windWest);
 }

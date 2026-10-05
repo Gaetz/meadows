@@ -66,6 +66,14 @@ struct FireParams {
     // and its char fades back to green meanwhile.
     f32 regrowSeconds { 180.0f };
     Vec2 wind { 0.0f, 0.0f };      // unit-ish direction x strength (0..1)
+    // How the wind shapes the spread, as fractions of spreadRate: calm
+    // air creeps at calmSpread in every direction; at full wind a
+    // neighbour straight downwind takes windSpread, one upwind
+    // upwindSpread (crosswind in between); partial wind blends from the
+    // calm figure. A fire is slow on its own and driven by the wind.
+    f32 calmSpread { 0.4f };
+    f32 windSpread { 1.6f };
+    f32 upwindSpread { 0.1f };
     // The weather's rain, 0..1: it damps the spread like ground moisture
     // (the wetter of the two counts) and, from rainDouseLevel up, soaks
     // the burning cells out — each after rainDouseSeconds under full rain.

@@ -1170,3 +1170,21 @@ segfault à 40 PASS et « Vulkan validation: clean run (0 message) ».
   perpendiculaire (`(-sin, 0, cos)` du cap) : le haut du brin bascule vers
   le cap lui-même. Le défaut était invisible tant que le cap était une
   constante codée en dur (avant E4.a).
+
+### Le feu lent au calme, poussé par le vent (demande dev 2026-10-05)
+Question dev : « le Souffle a-t-il un impact sur les flammes ? » — oui
+depuis E4.b (sa rafale entre dans le champ que le job échantillonne),
+mais la règle E3.a ne faisait que FREINER hors vent (`(1 − 0,75·w) +
+0,75·w·max(0, cos)` : plein régime au calme, 0,25× de côté et contre le
+vent, jamais plus vite sous le vent). Nouvelle règle, en fractions de
+`spreadRate` : au calme `calmSpread` (0,4) partout ; à vent plein
+`windSpread` (1,6) droit sous le vent, `upwindSpread` (0,1) contre,
+rampe entre les deux à partir d'un peu en arrière du travers
+(`clamp((cos + 0,3) / 1,3)`), le tout mélangé depuis la valeur calme par
+la force du vent. Le vent de météo à force 1 vaut un demi-vent plein
+(5 m/s sur 10) ; le Souffle et une rafale posée valent un vent plein.
+Data : `SpiritForm.fireCalmSpread / fireWindSpread / fireUpwindSpread`.
+Test : au calme le front rampe (> 2 cellules en 4 s), sous le vent il
+atteint ≥ 2× plus loin sous le vent et retient le côté contre le vent ;
+l'ancien test de forme (ratio d'axes > 1,1) devient > 0,8 — le cône sous
+le vent s'élargit en avançant, la boîte englobante reste carrée.

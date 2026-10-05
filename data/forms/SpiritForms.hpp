@@ -25,6 +25,11 @@ struct SpiritForm : Form {
                    // "conduction" | "activation" | "delta"
     f32 decayPerSecond { 0.0f };     // coverage fade (heat loss, drying)
     f32 spreadRate { 0.0f };         // coverage: damage/s to neighbours
+    // Fire: the wind's shaping of the spread, fractions of spreadRate
+    // (FireParams calmSpread / windSpread / upwindSpread).
+    f32 fireCalmSpread { 0.4f };
+    f32 fireWindSpread { 1.6f };
+    f32 fireUpwindSpread { 0.1f };
     f32 ignitionPoints { 1.0f };     // hitpoints a cell loses before it turns on
     i32 spreadBudgetPerTick { 64 };  // never "the whole map burns"
     core::Guid contactEffect;        // EffectForm applied to actors in the field
@@ -70,6 +75,9 @@ struct SpiritForm : Form {
         REFLECT_FIELD(fieldKind)
         REFLECT_FIELD(decayPerSecond)
         REFLECT_FIELD(spreadRate)
+        REFLECT_FIELD(fireCalmSpread)
+        REFLECT_FIELD(fireWindSpread)
+        REFLECT_FIELD(fireUpwindSpread)
         REFLECT_FIELD(ignitionPoints)
         REFLECT_FIELD(spreadBudgetPerTick)
         REFLECT_FIELD(contactEffect)

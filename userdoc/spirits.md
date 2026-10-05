@@ -119,7 +119,11 @@ spark — `intensity` heat dealt to every fire-field cell within
 spirit's `ignitionPoints`, then burns its ground's `fuel` seconds (a
 `SurfaceMaterialForm` field, blended over the splat under it) while
 dealing `spreadRate` heat per second to its eight neighbours, damped by
-their `moisture`; bare rock, sand and snow carry no fuel, standing water
+their `moisture` and shaped by the wind: calm air spreads at
+`fireCalmSpread` of that rate all round, a full wind at `fireWindSpread`
+straight downwind and `fireUpwindSpread` against it (the weather's wind
+at strength 1 is half a full wind; the breath and a gust are a full one),
+so a fire creeps on its own and runs where the wind sends it; bare rock, sand and snow carry no fuel, standing water
 puts a burning cell out and keeps it out. Rain counts as moisture (the
 wetter of the two) and, from half strength up, soaks burning cells out
 in a few seconds. Burnt ground stays charred and its grass is gone; the
