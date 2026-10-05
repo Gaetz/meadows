@@ -1045,19 +1045,122 @@ interactif → calibration en jeu.
   `riverFlowSpeedForTier` (la scène et l'export partagent la loi) ;
   `MapRecordsTest` vérifie le round-trip d'un fleuve.
 
-### 7.5 La refonte de la génération (ouverte le 2026-10-05) — document de design À ÉCRIRE avant tout code
+### 7.5 La refonte de la génération — document de design (2026-10-05, à arbitrer)
 
-Entrées déjà sur la table : l'inventaire (§5), la baseline (§7.4) et ses
-instruments (B2), le hash de carte (B1). Manquent, **à fournir par le
-dev** : la liste des bugs vus en jeu et ce qui ne convient pas dans les
-paysages, en ses mots. Le document tiendra en quatre parties : (1) bugs
-et reproches ; (2) les cibles du §4 confirmées ou révisées ; (3) ce qui
-survit tel quel (noyaux fastscape/thermique/priority-flood/hydrologie/
-finalize — grid-agnostiques, survivants de CARTES —, le pipeline par
-carte, les bordures, l'eau) et ce qui est refait (contrôles analytiques,
-macro S1, budget d'érosion par famille, éventuellement les gouttelettes) ;
-(4) la méthode : banc offline, instruments B2 avant/après, hash B1,
-validation visuelle dev avec A/B. Puis les briques.
+#### 7.5.1 Le constat du dev (ses mots) et ce que les mesures en disent
+
+| Reproche / bug | Ce que l'inventaire et la baseline montrent | Où ça se joue |
+|---|---|---|
+| **Résidus de rivières aériennes, rivières qui courent au-dessus du sol** (réglé en partie, pas totalement) | `river wetness` : 1,9 % de l'axe des runs publiés est à sec, pire tronçon continu 232 m, 86 runs < 100 m sur 724 ; les rubans bakés se rendent au-delà du rect de la sim à la surface de leurs nœuds (profil rebâti aval→amont sur le sol FINAL, mais le détail runtime et le sculpt s'ajoutent après) ; le far-water trace les fleuves maîtres sur l'analytique là où aucune tranche n'est publiée — et l'analytique surestime le sol de 200 à 450 m (erosion calibration) ; les 56 runs de fleuve de la carte (0,0) courent à 300-500 m d'altitude le long du bord ouest, suspects | `reconcileRiversWithTerrain`, `buildLocalGeometry`, `collectFarWater`, le miroir analytique |
+| **Cellules qui changent sans continuité** | à l'arrivée d'une tranche, le sol passe de l'overview 64 m au 2 m : dérive mesurée jusqu'à **23,9 m** (MapBakerTest) — un saut sous les pieds et sous les objets ; la première session d'une carte neuve roule entièrement sur l'analytique (overview chargé au boot seulement) ; les anneaux scatter/herbe/collision sont recréés entiers à chaque publication | `publishBakedTiles`, `proceduralBase`, `applyMapWorld` (pas de hot-swap de l'overview) |
+| **Les distances sont trop longues** | une carte fait **24,6 km de côté ≈ 600 km²** (intérieur hors bandes de bordure ≈ 380 km²) ; Skyrim ≈ 37 km² (~6 km de côté), Hyrule de BotW ≈ 60-80 km² (~8-10 km), l'Entre-terre d'Elden Ring ≈ 80 km² (estimations publiques, ordre de grandeur) : **nos cartes font 8 à 16 fois ces mondes** ; traverser un côté = 75 min de course (5,5 m/s) contre ~20-30 min chez les références ; les structures sont taillées pour un monde infini (vallées maîtresses tous les 9,5 km, pics tous les 7 km, cols tous les 4 km, villes tous les 8-12 km au §5) | `kMapTilesPerSide`, `ProceduralControlParams` (toutes les longueurs d'onde), le tableau §4-§5 |
+| **Manque de variété par endroits, paysages très étonnants ailleurs** | `family census` : socle 3 % / versant 82 % / drame 15 %, relief médian 114 m — un hachis uniforme de versants (le « toujours le même événement » du constat 2026-08-24, jamais résolu) ; `vista` : un « sommet alpin » à 0,25-1,4 km de CHAQUE point de voyage — le drame est partout donc nulle part ; alpin = 46 % de la terre intérieure ; 772 lacs (20 par 4×4 km, 105 de plus de 10 ha, le plus profond 200 m) ; le miroir analytique a 60 % de `calm` que l'érosion ne respecte pas (socle publié 3 %) | la couche contrôles/macro S1 (layout continental, familles, amers, vallées), le budget d'érosion |
+
+Diagnostic : **les noyaux marchent, la couche du dessus fabrique le
+mauvais monde.** Fastscape, thermique, priority-flood, hydrologie,
+finalize, bordures, pipeline par carte, eau C : tous grid-agnostiques,
+survivants de CARTES, instrumentés. Ce qui ne va pas, c'est ce qu'on leur
+donne à manger — une macro de 1 000 km de continent, calibrée par
+briques successives sur un monde infini, puis découpée en cartes de
+600 km² — et le budget d'érosion qui la dissèque uniformément.
+
+#### 7.5.2 Pourquoi le mode histoire paraît plus naturel (ses règles)
+
+Le mode histoire n'a **aucune érosion** et presque aucune structure : un
+fbm de collines à **500 m de longueur d'onde, ±75 m** (5 octaves), des
+montagnes ridgées à **2 km, 270 m**, masquées (seuils 0,45-0,75 : plaines
+ailleurs), mer à 21 m, neige à 165 m — et **253 références placées à la
+main** (`village.toml`) sur un pad nivelé. Trois règles s'en dégagent :
+
+1. **Le relief est à l'échelle du joueur** : une colline se traverse en
+   une minute, une montagne se contourne en cinq ; rien ne dépasse 350 m
+   au-dessus de la plaine. Nos cartes mettent 1 200-1 700 m de pics et des
+   versants ravinés partout : l'échelle d'un massif réel, pas d'un jeu.
+2. **Le calme est la règle, le drame l'exception** : le masque garde des
+   plaines partout où le bruit de montagne n'est pas fort ; le sandbox
+   fait l'inverse (socle 3 %).
+3. **Les points d'intérêt sont placés, pas émergents** : le village, les
+   portes, les marqueurs sont des décisions ; le sandbox n'a aucun
+   placement piloté par le terrain (§5.3).
+
+Ce que le mode histoire n'a pas et que le sandbox doit garder : les
+vallées lisibles et les lits de rivières (érosion + hydrologie), l'eau
+vivante, les bordures, les biomes, la carte exportable en mod.
+
+#### 7.5.3 Décision de fond proposée : repartir sur des bases saines, garder les capacités
+
+- **La carte devient petite et lisible : 2×2 tranches = 8,2 km de côté
+  (≈ Skyrim), 3×3 = 12,3 km (≈ Hyrule) au plus.** C'est le premier levier,
+  pas un réglage : il change l'échelle de toutes les structures, divise le
+  bake par 4 à 9 (**23 s en Release pour une carte 2×2, mesuré par
+  MapBakerTest**), rend le banc offline et l'A/B visuel quotidiens, et
+  ramène les distances du §5 à celles des références (ville ↔ ville = la
+  carte, village tous les 2-3 km, hameau ou curiosité tous les 500-800 m).
+- **Une nouvelle couche macro (« S1 v3 ») à l'esprit du mode histoire** :
+  un **plan de carte** explicite et déterministe par seed — quelques
+  grandes pièces posées (UN massif ou plateau dominant, UN fleuve ou lac,
+  UNE côte ou deux, deux ou trois crêtes-amers avec leurs cols), un fond de
+  collines douces à l'échelle histoire (500 m / ±75 m) partout ailleurs,
+  et un **budget d'érosion modeste** qui sculpte les versants sans toucher
+  aux socles (le calm devient une contrainte dure du fastscape, pas une
+  modulation). Le layout continental à 1 000 km, les grilles d'amers
+  jitterées, le champ de vallées à 9 km, la porteuse, le décret « pays de
+  départ » sont **remplacés** par ce plan de carte, à l'échelle de la
+  carte.
+- **Les points d'intérêt par règles, à la densité du mode histoire** : le
+  plan de carte réserve les sites (pads, confluence, col, rive, belvédère)
+  et le peuplement les remplit — c'est l'ex-B10-B13, qui devient simple
+  sur une carte de 8 km.
+- **Les bugs d'eau et de continuité se règlent dans le même mouvement** :
+  les rubans et le far-water n'ont plus d'analytique sous eux (une petite
+  carte est entièrement bakée avant d'être jouée : pre-bake à la création,
+  overview chargeable à chaud), les rivières se rebâtissent sur le sol
+  COMPLET (détail + sculpt inclus, la règle 6 de l'eau).
+
+#### 7.5.4 Ce qui survit tel quel / ce qui est refait / ce qui tombe
+
+| Survit tel quel | Refait | Tombe |
+|---|---|---|
+| noyaux : `erodeFluvial`, `erodeThermal`, `priorityFloodFill`/`routeFlow`, `extractHydrology`/`classifyRivers`, `finalizeTerrain`, `amplifyFine`, reconcile v2 | **`ProceduralControls::at` + `synthesizeMacro` + `landHeight`** → le plan de carte (S1 v3) | layout continental 700 km, porteuse 20 km, grilles d'amers 7/3,5 km, `ValleyField` 9 km, `startMeadowRadius`, le re-fit « érosion-aware » du miroir (il n'y a plus de miroir à grande distance à mentir) |
+| pipeline par carte (`bakeMap`, tranches, overview, manifest + clé, streamer), bordures v2, `MasterNetwork` (re-dimensionné à la carte), eau C, matériaux, scatter, instruments B2, hash B1 | `kMapTilesPerSide` et toutes les longueurs d'onde (rescalées à la carte) ; le budget d'érosion (keep dur sur calm) ; `probeMapSpawn` (lit le plan) | `SpawnDiagnosticTest` ancrages 24 km (à rescaler) |
+| modding §5 (carte = plugin, `tier` exporté), cols/voyage | `collectFarWater` et les rubans hors rect (plus d'analytique sous l'eau) ; hot-swap de l'overview | le mode story comme second générateur ? **à décider** : il peut devenir « une carte dont le plan est vide » (bruit histoire + contenu placé) — un seul générateur, deux orchestrations, enfin |
+
+#### 7.5.5 Méthode (déjà en place)
+
+Hash de carte (B1) et instruments B2 avant/après chaque brique, banc
+offline (`bakeSoloTile`, `erosion-bench`) avant tout bump, A/B visuel
+dev avec la carte 2×2 (23 s), un commit par brique, suite rapide avant
+commit, complète en Release avant push. Le golden de la carte bouge par
+design à chaque brique de génération et se ré-épingle.
+
+#### 7.5.6 Briques proposées (R = refonte) — À ARBITRER
+
+- **R0 — Décisions** : taille de carte (2×2 recommandé, 3×3 possible),
+  sort du mode story (fusion ou maintien), cibles §4 révisées à l'échelle
+  (familles 40/35/25 gardées ; relief médian 20-40 m gardé ; sommet
+  « héroïque » = 300-500 m au-dessus de la plaine, 1 par carte ; lacs :
+  3-6 par carte).
+- **R1 — La carte 2×2 comme monde par défaut** (`kMapTilesPerSide`,
+  manifest, streamer, voyage, écran M, pre-bake) sans toucher à la macro :
+  baseline B2 rejouée à cette échelle — c'est la mesure de ce que la
+  taille seule change.
+- **R2 — Les bugs d'eau et de continuité**, à cette échelle : overview
+  chargeable à chaud, pre-bake complet avant le premier pas, rubans/far-
+  water sans analytique, profil rebâti sur le sol complet ; instruments
+  `river wetness` et un nouveau `ground continuity` (saut overview→tranche
+  mesuré en jeu).
+- **R3 — S1 v3, le plan de carte** : pièces macro posées par seed + fond
+  de collines histoire ; érosion avec keep dur sur le calme ; `family
+  census` comme juge (socle ≥ 40 %).
+- **R4 — Eau à l'échelle** : lacs rares, un fleuve, ruisseaux à 500-800 m ;
+  `lake census`.
+- **R5 — Vues et objectifs** : crêtes-amers et cols du plan, belvédères ;
+  `vista`.
+- **R6 — Sites et peuplement** (ex-B10-B13) : pads réservés par le plan,
+  `Authoring` enfin branché, hameaux/villages/POI par règles, chemins.
+- **R7 — Promotion en données** (l'ex-palier C, au bon moment) : le plan
+  de carte et ses knobs en Form, le panneau, puis le bump TRG4 (D1) une
+  fois pour toutes.
 
 ---
 
