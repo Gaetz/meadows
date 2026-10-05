@@ -47,6 +47,7 @@ add_library(meadows STATIC
     terrain/generation/MapExport.cpp
     terrain/generation/MasterNetwork.cpp
     terrain/generation/TerrainGen.cpp
+    terrain/generation/WorldLayer.cpp
     terrain/generation/ThermalErosion.cpp
     terrain/generation/TileBake.cpp
     terrain/generation/WaterSolve.cpp

@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
+#include "engine/terrain/generation/WorldLayer.hpp"
 
 // Terrain generation pipeline — stage S1 (macro synthesis). Headless
 // (lib meadows): the bake runs on JobSystem workers or in doctests, never
@@ -32,6 +33,16 @@ struct ControlSample {
     f32 uplift { 0.0f }; // [0,1] tectonic uplift strength (stage S2 input)
     bool sea { false };  // this point is open water by decree
     u8 biome { 0 };
+    // The elevation FLOOR in meters ABOVE SEA LEVEL when the provider
+    // knows it (the world layer's étage): landHeight builds on it
+    // instead of the tier table's altitude — the table then only
+    // shapes the relief. hasBase = false (painted/test sources) = the
+    // legacy absolute tier floor.
+    f32 base { 0.0f };
+    bool hasBase { false };
+    // Valley-bed depth (m) the macro digs along a ridged bed field
+    // (the pre-erosion drainage skeleton of the province); 0 = none.
+    f32 bedDepth { 0.0f };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
@@ -85,153 +96,52 @@ public:
     }
 };
 
-// Sandbox controls: continentalness (warped low-frequency FBM) decides
-// sea and elevation tier; a ridged mask decides where ranges rise. Pure
-// functions of (seed, x, z) — infinite and deterministic.
-struct ProceduralControlParams {
-    u32 seed { 1337 };
-    // Horizontal rhythm, two families with OPPOSITE scales:
-    //   LANDFORM CARRIERS (continent, uplift, hill chains, swell, tier
-    //   relief) run LONG — same heights spread over wide distances, so
-    //   slopes stay gentle and landscapes breathe;
-    //   TYPE SELECTORS (regime, climate) run SHORT — a walk of a few
-    //   hundred meters changes the landscape/biome character. Variety
-    //   comes from the selectors switching character over slow
-    //   carriers, not from the carriers themselves oscillating fast.
-    //   (gentle sits apart: passage width is a gameplay constant.)
-    // The continent wave is the walking rhythm of the world: it paces
-    // the tier ramp (plains -> hills -> high country) and the coasts,
-    // and its high-tier patches are what let the uplift ranges fire —
-    // shrinking it makes full-size massifs RARER without touching their
-    // size. Below ~4000 the landmasses crumble into an archipelago.
-    f32 continentWavelength { 4000.0f };
-    // REGIONAL CARRIER (adopted 2026-08-24 with the layout below —
-    // THE world config): a slow field added onto continentalness,
-    // remapped to its extremes — it decides where the 15-30 km land
-    // masses and straits are, while the 4 km fbm keeps drawing the
-    // local coastline character. 0 = off (legacy carpet world).
-    f32 continentCarrierWavelength { 20000.0f };
-    f32 continentCarrierAmp { 0.3f };
-    // CONTINENT LAYOUT (design-forced): a jittered mega grid of warped
-    // multi-lobe kernels GUARANTEES the world shape — the start sits
-    // on the coastal belt of a continental island, another continent
-    // lies within ~a cell, large islands scatter between. The
-    // regional carrier above keeps articulating coasts, straits and
-    // inland seas on top; this layer only decides where masses are.
-    bool continentLayout { true };
-    f32 continentCellSize { 700000.0f };
-    f32 continentRadiusMin { 160000.0f };
-    f32 continentRadiusMax { 260000.0f };
-    f32 islandCellSize { 280000.0f };
-    f32 islandChance { 0.45f };
-    f32 islandRadiusMin { 30000.0f };
-    f32 islandRadiusMax { 80000.0f };
-    f32 layoutAmp { 0.34f }; // continentalness lift inside/-outside
-    f32 seaThreshold { 0.42f }; // continentalness below -> open sea
-    // Continentalness span of the tier ramp. Wide since the layout
-    // adoption: the layout lift creates LAND, the ramp must not turn
-    // all of it into high country — the coastal belt keeps its plains
-    // and hills, the alpine tiers live deep inland.
-    f32 tierSpread { 0.35f };
-    f32 maxTier { 3.0f };
-    f32 upliftWavelength { 6500.0f };
-    f32 upliftMaskLow { 0.38f };
-    f32 upliftMaskHigh { 0.68f };
-    f32 warpWavelength { 1600.0f }; // continent-shape domain warp
-    f32 warpStrength { 440.0f };    // scaled with the continent wave
-    // Climate fields deciding the biome id (must match the BiomeForm
-    // palette shipped in data: 0 temperate, 1 arid, 2 alpine, 3 tundra,
-    // 4 subalpine, 5 steppe — the temperate->alpine and
-    // temperate->arid transition belts). REGIONAL since the biomes
-    // drive the ground materials: 5 fbm octaves from this base give
-    // 1-3 km coherent regions whose borders stay ragged at walk scale
-    // (a 350 m base made confetti patches — a biome was never a place).
-    // The short-wavelength "type selector" principle stays with the
-    // relief REGIME field below; climate is geography.
-    f32 climateWavelength { 2800.0f };
-    // Start decree, climate chapter (the layout guarantees the origin a
-    // coastal belt; this guarantees it a MEADOW): inside the radius the
-    // climate fields pull to temperate means, fading to `Fade` — the
-    // fields' own variation keeps the border ragged, never a circle.
-    // The radius covers the spawn probe's first height-acceptable ring
-    // (~8 km) so the start lands in prairie without moving away from
-    // the origin's authored content.
-    f32 startMeadowRadius { 8500.0f };
-    f32 startMeadowFade { 12000.0f };
-    // Relief regimes: a type-selector field sorts the land into three
-    // characters — HILL-CHAIN country (low, rolling ridged hills, no
-    // uplift), OLD MASSIFS (an elevated plateau wearing hills, uplift
-    // nearly off — the Massif Central look), and YOUNG RANGES (the
-    // plain uplift path). Erosion then treats each accordingly.
-    f32 regimeWavelength { 875.0f };
-    f32 hillChainWavelength { 6000.0f }; // ridged hills' own rhythm
-    f32 hillChainAmplitude { 130.0f };    // m of hill relief in chains
-    f32 oldMassifHeight { 210.0f };       // m of plateau under old hills
-    f32 oldMassifHillAmplitude { 150.0f };
-    // The LONG swell: a very-slow positive lift of whole landscapes —
-    // ranges riding it become truly high peaks, hill country on it
-    // becomes highland plateaus. Inland-gated like the massif plateau.
-    f32 swellWavelength { 22500.0f };
-    // Sized so summits riding the full swell reach ~1200 m — above the
-    // cloud layer (800-1000 m) and the snow line, without steepening
-    // anything: a base lift carries the peaks, slopes stay local.
-    f32 swellHeight { 750.0f };
-    // Passability corridors: a mid-frequency band field that locally
-    // SOFTENS erosion (never the heights) — cols through ranges,
-    // gentle passages between hills. ~quarter of the land.
-    f32 gentleWavelength { 1375.0f };
-    // Calm-socle breakup: the band field that keeps SOME plains rugged
-    // so the habitable family never reads as one uniform carpet.
-    f32 calmWavelength { 2600.0f };
-    // Objective layers — jittered landmark grids (fbm cannot promise
-    // spacing; the grid bounds the distance to the nearest landmark).
-    // ALPINE: a 600-900 m summit reachable from anywhere (~6 km),
-    // silhouette variants per hash (cone / elongated ridge / rimmed
-    // mesa). INTIMATE: a marked hill or an open clearing at ~3 km.
-    f32 peakCellSize { 7000.0f };
-    f32 peakHeightMin { 600.0f };
-    f32 peakHeightMax { 900.0f };
-    f32 peakRadiusMin { 1200.0f };
-    f32 peakRadiusMax { 2000.0f };
-    f32 hillCellSize { 3500.0f };
-    f32 hillHeightMin { 120.0f };
-    f32 hillHeightMax { 250.0f };
-    f32 hillRadiusMin { 600.0f };
-    f32 hillRadiusMax { 1600.0f };
-    // Valley orientation field: per ~cell angle, smoothly interpolated
-    // — the local axis relief stretches along (sightlines) and the
-    // trunk valleys run along.
-    f32 valleyAxisWavelength { 9000.0f };
-    // Master (trunk) valleys: wide flat-floored depressions every
-    // ~spacing transverse to nothing in particular — the future fleuve
-    // corridors. Their floor joins calm/gentle; crossing a range they
-    // read as gorges (kept steep by the uplift, softened by gentle).
-    f32 trunkSpacing { 9500.0f };
-    f32 trunkDepthMin { 40.0f };
-    f32 trunkDepthMax { 80.0f };
-    f32 trunkFloorHalfWidth { 900.0f };
-    f32 trunkShoulder { 2100.0f };
-    // Guaranteed cols: transverse gentle corridors combed along the
-    // axis every ~spacing so no range is a regional wall.
-    f32 colSpacing { 4000.0f };
-    // Lithology: "countries" of rock character between the regime and
-    // the carriers — hard pockets keep sharp relief and sea cliffs,
-    // soft pockets roll, with no per-case exceptions.
+// The local RHYTHM drawn on the world layer's floor (docs/PAYSAGE.md
+// §7.5): pieces (one landmark per cell — a dome, a ridge with cols, a
+// mesa), the massif crests, the valley beds, the guaranteed cols and
+// the lithology. Everything indexed by étage reads the province the
+// piece or point stands in, so the same rhythm scales with the floor.
+struct RhythmParams {
+    f32 pieceCellSize { 7000.0f };
+    f32 pieceChance { 0.8f };
+    f32 pieceRadiusMin { 900.0f };
+    f32 pieceRadiusMax { 1800.0f };
+    // [étage][min, max] meters of lift at the piece's summit.
+    f32 pieceHeightByEtage[4][2] { { 120.0f, 220.0f },
+                                   { 180.0f, 320.0f },
+                                   { 120.0f, 260.0f },
+                                   { 350.0f, 650.0f } };
+    f32 ridgeColWavelength { 1300.0f }; // saddles along a ridge piece
+    f32 crestWavelength { 1800.0f };    // massif ridged crests
+    f32 crestAmplitudeByEtage[4] { 30.0f, 60.0f, 90.0f, 200.0f };
+    f32 bedWavelength { 3000.0f };      // valley-bed skeleton
+    f32 bedDepthByEtage[4] { 14.0f, 22.0f, 20.0f, 35.0f };
+    f32 colSpacing { 2500.0f };         // guaranteed passes in massifs
     f32 hardnessWavelength { 4000.0f };
+};
+
+// Sandbox controls: every field derives from ONE sample of the world
+// layer (sea, floor, étage, massif, coast, climate) plus the local
+// rhythm. Pure functions of (seed, x, z) — infinite, deterministic,
+// and continuous across map lines (no per-map state anywhere).
+struct ProceduralControlParams {
+    u32 seed { 1337 }; // copied into world.seed by ProceduralControls
+    WorldLayerParams world;
+    RhythmParams rhythm;
 };
 
 class ProceduralControls final : public ControlSource {
 public:
     explicit ProceduralControls(const ProceduralControlParams& params)
-        : p { params } {}
+        : p { params } {
+        p.world.seed = p.seed;
+    }
     ControlSample at(f32 x, f32 z) const override;
-    // Same sample, but hands back the continentalness it computed —
-    // it is the heaviest part of a sample (warp+layout kernels), and
-    // macroHeightAnalytic needs the SAME value again for its shore
-    // distance. One evaluation, bit-identical to calling both.
-    ControlSample at(f32 x, f32 z, f32& outContinentalness) const;
+    // Same sample, handing back the world sample it derived from —
+    // macroHeightAnalytic needs the continent value again for its
+    // shore distance. One evaluation, bit-identical to calling both.
+    ControlSample at(f32 x, f32 z, WorldSample& outWorld) const;
     u8 biomeIdAt(f32 x, f32 z, f32 tier) const override; // climate only
-    f32 continentalness(f32 x, f32 z) const; // [0,1], warped
 
     const ProceduralControlParams& params() const { return p; }
 
@@ -249,16 +159,20 @@ struct TierLevel {
     f32 terrace { 0.0f }; // 0..1 strata quantization strength (mesas)
 };
 
-// Real-mountain scale: the highest tier + its relief + the long swell +
-// the fastscape orogeny (upliftRate x iterations, minus erosion) put the
-// tallest summits at ~1200 m — above the cloud layer (800-1000 m); the
-// valleys the stream power carves into that stay walkable.
+// The étage table (docs/PAYSAGE.md §7.5): one tier per elevation
+// province of the world layer (WorldLayerParams::etageAltitude indexes
+// it through ControlSample::tier). With a world floor the altitude
+// column is unused — it is the ABSOLUTE floor of painted/test sources
+// only; the relief columns are the province's own walking rhythm:
+// plains roll +/-25 m over 700 m, hills +/-45 m, the plateau is flat
+// and terraced, the high mountain carries the big waves the massif
+// crests and the erosion sculpt.
 struct MacroParams {
     vector<TierLevel> tiers {
-        { 40.0f, 18.0f, 2100.0f, 0.0f },   // coastal plains
-        { 110.0f, 90.0f, 6500.0f, 0.0f },  // hills (long rolling waves)
-        { 270.0f, 18.0f, 3500.0f, 0.8f },  // mesa plateau
-        { 520.0f, 140.0f, 5500.0f, 0.0f }, // high ranges
+        { 40.0f, 25.0f, 700.0f, 0.0f },     // plains: gentle hills
+        { 150.0f, 45.0f, 900.0f, 0.0f },    // hills
+        { 450.0f, 28.0f, 750.0f, 0.5f },    // plateau (terraced)
+        { 1200.0f, 120.0f, 1100.0f, 0.0f }, // high mountain
     };
     f32 seaLevel { kDefaultSeaLevel };
     // Two-stage ocean: shore ramp -> luminous COASTAL PLATEAU (the
@@ -286,6 +200,10 @@ struct MacroParams {
     // Anisotropy of the relief carriers along ControlSample's valley
     // axis (1 = isotropic; applied at the sample's axisStrength).
     f32 valleyStretch { 2.5f };
+    // Valley-bed skeleton wavelength for ControlSample::bedDepth (the
+    // control seam copies its own value in at the bake, like
+    // hillChainWavelength). 0 disables.
+    f32 bedWavelength { 0.0f };
     f32 terraceStep { 40.0f };     // meters between mesa strata
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
     f32 warpWavelength { 3500.0f }; // relief domain warp
@@ -433,9 +351,12 @@ f32 mapGridRidgeFactor(const ProceduralControls& controls,
                        const MacroParams& macro, const MapGridSpec& spec,
                        f32 x, f32 z, f32 h);
 
-// Pointwise approximation of the S1 surface (shore falloff derived from
-// continentalness instead of the grid distance field): far silhouettes
-// beyond baked tiles and the bake's boundary condition.
+// Pointwise mirror of the S1 surface (shore falloff derived from the
+// world layer's continent value instead of the grid distance field):
+// far silhouettes beyond baked tiles, the bake's boundary condition,
+// the master network's grid. Equal to the per-texel macro away from
+// the coast (no erosion compression: the bake's hard erosion budget
+// keeps the baked ground near this surface — docs/PAYSAGE.md §7.5).
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z);
 

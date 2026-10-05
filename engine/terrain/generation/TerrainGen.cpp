@@ -1,5 +1,6 @@
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
+#include "engine/terrain/generation/WorldLayer.hpp"
 
 #include <cmath>
 #include <unordered_map>
@@ -14,147 +15,16 @@ namespace {
 
 // Seed salts: one per independent noise field, so a control tweak never
 // re-rolls an unrelated field.
-constexpr u32 kSaltContinent = 0x5ea5c0a5u;
-constexpr u32 kSaltContinentWarpX = 0xa1b2c3d4u;
-constexpr u32 kSaltContinentWarpZ = 0xb7c8d9eau;
-constexpr u32 kSaltUplift = 0x0f1e2d3cu;
-constexpr u32 kSaltTemperature = 0x7ea7be57u;
-constexpr u32 kSaltMoisture = 0x6d015745u;
 constexpr u32 kSaltRelief = 0xe5f6a7b8u;
 constexpr u32 kSaltReliefWarpX = 0xc3d4e5f6u;
 constexpr u32 kSaltReliefWarpZ = 0xd9eafb0cu;
-constexpr u32 kSaltRegime = 0x4b1d5eedu;
 constexpr u32 kSaltHillChain = 0x91c0ffeeu;
-constexpr u32 kSaltSwell = 0x5e110000u;
-constexpr u32 kSaltGentle = 0x6e97e155u;
 constexpr u32 kSaltHardness = 0x11780c1cu;
-constexpr u32 kSaltCalm = 0xca1a90c1u;
-constexpr u32 kSaltPeakAlpine = 0xa1b13e00u;
-constexpr u32 kSaltPeakHill = 0x811c0113u;
-constexpr u32 kSaltValleyAxis = 0x7a11e7a5u;
-constexpr u32 kSaltTrunk = 0x77201c00u;
+constexpr u32 kSaltPiece = 0xa1b13e00u;
+constexpr u32 kSaltRidgeCol = 0x51d9ec01u;
 constexpr u32 kSaltCol = 0xc0110000u;
 constexpr u32 kSaltAxialWarp = 0x51deca5eu;
-constexpr u32 kSaltContinentCarrier = 0xc0471e47u;
-constexpr u32 kSaltLayout = 0x1a70a700u;
-constexpr u32 kSaltLayoutWarpX = 0x1a70a7a1u;
-constexpr u32 kSaltLayoutWarpZ = 0x1a70a7b2u;
-
-// Design-forced continent layout: [0,1] landmass field from a jittered
-// mega grid of elliptical kernels (one continent per cell, 1 main + 2
-// satellite lobes so nothing reads as a circle; a second sparser grid
-// scatters large islands), evaluated at a ~60 km domain-warped
-// position so silhouettes wander. Cell (0, 0) keeps its jitter small:
-// the world origin — the sandbox start — is GUARANTEED to sit on its
-// continent.
-f32 layoutKernels(const ProceduralControlParams& p, f32 x, f32 z) {
-    const auto lobe = [](f32 dx, f32 dz, f32 radius, f32 aspect,
-                         f32 theta) {
-        const f32 ct = std::cos(theta);
-        const f32 st = std::sin(theta);
-        const f32 u = (ct * dx + st * dz) / (radius * aspect);
-        const f32 v = (-st * dx + ct * dz) / radius;
-        const f32 n = std::sqrt(u * u + v * v);
-        return 1.0f - noise::smoothstep01(0.62f, 1.0f, n);
-    };
-    f32 best = 0.0f;
-    // Continents. Cell centers sit ON multiples of cellSize (rounded
-    // indexing) so cell (0, 0)'s continent is centered at the world
-    // origin — the start guarantee, not a corner case.
-    {
-        const f32 cell = p.continentCellSize;
-        const i32 cx =
-            static_cast<i32>(std::floor(x / cell + 0.5f));
-        const i32 cz =
-            static_cast<i32>(std::floor(z / cell + 0.5f));
-        for (i32 dz = -1; dz <= 1; ++dz) {
-            for (i32 dx = -1; dx <= 1; ++dx) {
-                const i32 gx = cx + dx;
-                const i32 gz = cz + dz;
-                const auto jitter = [&](u32 k) {
-                    return noise::lattice(
-                        (p.seed ^ kSaltLayout) + k * 0x9e3779b9u, gx,
-                        gz);
-                };
-                const bool startCell = gx == 0 && gz == 0;
-                const f32 radius =
-                    glm::mix(p.continentRadiusMin,
-                             p.continentRadiusMax, jitter(2));
-                f32 px, pz;
-                if (startCell) {
-                    // Start guarantee, coastal flavor: the origin sits
-                    // in the continent's COASTAL BELT (not its heart —
-                    // the interior is the adventure's future), so the
-                    // near world keeps its bays and straits.
-                    const f32 toCenter = jitter(0) * 6.2831853f;
-                    px = std::cos(toCenter) * radius * 0.72f;
-                    pz = std::sin(toCenter) * radius * 0.72f;
-                } else {
-                    px = (static_cast<f32>(gx) +
-                          0.5f * (jitter(0) - 0.5f)) *
-                         cell;
-                    pz = (static_cast<f32>(gz) +
-                          0.5f * (jitter(1) - 0.5f)) *
-                         cell;
-                }
-                const f32 theta = jitter(3) * 3.14159265f;
-                const f32 aspect = 1.0f + 0.8f * jitter(4);
-                best = glm::max(
-                    best, lobe(x - px, z - pz, radius, aspect, theta));
-                // Satellite lobes stretch the silhouette.
-                for (u32 s = 0; s < 2; ++s) {
-                    const f32 sa = jitter(5 + s * 3) * 6.2831853f;
-                    const f32 sd =
-                        radius * glm::mix(0.35f, 0.7f,
-                                          jitter(6 + s * 3));
-                    const f32 sr =
-                        radius * glm::mix(0.4f, 0.65f,
-                                          jitter(7 + s * 3));
-                    best = glm::max(
-                        best,
-                        lobe(x - (px + std::cos(sa) * sd),
-                             z - (pz + std::sin(sa) * sd), sr,
-                             1.0f + 0.5f * jitter(8 + s), theta));
-                }
-            }
-        }
-    }
-    // Large islands (sparser, smaller).
-    {
-        const f32 cell = p.islandCellSize;
-        const i32 cx = static_cast<i32>(std::floor(x / cell));
-        const i32 cz = static_cast<i32>(std::floor(z / cell));
-        for (i32 dz = -1; dz <= 1; ++dz) {
-            for (i32 dx = -1; dx <= 1; ++dx) {
-                const i32 gx = cx + dx;
-                const i32 gz = cz + dz;
-                const auto jitter = [&](u32 k) {
-                    return noise::lattice((p.seed ^ kSaltLayout ^
-                                           0x51ab5eedu) +
-                                              k * 0x9e3779b9u,
-                                          gx, gz);
-                };
-                if (jitter(9) > p.islandChance) {
-                    continue;
-                }
-                const f32 px = (static_cast<f32>(gx) + 0.25f +
-                                0.5f * jitter(0)) *
-                               cell;
-                const f32 pz = (static_cast<f32>(gz) + 0.25f +
-                                0.5f * jitter(1)) *
-                               cell;
-                const f32 radius = glm::mix(p.islandRadiusMin,
-                                            p.islandRadiusMax,
-                                            jitter(2));
-                best = glm::max(
-                    best, lobe(x - px, z - pz, radius,
-                               1.0f + 0.9f * jitter(3),
-                               jitter(4) * 3.14159265f));
-            }
-        }
-    }
-    return best;
-}
+constexpr u32 kSaltBed = 0xbed0bed0u;
 
 struct TierBlend {
     f32 altitude;
@@ -180,90 +50,59 @@ TierBlend blendTiers(const MacroParams& p, f32 tier) {
              glm::mix(a.terrace, b.terrace, tt) };
 }
 
-// Valley potential: ONE smooth scalar field drives the whole valley
-// system — the trunk valleys are its ISOLINE stripes (continuous
-// curves by construction, they wander with the field; the stripe
-// index is a global valley identity so one hash rules a valley end to
-// end), and the local axis is the isoline direction (perp of the
-// gradient). Everything is a pure smooth function of (x, z):
-// translation-invariant, no cells, no frames — the earlier
-// rotated-frame formulation tore the field apart far from the origin
-// (a locally varying angle sweeps r*dTheta of coordinates).
-struct ValleyField {
-    f32 phi { 0.0f };      // potential [0,1]
-    f32 gradLen { 0.0f };  // |grad phi| (per meter)
-    f32 axisCos { 1.0f };  // isoline direction (undirected)
-    f32 axisSin { 0.0f };
-    f32 strength { 0.0f }; // fades at the potential's extrema
+// The PIECES (docs/PAYSAGE.md §7.5): one landmark per jittered cell —
+// fbm cannot promise spacing, the grid bounds the distance to the
+// nearest piece — drawn at the height of the étage its CENTRE stands
+// in (one world sample, only when the point is inside the footprint),
+// so a piece never reads a seam of its own. Three silhouettes per
+// hash: a dome, a RIDGE modulated along its axis (the saddles are the
+// cols, handed to `gentle`), a MESA (flat top, short rim). Pure
+// function of (seed, x, z); the analytic mirror gets it for free.
+struct PieceSample {
+    f32 add { 0.0f };        // meters of base lift
+    f32 mesaTop { 0.0f };    // [0,1] on a mesa's flat top
+    f32 ridgeFlank { 0.0f }; // [0,1] on a dome/ridge flank
+    f32 col { 0.0f };        // [0,1] saddle corridor of a ridge piece
 };
 
-ValleyField valleyField(u32 seed, f32 x, f32 z, f32 wavelength) {
-    const auto phiAt = [&](f32 px, f32 pz) {
-        return noise::fbm(seed, px, pz, 1.0f / wavelength, 2, 2.0f,
-                          0.5f);
-    };
-    ValleyField out;
-    out.phi = phiAt(x, z);
-    const f32 e = 150.0f;
-    const f32 gx = (phiAt(x + e, z) - phiAt(x - e, z)) / (2.0f * e);
-    const f32 gz = (phiAt(x, z + e) - phiAt(x, z - e)) / (2.0f * e);
-    out.gradLen = std::sqrt(gx * gx + gz * gz);
-    if (out.gradLen > 1.0e-9f) {
-        out.axisCos = -gz / out.gradLen;
-        out.axisSin = gx / out.gradLen;
-    }
-    // Normalized gradient (units of amplitude per wavelength) —
-    // band-passed. The masks live in PHASE space (smooth in phi), so
-    // the band only bounds the METRIC width of a valley: at the low
-    // end the phase stalls and a stripe balloons into a crater-wide
-    // patch, at the high end it pinches into a slit — both fade out
-    // instead. Kept as open as those bounds allow: the fleuve
-    // corridors need CONNECTED valleys to drain along.
-    const f32 gn = out.gradLen * wavelength;
-    out.strength = noise::smoothstep01(0.08f, 0.2f, gn) *
-                   (1.0f - noise::smoothstep01(1.0f, 1.5f, gn));
-    return out;
-}
-
-// One objective layer: a jittered grid of landmark kernels (alpine
-// summits, marked hills, open clearings). fbm cannot promise spacing —
-// the grid gives a hard bound on the distance to the nearest landmark,
-// stays a pure function of (seed, x, z), and the analytic silhouette
-// mirrors it for free (same controls path). The per-cell hash decides
-// position, size and SILHOUETTE VARIANT: landmarks must be
-// recognizable, not interchangeable.
-struct LandmarkSample {
-    f32 add { 0.0f };      // meters of base lift (onto plateau)
-    f32 clearing { 0.0f }; // [0,1] relief-suppression bowl
-};
-
-LandmarkSample landmarkLayer(u32 seed, f32 x, f32 z, f32 cellSize,
-                             f32 heightMin, f32 heightMax, f32 radiusMin,
-                             f32 radiusMax, bool clearings) {
-    LandmarkSample out;
+PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z) {
+    const RhythmParams& r = p.rhythm;
+    PieceSample out;
+    const f32 cellSize = r.pieceCellSize;
     const i32 cellX = static_cast<i32>(std::floor(x / cellSize));
     const i32 cellZ = static_cast<i32>(std::floor(z / cellSize));
+    // The start cell always has its piece: the meadow the decree
+    // flattens gets its landmark (the hill the player orients by).
+    const i32 startCellX =
+        static_cast<i32>(std::floor(p.world.startX / cellSize));
+    const i32 startCellZ =
+        static_cast<i32>(std::floor(p.world.startZ / cellSize));
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
             const i32 gx = cellX + dx;
             const i32 gz = cellZ + dz;
             const auto jitter = [&](u32 k) {
-                return noise::lattice(seed + k * 0x9e3779b9u, gx, gz);
+                return noise::lattice((p.seed ^ kSaltPiece) +
+                                          k * 0x9e3779b9u,
+                                      gx, gz);
             };
+            const bool startCell = gx == startCellX && gz == startCellZ;
+            if (!startCell && jitter(9) > r.pieceChance) {
+                continue;
+            }
             const f32 px =
                 (static_cast<f32>(gx) + 0.2f + 0.6f * jitter(0)) *
                 cellSize;
             const f32 pz =
                 (static_cast<f32>(gz) + 0.2f + 0.6f * jitter(1)) *
                 cellSize;
-            const f32 height = glm::mix(heightMin, heightMax, jitter(2));
-            const f32 radius = glm::mix(radiusMin, radiusMax, jitter(3));
+            const f32 radius =
+                glm::mix(r.pieceRadiusMin, r.pieceRadiusMax, jitter(3));
             const f32 variant = jitter(4);
-            const bool mesa = !clearings && variant >= 0.7f;
-            const bool ridge = !clearings && variant >= 0.4f && !mesa;
-            const f32 aspect = ridge
-                                   ? glm::mix(2.8f, 4.5f, jitter(5))
-                                   : 1.0f + 0.4f * jitter(5);
+            const bool mesa = variant >= 0.75f;
+            const bool ridge = variant >= 0.4f && !mesa;
+            const f32 aspect = ridge ? glm::mix(2.8f, 4.5f, jitter(5))
+                                     : 1.0f + 0.4f * jitter(5);
             const f32 theta = jitter(6) * 3.14159265f;
             const f32 ct = std::cos(theta);
             const f32 st = std::sin(theta);
@@ -275,29 +114,55 @@ LandmarkSample landmarkLayer(u32 seed, f32 x, f32 z, f32 cellSize,
             if (n2 >= 1.0f) {
                 continue;
             }
-            if (clearings && variant < 0.3333f) {
-                const f32 bowl = (1.0f - n2) * (1.0f - n2);
-                out.clearing = glm::max(out.clearing, bowl);
+            // The piece's étage: where its centre stands (a piece in
+            // the sea does not exist).
+            const WorldSample centre = worldSampleAt(p.world, px, pz);
+            if (centre.sea) {
                 continue;
             }
-            // Dome/ridge: C1 kernel the erosion carves into flanks;
-            // mesa: flat top with a short rim (terrace-free — the
-            // kernel shape IS the stratum).
+            const u32 tier = glm::min(
+                3u, static_cast<u32>(std::lround(etageIndexFor(
+                        p.world, glm::max(centre.base, 0.0f)))));
+            const f32 height = glm::mix(r.pieceHeightByEtage[tier][0],
+                                        r.pieceHeightByEtage[tier][1],
+                                        jitter(2));
             const f32 n = std::sqrt(n2);
-            const f32 k =
-                mesa ? 1.0f - noise::smoothstep01(0.55f, 0.9f, n)
-                     : (1.0f - n2) * (1.0f - n2);
-            out.add = glm::max(out.add, height * k);
+            if (mesa) {
+                const f32 k = 1.0f - noise::smoothstep01(0.55f, 0.9f, n);
+                out.add = glm::max(out.add, height * k);
+                out.mesaTop = glm::max(
+                    out.mesaTop, 1.0f - noise::smoothstep01(0.3f, 0.55f, n));
+                continue;
+            }
+            // Dome/ridge: C1 kernel the erosion carves into flanks. A
+            // ridge is modulated along its length: the lows are
+            // saddles — the cols a walker crosses it by.
+            const f32 k = (1.0f - n2) * (1.0f - n2);
+            f32 mod = 1.0f;
+            if (ridge) {
+                mod = glm::mix(
+                    0.55f, 1.0f,
+                    noise::fbm(p.seed ^ kSaltRidgeCol, x, z,
+                               1.0f / r.ridgeColWavelength, 2, 2.0f,
+                               0.5f));
+                out.col = glm::max(out.col, (1.0f - mod) / 0.45f * k);
+            }
+            out.add = glm::max(out.add, height * k * mod);
+            out.ridgeFlank = glm::max(
+                out.ridgeFlank,
+                noise::smoothstep01(0.08f, 0.4f, k) *
+                    (1.0f - noise::smoothstep01(0.6f, 0.9f, k)));
         }
     }
     return out;
 }
 
-// Land surface before the coast profile: tier floor + warped relief +
-// soft strata quantization, plus the regime extras — the old-massif
-// plateau and the ridged hill-chain relief (0/0 = legacy).
+// Land surface before the coast profile: the FLOOR (the world layer's
+// base when the sample carries one, else the tier table's altitude) +
+// the tier's warped relief + the piece lift + the massif crests - the
+// valley beds + soft strata quantization. Fields at 0 = legacy.
 f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
-               f32 hillChainWavelength, f32 x, f32 z) {
+               f32 hillChainWavelength, f32 bedWavelength, f32 x, f32 z) {
     const f32 tier = s.tier;
     const TierBlend t = blendTiers(p, tier);
     const f32 wx =
@@ -338,7 +203,8 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
                             2.0f -
                         1.0f) *
                        t.reliefAmplitude * s.reliefScale;
-    f32 h = t.altitude + relief + s.plateau;
+    const f32 floor = s.hasBase ? p.seaLevel + s.base : t.altitude;
+    f32 h = floor + relief + s.plateau;
     if (s.hillRelief > 0.0f && hillChainWavelength > 1.0f) {
         // Ridged chains: elongated crests, the erosion pass rounds
         // them into rolling hill country.
@@ -352,6 +218,15 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
     // so no inland trough floods below the waterline.
     if (s.trunkDepth > 0.0f) {
         h -= s.trunkDepth *
+             noise::smoothstep01(40.0f, 90.0f, h - p.seaLevel);
+    }
+    // Valley beds: a ridged skeleton dug into the floor — the
+    // drainage the erosion deepens instead of inventing, fading out
+    // near the sea so no bed floods below the waterline.
+    if (s.bedDepth > 0.0f && bedWavelength > 1.0f) {
+        h -= s.bedDepth *
+             noise::ridgedFbm(seed ^ kSaltBed, wx, wz,
+                              1.0f / bedWavelength, 2, 2.0f, 0.5f) *
              noise::smoothstep01(40.0f, 90.0f, h - p.seaLevel);
     }
     if (t.terrace > 0.0f && p.terraceStep > 0.0f) {
@@ -474,346 +349,85 @@ f32 recurveLand(const MacroParams& p, f32 h) {
     return p.seaLevel + out * span;
 }
 
-f32 ProceduralControls::continentalness(f32 x, f32 z) const {
-    const f32 wx =
-        x + (noise::fbm(p.seed ^ kSaltContinentWarpX, x, z,
-                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
-                 2.0f -
-             1.0f) *
-                p.warpStrength;
-    const f32 wz =
-        z + (noise::fbm(p.seed ^ kSaltContinentWarpZ, x, z,
-                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
-                 2.0f -
-             1.0f) *
-                p.warpStrength;
-    f32 c = noise::fbm(p.seed ^ kSaltContinent, wx, wz,
-                       1.0f / p.continentWavelength, 4, 2.0f, 0.5f);
-    // Continental carrier: the very slow field deciding WHERE the
-    // land masses and open seas are; the fbm above keeps drawing the
-    // local coastline character on top — and only there: where the
-    // carrier is decided (well above or below its midline) the local
-    // detail is compressed, so continent interiors keep their lakes
-    // rare and open oceans their islands rare. The coast detail
-    // belongs to the coastal belts. Off (0) = legacy bit-exact.
-    f32 lift = 0.0f;
-    f32 liftScale = 0.0f;
-    // Layout first: its rim belt decides where the regional carrier
-    // may speak at full volume (coast detail belongs to the coasts —
-    // deep continent and open ocean get half of it, so the guaranteed
-    // masses stay masses).
-    f32 carrierGain = 1.0f;
-    if (p.continentLayout) {
-        // Kernels evaluated at a ~55 km domain-warped position so no
-        // coast remembers the ellipse it came from.
-        const f32 lx =
-            x + (noise::fbm(p.seed ^ kSaltLayoutWarpX, x, z,
-                            1.0f / 140000.0f, 2, 2.0f, 0.5f) *
-                     2.0f -
-                 1.0f) *
-                    55000.0f;
-        const f32 lz =
-            z + (noise::fbm(p.seed ^ kSaltLayoutWarpZ, x, z,
-                            1.0f / 140000.0f, 2, 2.0f, 0.5f) *
-                     2.0f -
-                 1.0f) *
-                    55000.0f;
-        const f32 layout = layoutKernels(p, lx, lz);
-        lift += (layout * 2.0f - 1.0f) * p.layoutAmp;
-        liftScale += p.layoutAmp;
-        const f32 rim = 1.0f - std::abs(layout * 2.0f - 1.0f);
-        carrierGain = glm::mix(0.5f, 1.0f, rim);
-    }
-    if (p.continentCarrierWavelength > 1.0f) {
-        // Contrasted: raw fbm hugs its midline, which would leave most
-        // of the map in the undecided belt — the remap pushes it to
-        // its extremes (solid continent / open ocean) with a narrow
-        // coastal transition band where the local detail lives.
-        // A single band organizes only its own scale (measured on the
-        // 1000 km maps: a 30 km carrier is still a uniform carpet up
-        // there). Continent-scale wavelengths therefore STACK a
-        // regional band at lambda/8 under the same remap — continents
-        // at the top, the 30-40 km region structure preserved inside
-        // them. Small carriers stay single-band.
-        f32 raw;
-        if (p.continentCarrierWavelength > 100000.0f) {
-            raw = 0.62f *
-                      noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
-                                 1.0f / p.continentCarrierWavelength,
-                                 4, 2.0f, 0.5f) +
-                  0.38f *
-                      noise::fbm(
-                          p.seed ^ kSaltContinentCarrier ^ 0x9e3779b9u,
-                          x, z,
-                          8.0f / p.continentCarrierWavelength, 3, 2.0f,
-                          0.5f);
-        } else {
-            raw = noise::fbm(p.seed ^ kSaltContinentCarrier, x, z,
-                             1.0f / p.continentCarrierWavelength, 3,
-                             2.0f, 0.5f);
-        }
-        const f32 carrier = noise::smoothstep01(0.38f, 0.62f, raw);
-        lift += (carrier - 0.5f) * 2.0f * p.continentCarrierAmp *
-                carrierGain;
-        liftScale += p.continentCarrierAmp * carrierGain;
-    }
-    if (liftScale > 0.0f) {
-        const f32 decided = noise::smoothstep01(
-            0.3f * liftScale, 0.9f * liftScale, std::abs(lift));
-        c = 0.5f + (c - 0.5f) * (1.0f - 0.6f * decided) + lift;
-    }
-    return c;
+namespace {
+
+f32 lerpByEtage(const f32 (&table)[4], f32 tier) {
+    const f32 t = glm::clamp(tier, 0.0f, 3.0f);
+    const u32 i0 = glm::min(static_cast<u32>(t), 2u);
+    return glm::mix(table[i0], table[i0 + 1], t - static_cast<f32>(i0));
 }
 
+} // namespace
+
 ControlSample ProceduralControls::at(f32 x, f32 z) const {
-    f32 unusedContinentalness = 0.0f;
-    return at(x, z, unusedContinentalness);
+    WorldSample unused;
+    return at(x, z, unused);
 }
 
 ControlSample ProceduralControls::at(f32 x, f32 z,
-                                     f32& outContinentalness) const {
-    const f32 c = continentalness(x, z);
-    outContinentalness = c;
-    ControlSample sample;
-    sample.sea = c < p.seaThreshold;
-    sample.tier = glm::clamp((c - p.seaThreshold) / p.tierSpread, 0.0f,
-                             1.0f) *
-                  p.maxTier;
-    // Ranges rise where the ridged mask fires, and prefer high ground —
-    // uplift feeds stage S2 (stream-power erosion), it is not height.
-    const f32 mask = noise::smoothstep01(
-        p.upliftMaskLow, p.upliftMaskHigh,
-        noise::ridgedFbm(p.seed ^ kSaltUplift, x, z,
-                         1.0f / p.upliftWavelength, 3, 2.0f, 0.5f));
-    sample.uplift = mask * noise::smoothstep01(0.0f, 1.2f, sample.tier);
-    // Relief regime: a slow field sorts the land into hill-chain
-    // country / old massifs / young ranges. Inland-gated so coasts keep
-    // their shore profile whatever the regime says.
-    const f32 regime = noise::fbm(p.seed ^ kSaltRegime, x, z,
-                                  1.0f / p.regimeWavelength, 3, 2.0f,
-                                  0.5f);
-    const f32 hills = 1.0f - noise::smoothstep01(0.22f, 0.33f, regime);
-    const f32 old = noise::smoothstep01(0.55f, 0.68f, regime);
-    const f32 inland = noise::smoothstep01(0.15f, 0.6f, sample.tier);
-    // Hill country stays LOW (no ranges) and rolls; old massifs stand
-    // on a plateau wearing hills, their uplift nearly off — erosion
-    // rounds what little rises. Young ranges keep the plain path.
-    sample.uplift *= (1.0f - hills) * (1.0f - 0.85f * old);
-    sample.tier = glm::mix(sample.tier,
-                           glm::min(sample.tier, 1.1f), hills);
-    sample.tier =
-        glm::mix(sample.tier, glm::min(sample.tier, 1.4f), old);
-    sample.plateau = old * inland * p.oldMassifHeight;
-    sample.hillRelief =
-        inland * (hills * p.hillChainAmplitude +
-                  old * p.oldMassifHillAmplitude);
-    // A gentle uplift FLOOR keeps regime hills alive through S2: the
-    // range mask fires nowhere near them, so without this the ridged
-    // S1 hills erode to a featureless plain in a hundred iterations —
-    // an old massif must stay hilly, only rounded.
-    sample.uplift = glm::max(
-        sample.uplift,
-        inland * glm::max(old * 0.04f, hills * 0.03f));
-    // The LONG swell: whole landscapes ride a very slow positive lift —
-    // ranges on it reach true high-mountain altitudes, hill country on
-    // it reads as highland plateau. Positive-only (it raises, never
-    // digs) and inland-gated so coasts keep their profile.
-    const f32 swell = noise::smoothstep01(
-        0.45f, 0.85f,
-        noise::fbm(p.seed ^ kSaltSwell, x, z, 1.0f / p.swellWavelength,
-                   3, 2.0f, 0.5f));
-    sample.plateau += swell * inland * p.swellHeight;
-    // Valley potential: the axis relief elongates along and the trunk
-    // valleys follow — see valleyField (isoline stripes, translation-
-    // invariant).
-    const ValleyField valley = valleyField(
-        p.seed ^ kSaltValleyAxis, x, z, p.valleyAxisWavelength);
-    sample.axisCos = valley.axisCos;
-    sample.axisSin = valley.axisSin;
-    sample.axisStrength = valley.strength;
-    // Master (trunk) valleys: isoline stripes of the potential, one
-    // every ~trunkSpacing (in meters, via the local gradient). The
-    // stripe index is the valley's identity end to end. Inland-gated;
-    // through a range the depression reads as a gorge (uplift keeps
-    // the walls, gentle keeps the floor walkable).
-    {
-        // Stripe step chosen so the typical ISOLINE spacing (dPhi /
-        // |grad|) lands near trunkSpacing at the field's typical
-        // gradient (~0.35 amplitude per wavelength).
-        const f32 stripeStep =
-            0.35f * p.trunkSpacing / p.valleyAxisWavelength;
-        const f32 phase = valley.phi / stripeStep;
-        const i32 stripe =
-            static_cast<i32>(std::floor(phase));
-        // Distance to the NEAREST neighbouring valley line, measured
-        // and masked IN PHASE UNITS — a meters conversion through the
-        // local gradient is ill-conditioned where the gradient bends
-        // (the 1/|grad| term shears the mask into visible steps). In
-        // phase space everything is a smooth function of phi; the
-        // metric width of a valley then breathes with the local
-        // gradient (wide floors where the field is flat, narrow in
-        // steep zones), bounded by the strength band-pass. Checking
-        // the three candidate stripes keeps both sides of a stripe
-        // boundary in agreement (per-stripe centers differ).
-        f32 distPhase = 1.0e9f;
-        i32 owner = stripe;
-        for (i32 k = stripe - 1; k <= stripe + 1; ++k) {
-            const f32 center =
-                static_cast<f32>(k) + 0.35f +
-                0.3f * noise::lattice(p.seed ^ kSaltTrunk, k, 7);
-            const f32 d = std::abs(phase - center);
-            if (d < distPhase) {
-                distPhase = d;
-                owner = k;
-            }
-        }
-        const f32 floorPhase =
-            p.trunkFloorHalfWidth / p.trunkSpacing;
-        const f32 shoulderPhase = p.trunkShoulder / p.trunkSpacing;
-        const f32 profile = 1.0f - noise::smoothstep01(
-                                       floorPhase, shoulderPhase,
-                                       distPhase);
-        const f32 depth = glm::mix(
-            p.trunkDepthMin, p.trunkDepthMax,
-            noise::lattice(p.seed ^ kSaltTrunk ^ 0x5bd1e995u, owner,
-                           113));
-        // Own WIDE inland ramp: the shared `inland` gate rides the
-        // warped continent field and snaps 0->1 within tens of meters
-        // at the coast — fine for additive lifts, a visible tear for
-        // a mask. A full tier of ramp spreads it over ~a kilometer.
-        const f32 trunkInland =
-            noise::smoothstep01(0.3f, 1.3f, sample.tier);
-        const f32 gate = trunkInland * valley.strength;
-        sample.trunk = (1.0f - noise::smoothstep01(
-                                   floorPhase * 0.8f,
-                                   floorPhase * 1.3f, distPhase)) *
-                       gate;
-        sample.trunkDepth = depth * profile * gate;
-    }
-    // Passability corridors: erosion softeners, never height. Banded so
-    // roughly a quarter of the land is a gentle passage — except in the
-    // ranges, where the band widens with the uplift the walker must
-    // cross: drama stays, but always with a way through.
-    const f32 rangeNeed =
-        noise::smoothstep01(0.2f, 0.8f, sample.uplift);
-    sample.gentle = noise::smoothstep01(
-        0.55f - 0.18f * rangeNeed, 0.7f - 0.18f * rangeNeed,
-        noise::fbm(p.seed ^ kSaltGentle, x, z,
-                   1.0f / p.gentleWavelength, 3, 2.0f, 0.5f));
-    // Guaranteed cols: thin stripes of a SECOND potential cut across
-    // the country every ~colSpacing wherever ranges rise — no range is
-    // ever a regional wall. And the trunk floor is itself a corridor:
-    // the walkway of the future fleuve.
+                                     WorldSample& outWorld) const {
+    const WorldSample w = worldSampleAt(p.world, x, z);
+    outWorld = w;
+    const RhythmParams& r = p.rhythm;
+    ControlSample s;
+    s.sea = w.sea;
+    s.base = glm::max(w.base, 0.0f);
+    s.hasBase = true;
+    s.tier = etageIndexFor(p.world, s.base);
+    // The pieces: a landmark's lift, flattened on a mesa top; gated
+    // off the beach so no shore rises into a wall.
+    const PieceSample piece = pieceLayer(p, x, z);
+    const f32 shoreGate = noise::smoothstep01(5.0f, 40.0f, s.base);
+    s.plateau = piece.add * shoreGate;
+    s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
+    // Massif belts: ridged crests sized by the étage, and the uplift
+    // that feeds the stream power — never on a mesa top.
+    const f32 inland = noise::smoothstep01(25.0f, 80.0f, s.base);
+    s.hillRelief =
+        w.massif * lerpByEtage(r.crestAmplitudeByEtage, s.tier) * inland;
+    s.uplift = w.massif * noise::smoothstep01(0.3f, 0.8f, w.massif) *
+               (1.0f - piece.mesaTop);
+    // Guaranteed cols: thin stripes of a potential cut across every
+    // massif every ~colSpacing — no range is a regional wall. A ridge
+    // piece's saddles are corridors too.
+    const f32 rangeNeed = noise::smoothstep01(0.35f, 0.7f, w.massif);
     {
         const f32 psi = noise::fbm(p.seed ^ kSaltCol, x, z,
-                                   1.0f / (p.colSpacing * 3.2f), 2,
-                                   2.0f, 0.5f);
+                                   1.0f / (r.colSpacing * 3.2f), 2, 2.0f,
+                                   0.5f);
         const f32 colPhase = psi * 3.2f;
         const f32 frac = colPhase - std::floor(colPhase);
         const f32 colK =
             1.0f -
             noise::smoothstep01(0.045f, 0.13f, std::abs(frac - 0.5f));
-        sample.gentle =
-            glm::max(sample.gentle, colK * rangeNeed);
+        s.gentle = glm::clamp(colK * rangeNeed + piece.col, 0.0f, 1.0f);
     }
-    sample.gentle = glm::max(sample.gentle, 0.9f * sample.trunk);
-    // Lithology: a slow hardness field — hard pockets keep sharp
-    // relief and cliff coasts, soft pockets roll. Plain fbm: the mean
-    // sits at neutral, the tails are the drama.
-    sample.hardness =
-        noise::fbm(p.seed ^ kSaltHardness, x, z,
-                   1.0f / p.hardnessWavelength, 3, 2.0f, 0.5f);
-    // Calm socles: the habitable family — true plains (no orogeny, no
-    // hill chains, softish rock) thinned by a slow band so some plains
-    // stay rugged, plus the flat tops of swelled highland plateaus.
-    // Corridors are members by definition. Valley floors join after
-    // erosion (tile bake) — they are unknowable pointwise.
-    const f32 plainW =
-        (1.0f - noise::smoothstep01(0.03f, 0.12f, sample.uplift)) *
-        (1.0f - noise::smoothstep01(25.0f, 60.0f, sample.hillRelief)) *
-        (1.0f - noise::smoothstep01(0.62f, 0.8f, sample.hardness));
-    const f32 calmBand = noise::smoothstep01(
-        0.36f, 0.52f,
-        noise::fbm(p.seed ^ kSaltCalm, x, z, 1.0f / p.calmWavelength, 3,
-                   2.0f, 0.5f));
-    const f32 plateauTopW =
-        noise::smoothstep01(90.0f, 200.0f, sample.plateau) *
-        (1.0f - noise::smoothstep01(35.0f, 80.0f, sample.hillRelief)) *
-        (1.0f - noise::smoothstep01(0.15f, 0.4f, sample.uplift));
-    sample.calm =
-        glm::max(sample.gentle,
-                 glm::max(plainW, plateauTopW) * calmBand);
-    // Objective layers (jittered landmark grids): added to the base
-    // lift so the erosion keep protects the summit while the flanks
-    // stay carved (the alpine character). Faded where the swell/massif
-    // anchors already carry high ground, inland-gated like the swell.
-    // NOTE: calm above reads the PRE-landmark plateau on purpose — a
-    // cone summit is not a calm plateau top.
-    const LandmarkSample alpinePeaks = landmarkLayer(
-        p.seed ^ kSaltPeakAlpine, x, z, p.peakCellSize, p.peakHeightMin,
-        p.peakHeightMax, p.peakRadiusMin, p.peakRadiusMax, false);
-    const LandmarkSample hillMarks = landmarkLayer(
-        p.seed ^ kSaltPeakHill, x, z, p.hillCellSize, p.hillHeightMin,
-        p.hillHeightMax, p.hillRadiusMin, p.hillRadiusMax, true);
-    sample.plateau +=
-        alpinePeaks.add * inland *
-            (1.0f - noise::smoothstep01(450.0f, 750.0f, sample.plateau)) +
-        hillMarks.add * inland *
-            (1.0f - noise::smoothstep01(60.0f, 120.0f, sample.hillRelief));
-    // A clearing is a DESIGNED socle: flatten the relief carriers in
-    // the bowl and hand the ground to the calm family. Walk-scale
-    // country only — on active orogeny the flat shelves are the
-    // `gentle` corridors' job, never a decree against the fastscape.
-    const f32 clearing =
-        hillMarks.clearing * inland *
-        (1.0f - noise::smoothstep01(0.25f, 0.5f, sample.uplift));
-    // Trunk floors flatten their carriers too — a master valley floor
-    // is open ground, not a corrugated trench.
-    sample.reliefScale =
-        (1.0f - 0.75f * clearing) * (1.0f - 0.6f * sample.trunk);
-    sample.calm = glm::max(sample.calm, clearing);
-    sample.biome = biomeIdAt(x, z, sample.tier);
-    return sample;
+    // Calm is the RULE: everything that is neither a piece, a massif
+    // nor a piece's flank is habitable ground; corridors are members.
+    const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, piece.add)) *
+                     (1.0f - noise::smoothstep01(0.35f, 0.7f, w.massif)) *
+                     (1.0f - 0.5f * piece.ridgeFlank);
+    s.calm = glm::max(calm, s.gentle);
+    // Lithology: a slow hardness field, harder on massif coasts
+    // (calanques).
+    s.hardness = glm::clamp(
+        noise::fbm(p.seed ^ kSaltHardness, x, z, 1.0f / r.hardnessWavelength,
+                   3, 2.0f, 0.5f) +
+            0.3f * w.massif * w.coast,
+        0.0f, 1.0f);
+    s.bedDepth = lerpByEtage(r.bedDepthByEtage, s.tier) *
+                 noise::smoothstep01(25.0f, 70.0f, s.base);
+    s.biome = paletteIdFor(w.temperature, w.moisture, s.base);
+    return s;
 }
 
 u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
-    // Climate -> biome id (palette contract in ProceduralControlParams):
-    // cold beats arid beats alpine; temperate is the default. Only the
-    // two climate fbms are paid here — the tier comes from the caller,
-    // which is what lets synthesizeMacro evaluate the id per texel while
-    // the heavy control fields interpolate from the coarse lattice.
-    // Start decree: the homeland around the origin is temperate meadow
-    // (the tier biomes stay — a mountain is a mountain even at home).
-    const f32 startPull =
-        1.0f - noise::smoothstep01(p.startMeadowRadius,
-                                   p.startMeadowFade,
-                                   std::sqrt(x * x + z * z));
-    const f32 temperature = glm::mix(
-        noise::fbm(p.seed ^ kSaltTemperature, x, z,
-                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f),
-        0.46f, startPull);
-    if (temperature < 0.34f) {
-        return 3; // tundra
-    }
-    const f32 moisture = glm::mix(
-        noise::fbm(p.seed ^ kSaltMoisture, x, z,
-                   1.0f / p.climateWavelength, 5, 2.0f, 0.5f),
-        0.55f, startPull);
-    if (moisture < 0.38f && temperature > 0.58f) {
-        return 1; // arid
-    }
-    if (tier > 2.1f) {
-        return 2; // alpine
-    }
-    if (tier > 1.7f) {
-        return 4; // subalpine — the transition belt below the alpine
-                  // tiers (heath ground, milder snow accent)
-    }
-    if (moisture < 0.46f && temperature > 0.54f) {
-        return 5; // steppe — the drying fringe around the arid core
-                  // (elevation wins: the tier checks run first)
-    }
-    return 0;
+    // The climate and the floor come from the world layer — the same
+    // sample `at` derives the id from, so the per-texel id and the
+    // lattice sample never disagree.
+    (void)tier;
+    const WorldSample w = worldSampleAt(p.world, x, z);
+    return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f));
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,
@@ -905,10 +519,14 @@ MacroResult synthesizeMacro(const ControlSource& controls,
         out.axisStrength =
             lerp(s00.axisStrength, s10.axisStrength, s01.axisStrength,
                  s11.axisStrength);
+        out.base = lerp(s00.base, s10.base, s01.base, s11.base);
+        out.bedDepth = lerp(s00.bedDepth, s10.bedDepth, s01.bedDepth,
+                            s11.bedDepth);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
         out.sea = nearest.sea;
+        out.hasBase = nearest.hasBase;
         return out;
     };
     for (u32 row = 0; row < spec.n; ++row) {
@@ -941,8 +559,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             const f32 land = recurveLand(
                 params,
                 landHeight(params, seed, samples[i],
-                           params.hillChainWavelength, spec.x(col),
-                           spec.z(row)));
+                           params.hillChainWavelength, params.bedWavelength,
+                           spec.x(col), spec.z(row)));
             out.height[i] =
                 coastProfile(params, land, samples[i].tier,
                              out.seaDist[i], samples[i].hardness);
@@ -954,6 +572,10 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 namespace {
 
 constexpr u32 kSaltBorderStyle = 0xb02de125u;
+// Meters of shore per continent unit per wavelength (the carrier's
+// typical gradient after contrast): hand-tuned against the bake's
+// distance field.
+constexpr f32 kShoreProxy = 0.5f;
 constexpr u32 kSaltBorderCrest = 0xc2e57000u;
 constexpr u32 kSaltBorderIsle = 0x151e7000u;
 constexpr u32 kSaltBorderWander = 0x3a2de300u;
@@ -1197,45 +819,22 @@ f32 mapGridRidgeFactor(const ProceduralControls& controls,
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
-    // The sample's own continentalness serves the shore distance below:
-    // one evaluation instead of two (it is ~a quarter of this call).
-    f32 c = 0.0f;
-    const ControlSample s = controls.at(x, z, c);
+    // The sample's own world sample serves the shore distance below:
+    // one evaluation instead of two.
+    WorldSample w;
+    const ControlSample s = controls.at(x, z, w);
     const f32 land = recurveLand(
         params, landHeight(params, controls.params().seed, s,
-                           controls.params().hillChainWavelength, x, z));
-    // Shore distance approximated from continentalness: the ramp of the
-    // tier mapping doubles as a distance proxy (good enough for
-    // silhouettes and boundary conditions).
-    const f32 d = (c - controls.params().seaThreshold) *
-                  controls.params().continentWavelength * 0.35f;
-    const f32 h = coastProfile(params, land, s.tier, d, s.hardness);
-    // Erosion-aware silhouette: the fastscape carves the macro back
-    // toward base level, sparing what the plateau keep protects. Far
-    // meshes and the out-of-region fallback sample THIS surface, so a
-    // distant summit must sit near its future baked height, not at the
-    // pre-erosion macro's promise (which runs up to ~350 m proud).
-    // Piecewise-linear fit of the baked-vs-analytic calibration
-    // (tests: 'erosion calibration'): heights are kept up to a keep-
-    // dependent threshold, then compressed to the measured tail slope.
-    const f32 calmHigh =
-        s.calm * glm::smoothstep(150.0f, 400.0f, h - params.seaLevel);
-    const f32 keep = glm::min(kPlateauKeepMax,
-                              s.plateau * kPlateauKeepCoef +
-                                  calmHigh * kCalmKeep);
-    // The v4 crest fade lets the FLANKS erode while the crests hold:
-    // statistically, mid heights compress earlier and harder, the top
-    // of the lift survives — fit refreshed against the 'erosion
-    // calibration' bands of the adopted world.
-    // Uplift discriminates what a same keep cannot: active orogeny
-    // replenishes what the stream power takes, so ranges hold their
-    // heights while quiet flanks erode down.
-    const f32 threshold = 60.0f + 900.0f * keep + 600.0f * s.uplift;
-    const f32 rel = h - params.seaLevel;
-    if (rel <= threshold) {
-        return h;
-    }
-    return params.seaLevel + threshold + 0.35f * (rel - threshold);
+                           controls.params().rhythm.crestWavelength,
+                           controls.params().rhythm.bedWavelength, x, z));
+    // Shore distance approximated from the continent value: the
+    // carrier's typical slope turns continent units into meters (good
+    // enough for silhouettes and boundary conditions; the bake's grid
+    // distance field is the truth inside a map).
+    const WorldLayerParams& world = controls.params().world;
+    const f32 d = (w.continent - world.seaThreshold) *
+                  world.continentWavelength * kShoreProxy;
+    return coastProfile(params, land, s.tier, d, s.hardness);
 }
 
 } // namespace render::terraingen

@@ -1249,6 +1249,73 @@ design à chaque brique de génération et se ré-épingle.
   du centre sur le plateau. Nouvel instrument `spawn slope diagnostic`
   (sonde, relocalisation du jeu, pentes, plus doux par anneau).
 
+- **2026-10-05 — N2 livrée : l'étage monde + le rythme local (« macro
+  seule », érosion inchangée).** Nouveau `engine/terrain/generation/
+  WorldLayer.hpp/.cpp` : `worldSampleAt` (porteuse continent 45 km
+  contrastée ×1,6, déformée 12 km / 1 500 m, détail de côte 5 km sur la
+  ceinture seule, étage 28 km contrasté ×1,3, massif 26 km fenêtre
+  0,50-0,74 gaté par l'étage, climat 9 km + dérive 200 km + lapse
+  0,25/km) → `WorldSample { base, continent, etage, massif, coast,
+  temperature, moisture, sea }` ; table de provinces linéaire (0→10 m,
+  0,40→50, 0,52→150, 0,60→300, 0,72→520, 0,85→800, 1→1 100) + lift de
+  massif 350 m ; rampe intérieure sur la PORTEUSE (pas le détail de
+  côte, qui falaisait) de largeur 0,08·(1,5+4e) ; **décret de départ sur
+  le plancher lui-même** (rayon 6 km, fondu 16 km : `alt → min(80,
+  40+0,06·(alt−40))`, massif ×(1−pull), climat tiré vers 0,50/0,55) —
+  un tirage sur le champ d'étage traversait la pente raide de la table
+  (22 % mesurés) ; `etageIndexFor`/`etageAltitudeFor`/`paletteIdFor`.
+  `ProceduralControlParams { seed, world, rhythm }` (layout continental,
+  porteuse régionale, régimes, houle, grilles d'amers, champ de vallées,
+  trunks, climat local : SUPPRIMÉS, ~600 lignes) ; `RhythmParams`
+  (pièces 7 km / 80 % / 900-1 800 m, hauteurs par étage, cols de crête
+  1 300 m, crêtes 1 800 m par étage 30/60/90/200, lits 3 000 m par
+  étage 14/22/20/35, cols 2 500 m, dureté 4 km). `ControlSample +=
+  base, hasBase, bedDepth` ; `pieceLayer` (dôme / échine modulée à
+  cols / mesa, hauteur à l'étage du CENTRE, **la cellule du départ a
+  toujours sa pièce**) ; `at` v3 dérive tout d'un échantillon monde ;
+  `biomeIdAt` = même échantillon. `landHeight` v3 : plancher = mer +
+  base (table d'étages = repli peint/test, colonne altitude 40/150/450/
+  1 200, relief 25/700, 45/900, 28/750 terrasse 0,5, 120/1 100) + relief
+  + pièce + crêtes − lits (ridged 3 km, nouveau) ; `macroHeightAnalytic`
+  sans compression (égal à la synthèse ponctuelle hors côte, testé),
+  proxy de rivage `kShoreProxy` 0,5 (non calibré). `kCalmKeep` et la
+  relaxation calme restent (N3). Outil `terrain-map` : options
+  porteuse/layout retirées. `kTileBakeVersion` 70, hash `MapBakerTest`
+  16738992311582594802. Tests : 3 cas supprimés (régimes, amers,
+  trunks), 7 nouveaux (continuité à la ligne, départ garanti 8 seeds,
+  distribution 200 km, bornes v3, calme = la règle, ~1 pièce/carte,
+  analytique = synthèse) + instrument `macro transect diagnostic` ;
+  `MasterNetworkTest` « imprint » auto-ancré sur le plus long cours.
+  **Mesures monde (200 km, seed 1337)** : mer 31,8 % ; terre < 150 m
+  47,8 %, 150-450 32,7 %, 450-800 15,6 %, ≥ 800 3,9 % ; massif > 0,5 :
+  11,7 % ; calme > 0,6 : 86,9 % ; pièces 0,97 par carte (pire cellule
+  4) ; saut de plancher à la ligne 0,75 m ; pire pente de plancher 13 %
+  (bout raide de la table — borne de test 15 %). Rendus `terrain-map`
+  24/100/400 km : continents et mers lisibles, provinces, massifs,
+  pièces ; le disque de départ ne fait plus cratère.
+  **Baseline 8 km « macro seule »** (carte (0,0), bake 18 s Release) :
+  la carte est la plaine du décret (plancher 60-100 m, aucune mer, un
+  dôme forcé ~250 m) ; census intérieur **socle 68,6 % / versant
+  31,4 % / drame 0 %**, relief médian **12,5 m** (socle 9,5) ; transects
+  plats (< 8 m) 52-68 %, médian 5-7 m ; vista : ouvert 9/9, sommet ≤ 3 km
+  0/9, colline ≤ 1,5 km 0/9 ; 33 lacs naturels (7,9 par 4×4 km), 70
+  runs ; spawn (3 852, 73, 3 548), 1,6 m / 30 m ; calibration
+  analytique − baké : bande 0-100 m −28 m, 100-200 **−97 m**, 200-300
+  **−156 m** (keep 0,12). **Lecture** : l'étage et le rythme sont là
+  (pièce, plancher, climat tempéré), mais l'érosion actuelle (80 it.,
+  calme ×3 érodable, relaxation 0,75 vers la moyenne 160 m) rabote le
+  rythme ±25 m à ±7 m et creuse la pièce de 150 m — exactement le
+  budget que N3 doit imposer. **À traiter en N3/N4** : (1) le budget
+  dur `maxCut` (le socle doit garder ses ±25 m, la pièce son sommet) ;
+  (2) les **fleuves rectilignes** du réseau maître sur la plaine du
+  départ : le disque bas en pays haut est un bassin fermé que le
+  priority-flood remplit, et le routage sur la surface remplie trace des
+  droites (visible sur le rendu 24 km et dans les 58 runs fleuve à
+  hw 72) ; (3) 33 lacs sur une plaine plate. Leçon outillage : voir la
+  mémoire « ninja header deps » (les en-têtes ne déclenchent AUCUNE
+  recompilation dans les dossiers VS2026 : purge des .obj après tout
+  changement d'en-tête partagé).
+
 #### 7.5.6 Arbitrages du dev (2026-10-05) et plan approuvé : la passe « nouvelle base » (N1-N5)
 
 **Arbitrages** : cartes **2×2 tranches = 8 192 m** (échelle Skyrim), bandes

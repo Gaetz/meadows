@@ -258,7 +258,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The cache key is otherwise the
 // world seed alone: a changed default needs this bump (or a cleared
 // terrain-cache) to reach the player.
-constexpr u32 kTileBakeVersion = 69;
+constexpr u32 kTileBakeVersion = 70;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

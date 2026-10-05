@@ -79,7 +79,8 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     const ProceduralControls controls { controlParams };
 
     MacroParams macroParams = params.macro;
-    macroParams.hillChainWavelength = controlParams.hillChainWavelength;
+    macroParams.hillChainWavelength = controlParams.rhythm.crestWavelength;
+    macroParams.bedWavelength = controlParams.rhythm.bedWavelength;
     MacroResult macro =
         synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
     // Bounded-map border transitions: shaped BEFORE the imprint (a

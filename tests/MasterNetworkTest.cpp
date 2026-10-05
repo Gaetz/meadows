@@ -157,17 +157,40 @@ TEST_CASE("master network diagnostic" * doctest::skip()) {
 }
 
 TEST_CASE("master imprint: carves a channel, never dams, protects it") {
-    // A 2 km window on the seed-1337 spawn fleuve (the course the
-    // locator diagnostics pinned near (7453..8103, 0..300)): the
-    // imprint must LOWER only (no dam anywhere), actually dig a
-    // channel, and hand the erosion a keep along it.
+    // A 2 km window on the longest master course of map (0, 0) and
+    // its apron (anchored on the network itself, so a world retune
+    // moves the window, not the contract): the imprint must LOWER
+    // only (no dam anywhere), actually dig a channel, and hand the
+    // erosion a keep along it.
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
     const MacroParams macro;
     MasterNetworkParams net;
     net.seaLevel = macro.seaLevel;
-    const GridSpec sim { 6912.0f, -512.0f, 16.0f, 129 };
+    const auto rivers = masterRiversNear(controls, macro, net, -3072.0f,
+                                         -3072.0f, 11264.0f, 11264.0f);
+    REQUIRE(!rivers.empty());
+    const MasterRiver* longest = nullptr;
+    f32 longestLength = 0.0f;
+    for (const MasterRiver& river : rivers) {
+        f32 length = 0.0f;
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            length += std::hypot(river.nodes[k].x - river.nodes[k - 1].x,
+                                 river.nodes[k].z - river.nodes[k - 1].z);
+        }
+        if (length > longestLength) {
+            longestLength = length;
+            longest = &river;
+        }
+    }
+    REQUIRE(longest != nullptr);
+    const MasterNode& mid = longest->nodes[longest->nodes.size() / 2];
+    const GridSpec sim { std::floor(mid.x / 16.0f) * 16.0f - 1024.0f,
+                         std::floor(mid.z / 16.0f) * 16.0f - 1024.0f,
+                         16.0f, 129 };
+    MESSAGE("imprint window on the ", longestLength / 1000.0f,
+            " km course at (", mid.x, ", ", mid.z, ")");
     MacroResult m = synthesizeMacro(controls, sim, macro, pc.seed);
     const vector<f32> before = m.height;
     const vector<f32> calmBefore = m.calm;

@@ -44,6 +44,7 @@ bool sameMacro(const MacroParams& a, const MacroParams& b) {
            a.cliffTierStart == b.cliffTierStart &&
            a.cliffTierEnd == b.cliffTierEnd &&
            a.hillChainWavelength == b.hillChainWavelength &&
+           a.bedWavelength == b.bedWavelength &&
            a.valleyStretch == b.valleyStretch &&
            a.terraceStep == b.terraceStep &&
            a.terraceEdge == b.terraceEdge &&

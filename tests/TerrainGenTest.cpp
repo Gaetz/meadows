@@ -214,7 +214,8 @@ TEST_CASE("uplift is zero at sea and bounded on land") {
     ProceduralControlParams pc;
     pc.seed = 99;
     const ProceduralControls controls { pc };
-    const GridSpec spec { -8192.0f, -8192.0f, 64.0f, 257 };
+    // 64 km: the massif belts run at ~26 km, a window must hold one.
+    const GridSpec spec { -32768.0f, -32768.0f, 256.0f, 257 };
     const MacroParams params;
     const MacroResult r = synthesizeMacro(controls, spec, params, pc.seed);
     f32 maxUplift = 0.0f;
@@ -226,13 +227,13 @@ TEST_CASE("uplift is zero at sea and bounded on land") {
         }
         maxUplift = std::max(maxUplift, r.uplift[i]);
     }
-    // Somewhere in 16x16 km a range wants to rise.
+    // Somewhere in 64x64 km a range wants to rise.
     CHECK(maxUplift > 0.2f);
 }
 
-TEST_CASE("control sample with out-continentalness is bit-identical") {
+TEST_CASE("control sample with out-world-sample is bit-identical") {
     // The two-output overload must be THE same evaluation: same sample
-    // fields bitwise, and the handed-back continentalness equal to a
+    // fields bitwise, and the handed-back world sample equal to a
     // direct call — the dedupe in macroHeightAnalytic rests on it.
     ProceduralControlParams pc;
     pc.seed = 777;
@@ -242,8 +243,8 @@ TEST_CASE("control sample with out-continentalness is bit-identical") {
             const f32 x = static_cast<f32>(gx) * 3777.0f;
             const f32 z = static_cast<f32>(gz) * 2913.0f;
             const ControlSample a = controls.at(x, z);
-            f32 c = -1.0f;
-            const ControlSample b = controls.at(x, z, c);
+            WorldSample w;
+            const ControlSample b = controls.at(x, z, w);
             REQUIRE(a.sea == b.sea);
             REQUIRE(a.biome == b.biome);
             REQUIRE(a.tier == b.tier);
@@ -259,7 +260,14 @@ TEST_CASE("control sample with out-continentalness is bit-identical") {
             REQUIRE(a.trunk == b.trunk);
             REQUIRE(a.trunkDepth == b.trunkDepth);
             REQUIRE(a.hardness == b.hardness);
-            REQUIRE(c == controls.continentalness(x, z));
+            REQUIRE(a.base == b.base);
+            REQUIRE(a.hasBase == b.hasBase);
+            REQUIRE(a.bedDepth == b.bedDepth);
+            const WorldSample direct =
+                worldSampleAt(controls.params().world, x, z);
+            REQUIRE(w.continent == direct.continent);
+            REQUIRE(w.base == direct.base);
+            REQUIRE(w.massif == direct.massif);
         }
     }
 }
@@ -341,74 +349,18 @@ TEST_CASE("the analytic macro matches the tier floors away from shore") {
             const f32 b = macroHeightAnalytic(controls, params, x, z);
             CHECK(a == b);
             CHECK(a >= params.seaFloor - 1.0f);
-            // Ceiling: top tier + relief + every regime extra that can
-            // stack (long swell, massif plateau, chain hills).
-            CHECK(a <= params.tiers.back().altitude +
+            // Ceiling: the top étage + the massif lift + relief + the
+            // tallest piece + the massif crests.
+            const WorldLayerParams& world = controls.params().world;
+            const RhythmParams& rhythm = controls.params().rhythm;
+            CHECK(a <= world.etageAltitude[3] + world.massifLift +
                            params.tiers.back().reliefAmplitude +
-                           pc.swellHeight + pc.oldMassifHeight +
-                           pc.oldMassifHillAmplitude + 1.0f);
+                           rhythm.pieceHeightByEtage[3][1] +
+                           rhythm.crestAmplitudeByEtage[3] + 1.0f);
             maxSeen = std::max(maxSeen, a);
         }
     }
     CHECK(maxSeen > params.seaLevel); // some land exists
-}
-
-TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
-          "all exist") {
-    ProceduralControlParams params;
-    params.seed = 1337;
-    const ProceduralControls controls { params };
-    u32 hillChains = 0;
-    u32 oldMassifs = 0;
-    u32 youngRanges = 0;
-    // Scan a wide area at coarse steps: the three regimes must all
-    // occur on land — the variety contract. Sized against the longest
-    // control wave (the swell) so every regime gets several periods.
-    for (f32 z = -100000.0f; z <= 100000.0f; z += 2000.0f) {
-        for (f32 x = -100000.0f; x <= 100000.0f; x += 2000.0f) {
-            const ControlSample s = controls.at(x, z);
-            if (s.sea) {
-                continue;
-            }
-            if (s.plateau > 100.0f) {
-                ++oldMassifs;
-            } else if (s.hillRelief > 20.0f && s.uplift < 0.1f) {
-                ++hillChains;
-            }
-            if (s.uplift > 0.5f) {
-                ++youngRanges;
-            }
-        }
-    }
-    CHECK(hillChains > 50);
-    CHECK(oldMassifs > 50);
-    CHECK(youngRanges > 50);
-
-    // The long swell and the passability corridors both exist on land.
-    u32 swelled = 0;
-    u32 gentle = 0;
-    for (f32 z = -100000.0f; z <= 100000.0f; z += 2000.0f) {
-        for (f32 x = -100000.0f; x <= 100000.0f; x += 2000.0f) {
-            const ControlSample s = controls.at(x, z);
-            if (s.sea) {
-                continue;
-            }
-            if (s.plateau > 220.0f) {
-                ++swelled; // above what the massif regime alone gives
-            }
-            if (s.gentle > 0.5f) {
-                ++gentle;
-            }
-        }
-    }
-    CHECK(swelled > 50);
-    CHECK(gentle > 200);
-
-    // Regime extras default to zero for painted/test sources: the
-    // legacy macro path is untouched.
-    const ControlSample plain;
-    CHECK(plain.plateau == 0.0f);
-    CHECK(plain.hillRelief == 0.0f);
 }
 
 TEST_CASE("hard-rock coasts cliff into the sea, soft coasts beach") {
@@ -475,127 +427,15 @@ TEST_CASE("calm socles: plains and plateau tops join, ranges stay out") {
     const f64 share = 100.0 * calmish / static_cast<f64>(land);
     MESSAGE("control-level calm>0.6: ", share, "% of land (mean ",
             calmSum / static_cast<f64>(land), ")");
-    // Valley floors are added post-erosion in the bake; the control
-    // level alone stays a meaningful minority share.
-    CHECK(share > 10.0);
-    CHECK(share < 60.0);
+    // Calm is the RULE (docs/PAYSAGE.md §7.5): the pieces, massifs and
+    // their flanks are the exceptions.
+    CHECK(share > 55.0);
+    CHECK(share < 90.0);
 
     // Deterministic: same params, same field.
     const ProceduralControls again { params };
     CHECK(again.at(1234.0f, -5678.0f).calm ==
           controls.at(1234.0f, -5678.0f).calm);
-}
-
-TEST_CASE("landmark guarantee: an alpine summit within reach of any "
-          "inland point") {
-    ProceduralControlParams params;
-    params.seed = 1337;
-    const ProceduralControls controls { params };
-
-    // Deterministic sample points spread over the world; keep the
-    // INLAND ones (the layers are inland-gated like the swell).
-    u32 tested = 0;
-    f32 worst = 0.0f;
-    for (i32 k = 0; k < 400 && tested < 200; ++k) {
-        const f32 x = -45000.0f +
-                      90000.0f * render::noise::lattice(11u, k, 3);
-        const f32 z = -45000.0f +
-                      90000.0f * render::noise::lattice(23u, k, 7);
-        const ControlSample s = controls.at(x, z);
-        if (s.sea || s.tier < 1.2f) {
-            continue;
-        }
-        ++tested;
-        // Nearest alpine landmark: scan for the peak field's own
-        // maximum by probing a coarse ring grid around the point (the
-        // kernel is analytic — a probe on a 500 m grid within 8.5 km
-        // cannot miss a >=1.2 km-radius footprint).
-        f32 nearest = 1.0e9f;
-        for (f32 dz = -8500.0f; dz <= 8500.0f; dz += 500.0f) {
-            for (f32 dx = -8500.0f; dx <= 8500.0f; dx += 500.0f) {
-                const ControlSample probe = controls.at(x + dx, z + dz);
-                // A peak footprint shows as base lift well above what
-                // swell (<= swellHeight) plus massif can explain ONLY
-                // via its kernel — detect by the lift the layers add.
-                if (probe.plateau > 500.0f && !probe.sea) {
-                    nearest =
-                        glm::min(nearest, std::hypot(dx, dz));
-                }
-            }
-        }
-        worst = glm::max(worst, nearest);
-    }
-    MESSAGE("inland points tested: ", tested,
-            ", worst distance to a >500 m base-lift landmark: ", worst,
-            " m");
-    CHECK(tested >= 100);
-    // The jittered grid bounds the spacing: from anywhere inland, high
-    // ground within ~a cell and a half.
-    CHECK(worst < 9000.0f);
-
-    // Determinism of the layer.
-    const ProceduralControls again { params };
-    CHECK(again.at(4321.0f, 8765.0f).plateau ==
-          controls.at(4321.0f, 8765.0f).plateau);
-    CHECK(again.at(4321.0f, 8765.0f).reliefScale ==
-          controls.at(4321.0f, 8765.0f).reliefScale);
-}
-
-TEST_CASE("valley axis and trunk valleys: continuous, bounded, inland") {
-    ProceduralControlParams params;
-    params.seed = 1337;
-    const ProceduralControls controls { params };
-
-    // Continuity: the trunk field and the axis-stretched output never
-    // jump between neighbouring samples (the doubled-angle blend and
-    // the phase interpolation are C1; a tear here would print a wall
-    // into the terrain).
-    u64 land = 0, floorCells = 0, dugCells = 0;
-    f32 worstStep = 0.0f;
-    for (f32 z = -30000.0f; z <= 30000.0f; z += 1000.0f) {
-        f32 prevTrunk = -1.0f;
-        for (f32 x = -30000.0f; x <= 30000.0f; x += 20.0f) {
-            const ControlSample s = controls.at(x, z);
-            CHECK(s.trunk >= 0.0f);
-            CHECK(s.trunk <= 1.0f);
-            CHECK(s.trunkDepth <= params.trunkDepthMax + 1.0e-3f);
-            if (s.sea) {
-                CHECK(s.trunk == 0.0f);
-            }
-            if (prevTrunk >= 0.0f) {
-                worstStep = glm::max(worstStep,
-                                     std::abs(s.trunk - prevTrunk));
-            }
-            prevTrunk = s.trunk;
-            if (!s.sea) {
-                ++land;
-                floorCells += s.trunk > 0.5f;
-                dugCells += s.trunkDepth > 10.0f;
-            }
-        }
-    }
-    MESSAGE("trunk floor>0.5: ", 100.0 * floorCells / land,
-            "% of land, dug>10m: ", 100.0 * dugCells / land,
-            "%, worst 20 m trunk step: ", worstStep);
-    // ~1.2 km of floor per 12 km spacing -> the floor family is a
-    // bounded minority, and it exists.
-    CHECK(floorCells > 0);
-    CHECK(100.0 * floorCells / land < 25.0);
-    // 20 m sampling never sees a hard jump: the strength band-pass
-    // keeps the narrowest surviving floor ramp >= ~120 m of metric
-    // width, so a 20 m step crosses at most ~a quarter of it.
-    CHECK(worstStep < 0.3f);
-
-    // The trunk floor is a corridor by contract.
-    const ControlSample probe = controls.at(4230.0f, -7615.0f);
-    CHECK(probe.gentle >= 0.9f * probe.trunk - 1.0e-6f);
-
-    // Determinism.
-    const ProceduralControls again { params };
-    CHECK(again.at(-3111.0f, 9222.0f).trunk ==
-          controls.at(-3111.0f, 9222.0f).trunk);
-    CHECK(again.at(-3111.0f, 9222.0f).axisCos ==
-          controls.at(-3111.0f, 9222.0f).axisCos);
 }
 
 TEST_CASE("map border transitions: shared lines, coherent shapes") {
@@ -785,6 +625,330 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// The world layer and the v3 controls (docs/PAYSAGE.md §7.5, N2).
+
+TEST_CASE("world layer: continuous across a map line, bounded slopes") {
+    // No per-map state anywhere: the floor read 4 m on either side of
+    // the x = 8192 line is the same floor, and its gradient stays a
+    // walkable ramp away from the coast.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    f32 worstJump = 0.0f;
+    f32 worstGrad = 0.0f;
+    f32 worstX = 0.0f;
+    f32 worstZ = 0.0f;
+    for (f32 z = -20000.0f; z <= 28000.0f; z += 250.0f) {
+        const ControlSample a = controls.at(8188.0f, z);
+        const ControlSample b = controls.at(8196.0f, z);
+        if (!a.sea && !b.sea) {
+            worstJump = glm::max(worstJump, std::abs(a.base - b.base));
+        }
+        for (f32 x = -20000.0f; x <= 28000.0f; x += 500.0f) {
+            WorldSample w;
+            const ControlSample s = controls.at(x, z, w);
+            if (s.sea || w.coast > 0.05f) {
+                continue;
+            }
+            const f32 gx = (controls.at(x + 50.0f, z).base -
+                            controls.at(x - 50.0f, z).base) /
+                           100.0f;
+            const f32 gz = (controls.at(x, z + 50.0f).base -
+                            controls.at(x, z - 50.0f).base) /
+                           100.0f;
+            if (std::hypot(gx, gz) > worstGrad) {
+                worstGrad = std::hypot(gx, gz);
+                worstX = x;
+                worstZ = z;
+            }
+        }
+    }
+    {
+        WorldSample w;
+        const ControlSample s = controls.at(worstX, worstZ, w);
+        const WorldSample e = worldSampleAt(controls.params().world,
+                                            worstX + 50.0f, worstZ);
+        const WorldSample o = worldSampleAt(controls.params().world,
+                                            worstX - 50.0f, worstZ);
+        const WorldSample n = worldSampleAt(controls.params().world,
+                                            worstX, worstZ + 50.0f);
+        const WorldSample m = worldSampleAt(controls.params().world,
+                                            worstX, worstZ - 50.0f);
+        MESSAGE("worst gradient at (", worstX, ", ", worstZ, "): base ",
+                s.base, " etage ", w.etage, " massif ", w.massif,
+                " coast ", w.coast, " continent ", w.continent,
+                "; per 100 m along x: d(etage) ", e.etage - o.etage,
+                " d(massif) ", e.massif - o.massif, " d(continent) ",
+                e.continent - o.continent, " d(base) ", e.base - o.base,
+                "; along z: d(etage) ", n.etage - m.etage, " d(massif) ",
+                n.massif - m.massif, " d(base) ", n.base - m.base);
+    }
+    MESSAGE("floor jump across x = 8192: ", worstJump,
+            " m; worst inland floor gradient: ", worstGrad);
+    CHECK(worstJump < 1.0f);
+    CHECK(worstGrad <= 0.15f); // the steep end of the province table
+}
+
+TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
+    for (const u32 seed :
+         { 1u, 7u, 42u, 99u, 1337u, 2024u, 31337u, 65535u }) {
+        ProceduralControlParams pc;
+        pc.seed = seed;
+        const ProceduralControls controls { pc };
+        const WorldLayerParams& world = controls.params().world;
+        WorldSample w;
+        const ControlSample centre =
+            controls.at(world.startX, world.startZ, w);
+        CHECK_FALSE(centre.sea);
+        CHECK(centre.base <= 80.0f);
+        CHECK(w.massif < 0.05f);
+        CHECK(centre.biome == 0);
+        // The start map's rect: land, temperate, almost everywhere.
+        u32 samples = 0, land = 0, temperate = 0;
+        for (f32 z = 200.0f; z < 8192.0f; z += 400.0f) {
+            for (f32 x = 200.0f; x < 8192.0f; x += 400.0f) {
+                const ControlSample s = controls.at(x, z);
+                ++samples;
+                land += !s.sea;
+                temperate += !s.sea && s.biome == 0;
+            }
+        }
+        CHECK(100 * land >= 98 * samples);
+        CHECK(100 * temperate >= 90 * samples);
+        // The 10 km disc around it: mostly land (a coast may show).
+        u32 discSamples = 0, discLand = 0;
+        for (f32 dz = -10000.0f; dz <= 10000.0f; dz += 500.0f) {
+            for (f32 dx = -10000.0f; dx <= 10000.0f; dx += 500.0f) {
+                if (dx * dx + dz * dz > 1.0e8f) {
+                    continue;
+                }
+                ++discSamples;
+                discLand +=
+                    !controls.at(world.startX + dx, world.startZ + dz).sea;
+            }
+        }
+        CHECK(100 * discLand >= 85 * discSamples);
+    }
+}
+
+TEST_CASE("world layer: etage distribution over 200 km") {
+    // The world is mostly low country with hills, plateaus rarer, the
+    // high mountain rare; the sea a real share; massifs a minority.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    u64 samples = 0, sea = 0, low = 0, hills = 0, plateau = 0, high = 0,
+        massif = 0;
+    for (f32 z = -100000.0f; z <= 100000.0f; z += 1000.0f) {
+        for (f32 x = -100000.0f; x <= 100000.0f; x += 1000.0f) {
+            WorldSample w;
+            const ControlSample s = controls.at(x, z, w);
+            ++samples;
+            if (s.sea) {
+                ++sea;
+                continue;
+            }
+            if (s.base < 150.0f) {
+                ++low;
+            } else if (s.base < 450.0f) {
+                ++hills;
+            } else if (s.base < 800.0f) {
+                ++plateau;
+            } else {
+                ++high;
+            }
+            massif += w.massif > 0.5f;
+        }
+    }
+    const f64 land = static_cast<f64>(samples - sea);
+    const f64 seaPct =
+        100.0 * static_cast<f64>(sea) / static_cast<f64>(samples);
+    const f64 lowPct = 100.0 * static_cast<f64>(low) / land;
+    const f64 hillsPct = 100.0 * static_cast<f64>(hills) / land;
+    const f64 plateauPct = 100.0 * static_cast<f64>(plateau) / land;
+    const f64 highPct = 100.0 * static_cast<f64>(high) / land;
+    const f64 massifPct = 100.0 * static_cast<f64>(massif) / land;
+    MESSAGE("sea ", seaPct, "% of the world; land: < 150 m ", lowPct,
+            "%, 150-450 ", hillsPct, "%, 450-800 ", plateauPct,
+            "%, >= 800 ", highPct, "%; massif > 0.5: ", massifPct, "%");
+    CHECK(seaPct >= 15.0);
+    CHECK(seaPct <= 35.0);
+    CHECK(lowPct >= 35.0);
+    CHECK(lowPct <= 60.0);
+    CHECK(hillsPct >= 15.0);
+    CHECK(hillsPct <= 35.0);
+    CHECK(plateauPct >= 8.0);
+    CHECK(plateauPct <= 25.0);
+    CHECK(highPct >= 2.0);
+    CHECK(highPct <= 12.0);
+    CHECK(massifPct >= 8.0);
+    CHECK(massifPct <= 25.0);
+}
+
+TEST_CASE("controls v3: derived fields are bounded and consistent") {
+    ProceduralControlParams pc;
+    pc.seed = 4242;
+    const ProceduralControls controls { pc };
+    const WorldLayerParams& world = controls.params().world;
+    for (f32 z = -40000.0f; z <= 40000.0f; z += 1250.0f) {
+        for (f32 x = -40000.0f; x <= 40000.0f; x += 1250.0f) {
+            const ControlSample s = controls.at(x, z);
+            CHECK(s.hasBase);
+            CHECK(s.trunk == 0.0f);
+            CHECK(s.trunkDepth == 0.0f);
+            CHECK(s.axisStrength == 0.0f);
+            CHECK(s.uplift >= 0.0f);
+            CHECK(s.uplift <= 1.0f);
+            CHECK(s.calm >= s.gentle - 1.0e-6f);
+            CHECK(s.hardness >= 0.0f);
+            CHECK(s.hardness <= 1.0f);
+            // tier <-> base through the etage table.
+            CHECK(etageAltitudeFor(world, s.tier) ==
+                  doctest::Approx(
+                      glm::min(s.base, world.etageAltitude[3]))
+                      .epsilon(0.01));
+            if (s.sea) {
+                CHECK(s.base == 0.0f);
+            }
+        }
+    }
+}
+
+TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
+          "exception") {
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    for (f32 z = -40000.0f; z <= 40000.0f; z += 400.0f) {
+        for (f32 x = -40000.0f; x <= 40000.0f; x += 400.0f) {
+            WorldSample w;
+            const ControlSample s = controls.at(x, z, w);
+            if (s.sea) {
+                continue;
+            }
+            if (s.plateau > 60.0f && s.gentle < 0.05f) {
+                CHECK(s.calm < 0.35f);
+            }
+            if (w.massif > 0.75f && s.gentle < 0.05f) {
+                CHECK(s.calm < 0.4f);
+            }
+        }
+    }
+}
+
+TEST_CASE("controls v3: about one piece per map") {
+    // Local maxima of the piece lift above 60 m, counted per 8 km
+    // cell over 64 x 64 km: the jittered 7 km grid with its 80 %
+    // chance gives ~1 per map, never a cluster.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    constexpr f32 kStep = 200.0f;
+    constexpr i32 kN = 320; // 64 km
+    vector<f32> lift(static_cast<size_t>(kN) * kN);
+    for (i32 j = 0; j < kN; ++j) {
+        for (i32 i = 0; i < kN; ++i) {
+            const ControlSample s =
+                controls.at(-32000.0f + static_cast<f32>(i) * kStep,
+                            -32000.0f + static_cast<f32>(j) * kStep);
+            lift[static_cast<size_t>(j) * kN + i] =
+                s.sea ? 0.0f : s.plateau;
+        }
+    }
+    u32 perCell[8][8] = {};
+    u32 peaks = 0;
+    for (i32 j = 1; j < kN - 1; ++j) {
+        for (i32 i = 1; i < kN - 1; ++i) {
+            const f32 v = lift[static_cast<size_t>(j) * kN + i];
+            if (v <= 60.0f) {
+                continue;
+            }
+            bool top = true;
+            for (i32 dj = -1; dj <= 1 && top; ++dj) {
+                for (i32 di = -1; di <= 1; ++di) {
+                    if ((di || dj) &&
+                        lift[static_cast<size_t>(j + dj) * kN + i +
+                             di] >= v) {
+                        top = false;
+                        break;
+                    }
+                }
+            }
+            if (top) {
+                ++peaks;
+                ++perCell[(j * 200) / 8000][(i * 200) / 8000];
+            }
+        }
+    }
+    u32 worst = 0;
+    for (auto& row : perCell) {
+        for (const u32 c : row) {
+            worst = glm::max(worst, c);
+        }
+    }
+    MESSAGE("piece summits > 60 m: ", peaks, " in 64 cells (",
+            static_cast<f64>(peaks) / 64.0, " per map), worst cell ",
+            worst);
+    CHECK(static_cast<f64>(peaks) / 64.0 >= 0.5);
+    CHECK(static_cast<f64>(peaks) / 64.0 <= 1.8);
+    CHECK(worst <= 4);
+}
+
+TEST_CASE("the analytic macro is the pointwise synthesis, bounded") {
+    // No erosion compression any more: away from the coast the
+    // analytic equals the per-texel macro (same landHeight, same
+    // recurve); only the shore profile reads a proxy distance.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    MacroParams macro;
+    macro.hillChainWavelength = controls.params().rhythm.crestWavelength;
+    macro.bedWavelength = controls.params().rhythm.bedWavelength;
+    u32 compared = 0;
+    for (f32 z = -30000.0f; z <= 30000.0f; z += 1500.0f) {
+        for (f32 x = -30000.0f; x <= 30000.0f; x += 1500.0f) {
+            WorldSample w;
+            const ControlSample s = controls.at(x, z, w);
+            if (s.sea || w.coast > 0.0f) {
+                continue;
+            }
+            // A two-texel synthesis at the point (its shore distance
+            // is the grid's: far, like the analytic's proxy inland).
+            const GridSpec spec { x, z, 16.0f, 2 };
+            const MacroResult r =
+                synthesizeMacro(controls, spec, macro, pc.seed);
+            const f32 a = macroHeightAnalytic(controls, macro, x, z);
+            CHECK(std::abs(a - r.height[0]) < 2.0f);
+            ++compared;
+        }
+    }
+    CHECK(compared > 50);
+}
+
+// Hidden instrument: a transect of the analytic world through a
+// point of interest (the shapes the terrain-map PNG shows):
+//   meadows-tests "-tc=macro transect diagnostic" -ns
+TEST_CASE("macro transect diagnostic" * doctest::skip()) {
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    MacroParams macro;
+    macro.hillChainWavelength = controls.params().rhythm.crestWavelength;
+    macro.bedWavelength = controls.params().rhythm.bedWavelength;
+    const f32 z = 1705.0f;
+    for (f32 x = -6500.0f; x <= -2300.0f; x += 100.0f) {
+        WorldSample w;
+        const ControlSample s = controls.at(x, z, w);
+        MESSAGE("x ", x, ": h ",
+                macroHeightAnalytic(controls, macro, x, z), " base ",
+                s.base, " tier ", s.tier, " piece ", s.plateau,
+                " reliefScale ", s.reliefScale, " massif ", w.massif,
+                " hillRelief ", s.hillRelief, " bed ", s.bedDepth);
+    }
+    CHECK(true);
 }
 
 TEST_SUITE_END();
