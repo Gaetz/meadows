@@ -37,11 +37,27 @@ struct WorldLayerParams {
     // ControlSample::tier indexes MacroParams::tiers through it.
     f32 etageAltitude[4] { 0.0f, 150.0f, 450.0f, 1200.0f };
     f32 massifLift { 350.0f }; // extra floor under a massif belt
-    // Start decree.
+    // Benches: a mid-scale modulation of the floor (basins, benches,
+    // shelves) so the country changes every few kilometers inside one
+    // province, not only from province to province.
+    f32 benchWavelength { 7000.0f };
+    f32 benchAmp { 0.2f }; // +/- fraction of the province altitude
+    // Start decree, three reaches. The ANCHOR: the étage field is
+    // re-based so the start reads `startEtage` (a low province), the
+    // shift fading out far away — the country around the start keeps
+    // its own variation, no basin is dug (a flattened disc in high
+    // country was a closed bowl: straight rivers, lakes). The LOW
+    // COUNTRY ring: land, no massif, temperate climate. The MEADOW:
+    // the first steps are flat and low.
     f32 startX { 4096.0f };
     f32 startZ { 4096.0f };
-    f32 startRadius { 6000.0f };
-    f32 startFade { 16000.0f };
+    f32 startEtage { 0.30f };
+    f32 anchorRadius { 12000.0f };
+    f32 anchorFade { 24000.0f };
+    f32 startLowRadius { 4000.0f };
+    f32 startLowFade { 8000.0f };
+    f32 startRadius { 1200.0f };
+    f32 startFade { 4000.0f };
     // Climate: regional fields plus a continental drift, and the
     // altitude lapse (per km of floor).
     f32 climateWavelength { 9000.0f };

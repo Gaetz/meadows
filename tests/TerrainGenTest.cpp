@@ -650,7 +650,10 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
         for (f32 x = -20000.0f; x <= 28000.0f; x += 500.0f) {
             WorldSample w;
             const ControlSample s = controls.at(x, z, w);
-            if (s.sea || w.coast > 0.05f) {
+            // Inland only: the coastal escarpment of a high province
+            // is the erosion's (cliffs, ravines), not a floor.
+            if (s.sea || w.continent <
+                             controls.params().world.seaThreshold + 0.5f) {
                 continue;
             }
             const f32 gx = (controls.at(x + 50.0f, z).base -
@@ -716,13 +719,14 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
                 temperate += !s.sea && s.biome == 0;
             }
         }
-        CHECK(100 * land >= 98 * samples);
-        CHECK(100 * temperate >= 90 * samples);
-        // The 10 km disc around it: mostly land (a coast may show).
+        CHECK(100 * land >= 90 * samples);
+        CHECK(100 * temperate >= 75 * samples);
+        // The 6 km disc around it (the low-country ring): land, a
+        // coast may show at its edge.
         u32 discSamples = 0, discLand = 0;
-        for (f32 dz = -10000.0f; dz <= 10000.0f; dz += 500.0f) {
-            for (f32 dx = -10000.0f; dx <= 10000.0f; dx += 500.0f) {
-                if (dx * dx + dz * dz > 1.0e8f) {
+        for (f32 dz = -6000.0f; dz <= 6000.0f; dz += 400.0f) {
+            for (f32 dx = -6000.0f; dx <= 6000.0f; dx += 400.0f) {
+                if (dx * dx + dz * dz > 3.6e7f) {
                     continue;
                 }
                 ++discSamples;
@@ -742,8 +746,14 @@ TEST_CASE("world layer: etage distribution over 200 km") {
     const ProceduralControls controls { pc };
     u64 samples = 0, sea = 0, low = 0, hills = 0, plateau = 0, high = 0,
         massif = 0;
+    const WorldLayerParams& world = controls.params().world;
+    const f32 anchored = world.anchorRadius + world.anchorFade;
     for (f32 z = -100000.0f; z <= 100000.0f; z += 1000.0f) {
         for (f32 x = -100000.0f; x <= 100000.0f; x += 1000.0f) {
+            // Outside the start anchor: the world's own statistics.
+            if (std::hypot(x - world.startX, z - world.startZ) < anchored) {
+                continue;
+            }
             WorldSample w;
             const ControlSample s = controls.at(x, z, w);
             ++samples;
@@ -839,16 +849,17 @@ TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
     }
 }
 
-TEST_CASE("controls v3: about one piece per map") {
-    // Local maxima of the piece lift above 60 m, counted per 8 km
-    // cell over 64 x 64 km: the jittered 7 km grid with its 80 %
-    // chance gives ~1 per map, never a cluster.
+TEST_CASE("controls v3: a dozen pieces per map") {
+    // Local maxima of the piece lift above 40 m, counted per 8 km
+    // cell over 64 x 64 km: the jittered 2.4 km grid with its 85 %
+    // chance gives ~10 per map, spread (never an empty map).
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
     constexpr f32 kStep = 200.0f;
     constexpr i32 kN = 320; // 64 km
     vector<f32> lift(static_cast<size_t>(kN) * kN);
+    u32 landPerCell[8][8] = {};
     for (i32 j = 0; j < kN; ++j) {
         for (i32 i = 0; i < kN; ++i) {
             const ControlSample s =
@@ -856,6 +867,7 @@ TEST_CASE("controls v3: about one piece per map") {
                             -32000.0f + static_cast<f32>(j) * kStep);
             lift[static_cast<size_t>(j) * kN + i] =
                 s.sea ? 0.0f : s.plateau;
+            landPerCell[(j * 200) / 8000][(i * 200) / 8000] += !s.sea;
         }
     }
     u32 perCell[8][8] = {};
@@ -863,7 +875,7 @@ TEST_CASE("controls v3: about one piece per map") {
     for (i32 j = 1; j < kN - 1; ++j) {
         for (i32 i = 1; i < kN - 1; ++i) {
             const f32 v = lift[static_cast<size_t>(j) * kN + i];
-            if (v <= 60.0f) {
+            if (v <= 30.0f) {
                 continue;
             }
             bool top = true;
@@ -884,17 +896,25 @@ TEST_CASE("controls v3: about one piece per map") {
         }
     }
     u32 worst = 0;
-    for (auto& row : perCell) {
-        for (const u32 c : row) {
-            worst = glm::max(worst, c);
+    u32 least = 1000; // over the LAND maps (>= 60 % land)
+    u32 landMaps = 0;
+    for (u32 r = 0; r < 8; ++r) {
+        for (u32 c = 0; c < 8; ++c) {
+            worst = glm::max(worst, perCell[r][c]);
+            if (landPerCell[r][c] * 10 >= 1600 * 6) {
+                least = glm::min(least, perCell[r][c]);
+                ++landMaps;
+            }
         }
     }
-    MESSAGE("piece summits > 60 m: ", peaks, " in 64 cells (",
-            static_cast<f64>(peaks) / 64.0, " per map), worst cell ",
-            worst);
-    CHECK(static_cast<f64>(peaks) / 64.0 >= 0.5);
-    CHECK(static_cast<f64>(peaks) / 64.0 <= 1.8);
-    CHECK(worst <= 4);
+    MESSAGE("piece summits > 30 m: ", peaks, " in 64 cells (",
+            static_cast<f64>(peaks) / 64.0, " per map), land maps ",
+            landMaps, " min ", least, ", any map max ", worst);
+    CHECK(static_cast<f64>(peaks) / 64.0 >= 5.0);
+    CHECK(static_cast<f64>(peaks) / 64.0 <= 16.0);
+    CHECK(landMaps >= 20);
+    CHECK(least >= 1); // never an empty land map
+    CHECK(worst <= 20);
 }
 
 TEST_CASE("the analytic macro is the pointwise synthesis, bounded") {

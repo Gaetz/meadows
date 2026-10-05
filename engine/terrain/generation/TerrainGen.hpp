@@ -102,15 +102,18 @@ public:
 // the lithology. Everything indexed by étage reads the province the
 // piece or point stands in, so the same rhythm scales with the floor.
 struct RhythmParams {
-    f32 pieceCellSize { 7000.0f };
-    f32 pieceChance { 0.8f };
-    f32 pieceRadiusMin { 900.0f };
-    f32 pieceRadiusMax { 1800.0f };
+    // One piece per ~2.4 km cell: from anywhere, two or three in
+    // sight within a walk — the pull from point of interest to point
+    // of interest (the open-world rule of thumb, docs/PAYSAGE.md §7.5).
+    f32 pieceCellSize { 2400.0f };
+    f32 pieceChance { 0.85f };
+    f32 pieceRadiusMin { 300.0f };
+    f32 pieceRadiusMax { 900.0f };
     // [étage][min, max] meters of lift at the piece's summit.
-    f32 pieceHeightByEtage[4][2] { { 120.0f, 220.0f },
-                                   { 180.0f, 320.0f },
-                                   { 120.0f, 260.0f },
-                                   { 350.0f, 650.0f } };
+    f32 pieceHeightByEtage[4][2] { { 40.0f, 140.0f },
+                                   { 60.0f, 200.0f },
+                                   { 50.0f, 160.0f },
+                                   { 150.0f, 400.0f } };
     f32 ridgeColWavelength { 1300.0f }; // saddles along a ridge piece
     f32 crestWavelength { 1800.0f };    // massif ridged crests
     f32 crestAmplitudeByEtage[4] { 30.0f, 60.0f, 90.0f, 200.0f };

@@ -377,7 +377,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     // The pieces: a landmark's lift, flattened on a mesa top; gated
     // off the beach so no shore rises into a wall.
     const PieceSample piece = pieceLayer(p, x, z);
-    const f32 shoreGate = noise::smoothstep01(5.0f, 40.0f, s.base);
+    const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, s.base);
     s.plateau = piece.add * shoreGate;
     s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
     // Massif belts: ridged crests sized by the étage, and the uplift
