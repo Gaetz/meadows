@@ -179,6 +179,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     // {HDR boost, posterize bands, 0, 0}.
     vec4 uFireFlameInfo;
     vec4 uFireFlameLook;
-    // The wind's direction: xy = unit XZ it blows toward; z reserved.
+    // The wind: xy = unit XZ it blows toward; zw = its accumulated
+    // drift (metres at strength 1) — what the clouds and the mist ride,
+    // so a turning wind bends their path instead of jumping it.
     vec4 uWindDirInfo;
 };

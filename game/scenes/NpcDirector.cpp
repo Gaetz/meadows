@@ -297,6 +297,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             schedule_.patrol(dt, ctx, npc, patrolPoints);
         }
         pushNpcByWind(ctx, npc, dt); // the gusts (E4) shove him too
+        applyNpcShove(ctx, npc, dt); // and the water jet's lumps
         // Standing = no path AND no direct steering this frame (strafe
         // and flee move pathless — their run must reach the anim).
         npc.speed -= npc.speed * (1.0f - std::exp(-idleDecay * dt)) *

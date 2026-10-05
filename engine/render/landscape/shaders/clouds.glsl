@@ -33,10 +33,10 @@ float cloudFbm(vec2 p) {
 // ANALYTIC evaluation: used by the sky dome (whose rays reach far beyond
 // the baked field) and by the once-per-frame bake pass itself.
 float cloudDensityAnalytic(vec2 planePos) {
-    // Drift phase = accumulated wind time (uWindInfo.x), NOT wall time:
-    // weather changing the wind speed must not teleport the pattern.
-    vec2 wind = uWindDirInfo.xy * 18.0; // m/s of drift at wind strength 1
-    vec2 uv = (planePos + wind * uWindInfo.x) * uCloudInfo.z;
+    // Drift = the accumulated wind VECTOR (uWindDirInfo.zw), not
+    // direction x clock: a changing speed or heading bends the path, it
+    // never teleports the pattern. 18 m of drift per unit at strength 1.
+    vec2 uv = (planePos + uWindDirInfo.zw * 18.0) * uCloudInfo.z;
     float f = cloudFbm(uv);
     float threshold = 1.0 - uCloudInfo.x * 0.9;
     return smoothstep(threshold - 0.18, threshold + 0.22, f);

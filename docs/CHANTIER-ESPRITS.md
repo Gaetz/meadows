@@ -1145,3 +1145,28 @@ segfault à 40 PASS et « Vulkan validation: clean run (0 message) ».
   petits coefficients) — précision pleine à toute phase, et le champ tile
   toutes les 256 mailles (1024 m à l'échelle des rafales). Même correctif
   dans fxhaze.frag, dont le défilement roule sur l'horloge de frame.
+
+### Retours dev, deuxième tour (2026-10-05)
+- **« L'eau ne repousse pas les ennemis sous le jet »** : les sphères du
+  jet (`JetSphere`, lancées toutes les 0,12 s) traversent désormais les
+  acteurs : à moins de rayon + 0,6 m de la poitrine, le PNJ gagne une
+  poussée le long du vol (`Npc::shove`, 14 m/s² plafonnée à 3,5 m/s),
+  appliquée au sol et amortie (⅔ perdus en 0,35 s) par
+  `NpcMovement::applyNpcShove` dans le tick du directeur, à côté de la
+  poussée des rafales. Le `shove` est le canal générique de toute poussée
+  cinématique d'un PNJ (la version PNJ du `setExternalVelocity` du joueur).
+- **« Diriger le vent téléporte les nuages »** : nuages 2D, volume du
+  ciel et brume calculaient leur dérive comme direction × horloge de
+  vent — tourner la direction faisait pivoter tout le vecteur, donc
+  sauter le motif. Fait : `windDrift` (Vec2) intégré dans la scène avec
+  le même poids que `windTime` (dt × force), transporté par
+  `uWindDirInfo.zw` ; `clouds.glsl`, `skyclouds.frag`, `mist.frag` lisent
+  la dérive accumulée — un vent qui tourne courbe la trajectoire. L'herbe
+  et les arbres gardent la phase scalaire (leurs domaines de bruit sont
+  isotropes) et la direction instantanée, lissée par le sort.
+- **« L'herbe penche perpendiculairement à mon regard »** : `grass.vert`
+  prenait la direction du vent comme AXE de rotation ; or le brin tourne
+  autour de l'axe, donc penchait à 90°. L'axe est désormais la
+  perpendiculaire (`(-sin, 0, cos)` du cap) : le haut du brin bascule vers
+  le cap lui-même. Le défaut était invisible tant que le cap était une
+  constante codée en dur (avant E4.a).

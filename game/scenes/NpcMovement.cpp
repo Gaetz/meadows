@@ -228,4 +228,17 @@ void pushNpcByWind(const NpcContext& ctx, Npc& npc, f32 dt) {
     }
 }
 
+void applyNpcShove(const NpcContext& ctx, Npc& npc, f32 dt) {
+    if (glm::dot(npc.shove, npc.shove) < 0.01f) {
+        npc.shove = Vec2 { 0.0f };
+        return;
+    }
+    auto& transform = npc.entity.get_mut<world::Transform>();
+    Vec3 next = transform.position + Vec3 { npc.shove.x, 0.0f, npc.shove.y } * dt;
+    if (groundNpc(ctx, next)) {
+        transform.position = next;
+    }
+    npc.shove *= std::exp(-dt / kNpcShoveDecay);
+}
+
 } // namespace game

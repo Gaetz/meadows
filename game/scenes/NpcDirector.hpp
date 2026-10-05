@@ -131,6 +131,9 @@ struct Npc {
     // offset over the ground snap, falling back under gravity.
     f32 airHeight { 0.0f };
     f32 airVelocity { 0.0f };
+    // Shoved (a water jet's lumps, m/s on the ground plane): applied by
+    // NpcMovement::applyNpcShove each frame, decaying on its own.
+    Vec2 shove { 0.0f };
 
     // A fleeing fighter reached the interior's exit: the scene sweep
     // despawns him and may respawn him outside (LandscapeScene).

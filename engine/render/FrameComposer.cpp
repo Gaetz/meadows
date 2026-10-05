@@ -140,7 +140,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // wind's heading, in BASE so the mirror pass sways the same way.
     base.windDirInfo = { render::terrain::windDirectionFromDegrees(
                              in.atmos.windDirectionDeg),
-                         0.0f, 0.0f };
+                         in.windDrift.x, in.windDrift.y };
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {
         // Interior mode: no sun, no sky glow, dim constant ambient, no

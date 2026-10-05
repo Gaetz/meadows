@@ -105,6 +105,7 @@ struct FrameComposerInputs {
     // Submersion, wind, grass bend.
     f32 waterSurfaceY { -1.0e6f }; // effective surface above the camera
     f32 windTime { 0.0f };
+    Vec2 windDrift { 0.0f };
     bool grassBend { false };  // Play mode with a live body
     Vec3 playerFeet { 0.0f };
 

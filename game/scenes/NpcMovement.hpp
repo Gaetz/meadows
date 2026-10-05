@@ -65,4 +65,10 @@ bool steerFromFire(const NpcContext& ctx, Npc& npc, f32 dt);
 constexpr f32 kNpcWindPush = 0.6f;
 void pushNpcByWind(const NpcContext& ctx, Npc& npc, f32 dt);
 
+// The shove (Npc::shove, m/s): moves the actor, grounded, and decays it
+// (kNpcShoveDecay seconds to lose two thirds). Anything that pushes a
+// character kinematically adds to it — the water jet's lumps today.
+constexpr f32 kNpcShoveDecay = 0.35f;
+void applyNpcShove(const NpcContext& ctx, Npc& npc, f32 dt);
+
 } // namespace game

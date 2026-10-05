@@ -164,7 +164,9 @@ void main() {
     float dirNoise = vnoise(aPosScale.xz * 0.05 + uWindInfo.x * 0.05);
     float windAngle = atan(uWindDirInfo.y, uWindDirInfo.x) +
                       (dirNoise * 2.0 - 1.0) * 0.9; // around the weather's heading
-    vec3 windAxis = vec3(cos(windAngle), 0.0, sin(windAngle));
+    // The lean rotates AROUND this axis, so it is the wind's perpendicular:
+    // up tilts toward (axis.z, -axis.x) = the heading itself.
+    vec3 windAxis = vec3(-sin(windAngle), 0.0, cos(windAngle));
     float gustNoise = vnoise(aPosScale.xz * 0.25 + uWindInfo.x);
     float windLean = mix(0.25, 1.0, gustNoise);
     windLean = windLean * windLean * 1.25 * t * uWindInfo.y;

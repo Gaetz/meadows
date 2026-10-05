@@ -92,6 +92,7 @@ struct RenderView {
     bool interiorMode { false };
     f32 timeSeconds { 0.0f };
     f32 windTime { 0.0f };
+    Vec2 windDrift { 0.0f }; // accumulated direction x strength (metres at strength 1)
     // Moddable tuning scalars the scene owns (LandscapeTuningForm):
     f32 snowLine { render::kSnowLine };
     f32 splatUvScale { 0.25f };

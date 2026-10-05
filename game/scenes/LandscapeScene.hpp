@@ -182,6 +182,10 @@ private:
     // rainIntensity live here too.
     render::AtmosphereParams atmos;
     f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
+    // The drift the clouds, the sky volume and the mist ride: the wind's
+    // direction integrated with the same weight — a turning wind curves
+    // their path instead of teleporting the pattern (direction x clock did).
+    Vec2 windDrift { 0.0f };
 
     // The real mesh path.
     // A small ECS world spawned from plugin ReferenceForms; extractMeshes
@@ -816,6 +820,11 @@ private:
     static constexpr f32 kWindSpeedPerStrength = 5.0f; // m/s at weather strength 1
     static constexpr f32 kPlayerWindPush = 0.6f;       // of the gusts' speed
     static constexpr f32 kFloaterWindDrift = 0.08f;    // of the wind, on a floating prop
+    // A water jet's lump passing through an actor shoves him along its
+    // flight: this many m/s of shove gained per second in the stream,
+    // capped (the stream flows at ~24 m/s; a character is not a leaf).
+    static constexpr f32 kWaterJetShoveRate = 14.0f;
+    static constexpr f32 kWaterJetShoveMax = 3.5f;
     void updateSpiritWind(f32 dt);
     // The breath (Create x Wind as a stream, held).
     struct SpiritBlow {

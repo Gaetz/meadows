@@ -1774,6 +1774,8 @@ void LandscapeScene::update(f32 dt) {
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(atmos.windStrength, 0.05f);
+    windDrift += render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg) *
+                 (dt * glm::max(atmos.windStrength, 0.05f));
 
     // Weather crossfade (owned by WeatherController): slides `atmos` from the
     // captured start state to the selected weather over its duration.
@@ -7164,6 +7166,40 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
     for (const Vec3& at : landed) {
         fxDirector.cues().emit({ "Cue.Spirit.Water.Jet", at, 1.0f });
     }
+    // A lump flying through an actor shoves him along its flight (the
+    // shove rides Npc::shove, applied and decayed by the NPC director).
+    if (!interiorMode) {
+        for (const world::SpiritJet& jet : jets.entries()) {
+            if (jet.kind != render::terrain::SpiritKind::Water) {
+                continue;
+            }
+            for (const world::JetSphere& sphere : jet.spheres) {
+                const Vec3 at = sphere.at(world::SpiritJetList::kGravity);
+                const Vec2 flat { sphere.velocity.x, sphere.velocity.z };
+                const f32 speed = glm::length(flat);
+                if (speed < 1e-3f) {
+                    continue;
+                }
+                const f32 reach = sphere.radius + 0.6f;
+                for (const auto& npc : npcDirector.npcs()) {
+                    if (!npc->entity.is_alive() || npc->dead ||
+                        !npc->entity.has<world::Transform>()) {
+                        continue;
+                    }
+                    const Vec3 chest = npc->entity.get<world::Transform>().position +
+                                       Vec3 { 0.0f, 0.9f, 0.0f };
+                    if (glm::distance(chest, at) > reach) {
+                        continue;
+                    }
+                    npc->shove += flat / speed * (kWaterJetShoveRate * dt);
+                    const f32 shove = glm::length(npc->shove);
+                    if (shove > kWaterJetShoveMax) {
+                        npc->shove *= kWaterJetShoveMax / shove;
+                    }
+                }
+            }
+        }
+    }
     // The landing spots move with the aim: the kernel gets them fresh
     // every frame (a value copy of a handful of discs).
     pushRuntimeWaterSources();
@@ -7350,6 +7386,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .interiorMode = interiorMode,
         .timeSeconds = timeSeconds,
         .windTime = windTime,
+        .windDrift = windDrift,
         .snowLine = activeSnowLine,
         .splatUvScale = tuning.splatUvScale,
         .splatBlendDepth = tuning.splatBlendDepth,
