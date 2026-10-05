@@ -942,8 +942,32 @@ interactif → calibration en jeu.
 
 - **2026-10-05** — Ouverture. Six journaux consolidés dans ce document
   (originaux sous `docs/archive/`), état des lieux total (§5) par six
-  agents (génération, eau, scatter, peuplement, deux digests). Rien n'est
-  encore codé.
+  agents (génération, eau, scatter, peuplement, deux digests). Plan
+  d'assainissement A-D retenu par le dev (§7.3).
+- **2026-10-05 — Palier A livré (un commit par brique, comportement
+  nul).** A1 génération : `kStage1Version` supprimé, bloc de versions
+  réécrit autour de `kTileBakeVersion` seul ; `kBasinResolveMargin` →
+  `kMapApron` ; en-têtes de `TileBake.hpp`, `TerrainGen.hpp`,
+  `TerrainBakeStreamer.hpp`, `SandboxTerrain.hpp` réécrits pour le
+  pipeline par carte ; `WorldspaceForm.edge*` retirés
+  (`hillChainWavelength` doublon GARDÉ : le défaut 0 de `MacroParams`
+  sert aux tests « chain-free », pas un comportement nul). A2 eau :
+  `simMapA`/`uWaterSimA`/`waterSimUv()`/`WaterSimSnapshot::display`
+  supprimés (binding 7 gelé comme 5/6) ; boîtes « Volumes debug »
+  dessinées sans fenêtre gelée ; `dryThreshold` documenté comme seuil
+  du replay ; en-têtes `WaterSolve.hpp`/`WaterBodies.hpp` corrigés ;
+  `Floater` gardé et dit sans producteur. A3 scatter : includes
+  orphelins et `kPropCasterShader` local de `VegetationScatter.cpp`,
+  filtre `w < 0.35` de `VegetationCollision`, préchargement `rock_cc0`
+  de `WorldRenderer` (l'asset reste, le kit de mine s'en sert),
+  commentaires `Instance.params.w`/`GiProp.kind` ; `BiomeForm.
+  vegetationSet` et `BiomeVegetationForm` retirés. A4 diagnostics :
+  six cas ponctuels du monde infini supprimés (`spawn diagnostic` ×2,
+  `regime`, `height`, `spawn debris`, `analytic sea mismatch`) ; les 15
+  instruments restent (en-tête du fichier = la dette B2). Vérification :
+  suite rapide 684/684 après chaque brique, golden scatter inchangé,
+  smoke-run Debug sandbox après A2 (Vulkan, 0 erreur de validation),
+  hash `region.heights` du banc tuile inchangé (voir fin de palier).
 
 ---
 
