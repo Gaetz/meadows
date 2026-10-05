@@ -1117,6 +1117,54 @@ vivante, les bordures, les biomes, la carte exportable en mod.
   overview chargeable à chaud), les rivières se rebâtissent sur le sol
   COMPLET (détail + sculpt inclus, la règle 6 de l'eau).
 
+#### 7.5.3 bis — Décisions dev du 2026-10-05 (discussion après le premier jet) et correction du plan
+
+**Cadre acté par le dev :**
+- **Le monde de travail est le SANDBOX : un nombre INFINI de cartes**,
+  chaque carte se générant quand le joueur s'en approche, **différente
+  selon la seed**. C'est sur ce monde que se construit la boucle de
+  gameplay.
+- **Le mode histoire est un mode « tiré puis peint et édité »** : une
+  carte tirée par le générateur, puis retouchée à la main (peinture,
+  édition, contenu placé). **Ce n'est pas la première priorité.**
+- **Les paysages doivent s'étendre de carte en carte** : une petite carte
+  n'est pas une île ; une vallée, une côte, un massif continuent chez le
+  voisin.
+- **Le rythme ne préjuge pas de l'altitude** : le rythme du mode histoire
+  (relief à l'échelle du joueur) s'applique à toutes les cartes, mais
+  certaines sont en altitude, d'autres sur des côtes et des îles,
+  d'autres en haute montagne. L'élévation globale change de carte en
+  carte.
+
+**Ce que ça corrige dans le premier jet (§7.5.3) :**
+- Le « plan de carte » posé par seed carte par carte ne suffit pas : il ne
+  garantit ni la continuité entre cartes ni la distribution des étages.
+  La macro v3 devient **deux couches** :
+  1. **L'étage monde** — continu sur tout le graphe de cartes, basse
+     fréquence (texel ~500 m-1 km), **fonction pure et bon marché de
+     (seed, x, z)** pour que le monde reste infini et seedé : altitude de
+     base de la région, mer et îles, massifs qui enjambent plusieurs
+     cartes, climat. Il remplace le layout continental à 1 000 km et ses
+     ~45 paramètres par quelque chose de plus simple, à l'échelle de
+     cartes de 8-12 km. (Une version PEINTE de cette couche est l'outil
+     du mode histoire : plus tard.)
+  2. **Le rythme local** — à l'échelle du joueur, RELATIF à l'étage :
+     collines ~500 m de longueur d'onde, massif local, lits, dimensionnés
+     par l'étage (grand massif en haute montagne, falaises et criques sur
+     une côte) ; plus les points d'intérêt placés par règles.
+- **Les frontières prennent leur style de l'étage monde, pas d'un
+  hachage** : chaîne ou bras de mer là où l'étage met un massif ou une
+  côte, **ouverte** partout ailleurs (ni lift ni creusement). Hypothèse à
+  MESURER (sweep de divergence de `bake-map`) : avec un relief à érosion
+  modeste et le calme en contrainte dure, la divergence sur une frontière
+  ouverte devient petite ; si elle reste trop grande quelque part, la
+  règle chaîne/mer reste disponible localement. L'hydrologie maître est
+  déjà continue entre cartes ; les ruisseaux locaux peuvent différer au
+  bord : à instrumenter.
+- Les briques R1-R3 se réordonnent : la taille de carte vient AVEC
+  l'étage monde et les frontières ouvertes, pas avant (une carte de 8 km
+  ceinturée de chaînes tous les 8 km serait pire que l'actuel).
+
 #### 7.5.4 Ce qui survit tel quel / ce qui est refait / ce qui tombe
 
 | Survit tel quel | Refait | Tombe |
