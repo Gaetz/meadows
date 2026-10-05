@@ -61,6 +61,9 @@ void spawnStatic(SpawnContext& ctx, ecs::Entity entity, const data::Form& base,
         source.offset = form.particlesOffset;
         source.igniteRadius = form.igniteRadius;
         source.igniteHeat = form.igniteHeat;
+        source.douseByWater = form.douseByWater;
+        source.snuffWind = form.snuffWind;
+        source.snuffRain = form.snuffRain;
         entity.set<FxSource>(source);
     }
 }

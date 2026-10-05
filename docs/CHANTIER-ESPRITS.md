@@ -1205,3 +1205,24 @@ heatDecay` (trois voisins ne remontent pas un vent plein) ; data du jeu :
 spreadRate 1, calm 0,4, upwind 0,1, `decayPerSecond` 0,5 → 0,35. Test
 avec les chiffres livrés : en 15 s sous un vent plein, pas une cellule
 gagnée contre le vent, > 4 sous le vent ; au calme le disque rampe.
+
+### Torches et foyers : éteints par l'eau et le vent, rallumés par le feu (2026-10-05)
+Question dev : « est-ce que les torches s'éteignent avec un sort d'eau ou
+de vent ? » — non jusqu'ici (émetteurs permanents). Fait, dans le même
+modèle que le reste : `StaticForm.douseByWater / snuffWind / snuffRain`
+→ `FxSource` (+ `lit`, état runtime non persisté : un rechargement
+rallume) ; `LightSource.litScale` (0 éteint, l'extract multiplie). Les
+événements du monde sont collectés par frame en disques au sol :
+`waterEvents` (le sort d'extinction, une source d'eau posée, chaque
+sphère du jet sur son vol, chaque éclaboussure d'atterrissage) et
+`fireEvents` (l'étincelle, les pulses du jet de flammes et du brandon,
+via `igniteGround` qui enveloppe `spiritDirector.ignite`). Dans
+`updateFxSources`, une source allumée s'éteint si l'eau la touche
+(`douseByWater`), si `|vent| > snuffWind` ou si la pluie ≥ `snuffRain`
+(`snuffFxSource` : flammes, haze, son et lumière coupés, une bouffée de
+fumée ×4 pendant 1,5 s) ; une source éteinte se rallume si le sol brûle
+dessous ou si un événement feu la touche ; un igniter éteint n'allume
+rien. Data : torche — eau, vent 9 m/s (une rafale ou le Souffle), pluie
+0,7 ; foyer — eau, vent 13 m/s (le Souffle de près seulement), pluie 0,9.
+Pas de test headless (logique de scène) ; vérifié par la suite rapide et
+le boot story.

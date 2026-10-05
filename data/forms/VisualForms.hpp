@@ -66,6 +66,13 @@ struct StaticForm : Form {
     // would not). 0 = a contained fire (a hearth in its stones).
     f32 igniteRadius { 0.0f };
     f32 igniteHeat { 0.0f };
+    // What puts the prop's fire out: water (a douse, a jet, a spring, a
+    // splash) when douseByWater; a wind faster than snuffWind m/s (0 =
+    // never); rain at or above snuffRain (0 = never). Out, it relights
+    // from fire (burning ground under it, a brand, the flame jet).
+    bool douseByWater { false };
+    f32 snuffWind { 0.0f };
+    f32 snuffRain { 0.0f };
 
     REFLECT_BEGIN(StaticForm, Form)
         REFLECT_FIELD(displayName)
@@ -84,6 +91,9 @@ struct StaticForm : Form {
         REFLECT_FIELD(sound)
         REFLECT_FIELD(igniteRadius)
         REFLECT_FIELD(igniteHeat)
+        REFLECT_FIELD(douseByWater)
+        REFLECT_FIELD(snuffWind)
+        REFLECT_FIELD(snuffRain)
     REFLECT_END()
 };
 

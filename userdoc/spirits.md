@@ -160,7 +160,11 @@ props and trees within that radius, and the ground too when the flame
 stands within a metre of it. The spawner attaches them and the scene
 keeps them alight within 90 m; the base data ships a `Campfire` (safe in
 its stones) and a `Torch` (its flame, 1.6 m up, lights wood and trees
-within a metre but spares the grass) on the village square. The fire
+within a metre but spares the grass) on the village square. Both go
+out and relight: `douseByWater` (a douse, a spring, a jet lump or a
+splash on it), `snuffWind` m/s (a gust or the breath blows a torch out
+at 9, a hearth needs 13), `snuffRain` (0..1, a downpour); burning ground
+under it, a spark, a brand or the flame jet light it again. The fire
 reading also names the wind at the aimed spot (still air, or its speed
 and bearing). The other fire spells: `destroy` as
 `point` puts the flames out around the aim (the cells keep their fuel),

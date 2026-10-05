@@ -208,7 +208,7 @@ private:
     flecs::query<const world::Transform, const world::RefId> interactQuery;
     // Props carrying flames (world::FxSource — torches, campfires): one
     // emitter set per entity while it lives within reach of the camera.
-    flecs::query<const world::Transform, const world::FxSource> fxSourceQuery;
+    flecs::query<const world::Transform, world::FxSource> fxSourceQuery;
     struct FxSourceEmitters {
         u32 flame { 0 };
         u32 smoke { 0 };
@@ -216,6 +216,19 @@ private:
         audio::AudioSystem::SoundId sound { 0 };
     };
     std::unordered_map<u64, FxSourceEmitters> fxSourceEmitters;
+    // The frame's water (douses, jet lumps, splashes, springs) and fire
+    // (sparks, brands, the jet's pulses) events, as discs on the ground:
+    // what snuffs a torch and what relights it. Cleared once consumed.
+    struct GroundEvent {
+        Vec2 at { 0.0f };
+        f32 radius { 0.0f };
+    };
+    vector<GroundEvent> waterEvents;
+    vector<GroundEvent> fireEvents;
+    // A spell's spark on the ground: the lane's ignition, remembered for
+    // the frame (the props that relight from it).
+    void igniteGround(f32 x, f32 z, f32 radius, f32 heat);
+    void snuffFxSource(ecs::Entity entity, world::FxSource& source, const Vec3& at);
     static constexpr f32 kFxSourceReach = 90.0f;
     void updateFxSources();
     void resetFxSources(); // map swap / exit: the emitters go with the world

@@ -1983,7 +1983,11 @@ smokeParticles = "5b1e1700-0000-4000-8000-000000000103"
 hazeParticles = "5b1e1700-0000-4000-8000-00000000010a"
 particlesOffset = [0.0, 0.22, 0.0]
 sound = "5b1e1700-0000-4000-8000-0000000000d3" # the fire field's crackle loop
-# igniteRadius 0: a hearth stays in its stones.
+# igniteRadius 0: a hearth stays in its stones. Water puts it out, a
+# downpour too; only a breath right on it (13 m/s) snuffs it.
+douseByWater = true
+snuffWind = 13.0
+snuffRain = 0.9
 
 [[records]]
 form = "5b1e1700-0000-4000-8000-000000000106"
@@ -2001,9 +2005,13 @@ hazeParticles = "5b1e1700-0000-4000-8000-00000000010a"
 particlesOffset = [0.0, 1.62, 0.0]
 sound = "5b1e1700-0000-4000-8000-00000000010b"
 # A torch sets alight the wood and the trees within a metre of its
-# flame; the ground stays safe, the flame is 1.6 m up.
+# flame; the ground stays safe, the flame is 1.6 m up. Water, a gust or
+# the breath (9 m/s) and steady rain put it out; fire relights it.
 igniteRadius = 1.0
 igniteHeat = 1.5
+douseByWater = true
+snuffWind = 9.0
+snuffRain = 0.7
 
 # The village square, in front of the house: a campfire and two torches.
 [[records]]

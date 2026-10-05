@@ -107,8 +107,8 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
             const Vec3 d = at - focus;
             const f32 distanceSq = glm::dot(d, d);
             candidates.push_back(
-                { distanceSq, source.intensity / (1.0f + distanceSq), order++,
-                  { at, source.color, source.intensity,
+                { distanceSq, source.intensity * source.litScale / (1.0f + distanceSq), order++,
+                  { at, source.color, source.intensity * source.litScale,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
                     source.spotAngle, source.sunLinked,
@@ -151,7 +151,7 @@ void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
                 out.shadowLights.push_back(
                     { transform.position + transform.rotation * source.offset,
-                      source.color, source.intensity,
+                      source.color, source.intensity * source.litScale,
                       source.radius, source.flicker, forward,
                       source.spotAngle, source.sunLinked, true, false,
                       source.windowHalfWidth, source.windowHalfHeight });

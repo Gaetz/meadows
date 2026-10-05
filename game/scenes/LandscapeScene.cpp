@@ -963,7 +963,7 @@ void LandscapeScene::setupWorldAndStreaming() {
     interactQuery =
         world.handle().query<const world::Transform, const world::RefId>();
     fxSourceQuery =
-        world.handle().query<const world::Transform, const world::FxSource>();
+        world.handle().query<const world::Transform, world::FxSource>();
     streaming.init(world);
     categories = world::FormCategoryRegistry {};
     world::registerCoreCategories(categories);
@@ -4979,6 +4979,7 @@ void LandscapeScene::applyPendingSpiritActions() {
         }
         if (action.mode == PendingSpiritAction::Mode::FireDouse) {
             spiritDirector.douse(action.x, action.z, action.radius);
+            waterEvents.push_back({ { action.x, action.z }, action.radius });
             const Vec3 at { action.x,
                             render::terrain::height(renderer.terrainParams(),
                                                     action.x, action.z),
@@ -5089,8 +5090,7 @@ void LandscapeScene::applyPendingSpiritActions() {
             continue;
         }
         if (action.mode == PendingSpiritAction::Mode::FireIgnite) {
-            spiritDirector.ignite(action.x, action.z, action.radius,
-                                  action.rate);
+            igniteGround(action.x, action.z, action.radius, action.rate);
             const Vec3 at { action.x,
                             render::terrain::height(renderer.terrainParams(),
                                                     action.x, action.z),
@@ -5187,6 +5187,9 @@ void LandscapeScene::applyPendingSpiritActions() {
         spiritDirector.spawn(action.kind, action.x, action.z, action.rate,
                              action.radius, action.seconds,
                              activeWorldspaceGuid(), action.dirX, action.dirZ);
+        if (action.kind == render::terrain::SpiritKind::Water) {
+            waterEvents.push_back({ { action.x, action.z }, action.radius });
+        }
         changed = true;
         const Vec3 at { action.x,
                         render::terrain::height(renderer.terrainParams(),
@@ -6097,12 +6100,12 @@ void LandscapeScene::updateSpiritFlameJet(f32 dt) {
         const Vec3 p = origin + forward * t;
         const f32 ground = render::terrain::height(params, p.x, p.z);
         if (p.y < ground) {
-            spiritDirector.ignite(p.x, p.z, jet.radius, jet.heat); // the hillside
+            igniteGround(p.x, p.z, jet.radius, jet.heat); // the hillside
             break;
         }
         if (p.y - ground < 2.5f &&
             !render::terrain::waterSurfaceQuery(makeWaterQuery(), p.x, p.z, ground)) {
-            spiritDirector.ignite(p.x, p.z, jet.radius, jet.heat);
+            igniteGround(p.x, p.z, jet.radius, jet.heat);
         }
     }
 }
@@ -6519,14 +6522,81 @@ void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
     audioSystem.setPosition(fireLoop, at);
 }
 
+void LandscapeScene::igniteGround(f32 x, f32 z, f32 radius, f32 heat) {
+    spiritDirector.ignite(x, z, radius, heat);
+    fireEvents.push_back({ { x, z }, glm::max(radius, 0.5f) });
+}
+
+void LandscapeScene::snuffFxSource(ecs::Entity entity, world::FxSource& source,
+                                   const Vec3& at) {
+    source.lit = false;
+    if (auto it = fxSourceEmitters.find(entity.id()); it != fxSourceEmitters.end()) {
+        for (const u32 emitter : { it->second.flame, it->second.haze }) {
+            if (emitter != 0) {
+                fxSim.stopEmitter(emitter);
+            }
+        }
+        if (it->second.sound != 0) {
+            audioSystem.stop(it->second.sound, 0.3f);
+        }
+        if (it->second.smoke != 0) {
+            fxSim.stopEmitter(it->second.smoke);
+        }
+        fxSourceEmitters.erase(it);
+    }
+    // The last breath: a short, thicker puff of its own smoke.
+    if (const auto* form = forms.find<data::ParticleForm>(source.smoke)) {
+        fx::EmitterParams params = gameplay::toEmitterParams(*form);
+        params.duration = 1.5f;
+        params.rate *= 4.0f;
+        fxSim.spawn(params, at, static_cast<u32>(entity.id() & 0xffffffffu) ^ 0x51u);
+    }
+    if (entity.has<world::LightSource>()) {
+        entity.get_mut<world::LightSource>().litScale = 0.0f;
+    }
+}
+
 void LandscapeScene::updateFxSources() {
     const Vec3 cam = flyCamera.camera.position;
+    const auto within = [](const vector<GroundEvent>& events, const Vec3& at,
+                           f32 extra) {
+        for (const GroundEvent& e : events) {
+            const f32 dx = at.x - e.at.x;
+            const f32 dz = at.z - e.at.y;
+            const f32 reach = e.radius + extra;
+            if (dx * dx + dz * dz <= reach * reach) {
+                return true;
+            }
+        }
+        return false;
+    };
     std::unordered_set<u64> seen;
     fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           const world::FxSource& source) {
+                           world::FxSource& source) {
         const Vec3 at = transform.position + transform.rotation * source.offset;
-        if (glm::distance(at, cam) > kFxSourceReach) {
-            return; // out of reach: swept below if it was alight
+        const ecs::Entity entity { e };
+        // The elements decide first: water, a strong wind or a downpour
+        // put it out; fire (the ground alight under it, a spark or a
+        // brand on it) lights it again.
+        if (source.lit) {
+            const bool water = source.douseByWater && within(waterEvents, at, 0.3f);
+            const bool wind =
+                source.snuffWind > 0.0f && !interiorMode &&
+                glm::length(windField.windAt(at.x, at.z)) > source.snuffWind;
+            const bool rain = source.snuffRain > 0.0f && !interiorMode &&
+                              atmos.rainIntensity >= source.snuffRain;
+            if (water || wind || rain) {
+                snuffFxSource(entity, source, at);
+            }
+        } else if (spiritDirector.fireBurningAt(at.x, at.z) ||
+                   within(fireEvents, at, 0.3f)) {
+            source.lit = true;
+            if (entity.has<world::LightSource>()) {
+                entity.get_mut<world::LightSource>().litScale = 1.0f;
+            }
+        }
+        if (!source.lit || glm::distance(at, cam) > kFxSourceReach) {
+            return; // out, or out of reach: swept below if it was alight
         }
         seen.insert(e.id());
         if (fxSourceEmitters.contains(e.id())) {
@@ -6557,7 +6627,9 @@ void LandscapeScene::updateFxSources() {
         }
         fxSourceEmitters.emplace(e.id(), emitters);
     });
-    // Gone (despawned, disabled) or out of reach: the emitters stop.
+    waterEvents.clear();
+    fireEvents.clear();
+    // Gone (despawned, disabled, snuffed) or out of reach: the emitters stop.
     for (auto it = fxSourceEmitters.begin(); it != fxSourceEmitters.end();) {
         if (seen.contains(it->first)) {
             ++it;
@@ -6573,11 +6645,11 @@ void LandscapeScene::updateFxSources() {
         }
         it = fxSourceEmitters.erase(it);
     }
-    // The igniters among the sources in reach, then their heat.
+    // The igniters among the LIT sources in reach, then their heat.
     fxIgniters.clear();
     fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
                            const world::FxSource& source) {
-        if (source.igniteHeat <= 0.0f || !seen.contains(e.id())) {
+        if (source.igniteHeat <= 0.0f || !source.lit || !seen.contains(e.id())) {
             return;
         }
         const Vec3 at = transform.position + transform.rotation * source.offset;
@@ -6599,6 +6671,8 @@ void LandscapeScene::resetFxSources() {
     }
     fxSourceEmitters.clear();
     fxIgniters.clear();
+    waterEvents.clear();
+    fireEvents.clear();
     fxIgniterNearTree = false;
     fxIgniterTreeClock = 0.0f;
 }
@@ -6918,7 +6992,7 @@ void LandscapeScene::updateSpiritBrand(f32 dt) {
         brand.pulseClock -= kBrandPulse;
         // Never into water: the flame just hovers over it.
         if (!render::terrain::waterSurfaceQuery(makeWaterQuery(), aim->x, aim->z, aim->y)) {
-            spiritDirector.ignite(aim->x, aim->z, brand.radius, brand.heat);
+            igniteGround(aim->x, aim->z, brand.radius, brand.heat);
         }
     }
 }
@@ -7165,6 +7239,7 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
                         &landed);
     for (const Vec3& at : landed) {
         fxDirector.cues().emit({ "Cue.Spirit.Water.Jet", at, 1.0f });
+        waterEvents.push_back({ { at.x, at.z }, 1.5f });
     }
     // A lump flying through an actor shoves him along its flight (the
     // shove rides Npc::shove, applied and decayed by the NPC director).
@@ -7181,6 +7256,7 @@ void LandscapeScene::updateSpiritJets(f32 dt) {
                     continue;
                 }
                 const f32 reach = sphere.radius + 0.6f;
+                waterEvents.push_back({ { at.x, at.z }, reach }); // snuffs a torch it crosses
                 for (const auto& npc : npcDirector.npcs()) {
                     if (!npc->entity.is_alive() || npc->dead ||
                         !npc->entity.has<world::Transform>()) {

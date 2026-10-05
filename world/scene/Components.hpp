@@ -133,9 +133,13 @@ struct LightSource {
     // From the entity's pivot, in its frame (a torch's head, a fire's
     // heart): the light sits at position + rotation * offset.
     Vec3 offset { 0.0f };
+    // Intensity scale of the moment (a snuffed torch = 0); the extract
+    // multiplies.
+    f32 litScale { 1.0f };
 
     REFLECT_BEGIN(LightSource, void)
         REFLECT_FIELD(offset)
+        REFLECT_FIELD(litScale)
         REFLECT_FIELD(color)
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(radius)
@@ -240,6 +244,13 @@ struct FxSource {
     Vec3 offset { 0.0f }; // from the pivot, in the entity's frame
     f32 igniteRadius { 0.0f }; // StaticForm.igniteRadius / igniteHeat
     f32 igniteHeat { 0.0f };
+    // StaticForm.douseByWater / snuffWind / snuffRain, and the state they
+    // drive: out, the flames, haze, sound, light and ignition stop until
+    // fire relights it (runtime state, not persisted: a reload relights).
+    bool douseByWater { false };
+    f32 snuffWind { 0.0f };
+    f32 snuffRain { 0.0f };
+    bool lit { true };
 
     REFLECT_BEGIN(FxSource, void)
         REFLECT_FIELD(flame)
@@ -249,6 +260,10 @@ struct FxSource {
         REFLECT_FIELD(offset)
         REFLECT_FIELD(igniteRadius)
         REFLECT_FIELD(igniteHeat)
+        REFLECT_FIELD(douseByWater)
+        REFLECT_FIELD(snuffWind)
+        REFLECT_FIELD(snuffRain)
+        REFLECT_FIELD(lit)
     REFLECT_END()
 };
 
