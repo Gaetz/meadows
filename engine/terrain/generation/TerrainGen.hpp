@@ -48,6 +48,10 @@ struct ControlSample {
     // POI plan's negative kernels. landHeight subtracts it from the
     // floor; the bake keeps its water (no dimple fill inside).
     f32 basinDepth { 0.0f };
+    // The character region's relief wavelength multiplier (1 = the
+    // tier's own) and its id (nearest-sampled, for the instruments).
+    f32 reliefWavelengthScale { 1.0f };
+    u8 character { 0 };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)

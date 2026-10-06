@@ -260,3 +260,44 @@ TEST_CASE("poi plan: belvedere candidates around the start" * doctest::skip()) {
     CHECK(true);
 }
 
+TEST_CASE("poi plan: characters cover the land in shares, blended at borders") {
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    const auto& plan = controls.params().poi;
+    u32 counts[6] = {};
+    u32 land = 0;
+    f32 worstJump = 0.0f;
+    for (f32 z = -8000.0f; z <= 16000.0f; z += 200.0f) {
+        f32 prevMul = -1.0f;
+        for (f32 x = -8000.0f; x <= 16000.0f; x += 200.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                prevMul = -1.0f;
+                continue;
+            }
+            ++land;
+            ++counts[s.character % 6];
+            const PlanSample ps = planSampleAt(world, plan, x, z);
+            CHECK(ps.reliefMul >= 0.35f);
+            CHECK(ps.reliefMul <= 1.3f);
+            CHECK(ps.wavelengthMul >= 0.65f);
+            CHECK(ps.wavelengthMul <= 1.85f);
+            if (prevMul >= 0.0f) {
+                worstJump = glm::max(worstJump, std::abs(ps.reliefMul - prevMul));
+            }
+            prevMul = ps.reliefMul;
+        }
+    }
+    MESSAGE("characters over 24 km: meadow ", counts[0], " bocage ", counts[1],
+            " wooded ", counts[2], " marsh ", counts[3], " rocky ", counts[4],
+            " heath ", counts[5], " (land samples ", land,
+            "); worst reliefMul step over 200 m ", worstJump);
+    for (const u32 c : counts) {
+        CHECK(100 * c >= 5 * land);
+        CHECK(100 * c <= 40 * land);
+    }
+    CHECK(worstJump < 0.35f); // the 1/d^2 blend: no wall at a border
+}
+

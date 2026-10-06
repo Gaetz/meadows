@@ -114,10 +114,35 @@ struct PlanSample {
     f32 flank { 0.0f };      // [0,1] on a cone's flank
     f32 corridor { 0.0f };   // [0,1] inside a walk's tube
     f32 padFlat { 0.0f };    // [0,1] inside a site pad
-    u8 character { 0 };      // nearest moyen/grand site's hash % 6
+    // The CHARACTER region (docs/POI-CATALOGUE.md §E): the nearest
+    // moyen/grand site owns a character; the multipliers blend over
+    // the three nearest (1/d^2) so nothing steps at a border.
+    u8 character { 0 };      // the dominant character id
+    f32 reliefMul { 1.0f };  // tier relief amplitude multiplier
+    f32 wavelengthMul { 1.0f }; // tier relief wavelength multiplier
+    f32 wetBias { 0.0f };    // beds deeper, cover wetter
+    f32 hardBias { 0.0f };   // lithology
+    f32 coverBias { 0.0f };  // pushes the cover selector (heath/dry)
 };
+
+// The character table: six landscape styles between the points of
+// interest, indexed by a site's hash.
+enum class PoiCharacter : u8 {
+    RollingMeadow = 0, // the reference: relief x1, lambda x1
+    Bocage,            // small close bumps, a little wetter
+    WoodedHills,       // ample hills (the scatter reads the cover)
+    Marsh,             // nearly flat, wet, long waves
+    RockyPlateau,      // mesa country: low relief, long waves, hard
+    Heath,             // bare rolling land, long waves, heath cover
+    Count
+};
+const char* poiCharacterName(PoiCharacter c);
 PlanSample planSampleAt(const WorldLayerParams& world,
                         const PoiPlanParams& plan, f32 x, f32 z);
+// The cover bias of the character region alone (no kernels): the
+// per-texel palette id reads it.
+f32 planCoverBiasAt(const WorldLayerParams& world, const PoiPlanParams& plan,
+                    f32 x, f32 z);
 
 // Sites of every tier whose centre lies in the rect (world meters).
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,

@@ -12,6 +12,15 @@
 
 namespace render::terraingen {
 
+const char* poiCharacterName(PoiCharacter c) {
+    static const char* kNames[] = { "rolling-meadow", "bocage",
+                                    "wooded-hills",   "marsh",
+                                    "rocky-plateau",  "heath" };
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) ==
+                  static_cast<size_t>(PoiCharacter::Count));
+    return kNames[static_cast<size_t>(c)];
+}
+
 const char* poiTypeName(PoiType type) {
     static const char* kNames[] = {
         "summit",    "needle",   "ridge",     "mesa",      "butte",
@@ -750,6 +759,25 @@ f32 segmentDistance(f32 px, f32 pz, f32 ax, f32 az, f32 bx, f32 bz,
 
 } // namespace
 
+namespace {
+
+struct CharacterStyle {
+    f32 reliefMul, wavelengthMul, wetBias, hardBias, coverBias;
+};
+
+// docs/POI-CATALOGUE.md §E, the temperate column (the other biomes
+// reuse the styles; their palettes come from the climate).
+constexpr CharacterStyle kCharacters[] = {
+    { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f },     // rolling meadow
+    { 0.8f, 0.7f, 0.1f, 0.0f, 0.0f },     // bocage
+    { 1.25f, 0.85f, 0.0f, 0.0f, 0.0f },   // wooded hills
+    { 0.4f, 1.2f, 0.6f, -0.1f, 0.2f },    // marsh
+    { 0.7f, 1.5f, -0.2f, 0.35f, -0.1f },  // rocky plateau
+    { 0.9f, 1.8f, -0.1f, 0.1f, 0.3f },    // heath
+};
+
+} // namespace
+
 PlanSample planSampleAt(const WorldLayerParams& world,
                         const PoiPlanParams& plan, f32 x, f32 z) {
     PlanSample out;
@@ -757,6 +785,9 @@ PlanSample planSampleAt(const WorldLayerParams& world,
     // Sites: the 3x3 moyen and petit cells, the grand cells within reach
     // (a grand's cone reaches ~1 km: its own cell and the neighbours).
     f32 nearestD = 1.0e30f;
+    // The three nearest moyen/grand sites for the character blend.
+    f32 nearD[3] = { 1.0e30f, 1.0e30f, 1.0e30f };
+    u8 nearC[3] = { 0, 0, 0 };
     for (const PoiTier tier : { PoiTier::Grand, PoiTier::Moyen, PoiTier::Petit }) {
         const f32 size = cellSize(plan, tier);
         const i32 cx = static_cast<i32>(std::floor(x / size));
@@ -769,9 +800,23 @@ PlanSample planSampleAt(const WorldLayerParams& world,
                 }
                 const PoiSite& s = c.site;
                 const f32 d = std::hypot(x - s.x, z - s.z);
-                if (tier != PoiTier::Petit && d < nearestD) {
-                    nearestD = d;
-                    out.character = static_cast<u8>(s.hash % 6u);
+                if (tier != PoiTier::Petit) {
+                    if (d < nearestD) {
+                        nearestD = d;
+                        out.character = static_cast<u8>(s.hash % 6u);
+                    }
+                    const u8 c = static_cast<u8>(s.hash % 6u);
+                    for (u32 k = 0; k < 3; ++k) {
+                        if (d < nearD[k]) {
+                            for (u32 j = 2; j > k; --j) {
+                                nearD[j] = nearD[j - 1];
+                                nearC[j] = nearC[j - 1];
+                            }
+                            nearD[k] = d;
+                            nearC[k] = c;
+                            break;
+                        }
+                    }
                 }
                 // Footprint reject before any kernel (cones derive their
                 // footprint from the height: bound by the max slope).
@@ -789,6 +834,32 @@ PlanSample planSampleAt(const WorldLayerParams& world,
                 out.flank = glm::max(out.flank, k.flank);
                 out.padFlat = glm::max(out.padFlat, k.padFlat);
             }
+        }
+    }
+    // The character blend: inverse-square weights of the three nearest
+    // sites (a ~250 m fade at a Voronoi border).
+    {
+        f32 wsum = 0.0f;
+        CharacterStyle mix { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        for (u32 k = 0; k < 3; ++k) {
+            if (nearD[k] >= 1.0e29f) {
+                continue;
+            }
+            const f32 w = 1.0f / (nearD[k] * nearD[k] + 150.0f * 150.0f);
+            const CharacterStyle& c = kCharacters[nearC[k]];
+            mix.reliefMul += w * c.reliefMul;
+            mix.wavelengthMul += w * c.wavelengthMul;
+            mix.wetBias += w * c.wetBias;
+            mix.hardBias += w * c.hardBias;
+            mix.coverBias += w * c.coverBias;
+            wsum += w;
+        }
+        if (wsum > 0.0f) {
+            out.reliefMul = mix.reliefMul / wsum;
+            out.wavelengthMul = mix.wavelengthMul / wsum;
+            out.wetBias = mix.wetBias / wsum;
+            out.hardBias = mix.hardBias / wsum;
+            out.coverBias = mix.coverBias / wsum;
         }
     }
     // Walks: corridors and screens of the edges around.
@@ -883,6 +954,49 @@ PlanSample planSampleAt(const WorldLayerParams& world,
         out.lift = glm::max(out.lift, screenLift);
     }
     return out;
+}
+
+f32 planCoverBiasAt(const WorldLayerParams& world, const PoiPlanParams& plan,
+                    f32 x, f32 z) {
+    memoReady(world, plan);
+    f32 nearD[3] = { 1.0e30f, 1.0e30f, 1.0e30f };
+    u8 nearC[3] = { 0, 0, 0 };
+    for (const PoiTier tier : { PoiTier::Grand, PoiTier::Moyen }) {
+        const f32 size = cellSize(plan, tier);
+        const i32 cx = static_cast<i32>(std::floor(x / size));
+        const i32 cz = static_cast<i32>(std::floor(z / size));
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const CellSite& c = typedSite(world, plan, tier, cx + dx, cz + dz);
+                if (!c.present) {
+                    continue;
+                }
+                const f32 d = std::hypot(x - c.site.x, z - c.site.z);
+                const u8 ch = static_cast<u8>(c.site.hash % 6u);
+                for (u32 k = 0; k < 3; ++k) {
+                    if (d < nearD[k]) {
+                        for (u32 j = 2; j > k; --j) {
+                            nearD[j] = nearD[j - 1];
+                            nearC[j] = nearC[j - 1];
+                        }
+                        nearD[k] = d;
+                        nearC[k] = ch;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    f32 wsum = 0.0f, bias = 0.0f;
+    for (u32 k = 0; k < 3; ++k) {
+        if (nearD[k] >= 1.0e29f) {
+            continue;
+        }
+        const f32 w = 1.0f / (nearD[k] * nearD[k] + 150.0f * 150.0f);
+        bias += w * kCharacters[nearC[k]].coverBias;
+        wsum += w;
+    }
+    return wsum > 0.0f ? bias / wsum : 0.0f;
 }
 
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,

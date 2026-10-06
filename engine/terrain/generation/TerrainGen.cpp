@@ -224,7 +224,9 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         awz += s.axisSin * slide;
     }
     const f32 relief = (noise::fbm(seed ^ kSaltRelief, awx, awz,
-                                   1.0f / t.reliefWavelength,
+                                   1.0f / (t.reliefWavelength *
+                                           glm::max(s.reliefWavelengthScale,
+                                                    0.1f)),
                                    glm::max(p.reliefOctaves, 1), 2.0f,
                                    0.5f) *
                             2.0f -
@@ -428,6 +430,9 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         noise::ridgedFbm(p.seed ^ kSaltStoryRidge, x, z,
                          2.0f / r.storyMountainWavelength, 4, 2.0f, 0.5f);
     f32 regimeHills = 0.0f;
+    f32 characterWet = 0.0f;
+    f32 characterHard = 0.0f;
+    f32 characterCover = 0.0f;
     if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
         // The intimate grid (the August landmark grid): a marked hill,
@@ -468,7 +473,12 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         s.reliefScale = (1.0f - 0.7f * piece.mesaTop) *
                         (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor) *
                         (1.0f - 0.75f * piece.clearing) *
-                        glm::mix(1.3f, 0.6f, calmBand);
+                        glm::mix(1.3f, 0.6f, calmBand) * ps.reliefMul;
+        s.reliefWavelengthScale = ps.wavelengthMul;
+        s.character = ps.character;
+        characterWet = ps.wetBias;
+        characterHard = ps.hardBias;
+        characterCover = ps.coverBias;
     } else {
         const PieceGrid pieces { kSaltPiece,        r.pieceCellSize,
                                  r.pieceChance,     r.pieceRadiusMin,
@@ -519,11 +529,13 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     s.hardness = glm::clamp(
         noise::fbm(p.seed ^ kSaltHardness, x, z, 1.0f / r.hardnessWavelength,
                    3, 2.0f, 0.5f) +
-            0.3f * w.massif * w.coast,
+            0.3f * w.massif * w.coast + characterHard,
         0.0f, 1.0f);
     s.bedDepth = lerpByEtage(r.bedDepthByEtage, s.tier) *
-                 noise::smoothstep01(25.0f, 70.0f, s.base);
-    s.biome = paletteIdFor(w.temperature, w.moisture, s.base, w.cover);
+                 noise::smoothstep01(25.0f, 70.0f, s.base) *
+                 (1.0f + characterWet);
+    s.biome = paletteIdFor(w.temperature, w.moisture, s.base,
+                           w.cover + characterCover);
     return s;
 }
 
@@ -533,8 +545,10 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // lattice sample never disagree.
     (void)tier;
     const WorldSample w = worldSampleAt(p.world, x, z);
+    const f32 coverBias = p.rhythm.plan ? planCoverBiasAt(p.world, p.poi, x, z)
+                                        : 0.0f;
     return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f),
-                        w.cover);
+                        w.cover + coverBias);
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,
@@ -632,11 +646,15 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                             s11.bedDepth);
         out.basinDepth = lerp(s00.basinDepth, s10.basinDepth,
                               s01.basinDepth, s11.basinDepth);
+        out.reliefWavelengthScale =
+            lerp(s00.reliefWavelengthScale, s10.reliefWavelengthScale,
+                 s01.reliefWavelengthScale, s11.reliefWavelengthScale);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
         out.sea = nearest.sea;
         out.hasBase = nearest.hasBase;
+        out.character = nearest.character;
         return out;
     };
     for (u32 row = 0; row < spec.n; ++row) {

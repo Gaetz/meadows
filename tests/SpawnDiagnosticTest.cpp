@@ -389,7 +389,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         return false;
     };
     const auto coverOf = [&](f32 x, f32 z) -> int {
-        return controls.at(x, z).biome;
+        const ControlSample s = controls.at(x, z);
+        return static_cast<int>(s.biome) * 16 + static_cast<int>(s.character);
     };
     const auto runTransect = [&](const char* label, f32 dirX, f32 dirZ) {
         constexpr u32 kWindow = 10; // 10 x 25 m = 250 m = ~45 s of run
