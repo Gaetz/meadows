@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
@@ -26,6 +27,9 @@ int terrainMap(char** argv, int argc) {
         params.size = static_cast<u32>(std::atoi(argv[7]));
     }
 
+    if (argc >= 9) {
+        params.drawPoi = std::string(argv[8]) == "poi";
+    }
     ProceduralControlParams controlParams;
     controlParams.seed = seed;
     const ProceduralControls controls { controlParams };

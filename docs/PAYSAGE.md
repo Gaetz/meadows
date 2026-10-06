@@ -1464,6 +1464,55 @@ Ordre imposé : N3 avant N4. Hors passe : Form/UI des paramètres, bump
 TRG4, passage sans couture (cartes voisines résidentes), peuplement/POI,
 gouttelettes, mode histoire.
 
+### 7.6 Le plan de POI — le terrain au service des points d'intérêt (chantier COURANT, 2026-10-06)
+
+**Décision dev (nuit du 5 au 6 octobre)** après la brique « rythme
+histoire » : « des jeux comme Breath of the Wild ou Skyrim sont marqués par
+le fait qu'on voit plusieurs points d'intérêt où que l'on soit » — les POI
+viennent d'abord, le terrain est sculpté autour. Arbitrages : **POI = formes
+de terrain** (les structures humaines viendront plus tard sur les endroits
+visibles ou les sites propices aux villes, que le plan réserve) ; **~16 POI
+moyens par carte de 8 km** ; **visibilité garantie : 1 grand + 1 moyen depuis
+90 % des points marchables** ; **sol entre les POI = roulis du mode histoire
+(±75 m / 500 m), POI 2-3× plus hauts** ; ce chantier passe **avant N4-N5**.
+La règle du triangle de Nintendo (cacher / choisir / révéler, trois tailles,
+gravité, sommet-belvédère) est intégrée principe par principe. Le plan
+détaillé (briques P1-P5, architecture, règles, annexe) est le fichier de plan
+de la session ; la référence durable des types et des paysages est
+**`docs/POI-CATALOGUE.md`** (relief et roche, eau, côte, végétation ;
+caractères par biome ; règles de répartition F1-F8 ; la règle du triangle
+en une table).
+
+**Architecture** : `ProceduralControls::at` est étendu (pas de second
+provider) par un module `engine/terrain/generation/PoiPlan` — sites de trois
+étages sur des réseaux de cellules ancrés monde (grand 8 192 m = la carte,
+moyen 2 048 m, petit 350 m à 60 %), typés par les tables du catalogue depuis
+`worldSampleAt(site)`, liés par un graphe de voisinage relatif (symétrique et
+local : identique des deux côtés d'une ligne), mémoïsés par cellule en
+thread-local. Les briques : P1 plan + rendu + tests ; P2 noyaux, corridors,
+écrans dans `at()` (derrière une bascule pour l'A/B) ; P3 caractères ; P4
+visibilité et triangle (instrument `poi visibility`) ; P5 pads de ville,
+départ, export du plan dans `MapRecords`.
+
+#### Journal
+
+- **2026-10-06 — P1 livrée : le plan de POI.** `PoiPlan.hpp/.cpp`
+  (`poiSitesNear`, `poiEdgesNear`, `PoiPlanParams` dans
+  `ProceduralControlParams.poi`), 28 types, tables par contexte (mer / disque
+  de départ / côte / massif / étage ≥ 450 / ≥ 150 / plaine ; aride, froid),
+  règle F2 (grands voisins différents) et F3 (moyens adjacents différents,
+  comparés sur le tirage de base, un niveau), le grand de la cellule de
+  départ repoussé à ≥ 1 500 m du spawn, tailles par type (bassins en creux,
+  pads plats). `cooker terrain-map … poi` dessine sites (disque par étage,
+  couleur par famille) et marches (jaune, par leur point de passage).
+  Mesuré (seed 1337, 16 cartes) : 16 grands, 256 moyens (16 par carte), paire
+  la plus proche 1 112 m, 5 325 petits ; graphe sur 144 moyens : 192 arêtes,
+  0 isolé, 5 paires adjacentes de même type (2,6 %), 7 types distincts ;
+  symétrie à la ligne x = 8 192 vérifiée (une marche traversante, trouvée
+  identique depuis les deux cartes — la densité des traversées est à
+  regarder en P4). `docs/POI-CATALOGUE.md` écrit. Aucun changement de terrain
+  encore (le plan n'est pas lu par `at()` avant P2).
+
 ---
 
 ## 8. Glossaire

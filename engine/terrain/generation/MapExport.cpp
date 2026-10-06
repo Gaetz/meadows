@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/MapExport.hpp"
+#include "engine/terrain/generation/PoiPlan.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -155,6 +156,67 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
                         for (i32 dx = -thick; dx <= thick; ++dx) {
                             plot(col + dx, row + dz, riverBlue);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (params.drawPoi) {
+        const WorldLayerParams& world = controls.params().world;
+        const PoiPlanParams& plan = controls.params().poi;
+        const f32 maxX = minX + params.span;
+        const f32 maxZ = minZ + params.span;
+        const auto toCol = [&](f32 x) {
+            return static_cast<i32>((x - minX) / texel);
+        };
+        const auto toRow = [&](f32 z) {
+            return static_cast<i32>((z - minZ) / texel);
+        };
+        const auto line = [&](f32 ax, f32 az, f32 bx, f32 bz,
+                              const Rgb& c) {
+            const f32 length = std::hypot(bx - ax, bz - az);
+            const i32 steps =
+                glm::max(2, static_cast<i32>(length / (texel * 0.5f)));
+            for (i32 s = 0; s <= steps; ++s) {
+                const f32 t = static_cast<f32>(s) / static_cast<f32>(steps);
+                plot(toCol(glm::mix(ax, bx, t)), toRow(glm::mix(az, bz, t)),
+                     c);
+            }
+        };
+        const Rgb walk { 0.95f, 0.85f, 0.2f };
+        for (const PoiEdge& e :
+             poiEdgesNear(world, plan, minX, minZ, maxX, maxZ)) {
+            line(e.a.x, e.a.z, e.wx, e.wz, walk);
+            line(e.wx, e.wz, e.b.x, e.b.z, walk);
+        }
+        for (const PoiSite& s :
+             poiSitesNear(world, plan, minX, minZ, maxX, maxZ)) {
+            // Family colours: relief red, water blue, coast cyan,
+            // vegetation green, sites white.
+            Rgb c { 0.9f, 0.2f, 0.2f };
+            const u8 t = static_cast<u8>(s.type);
+            if (t >= static_cast<u8>(PoiType::Waterfall) &&
+                t <= static_cast<u8>(PoiType::Confluence)) {
+                c = { 0.2f, 0.4f, 1.0f };
+            } else if (t >= static_cast<u8>(PoiType::Headland) &&
+                       t <= static_cast<u8>(PoiType::Islet)) {
+                c = { 0.2f, 0.9f, 0.9f };
+            } else if (s.type == PoiType::LoneTree ||
+                       s.type == PoiType::Grove) {
+                c = { 0.2f, 0.9f, 0.3f };
+            } else if (s.type == PoiType::CityPad) {
+                c = { 1.0f, 1.0f, 1.0f };
+            }
+            const i32 r = s.tier == PoiTier::Grand   ? 6
+                          : s.tier == PoiTier::Moyen ? 3
+                                                     : 1;
+            const i32 cc = toCol(s.x);
+            const i32 rr = toRow(s.z);
+            for (i32 dz = -r; dz <= r; ++dz) {
+                for (i32 dx = -r; dx <= r; ++dx) {
+                    if (dx * dx + dz * dz <= r * r) {
+                        plot(cc + dx, rr + dz, c);
                     }
                 }
             }

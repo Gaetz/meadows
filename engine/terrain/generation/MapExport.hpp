@@ -20,6 +20,9 @@ struct TerrainMapParams {
     u32 size { 1000 };     // pixels per side
     bool drawRivers { true }; // master-network fleuve courses
     bool markCenter { true }; // small cross at the center
+    // The POI plan: sites (disc by tier, colour by family) and the
+    // walks between moyen sites (thin lines through their waypoint).
+    bool drawPoi { false };
 };
 
 // RGB8, size*size*3, row 0 = north (centerZ - span/2).

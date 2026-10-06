@@ -77,6 +77,7 @@
     WaterQueryTest.cpp
     AuthoringTest.cpp
     SpawnDiagnosticTest.cpp
+    PoiPlanTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
     MapRasterTest.cpp

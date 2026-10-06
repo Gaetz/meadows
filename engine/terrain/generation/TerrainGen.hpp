@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
+#include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
 // Terrain generation pipeline — stage S1 (macro synthesis). Headless
@@ -145,6 +146,7 @@ struct ProceduralControlParams {
     u32 seed { 1337 }; // copied into world.seed by ProceduralControls
     WorldLayerParams world;
     RhythmParams rhythm;
+    PoiPlanParams poi; // the POI plan (docs/POI-CATALOGUE.md)
 };
 
 class ProceduralControls final : public ControlSource {
