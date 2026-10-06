@@ -25,6 +25,9 @@ constexpr u32 kSaltRidgeCol = 0x51d9ec01u;
 constexpr u32 kSaltCol = 0xc0110000u;
 constexpr u32 kSaltAxialWarp = 0x51deca5eu;
 constexpr u32 kSaltBed = 0xbed0bed0u;
+constexpr u32 kSaltRegime = 0x4b1d5eedu;
+constexpr u32 kSaltCalm = 0xca1a90c1u;
+constexpr u32 kSaltIntimate = 0x811c0113u;
 constexpr u32 kSaltStoryMask = 0x51ed270bu;
 constexpr u32 kSaltStoryRidge = 0xc2b2ae35u;
 
@@ -65,12 +68,24 @@ struct PieceSample {
     f32 mesaTop { 0.0f };    // [0,1] on a mesa's flat top
     f32 ridgeFlank { 0.0f }; // [0,1] on a dome/ridge flank
     f32 col { 0.0f };        // [0,1] saddle corridor of a ridge piece
+    f32 clearing { 0.0f };   // [0,1] relief-suppression bowl (no lift)
 };
 
-PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z) {
+// A jittered-grid layer of landforms: the pieces (the plan-off
+// reference, heights by étage) or the INTIMATE grid under the plan
+// (one height range, clearings allowed — the August landmark grid).
+struct PieceGrid {
+    u32 salt;
+    f32 cellSize, chance, radiusMin, radiusMax;
+    f32 heightMin, heightMax; // used when !byEtage
+    bool byEtage, clearings, startCellAlways;
+};
+
+PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z,
+                       const PieceGrid& g) {
     const RhythmParams& r = p.rhythm;
     PieceSample out;
-    const f32 cellSize = r.pieceCellSize;
+    const f32 cellSize = g.cellSize;
     const i32 cellX = static_cast<i32>(std::floor(x / cellSize));
     const i32 cellZ = static_cast<i32>(std::floor(z / cellSize));
     // The start cell always has its piece: the meadow the decree
@@ -84,12 +99,12 @@ PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z) {
             const i32 gx = cellX + dx;
             const i32 gz = cellZ + dz;
             const auto jitter = [&](u32 k) {
-                return noise::lattice((p.seed ^ kSaltPiece) +
-                                          k * 0x9e3779b9u,
+                return noise::lattice((p.seed ^ g.salt) + k * 0x9e3779b9u,
                                       gx, gz);
             };
-            const bool startCell = gx == startCellX && gz == startCellZ;
-            if (!startCell && jitter(9) > r.pieceChance) {
+            const bool startCell =
+                g.startCellAlways && gx == startCellX && gz == startCellZ;
+            if (!startCell && jitter(9) > g.chance) {
                 continue;
             }
             const f32 px =
@@ -98,11 +113,11 @@ PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z) {
             const f32 pz =
                 (static_cast<f32>(gz) + 0.2f + 0.6f * jitter(1)) *
                 cellSize;
-            const f32 radius =
-                glm::mix(r.pieceRadiusMin, r.pieceRadiusMax, jitter(3));
+            const f32 radius = glm::mix(g.radiusMin, g.radiusMax, jitter(3));
             const f32 variant = jitter(4);
-            const bool mesa = variant >= 0.75f;
-            const bool ridge = variant >= 0.4f && !mesa;
+            const bool clearing = g.clearings && variant < 0.25f;
+            const bool mesa = !clearing && variant >= 0.75f;
+            const bool ridge = !clearing && variant >= 0.4f && !mesa;
             const f32 aspect = ridge ? glm::mix(2.8f, 4.5f, jitter(5))
                                      : 1.0f + 0.4f * jitter(5);
             const f32 theta = jitter(6) * 3.14159265f;
@@ -122,12 +137,21 @@ PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z) {
             if (centre.sea) {
                 continue;
             }
-            const u32 tier = glm::min(
-                3u, static_cast<u32>(std::lround(etageIndexFor(
-                        p.world, glm::max(centre.base, 0.0f)))));
-            const f32 height = glm::mix(r.pieceHeightByEtage[tier][0],
-                                        r.pieceHeightByEtage[tier][1],
-                                        jitter(2));
+            f32 height;
+            if (g.byEtage) {
+                const u32 tier = glm::min(
+                    3u, static_cast<u32>(std::lround(etageIndexFor(
+                            p.world, glm::max(centre.base, 0.0f)))));
+                height = glm::mix(r.pieceHeightByEtage[tier][0],
+                                  r.pieceHeightByEtage[tier][1], jitter(2));
+            } else {
+                height = glm::mix(g.heightMin, g.heightMax, jitter(2));
+            }
+            if (clearing) {
+                // An open bowl: the relief carriers flatten, no lift.
+                out.clearing = glm::max(out.clearing, (1.0f - n2) * (1.0f - n2));
+                continue;
+            }
             const f32 n = std::sqrt(n2);
             if (mesa) {
                 const f32 k = 1.0f - noise::smoothstep01(0.55f, 0.9f, n);
@@ -403,18 +427,55 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         storyMask * r.storyMountainAmplitude *
         noise::ridgedFbm(p.seed ^ kSaltStoryRidge, x, z,
                          2.0f / r.storyMountainWavelength, 4, 2.0f, 0.5f);
+    f32 regimeHills = 0.0f;
     if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
-        designedLift = ps.lift;
-        lift = glm::max(ps.lift, storyMountain * r.planStoryScale);
-        piece.mesaTop = ps.mesaTop;
-        piece.ridgeFlank = ps.flank;
+        // The intimate grid (the August landmark grid): a marked hill,
+        // a knoll or a clearing every ~1.2 km between the plan's sites.
+        const PieceGrid intimate { kSaltIntimate,      r.intimateCellSize,
+                                   r.intimateChance,   r.intimateRadiusMin,
+                                   r.intimateRadiusMax, r.intimateHeightMin,
+                                   r.intimateHeightMax, false, true, false };
+        piece = pieceLayer(p, x, z, intimate);
+        // A clearing is walk-scale country: never a decree against a
+        // massif's orogeny (August's rule).
+        piece.clearing *= (1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif)) *
+                          (1.0f - noise::smoothstep01(30.0f, 80.0f, ps.lift));
+        designedLift = glm::max(ps.lift, piece.add);
+        // The relief regime (August): hill-chain country, old massif,
+        // plain — a short selector, the landscape between two POI.
+        const f32 regime = noise::fbm(p.seed ^ kSaltRegime, x, z,
+                                      1.0f / r.regimeWavelength, 3, 2.0f,
+                                      0.5f);
+        const f32 hills = 1.0f - noise::smoothstep01(0.22f, 0.33f, regime);
+        const f32 old = noise::smoothstep01(0.55f, 0.68f, regime);
+        // Low country has its hill chains too: the gate only spares
+        // the beach.
+        const f32 regimeGate = noise::smoothstep01(8.0f, 40.0f, s.base);
+        regimeHills = hills * regimeGate * r.regimeHillAmplitude;
+        const f32 regimeLift = old * regimeGate * r.regimeMassifHeight;
+        lift = glm::max(glm::max(designedLift, storyMountain * r.planStoryScale),
+                        regimeLift);
+        piece.mesaTop = glm::max(piece.mesaTop, ps.mesaTop);
+        piece.ridgeFlank = glm::max(piece.ridgeFlank, ps.flank);
         corridor = ps.corridor;
         s.basinDepth = ps.basin * shoreGate;
-        s.reliefScale = (1.0f - 0.7f * ps.mesaTop) *
-                        (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor);
+        // Rugged plains vs calm plains: the calm band scales the roll.
+        const f32 calmBand = noise::smoothstep01(
+            0.36f, 0.52f,
+            noise::fbm(p.seed ^ kSaltCalm, x, z, 1.0f / r.calmBandWavelength,
+                       3, 2.0f, 0.5f));
+        s.reliefScale = (1.0f - 0.7f * piece.mesaTop) *
+                        (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor) *
+                        (1.0f - 0.75f * piece.clearing) *
+                        glm::mix(1.3f, 0.6f, calmBand);
     } else {
-        piece = pieceLayer(p, x, z);
+        const PieceGrid pieces { kSaltPiece,        r.pieceCellSize,
+                                 r.pieceChance,     r.pieceRadiusMin,
+                                 r.pieceRadiusMax,  0.0f,
+                                 0.0f,              true,
+                                 false,             true };
+        piece = pieceLayer(p, x, z, pieces);
         lift = glm::max(piece.add, storyMountain);
         designedLift = lift;
         s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
@@ -424,7 +485,8 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     // that feeds the stream power — never on a mesa top.
     const f32 inland = noise::smoothstep01(25.0f, 80.0f, s.base);
     s.hillRelief =
-        w.massif * lerpByEtage(r.crestAmplitudeByEtage, s.tier) * inland;
+        w.massif * lerpByEtage(r.crestAmplitudeByEtage, s.tier) * inland +
+        regimeHills;
     s.uplift = w.massif * noise::smoothstep01(0.3f, 0.8f, w.massif) *
                (1.0f - piece.mesaTop);
     // Guaranteed cols: thin stripes of a potential cut across every
@@ -451,7 +513,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, designedLift)) *
                      (1.0f - noise::smoothstep01(0.35f, 0.7f, w.massif)) *
                      (1.0f - 0.5f * piece.ridgeFlank);
-    s.calm = glm::max(calm, s.gentle);
+    s.calm = glm::max(glm::max(calm, s.gentle), piece.clearing);
     // Lithology: a slow hardness field, harder on massif coasts
     // (calanques).
     s.hardness = glm::clamp(
@@ -461,7 +523,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         0.0f, 1.0f);
     s.bedDepth = lerpByEtage(r.bedDepthByEtage, s.tier) *
                  noise::smoothstep01(25.0f, 70.0f, s.base);
-    s.biome = paletteIdFor(w.temperature, w.moisture, s.base);
+    s.biome = paletteIdFor(w.temperature, w.moisture, s.base, w.cover);
     return s;
 }
 
@@ -471,7 +533,8 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // lattice sample never disagree.
     (void)tier;
     const WorldSample w = worldSampleAt(p.world, x, z);
-    return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f));
+    return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f),
+                        w.cover);
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,

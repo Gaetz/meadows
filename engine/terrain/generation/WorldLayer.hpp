@@ -63,6 +63,12 @@ struct WorldLayerParams {
     f32 climateWavelength { 9000.0f };
     f32 climateSlowWavelength { 200000.0f };
     f32 lapsePerKm { 0.25f };
+    // The COVER: a short selector on the climate so the palette (and
+    // with it the ground and the scatter) changes every ~45 s of walk —
+    // a place of 700 m, between the 350 m confetti rejected in August
+    // and the 3 km regions that never alternate.
+    f32 coverWavelength { 600.0f };
+    f32 coverAmp { 0.16f };
 };
 
 struct WorldSample {
@@ -73,6 +79,7 @@ struct WorldSample {
     f32 coast { 0.0f };     // [0,1] 1 on the shoreline, 0 inland/offshore
     f32 temperature { 0.5f };
     f32 moisture { 0.5f };
+    f32 cover { 0.5f }; // [0,1] the short cover selector (700 m)
     bool sea { false };
 };
 
@@ -86,6 +93,9 @@ f32 etageAltitudeFor(const WorldLayerParams& p, f32 tier);
 // Climate -> biome palette id (the BiomeForm contract: 0 temperate,
 // 1 arid, 2 alpine, 3 tundra, 4 subalpine, 5 steppe). Cold beats arid
 // beats altitude; temperate is the default.
-u8 paletteIdFor(f32 temperature, f32 moisture, f32 base);
+// `cover` [0,1]: inside the temperate default, the short selector
+// picks the heath (4) or the dry meadow (5) variant — the ground and
+// the scatter change every ~45 s of walk without leaving the climate.
+u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover = 0.5f);
 
 } // namespace render::terraingen

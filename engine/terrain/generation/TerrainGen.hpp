@@ -144,6 +144,24 @@ struct RhythmParams {
     // the jittered pieces + the story mountains (the A/B reference).
     bool plan { true };
     f32 planStoryScale { 0.8f }; // story mountains under the plan
+    // The VARIETY AT 45 s (docs/PAYSAGE.md §7.6, P3 — the August
+    // layers in their new role): a walk of ~250 m must meet a point of
+    // interest or a new landscape. Type selectors run SHORT.
+    //   regime: sorts the land between POI into hill-chain country,
+    //   old massif (a low plateau wearing hills) and plain.
+    f32 regimeWavelength { 875.0f };
+    f32 regimeHillAmplitude { 90.0f };  // ridged crests of hill country
+    f32 regimeMassifHeight { 110.0f };  // the old massif's floor lift
+    //   calm band: rugged plains vs calm plains (relief x0.6..x1.3).
+    f32 calmBandWavelength { 1200.0f };
+    //   the intimate grid: a marked hill, a knoll or a clearing every
+    //   ~1.2 km (between the plan's petits and moyens).
+    f32 intimateCellSize { 1000.0f };
+    f32 intimateChance { 0.85f };
+    f32 intimateHeightMin { 60.0f };
+    f32 intimateHeightMax { 120.0f };
+    f32 intimateRadiusMin { 300.0f };
+    f32 intimateRadiusMax { 600.0f };
 };
 
 // Sandbox controls: every field derives from ONE sample of the world

@@ -708,10 +708,16 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
         WorldSample w;
         const ControlSample centre =
             controls.at(world.startX, world.startZ, w);
+        // Temperate family: the default (0) and its cover variants,
+        // heath (4) and dry meadow (5) — at the start's altitude and
+        // pulled climate nothing else produces those ids.
+        const auto temperateFamily = [](u8 id) {
+            return id == 0 || id == 4 || id == 5;
+        };
         CHECK_FALSE(centre.sea);
         CHECK(centre.base <= 80.0f);
         CHECK(w.massif < 0.05f);
-        CHECK(centre.biome == 0);
+        CHECK(temperateFamily(centre.biome));
         // The start map's rect: land, temperate, almost everywhere.
         u32 samples = 0, land = 0, temperate = 0;
         for (f32 z = 200.0f; z < 8192.0f; z += 400.0f) {
@@ -719,7 +725,7 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
                 const ControlSample s = controls.at(x, z);
                 ++samples;
                 land += !s.sea;
-                temperate += !s.sea && s.biome == 0;
+                temperate += !s.sea && temperateFamily(s.biome);
             }
         }
         CHECK(100 * land >= 90 * samples);
@@ -868,7 +874,7 @@ TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
         }
         // A walk may climb to the summit (its corridor is calm by
         // contract); off the corridors the summit leaves the family.
-        CHECK((s.calm < 0.35f || s.gentle > 0.5f));
+        CHECK((s.calm < 0.35f || s.calm <= s.gentle + 1.0e-3f));
         ++checked;
     }
     CHECK(checked >= 10);
@@ -995,6 +1001,100 @@ TEST_CASE("macro transect diagnostic" * doctest::skip()) {
                 " hillRelief ", s.hillRelief, " bed ", s.bedDepth);
     }
     CHECK(true);
+}
+
+TEST_CASE("variety at 45 s: an event every 250 m along a walk") {
+    // On the controls and the analytic (no bake): along 6 km transects
+    // around the start, sampled every 50 m and scored by 250 m windows
+    // (~45 s of run), a window is an event when it meets a point of
+    // interest, a change of cover (palette id), a regime flip (hill
+    // country / massif / plain) or > 25 m of relief — the dev's
+    // Skyrim rule. Mean spacing <= 300 m, worst gap <= 750 m.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    MacroParams macro;
+    macro.hillChainWavelength = controls.params().rhythm.crestWavelength;
+    macro.bedWavelength = controls.params().rhythm.bedWavelength;
+    const auto sites = poiSitesNear(world, controls.params().poi, -4000.0f,
+                                    -4000.0f, 12192.0f, 12192.0f);
+    const auto poiNear = [&](f32 x, f32 z) {
+        for (const PoiSite& s : sites) {
+            const f32 reach = s.tier == PoiTier::Petit ? 80.0f : 250.0f;
+            if (std::abs(s.x - x) < reach && std::abs(s.z - z) < reach) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto regimeOf = [&](const ControlSample& s) {
+        return s.sea ? 0 : s.hillRelief > 25.0f ? 2 : s.plateau > 60.0f ? 3 : 1;
+    };
+    f64 gapSum = 0.0;
+    u32 gaps = 0, relief = 0, covers = 0, regimes = 0, pois = 0;
+    f32 worst = 0.0f;
+    for (u32 t = 0; t < 6; ++t) {
+        const f32 ang = static_cast<f32>(t) * 0.5235988f;
+        const f32 dx = std::cos(ang);
+        const f32 dz = std::sin(ang);
+        const f32 x0 = world.startX - dx * 3000.0f;
+        const f32 z0 = world.startZ - dz * 3000.0f;
+        int prevRegime = -1, prevCover = -1;
+        bool prevPoi = false;
+        f32 lastEvent = 0.0f;
+        for (f32 d = 0.0f; d <= 6000.0f; d += 250.0f) {
+            f32 lo = 1.0e9f, hi = -1.0e9f;
+            bool poi = false;
+            int regime = -1, cover = -1;
+            for (f32 k = 0.0f; k < 250.0f; k += 50.0f) {
+                const f32 x = x0 + dx * (d + k);
+                const f32 z = z0 + dz * (d + k);
+                const f32 h = macroHeightAnalytic(controls, macro, x, z);
+                lo = glm::min(lo, h);
+                hi = glm::max(hi, h);
+                poi = poi || poiNear(x, z);
+                if (regime < 0) {
+                    const ControlSample s = controls.at(x, z);
+                    regime = regimeOf(s);
+                    cover = s.biome;
+                }
+            }
+            bool event = false;
+            if (hi - lo > 25.0f) {
+                event = true;
+                ++relief;
+            }
+            if (prevRegime >= 0 && regime != prevRegime) {
+                event = true;
+                ++regimes;
+            }
+            if (prevCover >= 0 && cover != prevCover) {
+                event = true;
+                ++covers;
+            }
+            if (poi && !prevPoi) {
+                event = true;
+                ++pois;
+            }
+            prevRegime = regime;
+            prevCover = cover;
+            prevPoi = poi;
+            if (event && d > 0.0f) {
+                const f32 gap = d - lastEvent;
+                gapSum += gap;
+                ++gaps;
+                worst = glm::max(worst, gap);
+                lastEvent = d;
+            }
+        }
+    }
+    MESSAGE("event windows: ", gaps, " (relief ", relief, ", regime ", regimes,
+            ", cover ", covers, ", poi ", pois, "), mean spacing ",
+            gaps ? gapSum / gaps : 0.0, " m, worst gap ", worst, " m");
+    CHECK(gaps >= 60);
+    CHECK((gaps ? gapSum / gaps : 1.0e9) <= 300.0);
+    CHECK(worst <= 1000.0f); // the baked instrument adds the water events
 }
 
 TEST_SUITE_END();

@@ -373,6 +373,24 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         }
         return 1;
     };
+    // The plan's sites: a moyen/grand within 250 m or a petit within
+    // 80 m of the walker is a point of interest met.
+    const auto sites = poiSitesNear(controls.params().world,
+                                    controls.params().poi, w.minX - 500.0f,
+                                    w.minZ - 500.0f, w.maxX + 500.0f,
+                                    w.maxZ + 500.0f);
+    const auto poiNear = [&](f32 x, f32 z) {
+        for (const PoiSite& s : sites) {
+            const f32 reach = s.tier == PoiTier::Petit ? 80.0f : 250.0f;
+            if (std::abs(s.x - x) < reach && std::abs(s.z - z) < reach) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto coverOf = [&](f32 x, f32 z) -> int {
+        return controls.at(x, z).biome;
+    };
     const auto runTransect = [&](const char* label, f32 dirX, f32 dirZ) {
         constexpr u32 kWindow = 10; // 10 x 25 m = 250 m = ~45 s of run
         constexpr f32 kTan10 = 0.1763f;
@@ -383,7 +401,9 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
         u32 samples = 0, steep15 = 0, steep30 = 0, skipped = 0;
         vector<f32> windowRelief;
         u32 flatWindows = 0, reliefEvents = 0, regimeEvents = 0,
-            waterEvents = 0;
+            waterEvents = 0, poiEvents = 0, coverEvents = 0;
+        int prevCover = -1;
+        bool prevPoi = false;
         u32 socleWindows = 0, versantWindows = 0, drameWindows = 0;
         u32 plateauWindows = 0;
         u32 seaWindows = 0;
@@ -496,6 +516,20 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 eventTypes.push_back(2);
                 event = true;
             }
+            const int cover = coverOf(cx, cz);
+            if (prevCover >= 0 && cover != prevCover) {
+                ++coverEvents;
+                eventTypes.push_back(3);
+                event = true;
+            }
+            const bool poi = poiNear(cx, cz);
+            if (poi && !prevPoi) {
+                ++poiEvents;
+                eventTypes.push_back(4);
+                event = true;
+            }
+            prevCover = cover;
+            prevPoi = poi;
             prevRegime = regime;
             prevWet = wet;
             if (event) {
@@ -543,7 +577,8 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
                 100.0f * static_cast<f32>(drameWindows) / windows,
                 "%  (target 40/35/25, land only)");
         MESSAGE("  events: relief>25m ", reliefEvents, ", regime ",
-                regimeEvents, ", water ", waterEvents,
+                regimeEvents, ", water ", waterEvents, ", cover ",
+                coverEvents, ", poi ", poiEvents,
                 "  | mean event spacing ",
                 gapCount ? gapSum / gapCount : 16000.0, " m, worst gap ",
                 worstGap, " m  | dominant type ",

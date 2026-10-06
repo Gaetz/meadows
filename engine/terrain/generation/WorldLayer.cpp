@@ -22,6 +22,8 @@ constexpr u32 kSaltTemperature = 0x7ea7be57u;
 constexpr u32 kSaltMoisture = 0x6d015745u;
 constexpr u32 kSaltTemperatureSlow = 0x7ea7be58u;
 constexpr u32 kSaltMoistureSlow = 0x6d015746u;
+constexpr u32 kSaltCoverT = 0xc0ec0e01u;
+constexpr u32 kSaltCoverM = 0xc0ec0e02u;
 
 // Province altitude from the raw étage field: a monotone table, the
 // low end wide (most land is low country), the high end rare.
@@ -204,6 +206,16 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
                    0.2f * (mSlow - 0.5f) + 0.15f * w.coast;
     temperature = glm::mix(temperature, 0.50f, pullLow);
     moisture = glm::mix(moisture, 0.55f, pullLow);
+    // The cover selector: nudges the climate and, inside the temperate
+    // default, picks the variant (paletteIdFor) — start included (a
+    // meadow with its heath and its copses is still a meadow).
+    const f32 coverT = noise::fbm(p.seed ^ kSaltCoverT, x, z,
+                                  1.0f / p.coverWavelength, 2, 2.0f, 0.5f);
+    const f32 coverM = noise::fbm(p.seed ^ kSaltCoverM, x, z,
+                                  1.0f / p.coverWavelength, 2, 2.0f, 0.5f);
+    temperature += p.coverAmp * (coverT * 2.0f - 1.0f);
+    moisture += p.coverAmp * (coverM * 2.0f - 1.0f);
+    w.cover = coverT;
     w.temperature = temperature;
     w.moisture = moisture;
     return w;
@@ -230,7 +242,7 @@ f32 etageAltitudeFor(const WorldLayerParams& p, f32 tier) {
                     t - static_cast<f32>(i0));
 }
 
-u8 paletteIdFor(f32 temperature, f32 moisture, f32 base) {
+u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover) {
     if (temperature < 0.34f) {
         return 3; // tundra
     }
@@ -245,6 +257,13 @@ u8 paletteIdFor(f32 temperature, f32 moisture, f32 base) {
     }
     if (moisture < 0.46f && temperature > 0.54f) {
         return 5; // steppe
+    }
+    // Temperate: the cover variants (heath above, dry meadow below).
+    if (cover > 0.62f) {
+        return 4;
+    }
+    if (cover < 0.36f) {
+        return 5;
     }
     return 0;
 }

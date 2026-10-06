@@ -1574,6 +1574,37 @@ départ, export du plan dans `MapRecords`.
   24,8 % / 39 m / 97 m / 32 %. Hash 7920876824618097595 (v73). Test
   « calm is the rule » : le socle texturé reste calme, les sommets des
   POI quittent la famille.
+- **2026-10-06 — Cadre dev corrigé : « une plaine n'est pas un problème,
+  une plaine de plus de 30 s de marche l'est ; dans Skyrim il y a un point
+  d'intérêt ou un nouveau paysage toutes les 45 secondes » ; et « les
+  éléments d'août peuvent servir à créer la variété entre les POI ».** Les
+  vallées maîtresses ne sont qu'une suggestion de chemin parmi d'autres :
+  les chemins réels viendront d'un **A\* de moindre pente entre les
+  installations humaines** (peuplement, après P5). **P3 réécrite « la
+  variété à 45 s »**, livrée : les sélecteurs d'août reviennent sous le
+  plan — **régime de relief** à 875 m (pays de collines : crêtes ridgées
+  90 m sur la longueur d'onde des crêtes ; vieux massif : plancher +110 m,
+  hors porte calme ; plaine), **bande de calme** à 1 200 m (roulis ×0,6 à
+  ×1,3 : plaines calmes contre plaines rugueuses), **grille intime** à
+  1 000 m (85 % : colline marquée 60-120 m, échine, mesa ou clairière —
+  `PieceGrid` : `pieceLayer` paramétré, clairière = bol sans levée,
+  jamais sur un massif ni sur un POI), **couvert** à 600 m
+  (`WorldSample::cover`, `paletteIdFor(…, cover)` : dans le tempéré la
+  lande (4) au-dessus de 0,62, la prairie sèche (5) sous 0,36). Instrument
+  `variety transect` étendu : événements POI (moyen/grand à < 250 m,
+  petit à < 80 m) et couvert (changement d'id de palette) ; nouveau test
+  « variety at 45 s » sur contrôles + analytique (6 transects au départ,
+  fenêtres de 250 m : 128 événements — relief 87, régime 31, couvert 63,
+  POI 24 — **espacement moyen 277 m, pire écart 750 m**). v74, hash
+  16056817174982315739. **Baseline « variété » sur le baké** (carte (0,0),
+  transects par le spawn) : E-O espacement **338 m** (pire 1 250), N-S
+  **261 m** (pire 775), relief médian 53 m par 250 m ; carte : versant
+  95 %, relief médian 58 m ; palette intérieure tempéré 49 % / lande 22 %
+  / prairie sèche 29 % ; colline ≤ 1,5 km 6/9 ; 92 lacs + 57 étangs ;
+  autour du spawn (rhythm) pente 20,6 %, 34 m / 250 m, 21 % du sol > 100 m.
+  Reste : la cible de 250 m n'est atteinte que N-S ; levier suivant = les
+  ruisseaux comme événements (tous les 500-800 m selon §4) et la grille
+  intime à 900 m ; jugement dev EN ATTENTE.
 
 ---
 
