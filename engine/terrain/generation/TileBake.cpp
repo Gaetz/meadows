@@ -249,6 +249,10 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                 glm::clamp(character.erodibility[i], 0.4f, 3.0f);
             character.talusScale[i] =
                 glm::clamp(character.talusScale[i], 0.5f, 1.6f);
+            // The plan's cliffs hold: a designed wall is not scree.
+            if (i < macro.cliff.size()) {
+                character.talusScale[i] *= 1.0f + 2.0f * macro.cliff[i];
+            }
         }
     }
 

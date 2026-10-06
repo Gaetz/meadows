@@ -52,6 +52,11 @@ struct ControlSample {
     // tier's own) and its id (nearest-sampled, for the instruments).
     f32 reliefWavelengthScale { 1.0f };
     u8 character { 0 };
+    // [0,1] cliff-and-bench quantization of the land (the plan's
+    // verticality: characters, cone flanks); landHeight steps the
+    // ground by MacroParams::cliffStep with it, the bake's thermal
+    // pass holds the walls it makes.
+    f32 terrace { 0.0f };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
@@ -257,6 +262,10 @@ struct MacroParams {
     f32 bedWavelength { 0.0f };
     f32 terraceStep { 40.0f };     // meters between mesa strata
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
+    // The plan's cliffs (ControlSample::terrace): bench height and the
+    // fraction of a step left as riser — small = a wall, not a slope.
+    f32 cliffStep { 30.0f };
+    f32 cliffEdge { 0.05f };
     f32 warpWavelength { 3500.0f }; // relief domain warp
     f32 warpStrength { 700.0f };
     // Elevation recurve: monotone remap of the LAND height above sea
@@ -294,6 +303,9 @@ struct MacroResult {
     // Designed depressions (m, ControlSample::basinDepth): the bake's
     // dimple fill skips them (they are water by design).
     vector<f32> basin;
+    // [0,1] ControlSample::terrace per texel: the thermal pass holds
+    // these walls instead of shedding them to the angle of repose.
+    vector<f32> cliff;
 };
 
 // Erosion keep from the base lift (TileBake stage 1 and the analytic

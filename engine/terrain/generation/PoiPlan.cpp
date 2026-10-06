@@ -650,11 +650,24 @@ Frame frameOf(const PoiSite& s, f32 radius, f32 aspect, f32 x, f32 z) {
 f32 ss(f32 lo, f32 hi, f32 x) { return noise::smoothstep01(lo, hi, x); }
 
 // The cone: a linear flank (the triangle silhouette) at a hashed slope,
-// its footprint derived from the height — never a dome.
+// its footprint derived from the height — never a dome. Verticality
+// keeps the FOOTPRINT of the soft slope and raises the summit to the
+// steep one (a taller mountain, not a needle: the high ground it
+// holds is what reads from afar).
 f32 coneRadius(const PoiPlanParams& plan, const PoiSite& s, f32 height) {
-    const f32 deg = glm::mix(plan.coneSlopeMinDeg, plan.coneSlopeMaxDeg,
-                             roll01(s.hash, 7));
-    return glm::max(height / std::tan(deg * 0.017453292f), 20.0f);
+    const f32 soft = glm::mix(plan.coneSlopeMinDeg, plan.coneSlopeMaxDeg,
+                              roll01(s.hash, 7));
+    return glm::max(height / std::tan(soft * 0.017453292f), 20.0f);
+}
+
+f32 coneHeightScale(const PoiPlanParams& plan, const PoiSite& s) {
+    const f32 soft = glm::mix(plan.coneSlopeMinDeg, plan.coneSlopeMaxDeg,
+                              roll01(s.hash, 7));
+    const f32 steep = glm::mix(plan.coneSlopeSteepMinDeg,
+                               plan.coneSlopeSteepMaxDeg, roll01(s.hash, 7));
+    const f32 ratio = std::tan(steep * 0.017453292f) /
+                      glm::max(std::tan(soft * 0.017453292f), 0.05f);
+    return glm::mix(1.0f, ratio, plan.verticality);
 }
 
 KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
@@ -682,7 +695,9 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
                                ? 1.0f - (1.0f - t) * (1.0f - t) / (2.0f * tip) -
                                      tip * 0.5f
                                : t;
-            k.lift = h * kk;
+            k.lift = h * kk *
+                     (s.type == PoiType::Needle ? 1.0f
+                                                : coneHeightScale(plan, s));
             k.flank = ss(0.05f, 0.3f, kk) * (1.0f - ss(0.85f, 1.0f, kk));
         }
         break;
@@ -692,7 +707,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         const Frame f = frameOf(s, r, 1.0f, x, z);
         if (f.n < 1.0f) {
             const f32 kk = glm::min(1.0f, (1.0f - f.n) / 0.85f);
-            k.lift = h * kk;
+            k.lift = h * kk * coneHeightScale(plan, s);
             k.mesaTop = 1.0f - ss(0.1f, 0.2f, f.n);
             // The crater: a bowl in the truncated top.
             k.basin = 0.35f * h * (1.0f - ss(0.05f, 0.18f, f.n));
@@ -705,7 +720,9 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
                                 x, z);
         if (f.n < 1.0f) {
             const f32 hm = glm::min(h, 150.0f);
-            k.lift = hm * glm::min(1.0f, (1.0f - f.n) / 0.35f);
+            k.lift = hm * glm::min(1.0f, (1.0f - f.n) /
+                                             glm::mix(0.35f, 0.18f,
+                                                      plan.verticality));
             k.mesaTop = 1.0f - ss(0.55f, 0.68f, f.n);
             k.flank = ss(0.65f, 0.75f, f.n) * (1.0f - ss(0.95f, 1.0f, f.n));
         }
@@ -742,7 +759,8 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
             const f32 hs = s.type == PoiType::Waterfall ? glm::min(h, 60.0f)
                                                         : glm::min(h, 120.0f);
             const f32 edge = 1.0f - ss(0.6f, 1.0f, f.n);
-            k.lift = hs * ss(-0.12f, 0.12f, f.v) * edge;
+            const f32 e = glm::mix(0.12f, 0.05f, plan.verticality);
+            k.lift = hs * ss(-e, e, f.v) * edge;
             k.flank = (1.0f - ss(0.0f, 0.15f, std::abs(f.v))) * edge;
         }
         break;
@@ -866,18 +884,18 @@ f32 segmentDistance(f32 px, f32 pz, f32 ax, f32 az, f32 bx, f32 bz,
 namespace {
 
 struct CharacterStyle {
-    f32 reliefMul, wavelengthMul, wetBias, hardBias, coverBias;
+    f32 reliefMul, wavelengthMul, wetBias, hardBias, coverBias, terrace;
 };
 
 // docs/POI-CATALOGUE.md §E, the temperate column (the other biomes
 // reuse the styles; their palettes come from the climate).
 constexpr CharacterStyle kCharacters[] = {
-    { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f },     // rolling meadow
-    { 0.8f, 0.7f, 0.1f, 0.0f, 0.0f },     // bocage
-    { 1.25f, 0.85f, 0.0f, 0.0f, 0.0f },   // wooded hills
-    { 0.4f, 1.2f, 0.6f, -0.1f, 0.2f },    // marsh
-    { 0.7f, 1.5f, -0.2f, 0.35f, -0.1f },  // rocky plateau
-    { 0.9f, 1.8f, -0.1f, 0.1f, 0.3f },    // heath
+    { 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.25f },     // rolling meadow
+    { 0.8f, 0.7f, 0.1f, 0.0f, 0.0f, 0.1f },      // bocage
+    { 1.25f, 0.85f, 0.0f, 0.0f, 0.0f, 0.4f },    // wooded hills
+    { 0.4f, 1.2f, 0.6f, -0.1f, 0.2f, 0.0f },     // marsh
+    { 0.7f, 1.5f, -0.2f, 0.35f, -0.1f, 0.9f },   // rocky plateau
+    { 0.9f, 1.8f, -0.1f, 0.1f, 0.3f, 0.55f },    // heath
 };
 
 } // namespace
@@ -944,7 +962,7 @@ PlanSample planSampleAt(const WorldLayerParams& world,
     // sites (a ~250 m fade at a Voronoi border).
     {
         f32 wsum = 0.0f;
-        CharacterStyle mix { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        CharacterStyle mix { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         for (u32 k = 0; k < 3; ++k) {
             if (nearD[k] >= 1.0e29f) {
                 continue;
@@ -956,6 +974,7 @@ PlanSample planSampleAt(const WorldLayerParams& world,
             mix.wetBias += w * c.wetBias;
             mix.hardBias += w * c.hardBias;
             mix.coverBias += w * c.coverBias;
+            mix.terrace += w * c.terrace;
             wsum += w;
         }
         if (wsum > 0.0f) {
@@ -964,6 +983,7 @@ PlanSample planSampleAt(const WorldLayerParams& world,
             out.wetBias = mix.wetBias / wsum;
             out.hardBias = mix.hardBias / wsum;
             out.coverBias = mix.coverBias / wsum;
+            out.terrace = mix.terrace / wsum;
         }
     }
     // Walks: corridors and screens of the edges around.
@@ -1057,6 +1077,12 @@ PlanSample planSampleAt(const WorldLayerParams& world,
         }
         out.lift = glm::max(out.lift, screenLift);
     }
+    // The cliffs: the character's terracing and the cones' flanks —
+    // never across a walk's corridor or a pad (passability promised).
+    out.terrace = glm::clamp(glm::max(out.terrace, 0.7f * out.flank) *
+                                 (1.0f - out.corridor) * (1.0f - out.padFlat),
+                             0.0f, 1.0f) *
+                  plan.verticality;
     return out;
 }
 

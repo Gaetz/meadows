@@ -230,8 +230,32 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
             thermal.iterations = params.fine.thermalIterations;
             thermal.talusTan = params.fine.thermalTalusTan;
             thermal.seaLevel = params.seaLevel;
+            // The walls the coarse pass kept (steeper than ~35 deg
+            // on the coarse grid) hold through the micro-thermal
+            // pass: a designed cliff is not a ravine wall to facet.
+            vector<f32> coarseSlope(coarse.cells(), 0.0f);
+            for (u32 row = 1; row + 1 < coarse.n; ++row) {
+                for (u32 col = 1; col + 1 < coarse.n; ++col) {
+                    const size_t i = static_cast<size_t>(row) * coarse.n + col;
+                    const f32 gx = (eroded[i + 1] - eroded[i - 1]) /
+                                   (2.0f * coarse.texelSize);
+                    const f32 gz = (eroded[i + coarse.n] - eroded[i - coarse.n]) /
+                                   (2.0f * coarse.texelSize);
+                    coarseSlope[i] = std::sqrt(gx * gx + gz * gz);
+                }
+            }
+            vector<f32> hold(out.fineSpec.cells());
+            for (u32 row = 0; row < out.fineSpec.n; ++row) {
+                for (u32 col = 0; col < out.fineSpec.n; ++col) {
+                    const f32 u = coarseU(out.fineSpec.x(col), coarse.originX);
+                    const f32 v = coarseU(out.fineSpec.z(row), coarse.originZ);
+                    const f32 sl = bicubicGrid(coarse, coarseSlope, u, v);
+                    hold[static_cast<size_t>(row) * out.fineSpec.n + col] =
+                        1.0f + 2.0f * glm::smoothstep(0.6f, 1.0f, sl);
+                }
+            }
             ThermalResult relaxed = erodeThermal(
-                out.fineSpec, out.height, thermal, nullptr, cancel);
+                out.fineSpec, out.height, thermal, &hold, cancel);
             out.height = std::move(relaxed.height);
         }
     } else {

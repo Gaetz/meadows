@@ -285,6 +285,17 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         const f32 q = (cell + soft) * p.terraceStep;
         h = glm::mix(h, q, t.terrace);
     }
+    if (s.terrace > 0.0f && p.cliffStep > 0.0f) {
+        // The plan's cliffs: benches at the cliff step, a short riser
+        // between — the slope becomes a staircase of walls.
+        const f32 cell = std::floor(h / p.cliffStep);
+        const f32 frac = h / p.cliffStep - cell;
+        const f32 edge = glm::clamp(p.cliffEdge, 0.01f, 0.49f);
+        const f32 soft =
+            noise::smoothstep01(0.5f - edge, 0.5f + edge, frac);
+        const f32 q = (cell + soft) * p.cliffStep;
+        h = glm::mix(h, q, s.terrace);
+    }
     return h;
 }
 
@@ -443,6 +454,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     f32 characterHard = 0.0f;
     f32 characterCover = 0.0f;
     f32 clearingPalette = 0.0f;
+    f32 terraceRaw = 0.0f;
     if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
         // The intimate grid (the August landmark grid): a marked hill,
@@ -490,6 +502,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         characterWet = ps.wetBias;
         characterHard = ps.hardBias;
         characterCover = ps.coverBias;
+        terraceRaw = ps.terrace;
     } else {
         const PieceGrid pieces { kSaltPiece,        r.pieceCellSize,
                                  r.pieceChance,     r.pieceRadiusMin,
@@ -535,6 +548,8 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
                      (1.0f - noise::smoothstep01(0.35f, 0.7f, w.massif)) *
                      (1.0f - 0.5f * piece.ridgeFlank);
     s.calm = glm::max(glm::max(calm, s.gentle), piece.clearing);
+    // The cliffs never cross a col or a clearing.
+    s.terrace = terraceRaw * (1.0f - s.gentle) * (1.0f - piece.clearing);
     // Lithology: a slow hardness field, harder on massif coasts
     // (calanques).
     s.hardness = glm::clamp(
@@ -598,6 +613,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.hillRelief.resize(spec.cells());
     out.hardness.resize(spec.cells());
     out.basin.resize(spec.cells());
+    out.cliff.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     // Control sampling on a COARSE grid, bilinearly interpolated to
@@ -681,6 +697,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
         out.reliefWavelengthScale =
             lerp(s00.reliefWavelengthScale, s10.reliefWavelengthScale,
                  s01.reliefWavelengthScale, s11.reliefWavelengthScale);
+        out.terrace = lerp(s00.terrace, s10.terrace, s01.terrace,
+                           s11.terrace);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
@@ -711,6 +729,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.hillRelief[i] = s.sea ? 0.0f : s.hillRelief;
             out.hardness[i] = s.hardness;
             out.basin[i] = s.sea ? 0.0f : s.basinDepth;
+            out.cliff[i] = s.sea ? 0.0f : s.terrace;
         }
     }
     out.seaDist = signedSeaDistance(spec, seaMask);

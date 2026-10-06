@@ -1683,6 +1683,127 @@ TEST_CASE("rhythm diagnostic" * doctest::skip()) {
 // the stage-1 macro and eroded WITHOUT the dimple fill. One map
 // stage-1 costs ~13 s in Release.
 //   meadows-tests "-tc=spawn flatness diagnostic" -ns
+// Verticality census: what the player reads as cliffs and walls. Along
+// eight 3 km transects through the spawn (4 m steps), per surface: the
+// share of steps steeper than 30 / 45 / 60 degrees, the WALLS (runs of
+// steps steeper than 45 degrees rising >= 5 m in all) per km with their
+// median and tallest height, and the 100 m rise p95. Surfaces: the
+// analytic, the stage-1 macro, the stage-1 before and after the thermal
+// relaxation, the baked ground, and the story mode around its start.
+TEST_CASE("verticality diagnostic" * doctest::skip()) {
+    const maptest::MapWorld& w = theMap();
+    const Vec3 spawn = spawnOf(w);
+    const ProceduralControls controls = controlsOf(w);
+    MacroParams macro = w.params.macro;
+    macro.hillChainWavelength = w.params.controls.rhythm.crestWavelength;
+    macro.bedWavelength = w.params.controls.rhythm.bedWavelength;
+    TileBakeParams mapParams = w.params;
+    mapParams.tileSize = w.mapSize;
+    mapParams.apron = kMapApron;
+    mapParams.mapGrid.valid = true;
+    mapParams.mapGrid.mapSize = w.mapSize;
+    mapParams.mapGrid.seed = w.params.worldSeed;
+    mapParams.mapGrid.seaLevel = w.seaLevel();
+    const TileStage1 full = bakeTileStage1(mapParams, w.mapX, w.mapZ);
+    TileBakeParams noThermalParams = mapParams;
+    noThermalParams.thermal.iterations = 0;
+    noThermalParams.rounding.strength = 0.0f;
+    const TileStage1 noThermal = bakeTileStage1(noThermalParams, w.mapX, w.mapZ);
+    render::TerrainParams story;
+    story.seed = 1337;
+    story.hillWavelength = 500.0f;
+    story.hillAmplitude = 75.0f;
+    story.octaves = 5;
+    story.lacunarity = 2.0f;
+    story.gain = 0.5f;
+    story.mountainWavelength = 2000.0f;
+    story.mountainAmplitude = 270.0f;
+    story.mountainMaskLow = 0.45f;
+    story.mountainMaskHigh = 0.75f;
+    const auto gridAt = [](const TileStage1& s1, const vector<f32>& g,
+                           f32 x, f32 z) {
+        return bilinearWorld(s1.sim, g, x, z);
+    };
+    struct Surface {
+        const char* name;
+        std::function<f32(f32, f32)> at;
+        f32 ox, oz;
+    };
+    const Surface surfaces[] = {
+        { "analytic (controls)",
+          [&](f32 x, f32 z) { return macroHeightAnalytic(controls, macro, x, z); },
+          spawn.x, spawn.z },
+        { "stage-1 macro",
+          [&](f32 x, f32 z) { return gridAt(full, full.macroHeight, x, z); },
+          spawn.x, spawn.z },
+        { "stage-1 eroded, NO thermal / rounding",
+          [&](f32 x, f32 z) { return gridAt(noThermal, noThermal.eroded, x, z); },
+          spawn.x, spawn.z },
+        { "stage-1 eroded (thermal + rounding)",
+          [&](f32 x, f32 z) { return gridAt(full, full.eroded, x, z); },
+          spawn.x, spawn.z },
+        { "baked final ground",
+          [&](f32 x, f32 z) { return w.height(x, z); }, spawn.x, spawn.z },
+        { "story around its start (32, 400)",
+          [&](f32 x, f32 z) { return render::terrain::height(story, x, z); },
+          32.0f, 400.0f },
+    };
+    constexpr f32 kStep = 4.0f;
+    constexpr f32 kLen = 3000.0f;
+    constexpr f32 kTan30 = 0.5774f;
+    constexpr f32 kTan45 = 1.0f;
+    constexpr f32 kTan60 = 1.7321f;
+    for (const Surface& sf : surfaces) {
+        u64 steps = 0, s30 = 0, s45 = 0, s60 = 0;
+        vector<f32> walls;
+        vector<f32> rises;
+        f64 km = 0.0;
+        for (u32 t = 0; t < 8; ++t) {
+            const f32 ang = static_cast<f32>(t) * 0.3926991f;
+            const f32 dx = std::cos(ang);
+            const f32 dz = std::sin(ang);
+            const f32 x0 = sf.ox - dx * kLen * 0.5f;
+            const f32 z0 = sf.oz - dz * kLen * 0.5f;
+            f32 prev = sf.at(x0, z0);
+            f32 wallRise = 0.0f;
+            vector<f32> last;
+            for (f32 d = kStep; d <= kLen; d += kStep) {
+                const f32 h = sf.at(x0 + dx * d, z0 + dz * d);
+                const f32 slope = std::abs(h - prev) / kStep;
+                ++steps;
+                km += kStep * 0.001;
+                if (slope > kTan30) ++s30;
+                if (slope > kTan45) ++s45;
+                if (slope > kTan60) ++s60;
+                if (slope > kTan45) {
+                    wallRise += std::abs(h - prev);
+                } else {
+                    if (wallRise >= 5.0f) walls.push_back(wallRise);
+                    wallRise = 0.0f;
+                }
+                last.push_back(h);
+                if (last.size() > 25) {
+                    rises.push_back(std::abs(h - last[last.size() - 26]));
+                }
+                prev = h;
+            }
+            if (wallRise >= 5.0f) walls.push_back(wallRise);
+        }
+        std::sort(walls.begin(), walls.end());
+        std::sort(rises.begin(), rises.end());
+        const f32 wallMed = walls.empty() ? 0.0f : walls[walls.size() / 2];
+        const f32 wallMax = walls.empty() ? 0.0f : walls.back();
+        const f32 rise95 = rises.empty() ? 0.0f : rises[rises.size() * 95 / 100];
+        MESSAGE(sf.name, ": steps > 30deg ", 100.0 * s30 / glm::max<u64>(steps, 1),
+                " %, > 45deg ", 100.0 * s45 / glm::max<u64>(steps, 1),
+                " %, > 60deg ", 100.0 * s60 / glm::max<u64>(steps, 1),
+                " %; walls (>45deg, >= 5 m) ", walls.size() / glm::max(km, 1e-3),
+                " per km, median ", wallMed, " m, tallest ", wallMax,
+                " m; 100 m rise p95 ", rise95, " m");
+    }
+    CHECK(true);
+}
+
 TEST_CASE("spawn flatness diagnostic" * doctest::skip()) {
     const maptest::MapWorld& w = theMap();
     const Vec3 spawn = spawnOf(w);

@@ -1098,4 +1098,61 @@ TEST_CASE("variety at 45 s: an event every 250 m along a walk") {
     CHECK(worst <= 1500.0f); // one transect may run a calm reach; the baked instrument (water, POI) is the judge
 }
 
+TEST_CASE("verticality: the plan terraces the country into cliffs") {
+    // On the analytic around the start (8 transects of 3 km, 4 m
+    // steps): with verticality 1 the steps steeper than 45 deg are at
+    // least 2 % of the walk and three times what verticality 0 leaves;
+    // a walk's corridor keeps its terrace near zero (passability).
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    ProceduralControlParams softPc = pc;
+    softPc.poi.verticality = 0.0f;
+    const ProceduralControls hard { pc };
+    const ProceduralControls soft { softPc };
+    const auto& world = hard.params().world;
+    MacroParams macro;
+    macro.hillChainWavelength = hard.params().rhythm.crestWavelength;
+    macro.bedWavelength = hard.params().rhythm.bedWavelength;
+    const auto steepShare = [&](const ProceduralControls& c) {
+        u64 steps = 0, steep = 0;
+        for (u32 t = 0; t < 8; ++t) {
+            const f32 ang = static_cast<f32>(t) * 0.3926991f;
+            const f32 dx = std::cos(ang);
+            const f32 dz = std::sin(ang);
+            f32 prev = macroHeightAnalytic(c, macro, world.startX - dx * 1500.0f,
+                                           world.startZ - dz * 1500.0f);
+            for (f32 d = 4.0f; d <= 3000.0f; d += 4.0f) {
+                const f32 h = macroHeightAnalytic(
+                    c, macro, world.startX - dx * 1500.0f + dx * d,
+                    world.startZ - dz * 1500.0f + dz * d);
+                ++steps;
+                steep += std::abs(h - prev) > 4.0f;
+                prev = h;
+            }
+        }
+        return static_cast<f64>(steep) / static_cast<f64>(glm::max<u64>(steps, 1));
+    };
+    const f64 hardShare = steepShare(hard);
+    const f64 softShare = steepShare(soft);
+    MESSAGE("steps > 45 deg: verticality 1 ", 100.0 * hardShare,
+            " %, verticality 0 ", 100.0 * softShare, " %");
+    CHECK(hardShare >= 0.015);
+    CHECK(hardShare >= 3.0 * softShare);
+    u32 corridorSamples = 0;
+    f32 worstTerrace = 0.0f;
+    for (f32 z = world.startZ - 2000.0f; z <= world.startZ + 2000.0f; z += 100.0f) {
+        for (f32 x = world.startX - 2000.0f; x <= world.startX + 2000.0f;
+             x += 100.0f) {
+            const PlanSample ps = planSampleAt(world, hard.params().poi, x, z);
+            if (ps.corridor > 0.9f) {
+                ++corridorSamples;
+                worstTerrace = glm::max(worstTerrace, hard.at(x, z).terrace);
+            }
+        }
+    }
+    MESSAGE("corridor samples ", corridorSamples, ", worst terrace ", worstTerrace);
+    CHECK(corridorSamples >= 1);
+    CHECK(worstTerrace <= 0.15f);
+}
+
 TEST_SUITE_END();

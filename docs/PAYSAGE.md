@@ -1656,6 +1656,54 @@ départ, export du plan dans `MapRecords`.
   montre les caractères et les POI d'eau sur leurs cours). Reste de P3b :
   l'eau rouge (120 lacs contre 3-6 visés) est systémique, pas un effet des
   axes — enquête à part ; la cible 250 m tient N-S, pas E-O.
+- **2026-10-06 — « Les reliefs ne sont pas assez accidentés : dans
+  Breath of the Wild et Elden Ring c'est la verticalité qui permet de
+  lire les paysages ; il faut exagérer l'aspect vertical » → brique
+  « verticalité », livrée.** Mesuré d'abord (nouvel instrument
+  `verticality diagnostic` : parts de pas de 4 m plus raides que 30 /
+  45 / 60°, murs — suites de pas > 45° montant ≥ 5 m — par km, hauteur
+  médiane et maximale, montée sur 100 m p95 ; sur l'analytique, le
+  stage-1 avant et après thermique, le baké, le mode histoire) :
+  autour du spawn le baké avait **2,3 % de pas > 30°, 0,2 % > 45°,
+  0,3 mur/km** ; le départ du mode histoire fait 13,9 % / 1,4 % / 0,8 ;
+  et la relaxation thermique de stage-1 (angle de repos 33°) effaçait
+  les rares murs (0,29 → 0 mur/km). Le problème était d'abord dans la
+  synthèse (formes douces), ensuite dans la relaxation. **Trois
+  mécanismes existants étendus, derrière un bouton
+  `PoiPlanParams::verticality` (0 = le look P3b, 1 = plein)** :
+  (1) **gradins** — la quantification `terrace` de l'étage 450 m
+  généralisée : `ControlSample::terrace` [0,1] vient du plan
+  (caractère : plateau rocailleux 0,9, lande 0,55, collines boisées 0,4,
+  prairie 0,25, bocage 0,1, marais 0 ; flancs de cône 0,7 × flanc),
+  nul sur un corridor, un pad, un col ou une clairière (la praticabilité
+  promise) ; `landHeight` marche le sol par `MacroParams::cliffStep`
+  30 m avec un ressaut de 5 % du pas (`cliffEdge`) : une pente devient
+  un escalier de murs et de bancs ; (2) **noyaux plus raides** — cônes
+  à 30-42° (`coneSlopeSteep*`) en gardant l'EMPREINTE de la pente douce
+  et en montant le sommet (hauteur × tan(raide)/tan(doux) ≈ ×1,5-1,9 ;
+  la première version, qui gardait la hauteur et réduisait l'empreinte,
+  faisait des aiguilles et perdait le sol haut : 25 → 17 % du sol à plus
+  de 100 m) ; rebord de mesa sur 18 % du rayon au lieu de 35, marche
+  d'escarpement/cascade sur ±5 % au lieu de ±12 ; (3) **la thermique
+  respecte les murs** — `MacroResult::cliff` (le `terrace` par texel)
+  multiplie l'angle de repos de stage-1 jusqu'à ×3 ; la micro-thermique
+  du finalize tient ce que le stage-1 a gardé (échelle 1 → 3 sur la
+  pente du grossier entre 31 et 45°). v76, hash 18360944717357650365. **Mesuré après**
+  (autour du spawn, baké) : **29 % de pas > 30°, 6,7 % > 45°, 4,8
+  murs/km (médiane 18 m, le plus haut 61 m)**, montée sur 100 m p95
+  81 m (était 47), pente moyenne 25 % (était 20), amplitude/km 96 m
+  (max 729), 27 % du sol > 100 m ; l'analytique seule : 25 % / 4,8 % /
+  7,7 murs/km. Soit deux fois le départ du mode histoire et dix fois le
+  sandbox d'avant. Variété intacte (E-O 290 m, N-S 288 m) ; 90 lacs +
+  21 étangs ; drame 3,5 % des fenêtres (était 0). Le rendu
+  `terrain-map … poi` montre les cônes étagés en courbes de niveau (le
+  grand au centre en pyramide à gradins) et les caractères rocailleux
+  en escaliers. Tests : « verticality: the plan terraces the country
+  into cliffs » (pas > 45° ≥ 1,5 % et ≥ 3× le réglage 0 ; 214
+  échantillons de corridor à terrace ≤ 0,003). Jugement dev EN ATTENTE
+  (A/B : `verticality` 0 = le bake précédent) ; leviers si « encore
+  trop doux » : `cliffStep` 30 → 45 m (murs plus hauts), `cliffEdge`,
+  les forces par caractère, `coneSlopeSteep*`.
 
 ---
 

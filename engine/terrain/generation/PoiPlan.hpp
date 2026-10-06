@@ -100,6 +100,15 @@ struct PoiPlanParams {
     // read from the next one, not a spike (needles keep their 40 deg).
     f32 coneSlopeMinDeg { 18.0f };
     f32 coneSlopeMaxDeg { 28.0f };
+    // Verticality — the Breath of the Wild / Elden Ring read: a
+    // landscape of cliffs and benches, not of slopes. 0 = the soft
+    // look (cones at 18-28 deg, no terracing), 1 = full: the cones
+    // take the steep slopes below, the mesa and step rims sharpen,
+    // and the characters terrace the ground into walls
+    // (ControlSample::terrace, landHeight's cliffStep).
+    f32 verticality { 1.0f };
+    f32 coneSlopeSteepMinDeg { 30.0f };
+    f32 coneSlopeSteepMaxDeg { 42.0f };
     f32 corridorHalfWidthMin { 60.0f };
     f32 corridorHalfWidthMax { 120.0f };
     f32 screenHeightMin { 40.0f };
@@ -129,6 +138,9 @@ struct PlanSample {
     f32 wetBias { 0.0f };    // beds deeper, cover wetter
     f32 hardBias { 0.0f };   // lithology
     f32 coverBias { 0.0f };  // pushes the cover selector (heath/dry)
+    // [0,1] cliff-and-bench quantization strength: the character's
+    // terracing and the cones' flanks, zero across a corridor or a pad.
+    f32 terrace { 0.0f };
 };
 
 // The character table: six landscape styles between the points of
