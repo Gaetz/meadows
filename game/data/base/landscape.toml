@@ -201,6 +201,7 @@ grassPresence = 0.55
 snowLineOffset = -60.0
 temperature = -0.2
 wetness = 0.25
+forestDensity = 0.55
 
 [[records]]
 form = "1a4d5c00-0000-4000-8000-0000000000b5"
@@ -216,6 +217,65 @@ grassPresence = 0.6
 snowLineOffset = 80.0
 temperature = 0.35
 wetness = 0.15
+forestDensity = 0.4
+
+# The POI plan's temperate character palettes (docs/POI-CATALOGUE.md §E):
+# the climate stays temperate, the cover changes every region.
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b6"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeDenseForest"
+displayName = "Dense forest"
+paletteIndex = 6
+editorColor = [0.18, 0.38, 0.2]
+grassPresence = 0.5
+temperature = 0.0
+wetness = 0.4
+forestDensity = 1.9
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b7"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeBocage"
+displayName = "Bocage"
+paletteIndex = 7
+editorColor = [0.45, 0.6, 0.3]
+grassPresence = 1.0
+temperature = 0.0
+wetness = 0.3
+forestDensity = 0.9
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b8"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeClearing"
+displayName = "Clearing"
+paletteIndex = 8
+editorColor = [0.7, 0.8, 0.4]
+grassPresence = 1.2
+temperature = 0.05
+wetness = 0.3
+forestDensity = 0.08
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b9"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeMarsh"
+displayName = "Marsh"
+paletteIndex = 9
+editorColor = [0.35, 0.5, 0.4]
+grassPresence = 0.75
+temperature = 0.05
+wetness = 0.95
+forestDensity = 0.35
 
 
 # Radiance-cascades GI tuning (docs/RENDERING.md): the render

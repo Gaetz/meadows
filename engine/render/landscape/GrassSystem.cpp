@@ -261,7 +261,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             glm::clamp(0.5f - 0.35f * fields.temperature +
                            0.5f * fields.biomeWetness,
                        0.0f, 1.0f);
-        const f32 forest = forestMask(params.seed, bestSite.x, bestSite.y);
+        const f32 forest = forestAt(params, bestSite.x, bestSite.y);
         f32 scores[kGrassSpeciesCount] = {
             0.25f + 0.9f * n0,
             (0.25f + 0.95f * dryBias) * n1,

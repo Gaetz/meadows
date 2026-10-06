@@ -223,15 +223,24 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         awx += s.axisCos * slide;
         awz += s.axisSin * slide;
     }
-    const f32 relief = (noise::fbm(seed ^ kSaltRelief, awx, awz,
-                                   1.0f / (t.reliefWavelength *
-                                           glm::max(s.reliefWavelengthScale,
-                                                    0.1f)),
-                                   glm::max(p.reliefOctaves, 1), 2.0f,
-                                   0.5f) *
-                            2.0f -
-                        1.0f) *
-                       t.reliefAmplitude * s.reliefScale;
+    // The character's wavelength: a blend of FIXED-scale carriers
+    // (0.7x, 1x, 1.8x), never a position-dependent frequency — sampling
+    // one noise at a varying scale chirps into concentric arcs where
+    // the scale changes.
+    const i32 octaves = glm::max(p.reliefOctaves, 1);
+    const auto carrier = [&](f32 mul) {
+        return noise::fbm(seed ^ kSaltRelief, awx, awz,
+                          1.0f / (t.reliefWavelength * mul), octaves, 2.0f,
+                          0.5f) *
+                   2.0f -
+               1.0f;
+    };
+    const f32 scale = glm::clamp(s.reliefWavelengthScale, 0.7f, 1.8f);
+    const f32 carried =
+        scale <= 1.0f
+            ? glm::mix(carrier(0.7f), carrier(1.0f), (scale - 0.7f) / 0.3f)
+            : glm::mix(carrier(1.0f), carrier(1.8f), (scale - 1.0f) / 0.8f);
+    const f32 relief = carried * t.reliefAmplitude * s.reliefScale;
     const f32 floor = s.hasBase ? p.seaLevel + s.base : t.altitude;
     f32 h = floor + relief + s.plateau;
     // Designed depressions (basins, canyons): dug into the floor, never
@@ -433,6 +442,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     f32 characterWet = 0.0f;
     f32 characterHard = 0.0f;
     f32 characterCover = 0.0f;
+    f32 clearingPalette = 0.0f;
     if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
         // The intimate grid (the August landmark grid): a marked hill,
@@ -444,8 +454,9 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         piece = pieceLayer(p, x, z, intimate);
         // A clearing is walk-scale country: never a decree against a
         // massif's orogeny (August's rule).
-        piece.clearing *= (1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif)) *
-                          (1.0f - noise::smoothstep01(30.0f, 80.0f, ps.lift));
+        piece.clearing *= 1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif);
+        clearingPalette = piece.clearing; // what biomeIdAt mirrors per texel
+        piece.clearing *= 1.0f - noise::smoothstep01(30.0f, 80.0f, ps.lift);
         designedLift = glm::max(ps.lift, piece.add);
         // The relief regime (August): hill-chain country, old massif,
         // plain — a short selector, the landscape between two POI.
@@ -534,8 +545,14 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     s.bedDepth = lerpByEtage(r.bedDepthByEtage, s.tier) *
                  noise::smoothstep01(25.0f, 70.0f, s.base) *
                  (1.0f + characterWet);
+    // The character names the temperate palette (dense woods, bocage,
+    // marsh); a clearing of the intimate grid is a clearing (8).
+    u8 namedPalette = r.plan ? characterPalette(s.character) : 0;
+    if (r.plan && clearingPalette > 0.5f) {
+        namedPalette = 8;
+    }
     s.biome = paletteIdFor(w.temperature, w.moisture, s.base,
-                           w.cover + characterCover);
+                           w.cover + characterCover, namedPalette);
     return s;
 }
 
@@ -545,10 +562,25 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // lattice sample never disagree.
     (void)tier;
     const WorldSample w = worldSampleAt(p.world, x, z);
-    const f32 coverBias = p.rhythm.plan ? planCoverBiasAt(p.world, p.poi, x, z)
-                                        : 0.0f;
+    f32 coverBias = 0.0f;
+    u8 namedPalette = 0;
+    if (p.rhythm.plan) {
+        const PlanCharacter pc = planCharacterAt(p.world, p.poi, x, z);
+        coverBias = pc.coverBias;
+        namedPalette = characterPalette(pc.character);
+        const RhythmParams& r = p.rhythm;
+        const PieceGrid intimate { kSaltIntimate,      r.intimateCellSize,
+                                   r.intimateChance,   r.intimateRadiusMin,
+                                   r.intimateRadiusMax, r.intimateHeightMin,
+                                   r.intimateHeightMax, false, true, false };
+        if (pieceLayer(p, x, z, intimate).clearing *
+                (1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif)) >
+            0.5f) {
+            namedPalette = 8;
+        }
+    }
     return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f),
-                        w.cover + coverBias);
+                        w.cover + coverBias, namedPalette);
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,

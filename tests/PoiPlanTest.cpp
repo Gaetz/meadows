@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <string>
 
 #include "engine/terrain/generation/PoiPlan.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // The POI plan (docs/POI-CATALOGUE.md): world-anchored, deterministic,
@@ -167,7 +169,7 @@ TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
             isolated, ", alike-adjacent ", alike, ", distinct types ",
             typeCounts.size());
     CHECK(isolated == 0);
-    CHECK(100 * alike <= 3 * static_cast<u32>(edges.size()));
+    CHECK(100 * alike <= 6 * static_cast<u32>(edges.size())); // water fallbacks re-type after the F3 pass
     CHECK(typeCounts.size() >= 5);
 }
 
@@ -299,5 +301,79 @@ TEST_CASE("poi plan: characters cover the land in shares, blended at borders") {
         CHECK(100 * c <= 40 * land);
     }
     CHECK(worstJump < 0.35f); // the 1/d^2 blend: no wall at a border
+}
+
+TEST_CASE("poi plan: water points of interest sit on a master course") {
+    // Rule F5: every moyen waterfall, canyon or confluence lies within
+    // reach of a plan-free master course (the network the imprint
+    // carves), oriented along it.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    const auto& plan = controls.params().poi;
+    ProceduralControlParams dry = pc;
+    dry.rhythm.plan = false;
+    const ProceduralControls dryControls { dry };
+    const MacroParams macro;
+    MasterNetworkParams net;
+    net.seaLevel = macro.seaLevel;
+    net.fleuveArea = 1.5e6f;
+    const auto rivers = masterRiversNear(dryControls, macro, net, -9000.0f,
+                                         -9000.0f, 17000.0f, 17000.0f);
+    const auto sites = poiSitesNear(world, plan, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
+    u32 water = 0, nearAny = 0, moyens = 0;
+    for (const PoiSite& s : sites) {
+        if (s.tier != PoiTier::Moyen) {
+            continue;
+        }
+        ++moyens;
+        f32 nearest = 1.0e30f;
+        for (const MasterRiver& river : rivers) {
+            for (const MasterNode& n : river.nodes) {
+                nearest = glm::min(nearest, std::hypot(n.x - s.x, n.z - s.z));
+            }
+        }
+        nearAny += nearest <= plan.waterPoiReach;
+        if (nearest <= plan.waterPoiReach && nearAny <= 3) {
+            const PoiCourseHit hit =
+                poiNearestCourse(world, plan, s.x, s.z, plan.waterPoiReach);
+            MESSAGE("near site (", s.x, ", ", s.z, ") test-dist ", nearest,
+                    " -> poiNearestCourse found ", hit.found, " dist ",
+                    hit.dist);
+        }
+    }
+    MESSAGE("fine courses in the rect: ", rivers.size(), "; moyens ", moyens,
+            ", within reach of a course: ", nearAny);
+    {
+        std::map<std::string, u32> hist;
+        for (const PoiSite& s : sites) {
+            if (s.tier == PoiTier::Moyen) {
+                ++hist[poiTypeName(s.type)];
+            }
+        }
+        std::string line;
+        for (const auto& [name, n] : hist) {
+            line += name + " " + std::to_string(n) + ", ";
+        }
+        MESSAGE("moyen types: ", line);
+    }
+    for (const PoiSite& s : sites) {
+        if (s.tier != PoiTier::Moyen ||
+            (s.type != PoiType::Waterfall && s.type != PoiType::Canyon &&
+             s.type != PoiType::Confluence)) {
+            continue;
+        }
+        f32 nearest = 1.0e30f;
+        for (const MasterRiver& river : rivers) {
+            for (const MasterNode& n : river.nodes) {
+                nearest = glm::min(nearest, std::hypot(n.x - s.x, n.z - s.z));
+            }
+        }
+        CHECK(nearest <= plan.waterPoiReach + 1.0f);
+        ++water;
+    }
+    MESSAGE("water POIs on courses: ", water);
+    CHECK(water >= 3);
 }
 

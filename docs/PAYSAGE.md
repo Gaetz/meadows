@@ -1605,6 +1605,57 @@ départ, export du plan dans `MapRecords`.
   Reste : la cible de 250 m n'est atteinte que N-S ; levier suivant = les
   ruisseaux comme événements (tous les 500-800 m selon §4) et la grille
   intime à 900 m ; jugement dev EN ATTENTE.
+- **2026-10-06 — « C'est mieux mais on manque encore de variété » → P3b
+  « les trois axes de variation », livrée.** La variété ne vient pas que
+  du relief : trois axes, un commit chacun. **Axe 1, les caractères de
+  région** (`8d252e9`) : le site moyen ou grand le plus proche porte un
+  caractère haché parmi six (prairie roulante, bocage, collines boisées,
+  marais, plateau rocailleux, lande — `kCharacters`, PoiPlan.cpp) ; les
+  multiplicateurs d'amplitude et de longueur d'onde du roulis, l'humidité
+  des lits, la dureté et le biais de couvert se fondent sur les trois sites
+  les plus proches (poids 1/d², `planCharacterAt`) : aucune marche aux
+  frontières (pire saut ×0,27 sur 200 m). `ControlSample +=
+  reliefWavelengthScale, character`. Mesuré sur 24 km : six caractères à
+  14-18 % de la terre chacun. **Leçon** : la longueur d'onde du roulis ne
+  peut pas être une fréquence variable dans un seul bruit (`1/(λ·scale)`
+  avec un `scale` qui dépend de la position chirpe en arcs concentriques
+  là où il change) ; `landHeight` fond trois porteuses à échelle FIXE
+  (×0,7, ×1, ×1,8) selon le caractère. **Axe 2, le couvert** :
+  `BiomeForm::forestDensity` (réfléchi, moddable) → `BiomeParams` /
+  `RegionFields` → `forestAt(params, x, z)` = masque forêt × densité, lu
+  par les arbres, les débris, les plantes, les buissons, le FarTerrain et
+  l'herbe (un seul oracle au lieu du masque nu) ; quatre palettes nommées
+  — 6 forêt dense (densité 1,9), 7 bocage (0,9), 8 clairière (0,08), 9
+  marais (humidité 0,95, 0,35) — choisies par le caractère
+  (`characterPalette` : collines boisées → 6, bocage → 7, marais → 9) et
+  par la grille intime (clairière → 8, `biomeIdAt` lit le même oracle par
+  texel) ; `biomeErosion` étendue aux lignes 6-9 (le marais comble à plat).
+  **Axe 3, l'eau par les formes** : règle F5 du catalogue — cascade, canyon
+  et confluence n'existent que SUR un cours maître : `poiNearestCourse`
+  (réseau maître lu sur les contrôles sans plan, `fleuveArea` 1,5e6,
+  portée `waterPoiReach` 450 m) ; un site trop loin se re-tire (3 fois)
+  puis se replie sur la forme sèche de sa famille (butte, échine, arbre
+  seul) ; un site gardé s'aimante sur le cours et prend sa direction
+  (`PoiSite::theta` : le canyon le long, la marche en travers). La table du
+  disque de départ gagne la cascade et la confluence (tout le rect de test
+  était dans le disque de pays bas). Le cirque n'est plus un bassin mais un
+  rebord de 120-200 m qui creuse son tarn (0,25 h). Mesuré : 144 moyens,
+  47 à portée d'un cours, **7 POI d'eau, tous sur un cours** (4 cascades,
+  3 confluences). Le départ accepte le bocage et la clairière comme sol de
+  prairie. v75, hash 15270338236042570239. Variété sur les contrôles : 125
+  événements (relief 85, régime 31, couvert 65, POI 24), **espacement moyen
+  286 m**, pire écart 1 250 m. **Baké** (carte (0,0), transects par le
+  spawn) : E-O **305 m** (pire 800), N-S **288 m** (pire 525) ; carte
+  socle 6,9 % / versant 93 %, relief médian 52 m ; palettes intérieures
+  tempéré 24 % / bocage 20 % / prairie sèche 19 % / forêt dense 14 % /
+  lande 8 % / clairière 7 % / marais 7 % ; 120 lacs + 47 étangs ; autour
+  du spawn pente 20,2 %, 5,6 inversions/km, 33,7 m / 250 m, montée p95
+  +36 / p5 −40 m, amplitude/km 96 m (max 415), 25 % du sol > 100 m.
+  Suite Release 796/796, rapide Debug verte, smoke-run Debug sur le cache
+  v75 sans erreur. Jugement dev EN ATTENTE (le rendu `p3b-10km.png`
+  montre les caractères et les POI d'eau sur leurs cours). Reste de P3b :
+  l'eau rouge (120 lacs contre 3-6 visés) est systémique, pas un effet des
+  axes — enquête à part ; la cible 250 m tient N-S, pas E-O.
 
 ---
 

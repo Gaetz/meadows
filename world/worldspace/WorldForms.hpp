@@ -417,6 +417,9 @@ struct BiomeForm : data::Form {
     f32 detailAmplitudeScale { 1.0f };
     f32 temperature { 0.0f };
     f32 wetness { 0.0f };
+    // Multiplier on the forest belt mask (trees, litter, ferns, the far
+    // canopy): 0 = open ground, 1 = the reference woods, 2 = dense.
+    f32 forestDensity { 1.0f };
     str gameplayTag; // e.g. "Biome.Tundra" (GAS tags, later)
 
     REFLECT_BEGIN(BiomeForm, data::Form)
@@ -430,6 +433,7 @@ struct BiomeForm : data::Form {
         REFLECT_FIELD(detailAmplitudeScale)
         REFLECT_FIELD(temperature)
         REFLECT_FIELD(wetness)
+        REFLECT_FIELD(forestDensity)
         REFLECT_FIELD(gameplayTag)
     REFLECT_END()
 };

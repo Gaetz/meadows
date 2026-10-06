@@ -988,21 +988,22 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             static_cast<i32>(spawn.y + 2.0f), ", ", static_cast<i32>(pz),
             ")");
     const char* names[] = { "temperate", "arid",      "alpine",
-                            "tundra",    "subalpine", "steppe" };
+                            "tundra",    "subalpine", "steppe",
+                            "dense-forest", "bocage", "clearing", "marsh" };
     struct Hit {
         f32 x { 0.0f };
         f32 z { 0.0f };
         f32 d { 1.0e18f };
     };
-    Hit nearest[6];
-    Hit alternate[6]; // nearest beyond 6 km — a second spot to try
-    u64 counts[6] = {};
+    Hit nearest[10];
+    Hit alternate[10]; // nearest beyond 6 km — a second spot to try
+    u64 counts[10] = {};
     u64 landSamples = 0;
     for (f32 z = w.minZ + kInterior; z <= w.maxZ - kInterior; z += 96.0f) {
         for (f32 x = w.minX + kInterior; x <= w.maxX - kInterior;
              x += 96.0f) {
             const ControlSample s = controls.at(x, z);
-            if (s.sea || s.biome >= 6) {
+            if (s.sea || s.biome >= 10) {
                 continue;
             }
             ++landSamples;
@@ -1018,7 +1019,7 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
             }
         }
     }
-    for (u32 b = 0; b < 6; ++b) {
+    for (u32 b = 0; b < 10; ++b) {
         MESSAGE(std::string(names[b]), ": ",
                 landSamples ? 100.0 * static_cast<f64>(counts[b]) /
                                   static_cast<f64>(landSamples)
@@ -1059,7 +1060,7 @@ TEST_CASE("biome locator diagnostic" * doctest::skip()) {
                 100.0f * static_cast<f32>(arid) / static_cast<f32>(total),
                 "% of the 1.5 km box, max blended sandiness ", maxSand);
     }
-    for (u32 b = 0; b < 6; ++b) {
+    for (u32 b = 0; b < 10; ++b) {
         const auto report = [&](const char* tag, const Hit& hit) {
             const std::string label = std::string(names[b]) + " " + tag;
             if (hit.d >= 1.0e18f) {

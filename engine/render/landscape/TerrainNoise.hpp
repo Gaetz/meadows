@@ -247,6 +247,7 @@ struct RegionFields {
     f32 grassPresence { 1.0f }; // scatter-only (not a shader input)
     f32 temperature { 0.0f };   // climate (tint composition)
     f32 biomeWetness { 0.0f };  // biome character (≠ baked water mask)
+    f32 forestDensity { 1.0f }; // scatter-only: the forest belt multiplier
 };
 RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z);
 

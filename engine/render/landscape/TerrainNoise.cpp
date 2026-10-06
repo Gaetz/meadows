@@ -351,6 +351,7 @@ BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
     BiomeParams blend;
     blend.grassPresence = 0.0f;
     blend.detailAmplitudeScale = 0.0f;
+    blend.forestDensity = 0.0f;
     for (u32 i = 0; i < 4; ++i) {
         const size_t clamped = glm::min<size_t>(
             region->biome[ids[i]], params.biomes->table.size() - 1);
@@ -362,6 +363,7 @@ BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
         blend.detailAmplitudeScale += w[i] * b.detailAmplitudeScale;
         blend.temperature += w[i] * b.temperature;
         blend.wetness += w[i] * b.wetness;
+        blend.forestDensity += w[i] * b.forestDensity;
     }
     return blend;
 }
@@ -424,6 +426,9 @@ RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {
                 s.temperature, n.temperature);
         fields.biomeWetness =
             avg(c.wetness, e.wetness, o.wetness, s.wetness, n.wetness);
+        fields.forestDensity =
+            avg(c.forestDensity, e.forestDensity, o.forestDensity,
+                s.forestDensity, n.forestDensity);
         fields.snowLineOffset += snowLineWander(params.seed, x, z);
     } else {
         const BiomeParams& biome = biomeAt(params, x, z);
@@ -433,6 +438,7 @@ RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {
         fields.grassPresence = biome.grassPresence;
         fields.temperature = biome.temperature;
         fields.biomeWetness = biome.wetness;
+        fields.forestDensity = biome.forestDensity;
     }
     if (region) {
         fields.wetness = maskSample(*region, region->wetness, x, z, 0.0f);

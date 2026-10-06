@@ -712,7 +712,7 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
         // heath (4) and dry meadow (5) — at the start's altitude and
         // pulled climate nothing else produces those ids.
         const auto temperateFamily = [](u8 id) {
-            return id == 0 || id == 4 || id == 5;
+            return id == 0 || id == 4 || id == 5 || (id >= 6 && id <= 9);
         };
         CHECK_FALSE(centre.sea);
         CHECK(centre.base <= 80.0f);

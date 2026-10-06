@@ -242,7 +242,8 @@ f32 etageAltitudeFor(const WorldLayerParams& p, f32 tier) {
                     t - static_cast<f32>(i0));
 }
 
-u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover) {
+u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover,
+                u8 characterPalette) {
     if (temperature < 0.34f) {
         return 3; // tundra
     }
@@ -258,7 +259,11 @@ u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover) {
     if (moisture < 0.46f && temperature > 0.54f) {
         return 5; // steppe
     }
-    // Temperate: the cover variants (heath above, dry meadow below).
+    // Temperate: the character region names its palette; else the
+    // cover variants (heath above, dry meadow below).
+    if (characterPalette != 0) {
+        return characterPalette;
+    }
     if (cover > 0.62f) {
         return 4;
     }

@@ -124,6 +124,10 @@ struct TileBakeParams {
         { 1.0f, 0.9f, 1.2f, 0.7f },   // tundra
         { 0.85f, 1.1f, 1.05f, 0.9f }, // subalpine (temperate->alpine mid)
         { 1.15f, 0.9f, 0.85f, 1.25f }, // steppe (temperate->arid mid)
+        { 0.85f, 1.05f, 1.15f, 0.7f }, // dense forest (temperate, soil-bound)
+        { 0.9f, 1.0f, 1.15f, 0.8f },   // bocage (temperate)
+        { 0.9f, 1.0f, 1.15f, 0.8f },   // clearing (temperate)
+        { 1.0f, 0.9f, 1.4f, 0.5f },    // marsh (soft, fills flat)
     };
 };
 
@@ -267,7 +271,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The cache key is otherwise the
 // world seed alone: a changed default needs this bump (or a cleared
 // terrain-cache) to reach the player.
-constexpr u32 kTileBakeVersion = 74;
+constexpr u32 kTileBakeVersion = 75;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

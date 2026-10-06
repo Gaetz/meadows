@@ -45,6 +45,11 @@ f32 forestMask(u32 seed, f32 x, f32 z) {
     return glm::smoothstep(0.46f, 0.58f, broad * 0.78f + detail * 0.22f);
 }
 
+f32 forestAt(const TerrainParams& params, f32 x, f32 z) {
+    const f32 density = terrain::regionFieldsAt(params, x, z).forestDensity;
+    return glm::clamp(forestMask(params.seed, x, z) * density, 0.0f, 1.0f);
+}
+
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz,
                                               f32 treeFadeEnd) {
@@ -108,7 +113,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 z = originZ + (static_cast<f32>(i / perSide) +
                                      rng.next()) *
                                         kTreeSpacing;
-            f32 forest = forestMask(params.seed, x, z);
+            f32 forest = forestAt(params, x, z);
             // Aridity thins the forest into savanna: the steppe keeps
             // isolated trees (~1/5 density), the arid core almost none —
             // the SAME dryBand vocabulary as the shader's withered-grass
@@ -265,7 +270,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             // Forest interior only — debris is what a forest floor
             // leaves behind. Same aridity thinning as the trees: a
             // savanna floor keeps no forest litter.
-            f32 forest = forestMask(params.seed, x, z);
+            f32 forest = forestAt(params, x, z);
             forest *= 1.0f -
                       0.88f * glm::smoothstep(
                                   0.08f, 0.38f,
@@ -409,7 +414,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                 0.55f) {
                 continue;
             }
-            const f32 forest = forestMask(params.seed, x, z);
+            const f32 forest = forestAt(params, x, z);
             // Habitat pick.
             u32 species = 0; // tall grass
             if (forest > 0.4f) {
@@ -474,7 +479,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (clump < 0.05f) {
                 continue;
             }
-            const f32 forest = forestMask(params.seed, x, z);
+            const f32 forest = forestAt(params, x, z);
             const f32 edge = forest * (1.0f - forest) * 4.0f;
             if (rng.next() >= clump * (0.35f + 0.65f * edge)) {
                 continue;

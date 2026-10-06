@@ -224,7 +224,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // The shared forest mask + the real scatter's gates:
                 // the fringe rises and darkens exactly where the true
                 // trees grow, continuing them past the vegetation ring.
-                f32 forest = forestMask(params.seed, x, z);
+                f32 forest = forestAt(params, x, z);
                 const f32 slope = 1.0f - n.y;
                 const f32 line = terrain::treeLine(params);
                 // Same fade as the real scatter: the fringe thins out
@@ -317,7 +317,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 const f32 z = want.y - kTreeFar +
                               (static_cast<f32>(tz) + rng.next()) *
                                   kTreeSpacing;
-                const f32 forest = forestMask(params.seed, x, z);
+                const f32 forest = forestAt(params, x, z);
                 if (forest < 0.05f || rng.next() >= forest * 0.6f) {
                     continue;
                 }

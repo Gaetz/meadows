@@ -61,7 +61,9 @@ f32 sandboxFallbackHeight(const SandboxTerrain& sb, f32 x, f32 z) {
 }
 
 bool spawnCandidateOk(f32 h, f32 seaLevel, u8 biome) {
-    return h > seaLevel + 8.0f && h < 95.0f && biome == 0;
+    // Temperate meadow ground: the default, the bocage, a clearing.
+    return h > seaLevel + 8.0f && h < 95.0f &&
+           (biome == 0 || biome == 7 || biome == 8);
 }
 
 std::optional<Vec3> probeMapSpawn(

@@ -100,6 +100,7 @@ sptr<const render::BiomeSet> buildBiomeSet(
         params.detailAmplitudeScale = form.detailAmplitudeScale;
         params.temperature = form.temperature;
         params.wetness = form.wetness;
+        params.forestDensity = form.forestDensity;
     });
     data::forEach<BiomeMapForm>(forms, [&](const BiomeMapForm& form) {
         if (!filter.matches(form.worldspace)) {

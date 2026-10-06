@@ -59,6 +59,7 @@ struct PoiSite {
     PoiType type { PoiType::Butte };
     f32 radius { 0.0f }; // footprint (m)
     f32 height { 0.0f }; // lift at the summit above the floor (m); < 0 = basin
+    f32 theta { 0.0f };  // the landform's axis (hashed; along the course for water POIs)
     u32 hash { 0 };      // the site's own salt (variants, satellites)
     i32 cellX { 0 };     // its lattice cell (identity across maps)
     i32 cellZ { 0 };
@@ -87,6 +88,11 @@ struct PoiPlanParams {
     f32 petitHeightMax { 40.0f };
     f32 edgeReach { 2200.0f }; // moyen-moyen link reach
     u32 edgeMax { 6 };         // per site (the relative-neighbourhood test prunes further)
+    // Water POIs (waterfall, canyon, confluence) exist only ON a master
+    // course (catalogue rule F5): a site farther than this from a
+    // course re-rolls; a kept one snaps onto the course and takes its
+    // direction.
+    f32 waterPoiReach { 450.0f };
     f32 grandStartClearance { 1500.0f }; // the start cell's grand vs the spawn
     // Kernels: cone flanks (the triangle silhouette), the walks' tubes
     // and the screens that hide then reveal (docs/POI-CATALOGUE.md §G).
@@ -139,10 +145,27 @@ enum class PoiCharacter : u8 {
 const char* poiCharacterName(PoiCharacter c);
 PlanSample planSampleAt(const WorldLayerParams& world,
                         const PoiPlanParams& plan, f32 x, f32 z);
-// The cover bias of the character region alone (no kernels): the
-// per-texel palette id reads it.
-f32 planCoverBiasAt(const WorldLayerParams& world, const PoiPlanParams& plan,
-                    f32 x, f32 z);
+// The character region alone (no kernels): the dominant character and
+// the blended cover bias — the per-texel palette id reads them.
+struct PlanCharacter {
+    u8 character { 0 };
+    f32 coverBias { 0.0f };
+};
+PlanCharacter planCharacterAt(const WorldLayerParams& world,
+                              const PoiPlanParams& plan, f32 x, f32 z);
+// The temperate palette a character names (0 = none: the climate's own).
+u8 characterPalette(u8 character);
+// The nearest fine master course (riviere tier) to a point, on the
+// plan-free analytic — what rule F5 types the water POIs against.
+struct PoiCourseHit {
+    bool found { false };
+    f32 dist { 1.0e30f };
+    f32 x { 0.0f }, z { 0.0f };
+    f32 dirX { 1.0f }, dirZ { 0.0f };
+};
+PoiCourseHit poiNearestCourse(const WorldLayerParams& world,
+                              const PoiPlanParams& plan, f32 x, f32 z,
+                              f32 reach);
 
 // Sites of every tier whose centre lies in the rect (world meters).
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,

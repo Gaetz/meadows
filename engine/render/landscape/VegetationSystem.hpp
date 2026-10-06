@@ -534,6 +534,12 @@ private:
 // darkens its coarse mesh with the SAME mask, so the distant forest
 // fringe continues the real scatter past the vegetation ring.
 f32 forestMask(u32 seed, f32 x, f32 z);
+// The forest belt AS THE BIOME WANTS IT: the mask scaled by the blended
+// forestDensity (dense woods saturate, a clearing or a marsh keeps a
+// few trees). Every consumer of the belt reads this one — trees,
+// litter, ferns, bushes, the far canopy, the grass habitat — so they
+// agree where the woods are.
+f32 forestAt(const TerrainParams& params, f32 x, f32 z);
 
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz,

@@ -96,6 +96,10 @@ f32 etageAltitudeFor(const WorldLayerParams& p, f32 tier);
 // `cover` [0,1]: inside the temperate default, the short selector
 // picks the heath (4) or the dry meadow (5) variant — the ground and
 // the scatter change every ~45 s of walk without leaving the climate.
-u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover = 0.5f);
+// `characterPalette` (0 = none): inside the temperate default, the POI
+// plan's character region or a clearing names its own palette (dense
+// forest 6, bocage 7, clearing 8, marsh 9) before the cover variants.
+u8 paletteIdFor(f32 temperature, f32 moisture, f32 base, f32 cover = 0.5f,
+                u8 characterPalette = 0);
 
 } // namespace render::terraingen

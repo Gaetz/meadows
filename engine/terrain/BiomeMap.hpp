@@ -24,6 +24,7 @@ struct BiomeParams {
     // Climate (gameplay/survival reads these through biomeAt).
     f32 temperature { 0.0f }; // -1 freezing .. +1 scorching
     f32 wetness { 0.0f };     // 0 arid .. 1 swamp
+    f32 forestDensity { 1.0f }; // multiplier on the forest belt mask
 };
 
 struct BiomeSet {

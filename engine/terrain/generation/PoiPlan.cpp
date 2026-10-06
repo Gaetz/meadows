@@ -9,6 +9,8 @@
 
 #include "engine/core/Hash.hpp"
 #include "engine/terrain/Noise.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
+#include "engine/terrain/generation/TerrainGen.hpp"
 
 namespace render::terraingen {
 
@@ -114,13 +116,17 @@ PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
         return PoiType::Islet;
     }
     if (startDisc) {
-        const Weighted t[] = { { PoiType::Butte, 30.0f },
-                               { PoiType::Ridge, 15.0f },
-                               { PoiType::Grove, 15.0f },
-                               { PoiType::LoneTree, 10.0f },
-                               { PoiType::PlainLake, 15.0f },
-                               { PoiType::CityPad, 15.0f } };
-        return pick(t, 6, r);
+        // Low country around the start: no massif types, but its
+        // water (a step, a confluence) and its lakes.
+        const Weighted t[] = { { PoiType::Butte, 26.0f },
+                               { PoiType::Ridge, 14.0f },
+                               { PoiType::Grove, 12.0f },
+                               { PoiType::LoneTree, 8.0f },
+                               { PoiType::PlainLake, 14.0f },
+                               { PoiType::Waterfall, 10.0f },
+                               { PoiType::Confluence, 6.0f },
+                               { PoiType::CityPad, 10.0f } };
+        return pick(t, 8, r);
     }
     if (w.coast > 0.5f) {
         const Weighted t[] = { { PoiType::Headland, 35.0f },
@@ -133,15 +139,16 @@ PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
         return pick(t, 4, r);
     }
     if (w.massif > 0.5f) {
-        const Weighted t[] = { { PoiType::Summit, 35.0f },
-                               { PoiType::Needle, 20.0f },
-                               { PoiType::Ridge, 20.0f },
+        const Weighted t[] = { { PoiType::Summit, 30.0f },
+                               { PoiType::Needle, 18.0f },
+                               { PoiType::Ridge, 18.0f },
                                { PoiType::Col, 10.0f },
+                               { PoiType::Canyon, 14.0f }, // the gorge
                                { PoiType::Cirque, base > 650.0f ? 15.0f
                                                                 : 0.0f },
                                { PoiType::Tarn, base > 650.0f ? 10.0f
                                                               : 0.0f } };
-        return pick(t, 6, r);
+        return pick(t, 7, r);
     }
     if (base >= 450.0f) {
         const Weighted t[] = { { PoiType::Mesa, 35.0f },
@@ -153,29 +160,95 @@ PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
         return pick(t, 6, r);
     }
     if (base >= 150.0f) {
-        const Weighted t[] = { { PoiType::Butte, 25.0f },
-                               { PoiType::Ridge, 25.0f },
-                               { PoiType::Mesa, 15.0f },
+        const Weighted t[] = { { PoiType::Butte, 22.0f },
+                               { PoiType::Ridge, 22.0f },
+                               { PoiType::Mesa, 13.0f },
                                { PoiType::Waterfall, 15.0f },
+                               { PoiType::Canyon, 10.0f },
                                { PoiType::PlainLake, 10.0f },
-                               { PoiType::Grove, arid ? 0.0f : 10.0f },
+                               { PoiType::Grove, arid ? 0.0f : 8.0f },
                                { PoiType::Oasis, arid ? 10.0f : 0.0f } };
-        return pick(t, 7, r);
+        return pick(t, 8, r);
     }
-    const Weighted t[] = { { PoiType::Butte, 30.0f },
-                           { PoiType::PlainLake, 20.0f },
+    const Weighted t[] = { { PoiType::Butte, 26.0f },
+                           { PoiType::PlainLake, 16.0f },
                            { PoiType::Ridge, 10.0f },
-                           { PoiType::Mesa, 10.0f },
-                           { PoiType::Grove, arid ? 0.0f : 10.0f },
-                           { PoiType::LoneTree, 10.0f },
-                           { PoiType::CityPad, 10.0f },
+                           { PoiType::Mesa, 8.0f },
+                           { PoiType::Waterfall, 10.0f }, // a step, rapids
+                           { PoiType::Confluence, 8.0f },
+                           { PoiType::Grove, arid ? 0.0f : 8.0f },
+                           { PoiType::LoneTree, 8.0f },
+                           { PoiType::CityPad, 8.0f },
                            { PoiType::Oasis, arid ? 10.0f : 0.0f } };
-    return pick(t, 8, r);
+    return pick(t, 10, r);
 }
 
 bool basinType(PoiType type) {
     return type == PoiType::PlainLake || type == PoiType::Tarn ||
-           type == PoiType::Cove || type == PoiType::Cirque;
+           type == PoiType::Cove;
+}
+
+bool waterCourseType(PoiType type) {
+    return type == PoiType::Waterfall || type == PoiType::Canyon ||
+           type == PoiType::Confluence;
+}
+
+// The nearest master course to (x, z), read on the PLAN-FREE analytic
+// (rhythm.plan off: the network must not read the plan it types for —
+// the memo keys on the whole params, so this network is its own).
+using CourseHit = PoiCourseHit;
+
+} // namespace
+
+PoiCourseHit poiNearestCourse(const WorldLayerParams& world,
+                              const PoiPlanParams& plan, f32 x, f32 z,
+                              f32 reach) {
+    ProceduralControlParams pc;
+    pc.seed = world.seed;
+    pc.world = world;
+    pc.poi = plan;
+    pc.rhythm.plan = false;
+    const ProceduralControls controls { pc };
+    const MacroParams macro;
+    MasterNetworkParams net;
+    net.seaLevel = macro.seaLevel;
+    // Down to the riviere tier: a waterfall or a gorge belongs to a
+    // real river, not only to the rare fleuves (the memo keys on the
+    // params, so this finer network lives beside the imprint's).
+    net.fleuveArea = 1.5e6f;
+    const auto rivers = masterRiversNear(controls, macro, net, x - reach,
+                                         z - reach, x + reach, z + reach);
+    CourseHit hit;
+    for (const MasterRiver& river : rivers) {
+        for (size_t k = 0; k < river.nodes.size(); ++k) {
+            const MasterNode& n = river.nodes[k];
+            const f32 d = std::hypot(n.x - x, n.z - z);
+            if (d < hit.dist) {
+                hit.dist = d;
+                hit.found = true;
+                hit.x = n.x;
+                hit.z = n.z;
+                const MasterNode& a = river.nodes[k > 0 ? k - 1 : k];
+                const MasterNode& b =
+                    river.nodes[k + 1 < river.nodes.size() ? k + 1 : k];
+                const f32 dx = b.x - a.x;
+                const f32 dz = b.z - a.z;
+                const f32 len = std::hypot(dx, dz);
+                if (len > 1.0f) {
+                    hit.dirX = dx / len;
+                    hit.dirZ = dz / len;
+                }
+            }
+        }
+    }
+    return hit;
+}
+
+namespace {
+
+CourseHit nearestCourse(const WorldLayerParams& world, const PoiPlanParams& plan,
+                        f32 x, f32 z, f32 reach) {
+    return poiNearestCourse(world, plan, x, z, reach);
 }
 
 struct CellKey {
@@ -237,6 +310,7 @@ CellSite placeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
     s.hash = core::hashU32(salt ^ core::hashU32(static_cast<u32>(cx) ^
                                                  (static_cast<u32>(cz) *
                                                   0x85ebca6bu)));
+    s.theta = roll01(s.hash, 6) * 3.14159265f;
     // The start cell's grand stands clear of the spawn (the probe lands
     // on the meadow, never on its flank): pushed away along the ray.
     if (tier == PoiTier::Grand) {
@@ -282,6 +356,10 @@ void sizeSite(const PoiPlanParams& plan, PoiSite& s) {
         if (s.type == PoiType::Tarn) {
             s.radius = lerpHash(100.0f, 300.0f, s.hash, 3);
         }
+    } else if (s.type == PoiType::Cirque) {
+        // The rim's own height; the kernel digs the tarn from it.
+        s.height = lerpHash(120.0f, 200.0f, s.hash, 4);
+        s.radius = lerpHash(300.0f, 600.0f, s.hash, 3);
     } else if (s.type == PoiType::CityPad || s.type == PoiType::Confluence) {
         s.height = 0.0f;
         s.radius = lerpHash(150.0f, 300.0f, s.hash, 3);
@@ -509,6 +587,33 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 s.type = drawType(tier, w, startDisc, s.hash, ++alt);
             }
         }
+        // Rule F5: a waterfall, a canyon or a confluence needs a
+        // master course under it — re-rolled otherwise, then the dry
+        // fallback of its family; a kept one snaps onto the course and
+        // takes its direction (the canyon runs along, the step across,
+        // the uphill side upstream).
+        if (tier == PoiTier::Moyen && waterCourseType(s.type)) {
+            CourseHit hit = nearestCourse(world, plan, s.x, s.z,
+                                          plan.waterPoiReach);
+            for (u32 tries = 0; tries < 3 && waterCourseType(s.type) &&
+                                !(hit.found && hit.dist <= plan.waterPoiReach);
+                 ++tries) {
+                s.type = drawType(tier, w, startDisc, s.hash, ++alt);
+            }
+            if (waterCourseType(s.type)) {
+                if (hit.found && hit.dist <= plan.waterPoiReach) {
+                    s.x = hit.x;
+                    s.z = hit.z;
+                    s.theta = s.type == PoiType::Canyon
+                                  ? std::atan2(hit.dirZ, hit.dirX)
+                                  : std::atan2(hit.dirX, -hit.dirZ);
+                } else {
+                    s.type = s.type == PoiType::Waterfall  ? PoiType::Butte
+                             : s.type == PoiType::Canyon   ? PoiType::Ridge
+                                                           : PoiType::LoneTree;
+                }
+            }
+        }
         sizeSite(plan, s);
     }
     return memo.sites.emplace(key, cell).first->second;
@@ -531,9 +636,8 @@ struct Frame {
 };
 
 Frame frameOf(const PoiSite& s, f32 radius, f32 aspect, f32 x, f32 z) {
-    const f32 theta = roll01(s.hash, 6) * 3.14159265f;
-    const f32 ct = std::cos(theta);
-    const f32 st = std::sin(theta);
+    const f32 ct = std::cos(s.theta);
+    const f32 st = std::sin(s.theta);
     const f32 rx = x - s.x;
     const f32 rz = z - s.z;
     Frame f;
@@ -661,7 +765,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
             const f32 opening = ss(0.3f, 0.8f, f.u) * (1.0f - ss(0.5f, 1.0f, std::abs(f.v)));
             const f32 rim = ss(0.45f, 0.75f, f.n) * (1.0f - ss(0.9f, 1.0f, f.n));
             k.lift = h * rim * (1.0f - opening);
-            k.basin = 0.2f * h * (1.0f - ss(0.2f, 0.5f, f.n));
+            k.basin = 0.25f * h * (1.0f - ss(0.2f, 0.5f, f.n)); // the tarn
             k.flank = rim;
         }
         break;
@@ -956,8 +1060,18 @@ PlanSample planSampleAt(const WorldLayerParams& world,
     return out;
 }
 
-f32 planCoverBiasAt(const WorldLayerParams& world, const PoiPlanParams& plan,
-                    f32 x, f32 z) {
+u8 characterPalette(u8 character) {
+    switch (static_cast<PoiCharacter>(character % 6u)) {
+    case PoiCharacter::WoodedHills: return 6;
+    case PoiCharacter::Bocage: return 7;
+    case PoiCharacter::Marsh: return 9;
+    default: return 0; // meadow, rocky plateau, heath: cover variants
+    }
+}
+
+PlanCharacter planCharacterAt(const WorldLayerParams& world,
+                              const PoiPlanParams& plan, f32 x, f32 z) {
+    PlanCharacter out;
     memoReady(world, plan);
     f32 nearD[3] = { 1.0e30f, 1.0e30f, 1.0e30f };
     u8 nearC[3] = { 0, 0, 0 };
@@ -996,7 +1110,9 @@ f32 planCoverBiasAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         bias += w * kCharacters[nearC[k]].coverBias;
         wsum += w;
     }
-    return wsum > 0.0f ? bias / wsum : 0.0f;
+    out.character = nearC[0];
+    out.coverBias = wsum > 0.0f ? bias / wsum : 0.0f;
+    return out;
 }
 
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,
