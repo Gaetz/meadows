@@ -86,7 +86,36 @@ struct PoiPlanParams {
     f32 edgeReach { 2200.0f }; // moyen-moyen link reach
     u32 edgeMax { 6 };         // per site (the relative-neighbourhood test prunes further)
     f32 grandStartClearance { 1500.0f }; // the start cell's grand vs the spawn
+    // Kernels: cone flanks (the triangle silhouette), the walks' tubes
+    // and the screens that hide then reveal (docs/POI-CATALOGUE.md §G).
+    // 18-28 deg: a 200 m moyen spans 400-600 m of base, a landmark
+    // read from the next one, not a spike (needles keep their 40 deg).
+    f32 coneSlopeMinDeg { 18.0f };
+    f32 coneSlopeMaxDeg { 28.0f };
+    f32 corridorHalfWidthMin { 60.0f };
+    f32 corridorHalfWidthMax { 120.0f };
+    f32 screenHeightMin { 40.0f };
+    f32 screenHeightMax { 90.0f };
+    f32 screenHalfLengthMin { 125.0f };
+    f32 screenHalfLengthMax { 250.0f };
+    f32 screenHalfWidth { 90.0f };
+    f32 screenNotch { 0.75f }; // fraction of the screen cut on the corridor
 };
+
+// What the terrain reads at (x, z): the landform lift of the sites (the
+// max of their kernels; < 0 inside a basin), the walks' corridors and
+// screens, the pads, and the character region (P3 reads it).
+struct PlanSample {
+    f32 lift { 0.0f };       // meters of base lift (positive kernels)
+    f32 basin { 0.0f };      // meters of depression (basin kernels), >= 0
+    f32 mesaTop { 0.0f };    // [0,1] on a flat top (mesa, crater rim)
+    f32 flank { 0.0f };      // [0,1] on a cone's flank
+    f32 corridor { 0.0f };   // [0,1] inside a walk's tube
+    f32 padFlat { 0.0f };    // [0,1] inside a site pad
+    u8 character { 0 };      // nearest moyen/grand site's hash % 6
+};
+PlanSample planSampleAt(const WorldLayerParams& world,
+                        const PoiPlanParams& plan, f32 x, f32 z);
 
 // Sites of every tier whose centre lies in the rect (world meters).
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,

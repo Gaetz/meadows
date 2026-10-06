@@ -183,3 +183,62 @@ TEST_CASE("poi plan: the start cell's grand stands clear of the spawn") {
         }
     }
 }
+
+TEST_CASE("poi plan: the terrain reads the plan") {
+    // A summit site lifts the controls at its centre by its height, a
+    // basin site digs, a pad flattens, and a walk's corridor is a
+    // gentle corridor at its waypoint. Plan off = no lift from sites.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    const auto& plan = controls.params().poi;
+    const auto sites = poiSitesNear(world, plan, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
+    u32 summits = 0, basins = 0, pads = 0;
+    for (const PoiSite& s : sites) {
+        const ControlSample c = controls.at(s.x, s.z);
+        if (c.sea || c.base < 12.0f) {
+            continue; // the shore gate
+        }
+        if ((s.type == PoiType::Summit || s.type == PoiType::Butte) &&
+            s.tier != PoiTier::Petit) {
+            CHECK(c.plateau >= 0.9f * s.height);
+            ++summits;
+        } else if (s.type == PoiType::PlainLake) {
+            CHECK(c.basinDepth >= 0.9f * -s.height);
+            ++basins;
+        } else if (s.type == PoiType::CityPad) {
+            CHECK(c.reliefScale <= 0.25f);
+            ++pads;
+        }
+    }
+    MESSAGE("checked summits ", summits, ", basins ", basins, ", pads ", pads);
+    CHECK(summits >= 10);
+    CHECK(basins >= 3);
+    const auto edges = poiEdgesNear(world, plan, 0.0f, 0.0f, 8192.0f, 8192.0f);
+    u32 corridors = 0;
+    for (const PoiEdge& e : edges) {
+        const ControlSample c = controls.at(e.wx, e.wz);
+        if (c.sea) {
+            continue;
+        }
+        CHECK(c.gentle >= 0.5f);
+        CHECK(c.calm >= 0.5f);
+        ++corridors;
+    }
+    CHECK(corridors >= 10);
+    // Plan off: the reference rhythm (pieces + story mountains) — the
+    // sites no longer lift the ground at their centre.
+    ProceduralControlParams off = pc;
+    off.rhythm.plan = false;
+    const ProceduralControls reference { off };
+    u32 differs = 0;
+    for (const PoiSite& s : sites) {
+        if (s.tier == PoiTier::Moyen &&
+            reference.at(s.x, s.z).plateau != controls.at(s.x, s.z).plateau) {
+            ++differs;
+        }
+    }
+    CHECK(differs > 50);
+}
+

@@ -208,6 +208,12 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
                        t.reliefAmplitude * s.reliefScale;
     const f32 floor = s.hasBase ? p.seaLevel + s.base : t.altitude;
     f32 h = floor + relief + s.plateau;
+    // Designed depressions (basins, canyons): dug into the floor, never
+    // below the shore (the sea gate), like the beds.
+    if (s.basinDepth > 0.0f) {
+        h -= s.basinDepth *
+             noise::smoothstep01(6.0f, 25.0f, floor - p.seaLevel);
+    }
     if (s.hillRelief > 0.0f && hillChainWavelength > 1.0f) {
         // Ridged chains: elongated crests, the erosion pass rounds
         // them into rolling hill country.
@@ -377,11 +383,17 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     s.base = glm::max(w.base, 0.0f);
     s.hasBase = true;
     s.tier = etageIndexFor(p.world, s.base);
-    // The pieces: a landmark's lift, flattened on a mesa top; gated
-    // off the beach so no shore rises into a wall.
-    const PieceSample piece = pieceLayer(p, x, z);
+    // The landforms: the POI plan's kernels (sites, walks' screens),
+    // or — plan off, the A/B reference — the jittered pieces and the
+    // story-mode mountains. Gated off the beach so no shore rises into
+    // a wall.
     const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, s.base);
-    // The story-mode mountains: ridged ranges where a slow mask fires.
+    PieceSample piece;
+    f32 lift = 0.0f;
+    f32 corridor = 0.0f;
+    // The story-mode mountains: with the plan, a HALF-height texture
+    // between the sites (the ridged relief the dev wants under his
+    // feet); the POI stand above it. P3 turns it into a character.
     const f32 storyMask = noise::smoothstep01(
         r.storyMountainMaskLow, r.storyMountainMaskHigh,
         noise::fbm(p.seed ^ kSaltStoryMask, x, z,
@@ -390,9 +402,21 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         storyMask * r.storyMountainAmplitude *
         noise::ridgedFbm(p.seed ^ kSaltStoryRidge, x, z,
                          2.0f / r.storyMountainWavelength, 4, 2.0f, 0.5f);
-    const f32 lift = glm::max(piece.add, storyMountain);
+    if (r.plan) {
+        const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
+        lift = glm::max(ps.lift, storyMountain * r.planStoryScale);
+        piece.mesaTop = ps.mesaTop;
+        piece.ridgeFlank = ps.flank;
+        corridor = ps.corridor;
+        s.basinDepth = ps.basin * shoreGate;
+        s.reliefScale = (1.0f - 0.7f * ps.mesaTop) *
+                        (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor);
+    } else {
+        piece = pieceLayer(p, x, z);
+        lift = glm::max(piece.add, storyMountain);
+        s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
+    }
     s.plateau = lift * shoreGate;
-    s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
     // Massif belts: ridged crests sized by the étage, and the uplift
     // that feeds the stream power — never on a mesa top.
     const f32 inland = noise::smoothstep01(25.0f, 80.0f, s.base);
@@ -413,7 +437,8 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         const f32 colK =
             1.0f -
             noise::smoothstep01(0.045f, 0.13f, std::abs(frac - 0.5f));
-        s.gentle = glm::clamp(colK * rangeNeed + piece.col, 0.0f, 1.0f);
+        s.gentle = glm::clamp(colK * rangeNeed + piece.col + corridor, 0.0f,
+                              1.0f);
     }
     // Calm is the RULE: everything that is neither a piece, a massif
     // nor a piece's flank is habitable ground; corridors are members.
@@ -457,6 +482,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.plateau.resize(spec.cells());
     out.hillRelief.resize(spec.cells());
     out.hardness.resize(spec.cells());
+    out.basin.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     // Control sampling on a COARSE grid, bilinearly interpolated to
@@ -535,6 +561,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
         out.base = lerp(s00.base, s10.base, s01.base, s11.base);
         out.bedDepth = lerp(s00.bedDepth, s10.bedDepth, s01.bedDepth,
                             s11.bedDepth);
+        out.basinDepth = lerp(s00.basinDepth, s10.basinDepth,
+                              s01.basinDepth, s11.basinDepth);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
@@ -563,6 +591,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.plateau[i] = s.sea ? 0.0f : s.plateau;
             out.hillRelief[i] = s.sea ? 0.0f : s.hillRelief;
             out.hardness[i] = s.hardness;
+            out.basin[i] = s.sea ? 0.0f : s.basinDepth;
         }
     }
     out.seaDist = signedSeaDistance(spec, seaMask);

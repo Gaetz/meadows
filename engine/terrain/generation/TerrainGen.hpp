@@ -44,6 +44,10 @@ struct ControlSample {
     // Valley-bed depth (m) the macro digs along a ridged bed field
     // (the pre-erosion drainage skeleton of the province); 0 = none.
     f32 bedDepth { 0.0f };
+    // A designed depression (m): a lake basin, a canyon, a crater — the
+    // POI plan's negative kernels. landHeight subtracts it from the
+    // floor; the bake keeps its water (no dimple fill inside).
+    f32 basinDepth { 0.0f };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
@@ -136,6 +140,10 @@ struct RhythmParams {
     f32 storyMountainAmplitude { 270.0f };
     f32 storyMountainMaskLow { 0.36f };
     f32 storyMountainMaskHigh { 0.62f };
+    // The POI plan drives the landforms (docs/PAYSAGE.md §7.6). Off =
+    // the jittered pieces + the story mountains (the A/B reference).
+    bool plan { true };
+    f32 planStoryScale { 0.5f }; // story mountains under the plan
 };
 
 // Sandbox controls: every field derives from ONE sample of the world
@@ -261,6 +269,9 @@ struct MacroResult {
     vector<f32> hillRelief;
     // Lithology [0,1] (ControlSample::hardness): erosion character.
     vector<f32> hardness;
+    // Designed depressions (m, ControlSample::basinDepth): the bake's
+    // dimple fill skips them (they are water by design).
+    vector<f32> basin;
 };
 
 // Erosion keep from the base lift (TileBake stage 1 and the analytic

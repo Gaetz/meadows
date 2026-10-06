@@ -146,7 +146,11 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
                 if (macro.height[i] <= params.macro.seaLevel) {
                     continue;
                 }
-                const f32 w = glm::smoothstep(0.25f, 0.75f, macro.calm[i]);
+                f32 w = glm::smoothstep(0.25f, 0.75f, macro.calm[i]);
+                if (!macro.basin.empty()) {
+                    // A designed basin is water: never filled.
+                    w *= 1.0f - glm::smoothstep(0.5f, 2.0f, macro.basin[i]);
+                }
                 if (w <= 0.0f) {
                     continue;
                 }

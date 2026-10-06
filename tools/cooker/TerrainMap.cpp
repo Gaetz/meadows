@@ -27,11 +27,16 @@ int terrainMap(char** argv, int argc) {
         params.size = static_cast<u32>(std::atoi(argv[7]));
     }
 
-    if (argc >= 9) {
-        params.drawPoi = std::string(argv[8]) == "poi";
-    }
     ProceduralControlParams controlParams;
     controlParams.seed = seed;
+    for (int i = 8; i < argc; ++i) {
+        const std::string flag = argv[i];
+        if (flag == "poi") {
+            params.drawPoi = true; // sites + walks overlay
+        } else if (flag == "noplan") {
+            controlParams.rhythm.plan = false; // the A/B reference
+        }
+    }
     const ProceduralControls controls { controlParams };
     const MacroParams macro;
     const vector<u8> pixels = renderTerrainMap(controls, macro, params);

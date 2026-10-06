@@ -332,10 +332,17 @@ u32 paramsKeyOf(const WorldLayerParams& world, const PoiPlanParams& plan) {
     return h;
 }
 
-Memo& memoFor(const WorldLayerParams& world, const PoiPlanParams& plan) {
+// The memo is only ever CLEARED at a public entry point (memoReady):
+// the internal functions hold references into it across nested calls.
+Memo& memoFor(const WorldLayerParams&, const PoiPlanParams&) {
     thread_local Memo memo;
+    return memo;
+}
+
+Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan) {
+    Memo& memo = memoFor(world, plan);
     const u32 key = paramsKeyOf(world, plan);
-    if (memo.paramsKey != key || memo.sites.size() > 8192) {
+    if (memo.paramsKey != key || memo.sites.size() > 32768) {
         memo.sites.clear();
         memo.rawEdges.clear();
         memo.paramsKey = key;
@@ -498,12 +505,391 @@ const CellSite& typedSite(const WorldLayerParams& world,
     return memo.sites.emplace(key, cell).first->second;
 }
 
+// --- Kernels ---------------------------------------------------------
+
+struct KernelOut {
+    f32 lift { 0.0f };
+    f32 basin { 0.0f };
+    f32 mesaTop { 0.0f };
+    f32 flank { 0.0f };
+    f32 padFlat { 0.0f };
+};
+
+// Elliptic normalized distance in the site's hashed frame.
+struct Frame {
+    f32 u, v; // normalized by radius (and aspect along u)
+    f32 n;    // sqrt(u^2 + v^2)
+};
+
+Frame frameOf(const PoiSite& s, f32 radius, f32 aspect, f32 x, f32 z) {
+    const f32 theta = roll01(s.hash, 6) * 3.14159265f;
+    const f32 ct = std::cos(theta);
+    const f32 st = std::sin(theta);
+    const f32 rx = x - s.x;
+    const f32 rz = z - s.z;
+    Frame f;
+    f.u = (ct * rx + st * rz) / (radius * aspect);
+    f.v = (-st * rx + ct * rz) / radius;
+    f.n = std::sqrt(f.u * f.u + f.v * f.v);
+    return f;
+}
+
+f32 ss(f32 lo, f32 hi, f32 x) { return noise::smoothstep01(lo, hi, x); }
+
+// The cone: a linear flank (the triangle silhouette) at a hashed slope,
+// its footprint derived from the height — never a dome.
+f32 coneRadius(const PoiPlanParams& plan, const PoiSite& s, f32 height) {
+    const f32 deg = glm::mix(plan.coneSlopeMinDeg, plan.coneSlopeMaxDeg,
+                             roll01(s.hash, 7));
+    return glm::max(height / std::tan(deg * 0.017453292f), 20.0f);
+}
+
+KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
+                   const PoiSite& s, f32 x, f32 z) {
+    KernelOut k;
+    const f32 h = glm::max(s.height, 0.0f);
+    const f32 depth = glm::max(-s.height, 0.0f);
+    switch (s.type) {
+    case PoiType::Summit:
+    case PoiType::Needle:
+    case PoiType::Butte:
+    case PoiType::Headland:
+    case PoiType::Islet:
+    case PoiType::SeaStack: {
+        const f32 r = s.type == PoiType::Needle
+                          ? glm::max(h / std::tan(0.7f), 20.0f) // ~40 deg
+                          : coneRadius(plan, s, h);
+        const f32 aspect = s.type == PoiType::Headland ? 2.2f : 1.0f;
+        const Frame f = frameOf(s, r, aspect, x, z);
+        if (f.n < 1.0f) {
+            // Rounded tip (C1 over the last 8 %), linear flank below.
+            const f32 t = 1.0f - f.n;
+            const f32 tip = 0.08f;
+            const f32 kk = t > 1.0f - tip
+                               ? 1.0f - (1.0f - t) * (1.0f - t) / (2.0f * tip) -
+                                     tip * 0.5f
+                               : t;
+            k.lift = h * kk;
+            k.flank = ss(0.05f, 0.3f, kk) * (1.0f - ss(0.85f, 1.0f, kk));
+        }
+        break;
+    }
+    case PoiType::Crater: {
+        const f32 r = coneRadius(plan, s, h);
+        const Frame f = frameOf(s, r, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            const f32 kk = glm::min(1.0f, (1.0f - f.n) / 0.85f);
+            k.lift = h * kk;
+            k.mesaTop = 1.0f - ss(0.1f, 0.2f, f.n);
+            // The crater: a bowl in the truncated top.
+            k.basin = 0.35f * h * (1.0f - ss(0.05f, 0.18f, f.n));
+            k.flank = ss(0.2f, 0.9f, f.n);
+        }
+        break;
+    }
+    case PoiType::Mesa: {
+        const Frame f = frameOf(s, s.radius, 1.0f + 0.4f * roll01(s.hash, 8),
+                                x, z);
+        if (f.n < 1.0f) {
+            const f32 hm = glm::min(h, 150.0f);
+            k.lift = hm * glm::min(1.0f, (1.0f - f.n) / 0.35f);
+            k.mesaTop = 1.0f - ss(0.55f, 0.68f, f.n);
+            k.flank = ss(0.65f, 0.75f, f.n) * (1.0f - ss(0.95f, 1.0f, f.n));
+        }
+        break;
+    }
+    case PoiType::Ridge:
+    case PoiType::Col: {
+        const f32 aspect = glm::mix(2.8f, 4.5f, roll01(s.hash, 8));
+        const Frame f = frameOf(s, s.radius, aspect, x, z);
+        if (f.n < 1.0f) {
+            const f32 kk = 1.0f - f.n;
+            f32 mod = 1.0f;
+            if (s.type == PoiType::Ridge) {
+                mod = glm::mix(0.55f, 1.0f,
+                               noise::fbm(s.hash ^ 0x51d9ec01u, x, z,
+                                          1.0f / 1300.0f, 2, 2.0f, 0.5f));
+            } else {
+                // A col: the saddle is the point, the ridge rises on
+                // both sides along the axis.
+                mod = 0.4f + 0.6f * ss(0.15f, 0.6f, std::abs(f.u));
+            }
+            k.lift = h * kk * mod;
+            k.flank = ss(0.05f, 0.4f, kk) * (1.0f - ss(0.6f, 0.9f, kk));
+        }
+        break;
+    }
+    case PoiType::Escarpment:
+    case PoiType::SeaCliff:
+    case PoiType::Waterfall: {
+        // A step across the footprint: the uphill half-plane rises.
+        const f32 r = s.radius * 2.0f;
+        const Frame f = frameOf(s, r, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            const f32 hs = s.type == PoiType::Waterfall ? glm::min(h, 60.0f)
+                                                        : glm::min(h, 120.0f);
+            const f32 edge = 1.0f - ss(0.6f, 1.0f, f.n);
+            k.lift = hs * ss(-0.12f, 0.12f, f.v) * edge;
+            k.flank = (1.0f - ss(0.0f, 0.15f, std::abs(f.v))) * edge;
+        }
+        break;
+    }
+    case PoiType::Canyon:
+    case PoiType::Fjord: {
+        const f32 aspect = glm::mix(3.0f, 5.0f, roll01(s.hash, 8));
+        const Frame f = frameOf(s, s.radius, aspect, x, z);
+        if (f.n < 1.0f) {
+            const f32 d = glm::max(h, 60.0f);
+            k.basin = d * glm::min(1.0f, (1.0f - f.n) / 0.3f);
+            k.flank = ss(0.6f, 0.75f, f.n) * (1.0f - ss(0.95f, 1.0f, f.n));
+        }
+        break;
+    }
+    case PoiType::Cirque: {
+        // An amphitheatre: a rim on three sides, open along +u.
+        const Frame f = frameOf(s, s.radius, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            const f32 opening = ss(0.3f, 0.8f, f.u) * (1.0f - ss(0.5f, 1.0f, std::abs(f.v)));
+            const f32 rim = ss(0.45f, 0.75f, f.n) * (1.0f - ss(0.9f, 1.0f, f.n));
+            k.lift = h * rim * (1.0f - opening);
+            k.basin = 0.2f * h * (1.0f - ss(0.2f, 0.5f, f.n));
+            k.flank = rim;
+        }
+        break;
+    }
+    case PoiType::PlainLake:
+    case PoiType::Tarn:
+    case PoiType::Cove: {
+        const Frame f = frameOf(s, s.radius, 1.0f + 0.5f * roll01(s.hash, 8),
+                                x, z);
+        if (f.n < 1.0f) {
+            k.basin = depth * glm::min(1.0f, (1.0f - f.n * f.n) / 0.4f);
+        }
+        break;
+    }
+    case PoiType::Hoodoos:
+    case PoiType::KarstTowers:
+    case PoiType::Boulders: {
+        // A field of small cones on a jittered lattice inside the
+        // footprint (towers are tall and thin, boulders squat).
+        const f32 cell = s.type == PoiType::Boulders ? 25.0f
+                         : s.type == PoiType::Hoodoos ? 45.0f
+                                                      : 90.0f;
+        const f32 hc = s.type == PoiType::Boulders ? 6.0f
+                       : s.type == PoiType::Hoodoos ? 20.0f
+                                                    : 60.0f;
+        const Frame f = frameOf(s, s.radius, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            const i32 cx = static_cast<i32>(std::floor(x / cell));
+            const i32 cz = static_cast<i32>(std::floor(z / cell));
+            f32 best = 0.0f;
+            for (i32 dz = -1; dz <= 1; ++dz) {
+                for (i32 dx = -1; dx <= 1; ++dx) {
+                    const u32 salt = s.hash ^ 0x7007e25u;
+                    const f32 px = (static_cast<f32>(cx + dx) +
+                                    noise::lattice(salt, cx + dx, cz + dz)) *
+                                   cell;
+                    const f32 pz = (static_cast<f32>(cz + dz) +
+                                    noise::lattice(salt + 1u, cx + dx, cz + dz)) *
+                                   cell;
+                    const f32 rr = cell * 0.45f;
+                    const f32 d = std::hypot(x - px, z - pz) / rr;
+                    if (d < 1.0f) {
+                        best = glm::max(best, hc * (1.0f - d));
+                    }
+                }
+            }
+            k.lift = best * (1.0f - ss(0.8f, 1.0f, f.n));
+            k.flank = k.lift > 1.0f ? 0.5f : 0.0f;
+        }
+        break;
+    }
+    case PoiType::Grove:
+    case PoiType::LoneTree:
+    case PoiType::Spring:
+    case PoiType::Oasis: {
+        const Frame f = frameOf(s, s.radius, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            const f32 kk = (1.0f - f.n * f.n) * (1.0f - f.n * f.n);
+            if (s.type == PoiType::Oasis) {
+                k.basin = 3.0f * kk;
+            } else if (s.type == PoiType::Spring) {
+                k.basin = 0.0f; // a marker: the water comes with the peuplement
+            } else {
+                k.lift = glm::min(h, 12.0f) * kk;
+            }
+        }
+        break;
+    }
+    case PoiType::CityPad:
+    case PoiType::Confluence: {
+        const Frame f = frameOf(s, s.radius, 1.0f, x, z);
+        if (f.n < 1.0f) {
+            k.padFlat = 1.0f - ss(0.7f, 1.0f, f.n);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    (void)world;
+    return k;
+}
+
+// Distance to a segment and the parameter along it.
+f32 segmentDistance(f32 px, f32 pz, f32 ax, f32 az, f32 bx, f32 bz,
+                    f32& t) {
+    const f32 dx = bx - ax;
+    const f32 dz = bz - az;
+    const f32 len2 = dx * dx + dz * dz;
+    t = len2 > 0.0f
+            ? glm::clamp(((px - ax) * dx + (pz - az) * dz) / len2, 0.0f, 1.0f)
+            : 0.0f;
+    return std::hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+
 } // namespace
+
+PlanSample planSampleAt(const WorldLayerParams& world,
+                        const PoiPlanParams& plan, f32 x, f32 z) {
+    PlanSample out;
+    memoReady(world, plan);
+    // Sites: the 3x3 moyen and petit cells, the grand cells within reach
+    // (a grand's cone reaches ~1 km: its own cell and the neighbours).
+    f32 nearestD = 1.0e30f;
+    for (const PoiTier tier : { PoiTier::Grand, PoiTier::Moyen, PoiTier::Petit }) {
+        const f32 size = cellSize(plan, tier);
+        const i32 cx = static_cast<i32>(std::floor(x / size));
+        const i32 cz = static_cast<i32>(std::floor(z / size));
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const CellSite& c = typedSite(world, plan, tier, cx + dx, cz + dz);
+                if (!c.present) {
+                    continue;
+                }
+                const PoiSite& s = c.site;
+                const f32 d = std::hypot(x - s.x, z - s.z);
+                if (tier != PoiTier::Petit && d < nearestD) {
+                    nearestD = d;
+                    out.character = static_cast<u8>(s.hash % 6u);
+                }
+                // Footprint reject before any kernel (cones derive their
+                // footprint from the height: bound by the max slope).
+                const f32 reach = glm::max(
+                    s.radius * 2.2f,
+                    glm::max(s.height, 0.0f) / std::tan(plan.coneSlopeMinDeg *
+                                                        0.017453292f));
+                if (d > reach) {
+                    continue;
+                }
+                const KernelOut k = kernelAt(world, plan, s, x, z);
+                out.lift = glm::max(out.lift, k.lift);
+                out.basin = glm::max(out.basin, k.basin);
+                out.mesaTop = glm::max(out.mesaTop, k.mesaTop);
+                out.flank = glm::max(out.flank, k.flank);
+                out.padFlat = glm::max(out.padFlat, k.padFlat);
+            }
+        }
+    }
+    // Walks: corridors and screens of the edges around.
+    {
+        const f32 size = plan.moyenCell;
+        const i32 reachCells = static_cast<i32>(std::ceil(plan.edgeReach / size));
+        const i32 cx = static_cast<i32>(std::floor(x / size));
+        const i32 cz = static_cast<i32>(std::floor(z / size));
+        f32 screenLift = 0.0f;
+        for (i32 dz = -reachCells; dz <= reachCells; ++dz) {
+            for (i32 dx = -reachCells; dx <= reachCells; ++dx) {
+                const CellSite& self = typedSite(world, plan, PoiTier::Moyen,
+                                                 cx + dx, cz + dz);
+                if (!self.present) {
+                    continue;
+                }
+                for (const PoiSite& t : rawEdgesOf(world, plan, cx + dx, cz + dz)) {
+                    if (!lowerRank(cx + dx, cz + dz, t.cellX, t.cellZ)) {
+                        continue; // canonical endpoint only
+                    }
+                    bool mutual = false;
+                    for (const PoiSite& back : rawEdgesOf(world, plan, t.cellX, t.cellZ)) {
+                        if (back.cellX == cx + dx && back.cellZ == cz + dz) {
+                            mutual = true;
+                            break;
+                        }
+                    }
+                    if (!mutual) {
+                        continue;
+                    }
+                    const PoiSite& a = self.site;
+                    const u32 eh = core::hashU32(a.hash ^ (t.hash * 0x27d4eb2fu));
+                    const f32 ex = t.x - a.x;
+                    const f32 ez = t.z - a.z;
+                    const f32 len = std::hypot(ex, ez);
+                    if (len < 1.0f) {
+                        continue;
+                    }
+                    const f32 bend = glm::mix(-0.25f, 0.25f, roll01(eh, 1));
+                    const f32 wx = (a.x + t.x) * 0.5f - ez / len * bend * len;
+                    const f32 wz = (a.z + t.z) * 0.5f + ex / len * bend * len;
+                    // Corridor: the nearer of the two segments.
+                    f32 t1, t2;
+                    const f32 d1 = segmentDistance(x, z, a.x, a.z, wx, wz, t1);
+                    const f32 d2 = segmentDistance(x, z, wx, wz, t.x, t.z, t2);
+                    const f32 half = glm::mix(plan.corridorHalfWidthMin,
+                                              plan.corridorHalfWidthMax,
+                                              roll01(eh, 2));
+                    const f32 d = glm::min(d1, d2);
+                    const f32 corridor = 1.0f - ss(half, half * 1.6f, d);
+                    out.corridor = glm::max(out.corridor, corridor);
+                    // Screen: a transverse ridge at 45-60 % of the walk,
+                    // notched on the corridor (the col the walk crosses).
+                    const f32 at = glm::mix(0.45f, 0.6f, roll01(eh, 3));
+                    const f32 l1 = std::hypot(wx - a.x, wz - a.z);
+                    const f32 total = l1 + std::hypot(t.x - wx, t.z - wz);
+                    const f32 along = at * total;
+                    f32 sx, sz, dirx, dirz;
+                    if (along <= l1) {
+                        const f32 u = along / glm::max(l1, 1.0f);
+                        sx = glm::mix(a.x, wx, u);
+                        sz = glm::mix(a.z, wz, u);
+                        dirx = (wx - a.x) / glm::max(l1, 1.0f);
+                        dirz = (wz - a.z) / glm::max(l1, 1.0f);
+                    } else {
+                        const f32 l2 = glm::max(total - l1, 1.0f);
+                        const f32 u = (along - l1) / l2;
+                        sx = glm::mix(wx, t.x, u);
+                        sz = glm::mix(wz, t.z, u);
+                        dirx = (t.x - wx) / l2;
+                        dirz = (t.z - wz) / l2;
+                    }
+                    const f32 halfLen = glm::mix(plan.screenHalfLengthMin,
+                                                 plan.screenHalfLengthMax,
+                                                 roll01(eh, 4));
+                    const f32 hs = glm::mix(plan.screenHeightMin,
+                                            plan.screenHeightMax, roll01(eh, 5));
+                    // Frame: u along the screen (perpendicular to the
+                    // walk), v across it (along the walk).
+                    const f32 rx = x - sx;
+                    const f32 rz = z - sz;
+                    const f32 su = (-dirz * rx + dirx * rz) / halfLen;
+                    const f32 sv = (dirx * rx + dirz * rz) / plan.screenHalfWidth;
+                    const f32 n = std::sqrt(su * su + sv * sv);
+                    if (n < 1.0f) {
+                        const f32 notch = 1.0f - plan.screenNotch * corridor;
+                        screenLift = glm::max(screenLift, hs * (1.0f - n) * notch);
+                    }
+                }
+            }
+        }
+        out.lift = glm::max(out.lift, screenLift);
+    }
+    return out;
+}
 
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,
                              const PoiPlanParams& plan, f32 minX, f32 minZ,
                              f32 maxX, f32 maxZ) {
     vector<PoiSite> out;
+    memoReady(world, plan);
     for (const PoiTier tier :
          { PoiTier::Grand, PoiTier::Moyen, PoiTier::Petit }) {
         const f32 size = cellSize(plan, tier);
@@ -532,6 +918,7 @@ vector<PoiEdge> poiEdgesNear(const WorldLayerParams& world,
                              const PoiPlanParams& plan, f32 minX, f32 minZ,
                              f32 maxX, f32 maxZ) {
     vector<PoiEdge> out;
+    memoReady(world, plan);
     const f32 size = plan.moyenCell;
     const i32 reachCells =
         static_cast<i32>(std::ceil(plan.edgeReach / size));

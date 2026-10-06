@@ -1512,6 +1512,38 @@ départ, export du plan dans `MapRecords`.
   identique depuis les deux cartes — la densité des traversées est à
   regarder en P4). `docs/POI-CATALOGUE.md` écrit. Aucun changement de terrain
   encore (le plan n'est pas lu par `at()` avant P2).
+- **2026-10-06 — P2 livrée : le terrain lit le plan.** `planSampleAt`
+  (`PoiPlan.cpp`) : noyaux par type — cône à flanc linéaire (pente hachée
+  18-28°, 40° pour l'aiguille, pointe arrondie sur 8 %) pour sommet /
+  butte / cap / îlot / stack ; cratère (cône tronqué + bol) ; mesa (plateau
+  plat, rebord raide, `mesaTop`) ; échine à cols et col (selle) ; gradin /
+  falaise de mer / cascade (demi-plan lissé) ; canyon et fjord (échine
+  négative à fond plat) ; cirque (amphithéâtre ouvert d'un côté) ; bassins
+  (lac de plaine, tarn, crique : dôme négatif à fond plat) ; champs de
+  hoodoos / tours karstiques / blocs (réseau de petits cônes) ; bosquet /
+  arbre (bosse de 12 m) ; oasis (−3 m) ; source = marqueur seul ; pads de
+  ville / confluence (`padFlat`). Marches : corridor (tube de 60-120 m,
+  `gentle`/`calm` = 1, relief ×0,5) sur la polyligne a → point de passage
+  → b, et **écran** à 45-60 % de la marche (échine transversale de
+  250-500 m, 40-90 m, entaillée à 75 % sur le corridor : la destination
+  disparaît derrière, réapparaît à l'encoche). `ControlSample +=
+  basinDepth` (soustrait du plancher par `landHeight` avec la porte du
+  rivage), `MacroResult += basin` (le comblement des creux saute les
+  bassins). `RhythmParams::plan` = bascule A/B (`terrain-map … noplan`),
+  `planStoryScale` 0,5 : les montagnes histoire restent une texture à
+  mi-hauteur sous le plan. Mémo : effacé seulement aux points d'entrée
+  (une référence vivante dans le mémo se faisait couper pendant un calcul
+  de réseau maître : segfault à 10 km). v73, hash 922232772222690693.
+  Tests : « the terrain reads the plan » (36 sommets levés ≥ 0,9×, 21
+  bassins creusés, 30 pads plats, corridors gentle/calm ≥ 0,5, plan off ≠
+  plan on sur 50+ sites). **Baseline « plan »** (carte (0,0)) : autour du
+  spawn pente 21,9 %, 9 inversions/km, relief 29,5 m / 250 m, montée p95
+  +40 / p5 −40 m, amplitude/km 92 m (max 311), 18,9 % du sol > 100 m ;
+  carte entière socle 5,3 % / versant 94,7 %, relief médian 43,6 m ; 83
+  lacs + 90 étangs ; spawn (3 881, 70, 4 656), 1,9 m / 30 m. Rendus :
+  les cônes se lisent comme des disques ombrés, les marches comme des
+  lignes douces, les écrans comme des traits transversaux. Jugement dev
+  EN ATTENTE (A/B : `noplan`).
 
 ---
 
