@@ -242,3 +242,21 @@ TEST_CASE("poi plan: the terrain reads the plan") {
     CHECK(differs > 50);
 }
 
+TEST_CASE("poi plan: belvedere candidates around the start" * doctest::skip()) {
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto sites = poiSitesNear(controls.params().world, controls.params().poi,
+                                    4096.0f - 2500.0f, 4096.0f - 2500.0f,
+                                    4096.0f + 2500.0f, 4096.0f + 2500.0f);
+    for (const PoiSite& s : sites) {
+        if (s.tier == PoiTier::Petit) {
+            continue;
+        }
+        MESSAGE("site ", std::string(poiTypeName(s.type)), " tier ", static_cast<int>(s.tier),
+                " at (", s.x, ", ", s.z, ") d ",
+                std::hypot(s.x - 4096.0f, s.z - 4096.0f), " h ", s.height);
+    }
+    CHECK(true);
+}
+

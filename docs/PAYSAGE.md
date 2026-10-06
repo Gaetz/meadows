@@ -1545,6 +1545,36 @@ départ, export du plan dans `MapRecords`.
   lignes douces, les écrans comme des traits transversaux. Jugement dev
   EN ATTENTE (A/B : `noplan`).
 
+- **2026-10-06 — « C'est toujours beaucoup trop plat ; tu es sûr que
+  l'érosion ne ramène pas tout au sol ? »** Mesuré au bon endroit cette
+  fois : nouvel instrument `spawn flatness diagnostic` (±1,5 km autour du
+  spawn, huit transects, pente moyenne par 10 m, part de sol plat < 2 %,
+  relief par 250 m, montée sur 100 m), sur l'analytique, la macro de
+  stage-1 (après comblement), l'érodé de stage-1, le sol final, puis les
+  variantes sans comblement, sans transport sédimentaire, sans fluvial.
+  **Verdict** : analytique plat 7,5 % / relief 26 m ; comblement ≈ 0 ;
+  **érodé plat 28 %** / 20 m ; sans transport 31 % ; **sans fluvial 8 %**
+  / 24 m — le fastscape aplanissait bien, mais pas sur le socle à budget
+  0,5 m : sur la **texture des montagnes histoire**, que la porte calme
+  lisait comme une levée dessinée (`calm = 1 − ss(20, 70, lift)` avec
+  `lift = max(POI, montagnes)`) → calme 0 → budget 250 m → fonds de vallée
+  plats. **Correction** : la porte calme ne lit que la levée DESSINÉE
+  (POI, pièces) ; la texture histoire est du socle, gardée brute par le
+  budget. Avec, au passage : `planStoryScale` 0,8, POI moyens 220-340 m
+  et grands 500-700 m (au-dessus de la texture), **départ sur un
+  belvédère** (le sommet, la butte ou la mesa du plan la plus proche du
+  centre de carte, à moins de 2,5 km — l'ancien spawn choisissait par
+  construction le point le plus plat de la prairie, le pire endroit pour
+  juger le relief), `TileBakeParams::dimpleFillMax` (bouton, 0 = sans).
+  **Après** (autour du spawn) : analytique pente 22,9 % / plat 5,4 % /
+  relief 38,7 m ; érodé plat 21 % / 33,5 m ; **sol final pente 19,6 % /
+  plat 13 % / relief 34 m, montée p95 +39 / p5 −35 m** ; `rhythm` : pente
+  23,8 %, 6,6 inversions/km, amplitude/km 108 m, **30 % du sol > 100 m
+  au-dessus de son minimum local** — le départ du mode histoire fait
+  24,8 % / 39 m / 97 m / 32 %. Hash 7920876824618097595 (v73). Test
+  « calm is the rule » : le socle texturé reste calme, les sommets des
+  POI quittent la famille.
+
 ---
 
 ## 8. Glossaire

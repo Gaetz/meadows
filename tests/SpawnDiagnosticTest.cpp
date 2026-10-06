@@ -8,6 +8,7 @@
 #include "MapWorldFixture.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshSimplify.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 
 // Hidden landscape INSTRUMENTS (every case is doctest::skip — run one
@@ -1636,3 +1637,113 @@ TEST_CASE("rhythm diagnostic" * doctest::skip()) {
     }
     CHECK(true);
 }
+
+// Hidden instrument: WHERE does the walking relief go between the
+// macro and the ground under the player's feet? Around the spawn
+// (+/-1.5 km), the same rhythm metrics on: the analytic (what the
+// controls draw), the stage-1 macro after the dimple fill, the eroded
+// stage-1 (budget + thermal + rounding), the baked final ground; then
+// the stage-1 macro and eroded WITHOUT the dimple fill. One map
+// stage-1 costs ~13 s in Release.
+//   meadows-tests "-tc=spawn flatness diagnostic" -ns
+TEST_CASE("spawn flatness diagnostic" * doctest::skip()) {
+    const maptest::MapWorld& w = theMap();
+    const Vec3 spawn = spawnOf(w);
+    const ProceduralControls controls = controlsOf(w);
+    MacroParams macro = w.params.macro;
+    macro.hillChainWavelength = w.params.controls.rhythm.crestWavelength;
+    macro.bedWavelength = w.params.controls.rhythm.bedWavelength;
+    TileBakeParams mapParams = w.params;
+    mapParams.tileSize = w.mapSize;
+    mapParams.apron = kMapApron;
+    mapParams.mapGrid.valid = true;
+    mapParams.mapGrid.mapSize = w.mapSize;
+    mapParams.mapGrid.seed = w.params.worldSeed;
+    mapParams.mapGrid.seaLevel = w.seaLevel();
+    const TileStage1 withFill = bakeTileStage1(mapParams, w.mapX, w.mapZ);
+    TileBakeParams noFillParams = mapParams;
+    noFillParams.dimpleFillMax = 0.0f;
+    const TileStage1 noFill = bakeTileStage1(noFillParams, w.mapX, w.mapZ);
+    TileBakeParams noTransportParams = mapParams;
+    noTransportParams.fluvial.sedimentCapacity = 0.0f;
+    const TileStage1 noTransport = bakeTileStage1(noTransportParams, w.mapX, w.mapZ);
+    TileBakeParams noFluvialParams = mapParams;
+    noFluvialParams.fluvial.iterations = 0;
+    const TileStage1 noFluvial = bakeTileStage1(noFluvialParams, w.mapX, w.mapZ);
+    const auto gridAt = [](const TileStage1& s1, const vector<f32>& g,
+                           f32 x, f32 z) {
+        return bilinearWorld(s1.sim, g, x, z);
+    };
+    struct Surface {
+        const char* name;
+        std::function<f32(f32, f32)> at;
+    };
+    const Surface surfaces[] = {
+        { "analytic (controls)",
+          [&](f32 x, f32 z) { return macroHeightAnalytic(controls, macro, x, z); } },
+        { "stage-1 macro, dimple fill 20 m",
+          [&](f32 x, f32 z) { return gridAt(withFill, withFill.macroHeight, x, z); } },
+        { "stage-1 eroded, dimple fill 20 m",
+          [&](f32 x, f32 z) { return gridAt(withFill, withFill.eroded, x, z); } },
+        { "baked final ground",
+          [&](f32 x, f32 z) { return w.height(x, z); } },
+        { "stage-1 macro, NO fill",
+          [&](f32 x, f32 z) { return gridAt(noFill, noFill.macroHeight, x, z); } },
+        { "stage-1 eroded, NO fill",
+          [&](f32 x, f32 z) { return gridAt(noFill, noFill.eroded, x, z); } },
+        { "stage-1 eroded, NO sediment transport",
+          [&](f32 x, f32 z) { return gridAt(noTransport, noTransport.eroded, x, z); } },
+        { "stage-1 eroded, NO fluvial at all (thermal + rounding only)",
+          [&](f32 x, f32 z) { return gridAt(noFluvial, noFluvial.eroded, x, z); } },
+    };
+    constexpr f32 kStep = 10.0f;
+    constexpr f32 kLen = 3000.0f; // 1.5 km each side of the spawn
+    for (const Surface& sf : surfaces) {
+        f64 slopeSum = 0.0;
+        u64 steps = 0;
+        vector<f32> reliefs;
+        vector<f32> rises;
+        u64 flat = 0, total = 0;
+        for (u32 t = 0; t < 8; ++t) {
+            const f32 ang = static_cast<f32>(t) * 0.3926991f;
+            const f32 dx = std::cos(ang);
+            const f32 dz = std::sin(ang);
+            const f32 x0 = spawn.x - dx * kLen * 0.5f;
+            const f32 z0 = spawn.z - dz * kLen * 0.5f;
+            f32 prev = sf.at(x0, z0);
+            vector<f32> window;
+            vector<f32> last;
+            for (f32 d = kStep; d <= kLen; d += kStep) {
+                const f32 h = sf.at(x0 + dx * d, z0 + dz * d);
+                const f32 step = std::abs(h - prev);
+                slopeSum += step;
+                ++steps;
+                flat += step < 0.2f; // < 2 % over 10 m
+                ++total;
+                window.push_back(h);
+                if (window.size() == 25) {
+                    const auto [lo, hi] = std::minmax_element(window.begin(), window.end());
+                    reliefs.push_back(*hi - *lo);
+                    window.clear();
+                }
+                last.push_back(h);
+                if (last.size() > 10) {
+                    last.erase(last.begin());
+                    rises.push_back(last.back() - last.front());
+                }
+                prev = h;
+            }
+        }
+        std::sort(reliefs.begin(), reliefs.end());
+        std::sort(rises.begin(), rises.end());
+        MESSAGE(std::string(sf.name), ": mean slope ",
+                steps ? 100.0 * slopeSum / (static_cast<f64>(steps) * kStep) : 0.0,
+                " %, flat (<2 %) ", total ? 100.0 * static_cast<f64>(flat) / static_cast<f64>(total) : 0.0,
+                " %, median 250 m relief ",
+                reliefs.empty() ? 0.0f : reliefs[reliefs.size() / 2],
+                " m, rise/100 m p95 +", rises.empty() ? 0.0f : rises[rises.size() * 95 / 100],
+                " / p5 ", rises.empty() ? 0.0f : rises[rises.size() / 20], " m");
+    }
+    CHECK(true);
+}
+

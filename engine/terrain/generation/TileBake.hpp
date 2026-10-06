@@ -107,6 +107,9 @@ struct TileBakeParams {
     // imprint and the border ridges' cols get the rough budget.
     f32 calmCut { 0.5f }; // the socle is the raw story relief
     f32 roughCut { 250.0f };
+    // Cap (m) of the local dimple fill on calm ground before the
+    // erosion (0 = no fill: the hollows stay, and become lakes).
+    f32 dimpleFillMax { 20.0f };
     //   keepCrestFade: 0 = keep as-is; else the erosion keep fades to
     //     keep*(1-fade) OFF the local crests (crest = stands above the
     //     ~500 m mean), matching the measured profile: erosion belongs

@@ -390,6 +390,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, s.base);
     PieceSample piece;
     f32 lift = 0.0f;
+    f32 designedLift = 0.0f; // the POI's own lift (the calm gate reads it)
     f32 corridor = 0.0f;
     // The story-mode mountains: with the plan, a HALF-height texture
     // between the sites (the ridged relief the dev wants under his
@@ -404,6 +405,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
                          2.0f / r.storyMountainWavelength, 4, 2.0f, 0.5f);
     if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
+        designedLift = ps.lift;
         lift = glm::max(ps.lift, storyMountain * r.planStoryScale);
         piece.mesaTop = ps.mesaTop;
         piece.ridgeFlank = ps.flank;
@@ -414,6 +416,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     } else {
         piece = pieceLayer(p, x, z);
         lift = glm::max(piece.add, storyMountain);
+        designedLift = lift;
         s.reliefScale = 1.0f - 0.7f * piece.mesaTop;
     }
     s.plateau = lift * shoreGate;
@@ -442,7 +445,10 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     }
     // Calm is the RULE: everything that is neither a piece, a massif
     // nor a piece's flank is habitable ground; corridors are members.
-    const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, lift)) *
+    // Calm is the rule: only a DESIGNED lift (a POI, a piece), a massif
+    // or a flank leaves it — the story texture is socle, kept raw by
+    // the budget (the fastscape used to flatten it into floors).
+    const f32 calm = (1.0f - noise::smoothstep01(20.0f, 70.0f, designedLift)) *
                      (1.0f - noise::smoothstep01(0.35f, 0.7f, w.massif)) *
                      (1.0f - 0.5f * piece.ridgeFlank);
     s.calm = glm::max(calm, s.gentle);

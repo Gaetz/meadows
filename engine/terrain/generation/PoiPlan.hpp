@@ -77,10 +77,12 @@ struct PoiPlanParams {
     f32 moyenCell { 2048.0f };
     f32 petitCell { 350.0f };
     f32 petitChance { 0.6f };
-    f32 grandHeightMin { 400.0f };
-    f32 grandHeightMax { 600.0f };
-    f32 moyenHeightMin { 150.0f };
-    f32 moyenHeightMax { 250.0f };
+    // Above the story texture (ridged ranges to ~215 m at 0.8): a
+    // moyen stands clear of it, a grand twice over.
+    f32 grandHeightMin { 500.0f };
+    f32 grandHeightMax { 700.0f };
+    f32 moyenHeightMin { 220.0f };
+    f32 moyenHeightMax { 340.0f };
     f32 petitHeightMin { 10.0f };
     f32 petitHeightMax { 40.0f };
     f32 edgeReach { 2200.0f }; // moyen-moyen link reach

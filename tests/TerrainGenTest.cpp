@@ -842,14 +842,36 @@ TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
             if (s.sea) {
                 continue;
             }
-            if (s.plateau > 60.0f && s.gentle < 0.05f) {
-                CHECK(s.calm < 0.35f);
-            }
+            // The story texture is socle (calm): only a massif leaves
+            // the family here; the designed lifts are checked below.
             if (w.massif > 0.75f && s.gentle < 0.05f) {
                 CHECK(s.calm < 0.4f);
             }
         }
     }
+    // A POI's own lift leaves the calm family at its summit.
+    const auto sites = poiSitesNear(controls.params().world,
+                                    controls.params().poi, -8192.0f,
+                                    -8192.0f, 16384.0f, 16384.0f);
+    u32 checked = 0;
+    for (const PoiSite& site : sites) {
+        if (site.tier == PoiTier::Petit || site.height < 60.0f) {
+            continue;
+        }
+        if (site.type != PoiType::Summit && site.type != PoiType::Butte &&
+            site.type != PoiType::Mesa) {
+            continue;
+        }
+        const ControlSample s = controls.at(site.x, site.z);
+        if (s.sea) {
+            continue;
+        }
+        // A walk may climb to the summit (its corridor is calm by
+        // contract); off the corridors the summit leaves the family.
+        CHECK((s.calm < 0.35f || s.gentle > 0.5f));
+        ++checked;
+    }
+    CHECK(checked >= 10);
 }
 
 TEST_CASE("controls v3: landmark summits on every map") {

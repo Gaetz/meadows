@@ -143,7 +143,7 @@ struct RhythmParams {
     // The POI plan drives the landforms (docs/PAYSAGE.md §7.6). Off =
     // the jittered pieces + the story mountains (the A/B reference).
     bool plan { true };
-    f32 planStoryScale { 0.5f }; // story mountains under the plan
+    f32 planStoryScale { 0.8f }; // story mountains under the plan
 };
 
 // Sandbox controls: every field derives from ONE sample of the world

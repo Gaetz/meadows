@@ -138,7 +138,8 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         // is a valley the walker descends into, not a pond to fill.
         vector<f32> depth(coarse.cells());
         for (size_t i = 0; i < depth.size(); ++i) {
-            depth[i] = glm::clamp(filled[i] - hp[i], 0.0f, 20.0f);
+            depth[i] = glm::clamp(filled[i] - hp[i], 0.0f,
+                                  params.dimpleFillMax);
         }
         for (u32 row = 0; row < out.sim.n; ++row) {
             for (u32 col = 0; col < out.sim.n; ++col) {
