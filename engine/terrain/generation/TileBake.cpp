@@ -318,6 +318,12 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         // dissection, never a carve to the plain.
         cut = glm::mix(cut, 4.0f * params.calmCut,
                        glm::smoothstep(30.0f, 80.0f, macro.plateau[i]));
+        // A plateau's escarpment is a designed wall too: dissected
+        // lightly, never carved to the plain (a carve that depended on
+        // the window's drainage).
+        if (i < macro.scarp.size()) {
+            cut = glm::mix(cut, 4.0f * params.calmCut, macro.scarp[i]);
+        }
         if (imprintKeep[i] > 0.0f || ridgeFactor[i] > 0.2f) {
             cut = params.roughCut;
         }

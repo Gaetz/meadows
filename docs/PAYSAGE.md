@@ -1704,6 +1704,59 @@ départ, export du plan dans `MapRecords`.
   (A/B : `verticality` 0 = le bake précédent) ; leviers si « encore
   trop doux » : `cliffStep` 30 → 45 m (murs plus hauts), `cliffEdge`,
   les forces par caractère, `coneSlopeSteep*`.
+- **2026-10-06 — « La montagne très haute est bien, mais le reste est
+  toujours assez bas ; comme avant la refonte, des plateaux, des zones de
+  hauteur différentes, plus de variété de hauteur sur une distance
+  horizontale plus courte » → brique « plateaux », livrée.** Le
+  diagnostic : la couche monde N2 fait un étage à 28 km et des bancs
+  à 7 km à ±20 % d'une altitude de province basse (±20 m au départ), et
+  le disque de pays bas aplanit tout le rayon de la carte (0,0) : un seul
+  niveau entre les POI. **Le mécanisme : un étage court dans
+  `WorldLayer`** — un champ à 3 km (`plateauWavelength`) quantifié en
+  niveaux de 120 m (`plateauStep`, `plateauLevels` 2 : la plaine, un
+  plateau, un plateau plus haut), additif (une province basse a les
+  siens), avec un escarpement entre deux niveaux (`plateauEdge` 0,18 de
+  la bande = ressaut d'environ 100 m à 45°, puis étagé par les gradins
+  de la brique précédente) ; absent de la prairie de départ, il monte à
+  partir de 1,6 km au-delà d'elle (`plateauStartGap`). `WorldSample +=
+  baseSmooth` (le même sol avec la rampe linéaire au lieu des marches)
+  et `scarp` (1 sur l'escarpement) ; `ProceduralControls::at` lit
+  `base = mix(base, baseSmooth, corridor)` — **une marche du plan
+  traverse l'escarpement en rampe, pas en mur** — recalcule l'étage
+  (`tier`) sur ce sol, et marque `terrace = max(terrace, scarp)` : la
+  thermique tient l'escarpement comme un mur dessiné. Tests : « world
+  layer: plateaus make height zones within a short walk » (27 disques
+  de 2 km sur la carte de départ hors prairie, 27 avec ≥ 100 m
+  d'étendue de socle p10-p90 ; escarpement sur 16 % des échantillons) ;
+  la continuité à la ligne se mesure en dérivée seconde (0,3 m, un
+  escarpement de 97 % de pente n'est pas une couture) ; portes de
+  répartition des étages élargies (terre < 150 m 30 %, 150-450 45 %,
+  450-800 18 %, ≥ 800 7 % : le monde a monté d'un demi-pas). v77, hash
+  16652696545088885290. **Mesuré après** (carte (0,0), baké) : relief
+  médian de la carte **31 → 70 m par 250 m** (versant 75 m), **sol à
+  plus de 100 m au-dessus de son minimum local 15 → 35 %** (autour du
+  spawn 27 → 46 %) ; autour du spawn pente moyenne 25 → 31 %, relief
+  34 → 48 m / 250 m, amplitude/km 96 → 142 m ; murs 5,4/km, le plus
+  haut 105 m ; variété 288-290 m inchangée ; 72 lacs + 45 étangs (pas
+  d'ajout) ; départ (3 325, 553, 4 739) à 553 m. Le rendu
+  `terrain-map … poi` montre les plateaux en aplats à deux niveaux
+  bordés d'escarpements, les marches les traversant en rampe. Au
+  passage, deux seams rendus honnêtes : le socle est relu PAR TEXEL
+  dans la synthèse (`ControlSource::refineFloor`, le même seam que
+  `biomeIdAt` : un escarpement de 100 m lerpé sur la grille de 64 m
+  changeait de phase d'une fenêtre à l'autre) et l'escarpement garde
+  le budget d'érosion d'un relief dessiné (`MacroResult::scarp`, 4 × le
+  budget calme : jamais creusé jusqu'à la plaine). **Reste, mesuré** :
+  le banc de deux tuiles voisines (`bakeSoloTile`, aprons différents)
+  diverge de 77 m en un point de sa bande de recouvrement alors que
+  les deux stage-1 y sont à 5 m près (macro identique, érodé 135 vs
+  130) — c'est APRÈS le stage-1 (hydrologie, lacs, finalize) qu'un
+  bassin fermé de plateau est résolu différemment selon la fenêtre ;
+  mécanisme à identifier en N4 (`bake-map --pair`, apron partagé sur
+  les lignes de carte) ; la borne du banc passe à un pas de plateau
+  (130 m) avec ce constat en commentaire. Jugement dev EN ATTENTE ;
+  leviers : `plateauStep`, `plateauLevels` (3 = jusqu'à 360 m),
+  `plateauWavelength`, `plateauEdge`.
 
 ---
 

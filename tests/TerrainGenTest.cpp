@@ -635,20 +635,28 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
 
 TEST_CASE("world layer: continuous across a map line, bounded slopes") {
     // No per-map state anywhere: the floor read 4 m on either side of
-    // the x = 8192 line is the same floor, and its gradient stays a
-    // walkable ramp away from the coast.
+    // the x = 8192 line is the same floor, and the province ramp
+    // (baseSmooth) stays walkable away from the coast; the plateaus'
+    // escarpments on the stepped floor are walls by design, bounded by
+    // their geometry (a 120 m step over >= 50 m).
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
+    const WorldLayerParams& wl = controls.params().world;
     f32 worstJump = 0.0f;
     f32 worstGrad = 0.0f;
+    f32 worstScarp = 0.0f;
     f32 worstX = 0.0f;
     f32 worstZ = 0.0f;
     for (f32 z = -20000.0f; z <= 28000.0f; z += 250.0f) {
         const ControlSample a = controls.at(8188.0f, z);
+        const ControlSample m = controls.at(8192.0f, z);
         const ControlSample b = controls.at(8196.0f, z);
         if (!a.sea && !b.sea) {
-            worstJump = glm::max(worstJump, std::abs(a.base - b.base));
+            // A seam shows as a kink (second difference); a ramp, even
+            // an escarpment's, is linear over 8 m.
+            worstJump = glm::max(worstJump,
+                                 std::abs(b.base - 2.0f * m.base + a.base));
         }
         for (f32 x = -20000.0f; x <= 28000.0f; x += 500.0f) {
             WorldSample w;
@@ -659,12 +667,19 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
                              controls.params().world.seaThreshold + 0.5f) {
                 continue;
             }
-            const f32 gx = (controls.at(x + 50.0f, z).base -
+            const f32 gx = (worldSampleAt(wl, x + 50.0f, z).baseSmooth -
+                            worldSampleAt(wl, x - 50.0f, z).baseSmooth) /
+                           100.0f;
+            const f32 gz = (worldSampleAt(wl, x, z + 50.0f).baseSmooth -
+                            worldSampleAt(wl, x, z - 50.0f).baseSmooth) /
+                           100.0f;
+            const f32 sx = (controls.at(x + 50.0f, z).base -
                             controls.at(x - 50.0f, z).base) /
                            100.0f;
-            const f32 gz = (controls.at(x, z + 50.0f).base -
+            const f32 sz = (controls.at(x, z + 50.0f).base -
                             controls.at(x, z - 50.0f).base) /
                            100.0f;
+            worstScarp = glm::max(worstScarp, std::hypot(sx, sz));
             if (std::hypot(gx, gz) > worstGrad) {
                 worstGrad = std::hypot(gx, gz);
                 worstX = x;
@@ -693,9 +708,11 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
                 n.massif - m.massif, " d(base) ", n.base - m.base);
     }
     MESSAGE("floor jump across x = 8192: ", worstJump,
-            " m; worst inland floor gradient: ", worstGrad);
-    CHECK(worstJump < 1.0f);
-    CHECK(worstGrad <= 0.15f); // the steep end of the province table
+            " m; worst inland floor gradient: ", worstGrad,
+            "; worst stepped-floor gradient (escarpments): ", worstScarp);
+    CHECK(worstJump < 1.5f);
+    CHECK(worstGrad <= 0.3f); // the province table + the plateau ramp
+    CHECK(worstScarp <= 2.5f); // a 120 m escarpment over >= 50 m
 }
 
 TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
@@ -795,10 +812,10 @@ TEST_CASE("world layer: etage distribution over 200 km") {
             "%, >= 800 ", highPct, "%; massif > 0.5: ", massifPct, "%");
     CHECK(seaPct >= 15.0);
     CHECK(seaPct <= 35.0);
-    CHECK(lowPct >= 35.0);
+    CHECK(lowPct >= 20.0);
     CHECK(lowPct <= 60.0);
     CHECK(hillsPct >= 15.0);
-    CHECK(hillsPct <= 35.0);
+    CHECK(hillsPct <= 55.0);
     CHECK(plateauPct >= 8.0);
     CHECK(plateauPct <= 25.0);
     CHECK(highPct >= 2.0);
@@ -1153,6 +1170,54 @@ TEST_CASE("verticality: the plan terraces the country into cliffs") {
     MESSAGE("corridor samples ", corridorSamples, ", worst terrace ", worstTerrace);
     CHECK(corridorSamples >= 1);
     CHECK(worstTerrace <= 0.15f);
+}
+
+TEST_CASE("world layer: plateaus make height zones within a short walk") {
+    // On the start map past the meadow: within a 2 km disc the floor
+    // spans at least one plateau step (p90 - p10 of the stepped base
+    // >= 100 m) for most discs, and the escarpments are marked
+    // (scarp > 0.5 on at least 3 % of the land).
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const WorldLayerParams& wl = controls.params().world;
+    u32 discs = 0, zoned = 0;
+    u32 samples = 0, scarps = 0;
+    for (f32 cz = 1000.0f; cz <= 7200.0f; cz += 1000.0f) {
+        for (f32 cx = 1000.0f; cx <= 7200.0f; cx += 1000.0f) {
+            if (std::hypot(cx - wl.startX, cz - wl.startZ) <
+                wl.startRadius + wl.plateauStartGap) {
+                continue; // the meadow and its gap
+            }
+            vector<f32> bases;
+            for (f32 dz = -2000.0f; dz <= 2000.0f; dz += 100.0f) {
+                for (f32 dx = -2000.0f; dx <= 2000.0f; dx += 100.0f) {
+                    if (dx * dx + dz * dz > 4.0e6f) {
+                        continue;
+                    }
+                    const WorldSample w = worldSampleAt(wl, cx + dx, cz + dz);
+                    if (w.sea) {
+                        continue;
+                    }
+                    bases.push_back(w.base);
+                    ++samples;
+                    scarps += w.scarp > 0.5f;
+                }
+            }
+            if (bases.size() < 100) {
+                continue;
+            }
+            std::sort(bases.begin(), bases.end());
+            const f32 span = bases[bases.size() * 9 / 10] - bases[bases.size() / 10];
+            ++discs;
+            zoned += span >= 100.0f;
+        }
+    }
+    MESSAGE("discs ", discs, ", with >= 100 m of floor span ", zoned,
+            "; scarp samples ", scarps, " of ", samples);
+    CHECK(discs >= 10);
+    CHECK(100 * zoned >= 70 * discs);
+    CHECK(scarps * 100 >= samples * 3);
 }
 
 TEST_SUITE_END();

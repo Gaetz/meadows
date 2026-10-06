@@ -57,6 +57,13 @@ struct ControlSample {
     // ground by MacroParams::cliffStep with it, the bake's thermal
     // pass holds the walls it makes.
     f32 terrace { 0.0f };
+    // [0,1] inside a walk's corridor (the plan's tubes): the floor's
+    // escarpments ramp here (refineFloor reads it per texel).
+    f32 corridor { 0.0f };
+    // [0,1] on a plateau's escarpment (WorldSample::scarp off the
+    // corridors): a designed wall — the bake dissects it lightly, never
+    // carves it to the plain (that carve depended on the window).
+    f32 scarp { 0.0f };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
@@ -107,6 +114,17 @@ public:
     virtual u8 biomeIdAt(f32 x, f32 z, f32 tier) const {
         (void)tier;
         return at(x, z).biome;
+    }
+    // The floor PER TEXEL: the plateaus' escarpments are ~100 m wide,
+    // a 64 m lattice lerps them at a phase that differs between two
+    // bake windows (a 77 m disagreement in a shared band). Providers
+    // whose floor is a cheap pure function override this to re-read
+    // `base` (and the tier it indexes) at the texel, keeping the
+    // lerped fields (corridor, …) of `s`. Default: the lerped floor.
+    virtual void refineFloor(f32 x, f32 z, ControlSample& s) const {
+        (void)x;
+        (void)z;
+        (void)s;
     }
 };
 
@@ -196,6 +214,7 @@ public:
     // shore distance. One evaluation, bit-identical to calling both.
     ControlSample at(f32 x, f32 z, WorldSample& outWorld) const;
     u8 biomeIdAt(f32 x, f32 z, f32 tier) const override; // climate only
+    void refineFloor(f32 x, f32 z, ControlSample& s) const override;
 
     const ProceduralControlParams& params() const { return p; }
 
@@ -306,6 +325,9 @@ struct MacroResult {
     // [0,1] ControlSample::terrace per texel: the thermal pass holds
     // these walls instead of shedding them to the angle of repose.
     vector<f32> cliff;
+    // [0,1] ControlSample::scarp per texel: the erosion budget of a
+    // designed landform (TileBake's maxCut).
+    vector<f32> scarp;
 };
 
 // Erosion keep from the base lift (TileBake stage 1 and the analytic

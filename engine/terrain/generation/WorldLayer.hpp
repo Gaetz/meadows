@@ -42,6 +42,17 @@ struct WorldLayerParams {
     // province, not only from province to province.
     f32 benchWavelength { 7000.0f };
     f32 benchAmp { 0.2f }; // +/- fraction of the province altitude
+    // Plateaus — the SHORT étage: the floor steps between a few levels
+    // every ~3 km (the plain, a plateau a step up, a higher one), an
+    // escarpment between two levels; height zones change over a short
+    // walk instead of a province. Additive (a low province has them
+    // too), off inside the meadow, ramped (not stepped) along a walk's
+    // corridor (ControlSample reads baseSmooth there). 0 levels = off.
+    f32 plateauWavelength { 3000.0f };
+    f32 plateauStep { 120.0f };
+    u32 plateauLevels { 2 };
+    f32 plateauEdge { 0.18f };     // fraction of a level band kept as riser
+    f32 plateauStartGap { 1600.0f }; // meters past the meadow before they rise
     // Start decree, three reaches. The ANCHOR: the étage field is
     // re-based so the start reads `startEtage` (a low province), the
     // shift fading out far away — the country around the start keeps
@@ -73,6 +84,8 @@ struct WorldLayerParams {
 
 struct WorldSample {
     f32 base { 0.0f };      // the elevation floor (m above sea), < 0 at sea
+    f32 baseSmooth { 0.0f }; // the floor with the plateaus ramped, not stepped
+    f32 scarp { 0.0f };      // [0,1] on a plateau's escarpment (a wall to hold)
     f32 continent { 0.5f }; // carrier value (sea below seaThreshold)
     f32 etage { 0.0f };     // raw province field [0,1]
     f32 massif { 0.0f };    // [0,1] range belt strength

@@ -18,6 +18,7 @@ constexpr u32 kSaltCoastDetail = 0xc0a57de7u;
 constexpr u32 kSaltEtage = 0xe7a9e000u;
 constexpr u32 kSaltMassif = 0x3a551f00u;
 constexpr u32 kSaltBench = 0xbe9c4000u;
+constexpr u32 kSaltPlateau = 0x91a7ea00u;
 constexpr u32 kSaltTemperature = 0x7ea7be57u;
 constexpr u32 kSaltMoisture = 0x6d015745u;
 constexpr u32 kSaltTemperatureSlow = 0x7ea7be58u;
@@ -180,10 +181,38 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
         // relief and the beds give its rivers their texture).
         alt = glm::mix(alt, glm::min(80.0f, 40.0f + (alt - 40.0f) * 0.06f),
                        pull);
+        // Plateaus: the short étage, stepped (the floor) and ramped
+        // (baseSmooth, for the corridors), past the meadow.
+        f32 stepped = 0.0f;
+        f32 ramped = 0.0f;
+        f32 scarp = 0.0f;
+        if (p.plateauLevels > 0 && p.plateauStep > 0.0f) {
+            const f32 n = static_cast<f32>(p.plateauLevels);
+            f32 v = noise::fbm(p.seed ^ kSaltPlateau, wx, wz,
+                               1.0f / p.plateauWavelength, 3, 2.0f, 0.5f);
+            v = glm::clamp(0.5f + (v - 0.5f) * 1.8f, 0.0f, 1.0f);
+            const f32 t = v * n;
+            const f32 cell = std::floor(t);
+            const f32 frac = t - cell;
+            const f32 edge = glm::clamp(p.plateauEdge, 0.01f, 0.49f);
+            const f32 soft =
+                noise::smoothstep01(0.5f - edge, 0.5f + edge, frac);
+            const f32 gate = noise::smoothstep01(
+                p.startRadius + p.plateauStartGap * 0.25f,
+                p.startRadius + p.plateauStartGap, dStart);
+            stepped = glm::min(cell + soft, n) * p.plateauStep * gate;
+            ramped = t * p.plateauStep * gate;
+            scarp = (cell < n ? 1.0f - glm::clamp(std::abs(frac - 0.5f) / edge,
+                                                  0.0f, 1.0f)
+                              : 0.0f) *
+                    gate;
+        }
         const f32 inland = noise::smoothstep01(
             0.0f, p.coastBand * (1.5f + 4.0f * w.etage),
             carrier - p.seaThreshold);
-        w.base = alt * inland;
+        w.base = (alt + stepped) * inland;
+        w.baseSmooth = (alt + ramped) * inland;
+        w.scarp = scarp * noise::smoothstep01(0.3f, 0.8f, inland);
     }
     // Climate: regional + continental drift, altitude lapse, wetter
     // coasts; the start is pulled to temperate means.

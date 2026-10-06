@@ -487,6 +487,13 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         piece.mesaTop = glm::max(piece.mesaTop, ps.mesaTop);
         piece.ridgeFlank = glm::max(piece.ridgeFlank, ps.flank);
         corridor = ps.corridor;
+        // A walk ramps the plateaus' escarpments (a pass, not a wall);
+        // elsewhere the escarpment is a wall the thermal pass holds.
+        s.base = glm::max(glm::mix(w.base, w.baseSmooth, corridor), 0.0f);
+        s.tier = etageIndexFor(p.world, s.base);
+        s.corridor = corridor;
+        s.scarp = w.scarp * (1.0f - corridor);
+        terraceRaw = glm::max(ps.terrace, s.scarp);
         s.basinDepth = ps.basin * shoreGate;
         // Rugged plains vs calm plains: the calm band scales the roll.
         const f32 calmBand = noise::smoothstep01(
@@ -502,7 +509,6 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         characterWet = ps.wetBias;
         characterHard = ps.hardBias;
         characterCover = ps.coverBias;
-        terraceRaw = ps.terrace;
     } else {
         const PieceGrid pieces { kSaltPiece,        r.pieceCellSize,
                                  r.pieceChance,     r.pieceRadiusMin,
@@ -571,6 +577,13 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     return s;
 }
 
+void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
+    const WorldSample w = worldSampleAt(p.world, x, z);
+    s.base = glm::max(glm::mix(w.base, w.baseSmooth, s.corridor), 0.0f);
+    s.tier = etageIndexFor(p.world, s.base);
+    s.scarp = w.scarp * (1.0f - s.corridor);
+}
+
 u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     // The climate and the floor come from the world layer — the same
     // sample `at` derives the id from, so the per-texel id and the
@@ -614,6 +627,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.hardness.resize(spec.cells());
     out.basin.resize(spec.cells());
     out.cliff.resize(spec.cells());
+    out.scarp.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     // Control sampling on a COARSE grid, bilinearly interpolated to
@@ -699,6 +713,9 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                  s01.reliefWavelengthScale, s11.reliefWavelengthScale);
         out.terrace = lerp(s00.terrace, s10.terrace, s01.terrace,
                            s11.terrace);
+        out.corridor = lerp(s00.corridor, s10.corridor, s01.corridor,
+                            s11.corridor);
+        out.scarp = lerp(s00.scarp, s10.scarp, s01.scarp, s11.scarp);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
@@ -715,6 +732,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             // lattice drew 64 m axis-aligned biome stairs); the tier the
             // alpine rule needs interpolates fine.
             if (step > 1) {
+                controls.refineFloor(spec.x(col), spec.z(row), s);
                 s.biome = controls.biomeIdAt(spec.x(col), spec.z(row),
                                              s.tier);
             }
@@ -730,6 +748,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.hardness[i] = s.hardness;
             out.basin[i] = s.sea ? 0.0f : s.basinDepth;
             out.cliff[i] = s.sea ? 0.0f : s.terrace;
+            out.scarp[i] = s.sea ? 0.0f : s.scarp;
         }
     }
     out.seaDist = signedSeaDistance(spec, seaMask);
