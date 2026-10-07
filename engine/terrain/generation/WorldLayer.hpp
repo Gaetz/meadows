@@ -98,6 +98,10 @@ struct WorldSample {
 
 WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z);
 
+// FNV-1a over EVERY field (the memo keys: a pupitre edit must never
+// serve a stale sample). Add a field = add a line here.
+u64 hashParams(const WorldLayerParams& p);
+
 // Continuous province index 0..3 for a floor altitude (the inverse of
 // the étage table), and the table read back at a continuous index.
 f32 etageIndexFor(const WorldLayerParams& p, f32 base);

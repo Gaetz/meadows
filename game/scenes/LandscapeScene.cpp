@@ -21,6 +21,7 @@
 //   8. Dev panels  drawUi / drawSkyUi / drawGameplayUi (ImGui)
 
 #include "game/scenes/LandscapeScene.hpp"
+#include "game/TerrainGenTuning.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -212,6 +213,7 @@ void LandscapeScene::bootstrapData() {
     LOG_INFO("Plugin stack: {} plugins, {} forms",
              pluginStack.plugins.size(), forms.count());
     tuning = resolveLandscapeTuning(forms);
+    genTuning = data::resolveTerrainGenTuning(forms);
     weather.init(forms);
     texts.build(forms); // LocStringForm index (key -> text)
     LOG_INFO("Loc: {} strings, language '{}' (packs gated in plugins.toml)",
@@ -1325,6 +1327,15 @@ void LandscapeScene::update(f32 dt) {
         }
     }
     updateCameraFarPlane(); // tracks the live view-radius slider
+    // The pupitre's Apply: the active map rebuilt with the edited
+    // params (a new streamer; its key misses the cache; the bake runs
+    // in the background behind the veil).
+    if (genTuningApplyRequested) {
+        genTuningApplyRequested = false;
+        if (sandboxActive) {
+            travelToMap(activeMapX, activeMapZ);
+        }
+    }
     // Mesh path: pump async residency (worker decodes -> main-thread
     // uploads, §7), then extract this frame's snapshot from the world.
     {
@@ -2204,16 +2215,15 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
     activeMapZ = mapZ;
     render::TerrainParams& params = renderer.terrainParams();
     auto sandbox = std::make_shared<render::SandboxTerrain>();
-    sandbox->controls.seed = tuning.terrainSeed;
-    sandbox->macro.seaLevel = tuning.seaLevel;
-    sandbox->macro.recurveLow = tuning.terrainRecurveLow;
-    sandbox->macro.recurveMid = tuning.terrainRecurveMid;
-    sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
     // Bounded map (chantier CARTES M1.4): the sandbox world IS a
     // bounded map; the fallback beyond the borders shows the lattice
-    // neighbours' preview.
+    // neighbours' preview. The fallback and the spawn probe read the
+    // SAME params as the bake (the pupitre included).
     const render::terraingen::TileBakeParams bakeParams =
         makeMapBakeParams();
+    sandbox->controls = bakeParams.controls;
+    sandbox->controls.seed = tuning.terrainSeed;
+    sandbox->macro = bakeParams.macro;
     TerrainBakeStreamer::MapStreamConfig mapCfg;
     mapCfg.tilesPerSide = kMapTilesPerSide;
     mapCfg.mapX = mapX;
@@ -3041,6 +3051,12 @@ EditorContext LandscapeScene::makeEditorContext() {
                 ? platform::executableDir() / "terrain-cache" /
                       std::to_string(tuning.terrainSeed)
                 : std::filesystem::path {},
+            &genTuning,
+            [this] { genTuningApplyRequested = true; },
+            [this](const str& preset) { saveGenTuningFile(preset); },
+            [this](const str& preset) { return loadGenTuningFile(preset); },
+            platform::executableDir() / "data" / "mods" /
+                "terrain-gen-presets",
         },
         makeDungeonGenContext(),
     };
@@ -3048,17 +3064,27 @@ EditorContext LandscapeScene::makeEditorContext() {
 
 render::terraingen::TileBakeParams
 LandscapeScene::makeMapBakeParams() const {
-    render::terraingen::TileBakeParams params;
-    params.worldSeed = tuning.terrainSeed;
-    params.controls.seed = tuning.terrainSeed;
-    params.macro.seaLevel = tuning.seaLevel;
-    params.macro.recurveLow = tuning.terrainRecurveLow;
-    params.macro.recurveMid = tuning.terrainRecurveMid;
-    params.macro.recurveHigh = tuning.terrainRecurveHigh;
-    // Border transitions on (bakeMap fills the grid spec; the
-    // streamer overwrites it from its own map config either way).
-    params.mapGrid.valid = true;
-    return params;
+    // ONE mapping shared with the cooker and the tests: the two tuning
+    // records -> the bake params (borders on).
+    return makeTerrainBakeParams(tuning, genTuning);
+}
+
+// The pupitre files: the overlay the plugin stack loads at boot
+// (data/mods/terrain-gen.toml), or a named preset (the dev's A/B).
+void LandscapeScene::saveGenTuningFile(const str& preset) {
+    const auto mods = platform::executableDir() / "data" / "mods";
+    const std::filesystem::path path =
+        preset.empty() ? mods / "terrain-gen.toml"
+                       : mods / "terrain-gen-presets" / (preset + ".toml");
+    const str pluginName =
+        preset.empty() ? str { "terrain-gen" } : "terrain-gen-preset-" + preset;
+    saveTerrainGenTuning(genTuning, path, formTypes, pluginName.c_str());
+}
+
+bool LandscapeScene::loadGenTuningFile(const str& preset) {
+    const auto path = platform::executableDir() / "data" / "mods" /
+                      "terrain-gen-presets" / (preset + ".toml");
+    return loadTerrainGenTuning(path, formTypes, genTuning);
 }
 
 DungeonGenContext LandscapeScene::makeDungeonGenContext() {

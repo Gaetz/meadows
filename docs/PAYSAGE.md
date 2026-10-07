@@ -622,6 +622,51 @@ autre monde (bordures, hydrologie globale, spawn au centre).
 
 ---
 
+## 4 bis. Les principes de composition du monde (plan « composition du monde », approuvé dev 2026-10-07)
+
+Le raisonnement général qui précède toute brique de paysage — chaque
+remarque du dev se relit contre ces huit principes avant de toucher au
+code (jamais une correction locale qui ajoute une couche parallèle).
+Références du dev : Breath of the Wild, Skyrim, Elden Ring ; ses
+méthodes : points d'intérêt, règle du triangle (cacher / choisir /
+révéler), verticalité, chemins avec choix entre des structures
+géographiques réelles ; ses arbitrages du 2026-10-07 : escalade mixte
+(petites falaises franchissables, grands escarpements = murs), **une zone
+= 1 km, un monde resserré avec beaucoup d'exploration, comme Skyrim**.
+
+1. **Le monde est une mosaïque de zones de ~1 km, chacune avec une
+   identité** : un archétype (sa nature), un étage (sa hauteur, par
+   paliers), une grammaire (comment son relief, ses falaises, son
+   couvert, son eau se dessinent).
+2. **Les porteuses longues décident l'étage, les zones décident la
+   nature** (la règle d'août remise à l'échelle) : une tendance d'étage
+   à ~4 km fait monter les zones par paliers ; chaque zone arrondit à son
+   palier et le tient.
+3. **La verticalité est aux frontières des zones** : mur proportionné à
+   l'écart d'étage (bande de falaise franchissable à ses encoches, ou
+   escarpement infranchissable), crête, rivière ou lisière entre zones de
+   même étage ; à l'intérieur, la grammaire de l'archétype.
+4. **Chaque mur a ses portes, et les portes sont des structures
+   géographiques réelles** (col, brèche-rampe, gorge, gué, pont, éboulis) :
+   le choix de chemin est un choix de structure.
+5. **La règle du triangle** : à chaque porte, la zone suivante est cachée
+   puis révélée ; les POI gardent leur silhouette conique et leurs écrans.
+6. **Hiérarchie des amers** : le grand de la carte visible de presque
+   partout ; un moyen toutes les 2-3 zones ; chaque zone porte son petit.
+7. **Le calme est la règle dans la zone, le drame est à ses bords et à
+   son POI** (le 40/35/25 du §4 : socle = l'intérieur des zones, versant =
+   les grammaires, drame = les murs et les POI).
+8. **Tout est réglable par le dev sans compiler, et tout est donnée
+   (moddable §5)** : le pupitre (`TerrainGenTuningForm`, panneau Terrain
+   generation, `cooker landscape-report`), puis les archétypes de zones.
+
+Briques (fichier de plan de session) : **Z0** le pupitre · **Z1** la
+performance de génération (stage-1 ≤ 20 s, chargement instantané avec
+cache, pas de bump de version sans cache livré) · **Z2** les zones ·
+**Z3** murs et portes · **Z4** POI emboîtés et visibilité · **Z5** chemins
+et sites. Méthode : un essai = Release + `landscape-report` + cache copié ;
+suite rapide au commit, complète au push, jamais par prompt.
+
 ## 5. ÉTAT DES LIEUX TOTAL — 2026-10-05 (ouverture du chantier)
 
 Inventaire lecture seule du dépôt à `b17d1f3` (six rapports : génération,
@@ -1757,6 +1802,60 @@ départ, export du plan dans `MapRecords`.
   (130 m) avec ce constat en commentaire. Jugement dev EN ATTENTE ;
   leviers : `plateauStep`, `plateauLevels` (3 = jusqu'à 360 m),
   `plateauWavelength`, `plateauEdge`.
+
+### 7.7 La composition du monde — zones, murs et portes, pupitre, performance (chantier COURANT, 2026-10-07)
+
+**Le constat du dev (2026-10-07)** : les briques verticalité et plateaux
+étaient des corrections locales, pas un raisonnement de level design ; le
+résultat restait plus simple que le monde d'août ; les chaînes de tests
+brûlaient les crédits ; et **le paysage recharge lentement** là où il
+apparaissait instantanément après ÉCONOMIE. L'inventaire (agents) a
+montré qu'août faisait des ZONES (paliers 40 → 110 → 270 → 520 m sur une
+onde de 4 km, régime à 875 m, vallées orientées) que la refonte d'octobre
+a lissées (étage 28 km, disque de départ aplani, roulis uniforme) ; que
+le bake d'une carte est passé de 18 s (N1) à 41 s (plateaux) par
+lectures par texel ajoutées (`biomeIdAt`, `refineFloor`) ; et que cinq
+bumps de version du cache en un jour ont fait re-baker la carte au dev à
+chaque lancement. Les principes de réponse sont au **§4 bis** ; les
+briques Z0-Z5 dans le fichier de plan.
+
+#### Journal
+
+- **2026-10-07 — Z0 livrée : le pupitre.** `TerrainGenTuningForm`
+  (`data/forms/LandscapeForms.hpp`, motif `StatsTuningForm`, guid
+  `1a4d5c00-…-00a`) : 103 champs scalaires réfléchis (couche monde,
+  rythme, plan de POI, macro, bake — tableaux aplatis `…Etage0..3`),
+  défauts = les défauts C++ (test `terrain gen tuning: the form's
+  defaults equal the C++ defaults`, champ par champ par réflexion).
+  **Un seul mappage** `game::applyTerrainGenTuning` / `capture…`
+  (`game/TerrainGenTuning.cpp`, deux listes dans le même ordre) et
+  `makeTerrainBakeParams(tuning, gen)` utilisé par la scène
+  (`makeMapBakeParams`), `cooker pre-bake`, `bake-map` et le rapport ; le
+  repli analytique et la sonde de spawn lisent les params du bake
+  (`applyMapWorld` copie `controls`/`macro` du bake, plus les cinq champs
+  à la main). **Clé de cache** : `mapBakeKey` hache tous les champs du
+  Form (`hashTerrainGenTuning`) : une édition = une carte différente,
+  re-bakée par le streamer ; les mémos thread-local (`PoiPlan`, le
+  start-shift de `WorldLayer`, le veto de bordure de `TerrainGen`) sont
+  clés sur **tous** les paramètres (`hashParams` par struct). **Panneau** :
+  `drawReflectedStruct` (la grille de propriétés sans EditSession) dans
+  « Terrain generation » (mode Édition) : filtre par groupe, **Apply &
+  re-bake map** (= `travelToMap` de la carte active au prochain update :
+  nouveau streamer, cache raté, bake en fond derrière le voile), **Save
+  overlay** (`data/mods/terrain-gen.toml`, listé dans `plugins.toml` — un
+  patch §5 sur le record canonique, lu aussi par le cooker), **presets**
+  (`data/mods/terrain-gen-presets/<nom>.toml`, sauver / charger = l'A/B du
+  dev), **Reset to C++ defaults**. **`cooker landscape-report <gameDir>
+  [mapX mapZ]`** : bake si le cache est périmé (pupitre inclus), `plan.png`
+  à côté des tranches, et le recensement (pente, pas > 30/45°, murs/km,
+  relief par 250 m, montée p95, sol > 100 m, lacs, rivières), une ligne
+  d'historique dans `landscape-report.log` — la mesure unique d'une brique,
+  40 s en Release, aucune suite de tests. `game/MapView` = la carte bakée
+  relue derrière la seam `TerrainParams` (le fixture de tests en est la
+  copie ; à fusionner). La clé change pour tout le monde : le cache est
+  re-baké et **livré** dans les deux dossiers de lancement (règle « pas de
+  bump sans cache »). Les caractères (six grammaires) ne sont pas exposés :
+  ils deviennent la table d'archétypes des zones en Z2.
 
 ---
 

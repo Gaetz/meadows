@@ -284,8 +284,8 @@ struct LandscapeTuningForm : Form {
     f32 seasonLeafFall { 0.0f };
     // Sandbox elevation recurve (MacroParams::recurve*): curve outputs
     // at normalized inputs 1/4, 1/2, 3/4 — 0.25/0.5/0.75 = identity.
-    // NOTE: baked tiles cache by seed only; clear terrain-cache/<seed>
-    // after changing these (same rule as seaLevel).
+    // Part of the map cache key (game::mapBakeKey) with seaLevel and
+    // the generation pupitre: a change re-bakes the map on demand.
     f32 terrainRecurveLow { 0.25f };
     f32 terrainRecurveMid { 0.5f };
     f32 terrainRecurveHigh { 0.75f };
@@ -474,6 +474,232 @@ struct LandscapeTuningForm : Form {
 // type, as ordinary records (§5 — a mod retunes a species in pure TOML).
 // Mirrors render::LobeTreeParams field-for-field; the scene maps Form ->
 // flat engine params (engine/* never includes data/*, §4).
+// TerrainGenTuningForm — the generation PUPITRE (docs/PAYSAGE.md §7.7):
+// every generation knob the dev turns without recompiling, one record,
+// canonical guid, resolved by resolveTerrainGenTuning(). game::
+// applyTerrainGenTuning maps it onto TileBakeParams (one function, used
+// by the scene, the cooker and the tests) and the map cache key hashes
+// it, so an edit = a different map, re-baked on demand. The record may
+// be absent: the defaults below MUST equal the C++ defaults of the
+// mapped structs (TerrainGenTuningTest checks them field by field).
+// Reflection is scalar: arrays are flattened (…Etage0..3).
+struct TerrainGenTuningForm : Form {
+    // --- World layer (engine/terrain/generation/WorldLayer.hpp)
+    f32 worldContinentWavelength { 45000.0f };
+    f32 worldSeaThreshold { 0.47f };
+    f32 worldEtageWavelength { 28000.0f };
+    f32 worldMassifWavelength { 26000.0f };
+    f32 worldMassifLift { 350.0f };
+    f32 worldBenchWavelength { 7000.0f };
+    f32 worldBenchAmp { 0.2f };
+    f32 worldPlateauWavelength { 3000.0f };
+    f32 worldPlateauStep { 120.0f };
+    u32 worldPlateauLevels { 2 };
+    f32 worldPlateauEdge { 0.18f };
+    f32 worldPlateauStartGap { 1600.0f };
+    f32 worldStartEtage { 0.30f };
+    f32 worldStartRadius { 1200.0f };
+    f32 worldStartFade { 4000.0f };
+    f32 worldStartLowRadius { 4000.0f };
+    f32 worldStartLowFade { 8000.0f };
+    f32 worldAnchorRadius { 12000.0f };
+    f32 worldAnchorFade { 24000.0f };
+    f32 worldClimateWavelength { 9000.0f };
+    f32 worldLapsePerKm { 0.25f };
+    f32 worldCoverWavelength { 600.0f };
+    f32 worldCoverAmp { 0.16f };
+    // --- Rhythm (TerrainGen.hpp RhythmParams)
+    bool rhythmPlan { true };
+    f32 rhythmPlanStoryScale { 0.8f };
+    f32 rhythmStoryMountainWavelength { 2000.0f };
+    f32 rhythmStoryMountainAmplitude { 270.0f };
+    f32 rhythmStoryMountainMaskLow { 0.36f };
+    f32 rhythmStoryMountainMaskHigh { 0.62f };
+    f32 rhythmRegimeWavelength { 875.0f };
+    f32 rhythmRegimeHillAmplitude { 90.0f };
+    f32 rhythmRegimeMassifHeight { 110.0f };
+    f32 rhythmCalmBandWavelength { 1200.0f };
+    f32 rhythmIntimateCellSize { 1000.0f };
+    f32 rhythmIntimateChance { 0.85f };
+    f32 rhythmIntimateHeightMin { 60.0f };
+    f32 rhythmIntimateHeightMax { 120.0f };
+    f32 rhythmIntimateRadiusMin { 300.0f };
+    f32 rhythmIntimateRadiusMax { 600.0f };
+    f32 rhythmCrestWavelength { 1800.0f };
+    f32 rhythmCrestAmplitudeEtage0 { 30.0f };
+    f32 rhythmCrestAmplitudeEtage1 { 60.0f };
+    f32 rhythmCrestAmplitudeEtage2 { 90.0f };
+    f32 rhythmCrestAmplitudeEtage3 { 200.0f };
+    f32 rhythmBedWavelength { 3000.0f };
+    f32 rhythmBedDepthEtage0 { 14.0f };
+    f32 rhythmBedDepthEtage1 { 22.0f };
+    f32 rhythmBedDepthEtage2 { 20.0f };
+    f32 rhythmBedDepthEtage3 { 35.0f };
+    f32 rhythmColSpacing { 2500.0f };
+    f32 rhythmHardnessWavelength { 4000.0f };
+    f32 rhythmRidgeColWavelength { 1300.0f };
+    // --- POI plan (PoiPlan.hpp PoiPlanParams)
+    f32 poiMoyenCell { 2048.0f };
+    f32 poiPetitCell { 350.0f };
+    f32 poiPetitChance { 0.6f };
+    f32 poiGrandHeightMin { 500.0f };
+    f32 poiGrandHeightMax { 700.0f };
+    f32 poiMoyenHeightMin { 220.0f };
+    f32 poiMoyenHeightMax { 340.0f };
+    f32 poiPetitHeightMin { 10.0f };
+    f32 poiPetitHeightMax { 40.0f };
+    f32 poiEdgeReach { 2200.0f };
+    u32 poiEdgeMax { 6 };
+    f32 poiWaterReach { 450.0f };
+    f32 poiGrandStartClearance { 1500.0f };
+    f32 poiConeSlopeMinDeg { 18.0f };
+    f32 poiConeSlopeMaxDeg { 28.0f };
+    f32 poiVerticality { 1.0f };
+    f32 poiConeSlopeSteepMinDeg { 30.0f };
+    f32 poiConeSlopeSteepMaxDeg { 42.0f };
+    f32 poiCorridorHalfWidthMin { 60.0f };
+    f32 poiCorridorHalfWidthMax { 120.0f };
+    f32 poiScreenHeightMin { 40.0f };
+    f32 poiScreenHeightMax { 90.0f };
+    f32 poiScreenNotch { 0.75f };
+    // --- Macro synthesis (TerrainGen.hpp MacroParams)
+    i32 macroReliefOctaves { 5 };
+    f32 macroReliefAmplitudeEtage0 { 75.0f };
+    f32 macroReliefAmplitudeEtage1 { 90.0f };
+    f32 macroReliefAmplitudeEtage2 { 60.0f };
+    f32 macroReliefAmplitudeEtage3 { 150.0f };
+    f32 macroReliefWavelengthEtage0 { 500.0f };
+    f32 macroReliefWavelengthEtage1 { 500.0f };
+    f32 macroReliefWavelengthEtage2 { 500.0f };
+    f32 macroReliefWavelengthEtage3 { 700.0f };
+    f32 macroPlateauTerrace { 0.3f };
+    f32 macroTerraceStep { 40.0f };
+    f32 macroTerraceEdge { 0.16f };
+    f32 macroCliffStep { 30.0f };
+    f32 macroCliffEdge { 0.05f };
+    f32 macroWarpWavelength { 3500.0f };
+    f32 macroWarpStrength { 700.0f };
+    f32 macroValleyStretch { 2.5f };
+    // --- Bake (TileBake.hpp, FluvialErosion.hpp, ThermalErosion.hpp)
+    f32 bakeMacroTexel { 16.0f };
+    f32 bakeCalmCut { 0.5f };
+    f32 bakeRoughCut { 250.0f };
+    f32 bakeDimpleFillMax { 20.0f };
+    f32 bakeKeepCrestFade { 0.35f };
+    i32 bakeFluvialIterations { 48 };
+    f32 bakeFluvialK { 0.08f };
+    f32 bakeUpliftRate { 1.5f };
+    i32 bakeThermalIterations { 60 };
+    f32 bakeTalusTan { 0.65f };
+    f32 bakeRoundingStrength { 0.6f };
+
+    REFLECT_BEGIN(TerrainGenTuningForm, Form)
+        REFLECT_FIELD(worldContinentWavelength)
+        REFLECT_FIELD(worldSeaThreshold)
+        REFLECT_FIELD(worldEtageWavelength)
+        REFLECT_FIELD(worldMassifWavelength)
+        REFLECT_FIELD(worldMassifLift)
+        REFLECT_FIELD(worldBenchWavelength)
+        REFLECT_FIELD(worldBenchAmp)
+        REFLECT_FIELD(worldPlateauWavelength)
+        REFLECT_FIELD(worldPlateauStep)
+        REFLECT_FIELD(worldPlateauLevels)
+        REFLECT_FIELD(worldPlateauEdge)
+        REFLECT_FIELD(worldPlateauStartGap)
+        REFLECT_FIELD(worldStartEtage)
+        REFLECT_FIELD(worldStartRadius)
+        REFLECT_FIELD(worldStartFade)
+        REFLECT_FIELD(worldStartLowRadius)
+        REFLECT_FIELD(worldStartLowFade)
+        REFLECT_FIELD(worldAnchorRadius)
+        REFLECT_FIELD(worldAnchorFade)
+        REFLECT_FIELD(worldClimateWavelength)
+        REFLECT_FIELD(worldLapsePerKm)
+        REFLECT_FIELD(worldCoverWavelength)
+        REFLECT_FIELD(worldCoverAmp)
+        REFLECT_FIELD(rhythmPlan)
+        REFLECT_FIELD(rhythmPlanStoryScale)
+        REFLECT_FIELD(rhythmStoryMountainWavelength)
+        REFLECT_FIELD(rhythmStoryMountainAmplitude)
+        REFLECT_FIELD(rhythmStoryMountainMaskLow)
+        REFLECT_FIELD(rhythmStoryMountainMaskHigh)
+        REFLECT_FIELD(rhythmRegimeWavelength)
+        REFLECT_FIELD(rhythmRegimeHillAmplitude)
+        REFLECT_FIELD(rhythmRegimeMassifHeight)
+        REFLECT_FIELD(rhythmCalmBandWavelength)
+        REFLECT_FIELD(rhythmIntimateCellSize)
+        REFLECT_FIELD(rhythmIntimateChance)
+        REFLECT_FIELD(rhythmIntimateHeightMin)
+        REFLECT_FIELD(rhythmIntimateHeightMax)
+        REFLECT_FIELD(rhythmIntimateRadiusMin)
+        REFLECT_FIELD(rhythmIntimateRadiusMax)
+        REFLECT_FIELD(rhythmCrestWavelength)
+        REFLECT_FIELD(rhythmCrestAmplitudeEtage0)
+        REFLECT_FIELD(rhythmCrestAmplitudeEtage1)
+        REFLECT_FIELD(rhythmCrestAmplitudeEtage2)
+        REFLECT_FIELD(rhythmCrestAmplitudeEtage3)
+        REFLECT_FIELD(rhythmBedWavelength)
+        REFLECT_FIELD(rhythmBedDepthEtage0)
+        REFLECT_FIELD(rhythmBedDepthEtage1)
+        REFLECT_FIELD(rhythmBedDepthEtage2)
+        REFLECT_FIELD(rhythmBedDepthEtage3)
+        REFLECT_FIELD(rhythmColSpacing)
+        REFLECT_FIELD(rhythmHardnessWavelength)
+        REFLECT_FIELD(rhythmRidgeColWavelength)
+        REFLECT_FIELD(poiMoyenCell)
+        REFLECT_FIELD(poiPetitCell)
+        REFLECT_FIELD(poiPetitChance)
+        REFLECT_FIELD(poiGrandHeightMin)
+        REFLECT_FIELD(poiGrandHeightMax)
+        REFLECT_FIELD(poiMoyenHeightMin)
+        REFLECT_FIELD(poiMoyenHeightMax)
+        REFLECT_FIELD(poiPetitHeightMin)
+        REFLECT_FIELD(poiPetitHeightMax)
+        REFLECT_FIELD(poiEdgeReach)
+        REFLECT_FIELD(poiEdgeMax)
+        REFLECT_FIELD(poiWaterReach)
+        REFLECT_FIELD(poiGrandStartClearance)
+        REFLECT_FIELD(poiConeSlopeMinDeg)
+        REFLECT_FIELD(poiConeSlopeMaxDeg)
+        REFLECT_FIELD(poiVerticality)
+        REFLECT_FIELD(poiConeSlopeSteepMinDeg)
+        REFLECT_FIELD(poiConeSlopeSteepMaxDeg)
+        REFLECT_FIELD(poiCorridorHalfWidthMin)
+        REFLECT_FIELD(poiCorridorHalfWidthMax)
+        REFLECT_FIELD(poiScreenHeightMin)
+        REFLECT_FIELD(poiScreenHeightMax)
+        REFLECT_FIELD(poiScreenNotch)
+        REFLECT_FIELD(macroReliefOctaves)
+        REFLECT_FIELD(macroReliefAmplitudeEtage0)
+        REFLECT_FIELD(macroReliefAmplitudeEtage1)
+        REFLECT_FIELD(macroReliefAmplitudeEtage2)
+        REFLECT_FIELD(macroReliefAmplitudeEtage3)
+        REFLECT_FIELD(macroReliefWavelengthEtage0)
+        REFLECT_FIELD(macroReliefWavelengthEtage1)
+        REFLECT_FIELD(macroReliefWavelengthEtage2)
+        REFLECT_FIELD(macroReliefWavelengthEtage3)
+        REFLECT_FIELD(macroPlateauTerrace)
+        REFLECT_FIELD(macroTerraceStep)
+        REFLECT_FIELD(macroTerraceEdge)
+        REFLECT_FIELD(macroCliffStep)
+        REFLECT_FIELD(macroCliffEdge)
+        REFLECT_FIELD(macroWarpWavelength)
+        REFLECT_FIELD(macroWarpStrength)
+        REFLECT_FIELD(macroValleyStretch)
+        REFLECT_FIELD(bakeMacroTexel)
+        REFLECT_FIELD(bakeCalmCut)
+        REFLECT_FIELD(bakeRoughCut)
+        REFLECT_FIELD(bakeDimpleFillMax)
+        REFLECT_FIELD(bakeKeepCrestFade)
+        REFLECT_FIELD(bakeFluvialIterations)
+        REFLECT_FIELD(bakeFluvialK)
+        REFLECT_FIELD(bakeUpliftRate)
+        REFLECT_FIELD(bakeThermalIterations)
+        REFLECT_FIELD(bakeTalusTan)
+        REFLECT_FIELD(bakeRoundingStrength)
+    REFLECT_END()
+};
+
 struct LobeTreeTuningForm : Form {
     f32 trunkHeightMin { 4.2f };
     f32 trunkHeightMax { 6.1f };
@@ -765,6 +991,8 @@ LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms);
 LobeTreeTuningForm resolveLobeTreeTuning(const FormDatabase& forms);
 ColonizedTreeTuningForm resolveColonizedTreeTuning(const FormDatabase& forms);
 RcTuningForm resolveRcTuning(const FormDatabase& forms);
+// The generation pupitre: defaults (= the C++ defaults) when absent.
+TerrainGenTuningForm resolveTerrainGenTuning(const FormDatabase& forms);
 
 // Canonical guids of the singleton tuning records — the render panels'
 // "Save" button patches THESE records (into the render-tuning overlay
@@ -773,6 +1001,7 @@ const core::Guid& landscapeTuningGuid();
 const core::Guid& lobeTreeTuningGuid();
 const core::Guid& colonizedTreeTuningGuid();
 const core::Guid& rcTuningGuid();
+const core::Guid& terrainGenTuningGuid();
 
 // Every WeatherForm in the database, sorted by sortOrder — feeds the
 // weather dropdown. Empty if the plugin ships none.

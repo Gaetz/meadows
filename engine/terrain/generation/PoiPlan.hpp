@@ -119,6 +119,9 @@ struct PoiPlanParams {
     f32 screenNotch { 0.75f }; // fraction of the screen cut on the corridor
 };
 
+// FNV-1a over EVERY field (the memo key with the world's hash).
+u64 hashParams(const PoiPlanParams& p);
+
 // What the terrain reads at (x, z): the landform lift of the sites (the
 // max of their kernels; < 0 inside a basin), the walks' corridors and
 // screens, the pads, and the character region (P3 reads it).

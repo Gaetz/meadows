@@ -14,6 +14,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/terrain/TerrainBase.hpp"
 #include "game/AllForms.hpp"
+#include "game/TerrainGenTuning.hpp"
 #include "game/MapBaker.hpp"
 #include "game/TerrainBakeStreamer.hpp"
 #include "world/terrain/MapRecords.hpp"
@@ -104,13 +105,8 @@ int bakeMapCmd(char** argv, int argc) {
     const data::LandscapeTuningForm tuning =
         data::resolveLandscapeTuning(forms);
 
-    render::terraingen::TileBakeParams params;
-    params.worldSeed = tuning.terrainSeed;
-    params.controls.seed = tuning.terrainSeed;
-    params.macro.seaLevel = tuning.seaLevel;
-    params.macro.recurveLow = tuning.terrainRecurveLow;
-    params.macro.recurveMid = tuning.terrainRecurveMid;
-    params.macro.recurveHigh = tuning.terrainRecurveHigh;
+    render::terraingen::TileBakeParams params = game::makeTerrainBakeParams(
+        tuning, data::resolveTerrainGenTuning(forms));
     params.mapGrid.valid = borders; // MapBaker fills the spec
 
     const auto cacheDir = gameDir / "terrain-cache" /

@@ -30,6 +30,7 @@
 #include "BakeMapTool.hpp"
 #include "ErosionBench.hpp"
 #include "TerrainMap.hpp"
+#include "LandscapeReport.hpp"
 #include "PreBakeTool.hpp"
 #include "WaterReplayTool.hpp"
 #include "WaterSolveTool.hpp"
@@ -76,6 +77,9 @@ int usage() {
         "     terrain assets)\n"
         "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
         "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
+        "  cooker landscape-report <gameDir> [mapX mapZ]\n"
+        "     bakes the map when stale (pupitre included), writes\n"
+        "     plan.png next to it, prints the landscape census\n"
         "     bakes the sandbox tiles overlapping the rect (or the\n"
         "     centered square) into <gameDir>/terrain-cache/<seed>,\n"
         "     with the bake params resolved from <gameDir>/data — the\n"
@@ -407,6 +411,9 @@ int main(int argc, char** argv) {
     }
     if (command == "pre-bake" && (argc == 6 || argc == 7)) {
         return cooker::preBake(argv, argc);
+    }
+    if (command == "landscape-report" && (argc == 3 || argc == 5)) {
+        return cooker::landscapeReport(argv, argc);
     }
     if (command == "bake-map" && argc >= 5 && argc <= 9) {
         return cooker::bakeMapCmd(argv, argc);

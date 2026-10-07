@@ -15,6 +15,14 @@ namespace game {
 // Returns true when a field was committed this frame.
 bool drawPropertyGrid(data::EditSession& session, const core::Guid& id);
 
+// The same grid over a PLAIN reflected object (no EditSession, no
+// undo): the tuning pupitres edit a live struct and commit through the
+// reflected setter when the widget deactivates. Fields whose name
+// starts with `filter` (case-insensitive, empty = all) are shown.
+// Returns true when a field changed this frame.
+bool drawReflectedStruct(void* object, const reflect::TypeInfo& type,
+                         const char* filter = "");
+
 // The Value <-> text codec lives in engine/reflect/ValueText (the
 // CSV importer shares it); these usings keep the console/grid call sites.
 using reflect::valueFromString;

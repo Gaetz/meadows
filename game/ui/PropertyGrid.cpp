@@ -1,6 +1,9 @@
 #include "game/ui/PropertyGrid.hpp"
 
+#include <cctype>
 #include <charconv>
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <sstream>
 
@@ -163,6 +166,110 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
     });
     ImGui::EndTable();
     return committed;
+}
+
+bool drawReflectedStruct(void* object, const reflect::TypeInfo& type,
+                         const char* filter) {
+    if (!ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingStretchProp)) {
+        return false;
+    }
+    bool changed = false;
+    const str needle = filter ? filter : "";
+    reflect::forEachField(type, [&](const reflect::FieldInfo& field) {
+        if (field.flags & reflect::Transient) {
+            return;
+        }
+        if (!needle.empty()) {
+            bool match = field.name.size() >= needle.size();
+            for (size_t i = 0; match && i < needle.size(); ++i) {
+                match = std::tolower(static_cast<unsigned char>(
+                            field.name[i])) ==
+                        std::tolower(static_cast<unsigned char>(needle[i]));
+            }
+            if (!match) {
+                return;
+            }
+        }
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(field.name.c_str());
+        ImGui::TableNextColumn();
+        ImGui::PushID(static_cast<int>(field.id));
+        ImGui::SetNextItemWidth(-1.0f);
+        const reflect::Value current = field.get(object);
+        const auto commit = [&](const reflect::Value& value) {
+            if (field.set(object, value)) {
+                changed = true;
+            }
+        };
+        const auto commitOnDeactivate = [&](const reflect::Value& value) {
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                commit(value);
+            }
+        };
+        const auto drawText = [&] {
+            char buffer[256];
+            const str text = valueToString(current);
+            std::snprintf(buffer, sizeof(buffer), "%s", text.c_str());
+            ImGui::InputText("##v", buffer, sizeof(buffer));
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                if (const auto value =
+                        valueFromString(field.kind, buffer)) {
+                    commit(*value);
+                }
+            }
+        };
+        reflect::visit(current, reflect::overloaded {
+            [&](bool b) {
+                if (ImGui::Checkbox("##v", &b)) commit(reflect::Value { b });
+            },
+            [&](i32 v) {
+                ImGui::InputInt("##v", &v);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](u32 v) {
+                ImGui::InputScalar("##v", ImGuiDataType_U32, &v);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](f32 v) {
+                // Drag speed scales with the magnitude: a wavelength
+                // of 3 000 m and an edge of 0.05 both drag usefully.
+                const f32 speed = glm::max(std::abs(v) * 0.01f, 0.001f);
+                ImGui::DragFloat("##v", &v, speed, 0.0f, 0.0f, "%.4g");
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](f64 v) {
+                ImGui::InputDouble("##v", &v);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](Vec2 v) {
+                ImGui::DragFloat2("##v", &v.x, 0.05f);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](Vec3 v) {
+                ImGui::DragFloat3("##v", &v.x, 0.05f);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](Vec4 v) {
+                ImGui::DragFloat4("##v", &v.x, 0.05f);
+                commitOnDeactivate(reflect::Value { v });
+            },
+            [&](Quat q) {
+                f32 v[4] = { q.x, q.y, q.z, q.w };
+                ImGui::DragFloat4("##v", v, 0.01f);
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    q.x = v[0]; q.y = v[1]; q.z = v[2]; q.w = v[3];
+                    commit(reflect::Value { q });
+                }
+            },
+            [&](const str&) { drawText(); },
+            [&](const core::Guid&) { drawText(); },
+        });
+        ImGui::PopID();
+    });
+    ImGui::EndTable();
+    return changed;
 }
 
 } // namespace game

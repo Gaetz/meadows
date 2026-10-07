@@ -1,5 +1,7 @@
 #include "game/MapBaker.hpp"
 
+#include "game/TerrainGenTuning.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -86,6 +88,10 @@ u64 mapBakeKey(const TileBakeParams& params, i32 tilesPerSide) {
     mixF(params.macro.recurveMid);
     mixF(params.macro.recurveHigh);
     mixU(params.mapGrid.valid ? 1u : 0u);
+    // The generation pupitre (every TerrainGenTuningForm field): an
+    // edit is a different map, re-baked on demand.
+    const u64 gen = hashTerrainGenTuning(params);
+    mix(&gen, sizeof(gen));
     return h;
 }
 

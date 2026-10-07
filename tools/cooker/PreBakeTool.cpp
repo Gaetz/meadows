@@ -12,6 +12,7 @@
 #include "engine/core/Log.hpp"
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
+#include "game/TerrainGenTuning.hpp"
 
 namespace cooker {
 
@@ -78,13 +79,10 @@ int preBake(char** argv, int argc) {
     const data::LandscapeTuningForm tuning =
         data::resolveLandscapeTuning(forms);
 
-    render::terraingen::TileBakeParams params;
-    params.worldSeed = tuning.terrainSeed;
-    params.controls.seed = tuning.terrainSeed;
-    params.macro.seaLevel = tuning.seaLevel;
-    params.macro.recurveLow = tuning.terrainRecurveLow;
-    params.macro.recurveMid = tuning.terrainRecurveMid;
-    params.macro.recurveHigh = tuning.terrainRecurveHigh;
+    // The SAME mapping as the game (the pupitre included): a pre-bake
+    // with different params would poison the cache.
+    render::terraingen::TileBakeParams params = game::makeTerrainBakeParams(
+        tuning, data::resolveTerrainGenTuning(forms));
 
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);

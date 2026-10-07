@@ -900,6 +900,98 @@ BorderSample sampleBorders(const ProceduralControls& controls,
 
 } // namespace
 
+namespace {
+struct Fnv {
+    u64 h { 1469598103934665603ull };
+    void mix(const void* data, size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            h ^= bytes[i];
+            h *= 1099511628211ull;
+        }
+    }
+    void f(f32 v) { mix(&v, sizeof(v)); }
+    void i(i32 v) { mix(&v, sizeof(v)); }
+    void b(bool v) { const u8 x = v ? 1 : 0; mix(&x, 1); }
+};
+} // namespace
+
+u64 hashParams(const RhythmParams& p) {
+    Fnv h;
+    h.f(p.pieceCellSize);
+    h.f(p.pieceChance);
+    h.f(p.pieceRadiusMin);
+    h.f(p.pieceRadiusMax);
+    for (const auto& row : p.pieceHeightByEtage) {
+        h.f(row[0]);
+        h.f(row[1]);
+    }
+    h.f(p.ridgeColWavelength);
+    h.f(p.crestWavelength);
+    for (const f32 a : p.crestAmplitudeByEtage) {
+        h.f(a);
+    }
+    h.f(p.bedWavelength);
+    for (const f32 d : p.bedDepthByEtage) {
+        h.f(d);
+    }
+    h.f(p.colSpacing);
+    h.f(p.hardnessWavelength);
+    h.f(p.storyMountainWavelength);
+    h.f(p.storyMountainAmplitude);
+    h.f(p.storyMountainMaskLow);
+    h.f(p.storyMountainMaskHigh);
+    h.b(p.plan);
+    h.f(p.planStoryScale);
+    h.f(p.regimeWavelength);
+    h.f(p.regimeHillAmplitude);
+    h.f(p.regimeMassifHeight);
+    h.f(p.calmBandWavelength);
+    h.f(p.intimateCellSize);
+    h.f(p.intimateChance);
+    h.f(p.intimateHeightMin);
+    h.f(p.intimateHeightMax);
+    h.f(p.intimateRadiusMin);
+    h.f(p.intimateRadiusMax);
+    return h.h;
+}
+
+u64 hashParams(const MacroParams& p) {
+    Fnv h;
+    for (const TierLevel& t : p.tiers) {
+        h.f(t.altitude);
+        h.f(t.reliefAmplitude);
+        h.f(t.reliefWavelength);
+        h.f(t.terrace);
+    }
+    h.i(p.reliefOctaves);
+    h.f(p.seaLevel);
+    h.f(p.seaFloor);
+    h.f(p.shallowDepth);
+    h.f(p.shelfWidth);
+    h.f(p.shelfDepth);
+    h.f(p.shelfEnd);
+    h.f(p.seaFalloff);
+    h.f(p.shoreWidth);
+    h.f(p.shoreHeight);
+    h.f(p.cliffTierStart);
+    h.f(p.cliffTierEnd);
+    h.f(p.hillChainWavelength);
+    h.f(p.valleyStretch);
+    h.f(p.bedWavelength);
+    h.f(p.terraceStep);
+    h.f(p.terraceEdge);
+    h.f(p.cliffStep);
+    h.f(p.cliffEdge);
+    h.f(p.warpWavelength);
+    h.f(p.warpStrength);
+    h.f(p.recurveLow);
+    h.f(p.recurveMid);
+    h.f(p.recurveHigh);
+    h.f(p.recurveSpan);
+    return h.h;
+}
+
 MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
                             bool vertical) {
     u64 h = 14695981039346656037ull;
@@ -939,6 +1031,12 @@ MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
     key ^= static_cast<u64>(
                static_cast<i64>(spec.seaLevel * 64.0f)) << 17;
     key ^= static_cast<u64>(spec.mapSize) << 3;
+    // The analytic samples below read every control param: a pupitre
+    // edit must never serve a stale veto.
+    key ^= hashParams(controls.params().world) * 0x9e3779b97f4a7c15ull;
+    key ^= hashParams(controls.params().rhythm) * 0xc2b2ae3d27d4eb4full;
+    key ^= hashParams(controls.params().poi) * 0x165667b19e3779f9ull;
+    key ^= hashParams(macro) * 0x27d4eb2f165667c5ull;
     if (const auto it = memo.find(key); it != memo.end()) {
         return it->second;
     }

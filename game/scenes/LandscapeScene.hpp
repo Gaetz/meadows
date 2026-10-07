@@ -147,6 +147,11 @@ private:
     // live; the TOML sets where it all starts.
     data::FormTypeRegistry formTypes;
     LandscapeTuningForm tuning;
+    // The generation pupitre (docs/PAYSAGE.md §7.7): the live record
+    // the map bake params are built from; Apply re-bakes the active
+    // map on the next update (never from inside the UI draw).
+    data::TerrainGenTuningForm genTuning;
+    bool genTuningApplyRequested { false };
 
     // Weather (extracted to WeatherController): precreated
     // states from landscape.toml, crossfaded into `atmos` over its duration.
@@ -307,6 +312,8 @@ private:
     // The resolved map-scale bake params — ONE definition shared by
     // applyMapWorld's streamer and the editor's map bake (M5.3).
     render::terraingen::TileBakeParams makeMapBakeParams() const;
+    void saveGenTuningFile(const str& preset);
+    bool loadGenTuningFile(const str& preset);
     // GENERIC interaction (E) + travel fade + talk toast,
     // extracted to InteractionController. performTravel STAYS
     // here (a worldspace swap is streaming/scene territory — cellStreamer,

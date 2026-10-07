@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LandscapeForms.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 #include "game/LevelEditor.hpp"
@@ -29,6 +30,16 @@ struct GenContext {
     // (non-map scenes).
     render::terraingen::TileBakeParams mapBakeParams;
     std::filesystem::path mapCacheRoot; // terrain-cache/<seed>
+    // The generation PUPITRE (docs/PAYSAGE.md §7.7, Z0): the scene's
+    // live TerrainGenTuningForm and what the panel may ask of it —
+    // re-bake the active map with it (the cache key follows the
+    // values), write the overlay (preset "") or a named preset, load
+    // a preset. Null genTuning hides the section.
+    data::TerrainGenTuningForm* genTuning { nullptr };
+    std::function<void()> applyGenTuning;
+    std::function<void(const str&)> saveGenTuning;
+    std::function<bool(const str&)> loadGenTuning;
+    std::filesystem::path genPresetsDir;
 };
 
 // Editor panel: bake a bounded map on workers (progress bar), then
@@ -55,6 +66,11 @@ private:
     sptr<MapBake> mapBake;
     i32 mapX { 0 };
     i32 mapZ { 0 };
+    // Pupitre UI state.
+    char presetName[64] { "" };
+    char fieldFilter[64] { "" };
+    str presetPicked;
+    void drawPupitre(const GenContext& ctx);
 };
 
 } // namespace game

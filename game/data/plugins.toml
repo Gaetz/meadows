@@ -67,6 +67,13 @@ enabled = false
 [[plugins]]
 file = "mods/render-tuning.toml"
 
+# Generation-pupitre overlay (docs/PAYSAGE.md §7.7): written by the
+# editor's "Terrain generation" panel (Save overlay) — a patch on the
+# TerrainGenTuningForm record; the cooker reads it too (same bake, same
+# cache key). Absent until the first save.
+[[plugins]]
+file = "mods/terrain-gen.toml"
+
 # Level-editor output: an ordinary mod layered on top. Absent on a fresh
 # install — silently skipped until the first editor export.
 [[plugins]]

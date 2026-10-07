@@ -10,6 +10,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "game/MapBaker.hpp"
+#include "game/ui/PropertyGrid.hpp"
 #include "world/terrain/MapRecords.hpp"
 #include "world/terrain/TerrainRegions.hpp"
 #include "world/worldspace/WorldForms.hpp"
@@ -26,6 +27,9 @@ using render::terraingen::TileBakeResult;
 void TerrainGenTool::drawPanel(const GenContext& ctx) {
     if (!ImGui::CollapsingHeader("Terrain generation")) {
         return;
+    }
+    if (ctx.genTuning) {
+        drawPupitre(ctx);
     }
     // ---- Bounded-map bake (chantier CARTES M5.3) --------------------
     if (ctx.mapCacheRoot.empty()) {
@@ -115,6 +119,81 @@ void TerrainGenTool::drawPanel(const GenContext& ctx) {
             }
         }
     }
+}
+
+// The pupitre: every generation knob, live; Apply re-bakes the active
+// map (travelToMap on the scene: new streamer, cache miss on the new
+// key, background bake behind the veil); Save writes the overlay
+// plugin the stack loads at boot; presets are the dev's A/B.
+void TerrainGenTool::drawPupitre(const GenContext& ctx) {
+    ImGui::SeparatorText("Generation pupitre");
+    ImGui::TextDisabled("Edit, then Apply: the active map re-bakes with "
+                        "these values (~40 s Release). Save = the "
+                        "overlay loaded at boot.");
+    if (ImGui::Button("Apply & re-bake map")) {
+        if (ctx.applyGenTuning) {
+            ctx.applyGenTuning();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save overlay")) {
+        if (ctx.saveGenTuning) {
+            ctx.saveGenTuning("");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to C++ defaults")) {
+        *ctx.genTuning = data::TerrainGenTuningForm {};
+    }
+    // Presets: named files under data/mods/terrain-gen-presets/.
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputText("preset name", presetName, sizeof(presetName));
+    ImGui::SameLine();
+    if (ImGui::Button("Save preset") && presetName[0] != '\0') {
+        if (ctx.saveGenTuning) {
+            ctx.saveGenTuning(presetName);
+        }
+    }
+    {
+        vector<str> presets;
+        std::error_code ec;
+        if (!ctx.genPresetsDir.empty() &&
+            std::filesystem::is_directory(ctx.genPresetsDir, ec)) {
+            for (const auto& entry :
+                 std::filesystem::directory_iterator(ctx.genPresetsDir, ec)) {
+                if (entry.path().extension() == ".toml") {
+                    presets.push_back(entry.path().stem().string());
+                }
+            }
+        }
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::BeginCombo("##preset", presetPicked.empty()
+                                              ? "(preset)"
+                                              : presetPicked.c_str())) {
+            for (const str& name : presets) {
+                if (ImGui::Selectable(name.c_str(), name == presetPicked)) {
+                    presetPicked = name;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load preset") && !presetPicked.empty()) {
+            if (ctx.loadGenTuning) {
+                ctx.loadGenTuning(presetPicked);
+            }
+        }
+    }
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputText("filter (world/rhythm/poi/macro/bake)", fieldFilter,
+                     sizeof(fieldFilter));
+    if (ImGui::BeginChild("pupitre-fields", ImVec2(0.0f, 320.0f),
+                          ImGuiChildFlags_Borders)) {
+        drawReflectedStruct(ctx.genTuning,
+                            data::TerrainGenTuningForm::staticTypeInfo(),
+                            fieldFilter);
+    }
+    ImGui::EndChild();
 }
 
 // Accept the baked map: slices copied into the export assets, the

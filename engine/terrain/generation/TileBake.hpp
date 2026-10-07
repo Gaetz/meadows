@@ -268,9 +268,9 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // Cache identity of the published slices (.trg/.twb file names and the
 // map manifest): bump when ANY published output changes — a stage-1,
 // hydrology, finalize or default-parameter change alike. Miss it and
-// stale caches keep the old landscape. The cache key is otherwise the
-// world seed alone: a changed default needs this bump (or a cleared
-// terrain-cache) to reach the player.
+// stale caches keep the old landscape. The map cache key also hashes
+// the generation pupitre (game::mapBakeKey): an edited parameter is a
+// new map on its own; a changed C++ DEFAULT still needs this bump.
 constexpr u32 kTileBakeVersion = 77;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past

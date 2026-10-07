@@ -15,6 +15,8 @@ add_library(meadows-runtime STATIC
     Settings.cpp
     SoundResolver.cpp
     MapBaker.cpp
+    MapView.cpp
+    TerrainGenTuning.cpp
     TerrainBakeStreamer.cpp
     TerrainCollision.cpp
     scenes/DungeonGenTool.cpp

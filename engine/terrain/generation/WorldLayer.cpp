@@ -65,34 +65,19 @@ f32 etageRaw(const WorldLayerParams& p, f32 x, f32 z) {
     return 0.5f + (e - 0.5f) * 1.3f;
 }
 
-// The étage shift that anchors the start: memoized per (seed, start,
-// wavelengths) — pure, thread-local, a few floats.
+// The étage shift that anchors the start: memoized on the whole
+// params hash — pure, thread-local, a few floats.
 f32 etageAnchorShift(const WorldLayerParams& p) {
-    struct Memo {
-        u32 seed;
-        f32 startX, startZ, etageWavelength, warpWavelength, warpStrength,
-            startEtage;
-        f32 shift;
-    };
-    thread_local Memo memo { 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    thread_local u64 memoKey = 0;
+    thread_local f32 memoShift = 0.0f;
     thread_local bool valid = false;
-    if (!valid || memo.seed != p.seed || memo.startX != p.startX ||
-        memo.startZ != p.startZ ||
-        memo.etageWavelength != p.etageWavelength ||
-        memo.warpWavelength != p.continentWarpWavelength ||
-        memo.warpStrength != p.continentWarpStrength ||
-        memo.startEtage != p.startEtage) {
-        memo = { p.seed,
-                 p.startX,
-                 p.startZ,
-                 p.etageWavelength,
-                 p.continentWarpWavelength,
-                 p.continentWarpStrength,
-                 p.startEtage,
-                 p.startEtage - etageRaw(p, p.startX, p.startZ) };
+    const u64 key = hashParams(p);
+    if (!valid || memoKey != key) {
+        memoKey = key;
+        memoShift = p.startEtage - etageRaw(p, p.startX, p.startZ);
         valid = true;
     }
-    return memo.shift;
+    return memoShift;
 }
 
 } // namespace
@@ -248,6 +233,55 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
     w.temperature = temperature;
     w.moisture = moisture;
     return w;
+}
+
+u64 hashParams(const WorldLayerParams& p) {
+    u64 h = 1469598103934665603ull;
+    const auto mix = [&](const void* data, size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            h ^= bytes[i];
+            h *= 1099511628211ull;
+        }
+    };
+    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
+    const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
+    u(p.seed);
+    f(p.continentWavelength);
+    f(p.coastDetailWavelength);
+    f(p.coastDetailAmp);
+    f(p.continentWarpWavelength);
+    f(p.continentWarpStrength);
+    f(p.seaThreshold);
+    f(p.coastBand);
+    f(p.etageWavelength);
+    f(p.massifWavelength);
+    for (const f32 a : p.etageAltitude) {
+        f(a);
+    }
+    f(p.massifLift);
+    f(p.benchWavelength);
+    f(p.benchAmp);
+    f(p.plateauWavelength);
+    f(p.plateauStep);
+    u(p.plateauLevels);
+    f(p.plateauEdge);
+    f(p.plateauStartGap);
+    f(p.startX);
+    f(p.startZ);
+    f(p.startEtage);
+    f(p.anchorRadius);
+    f(p.anchorFade);
+    f(p.startLowRadius);
+    f(p.startLowFade);
+    f(p.startRadius);
+    f(p.startFade);
+    f(p.climateWavelength);
+    f(p.climateSlowWavelength);
+    f(p.lapsePerKm);
+    f(p.coverWavelength);
+    f(p.coverAmp);
+    return h;
 }
 
 f32 etageIndexFor(const WorldLayerParams& p, f32 base) {

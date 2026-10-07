@@ -115,3 +115,29 @@ into them will (correctly) show up as dangling.
 
 Related: [How plugins work](plugins.md) ·
 [Load order & conflicts](load-order.md)
+
+## Le pupitre de génération (sandbox)
+
+Tous les réglages de la génération des cartes sandbox (couche monde,
+rythme, plan de points d'intérêt, synthèse macro, érosion) sont un Form
+`TerrainGenTuningForm` : un record unique, patchable par n'importe quel
+plugin (§5, dernier écrivain gagne par champ). Trois façons de le régler :
+
+- **En jeu, mode Édition → panneau « Terrain generation » → « Generation
+  pupitre »** : éditez les champs (filtre `world`, `rhythm`, `poi`,
+  `macro`, `bake`), **Apply & re-bake map** re-cuit la carte active avec
+  ces valeurs (≈ 40 s en Release, derrière le voile), **Save overlay**
+  écrit `data/mods/terrain-gen.toml` (chargé au prochain lancement),
+  **Save preset / Load preset** gèrent `data/mods/terrain-gen-presets/`.
+- **À la main** : un plugin qui patche le record
+  `1a4d5c00-0000-4000-8000-00000000000a` (type `TerrainGenTuningForm`).
+- **Hors jeu** : `cooker landscape-report <gameDir> [mapX mapZ]` cuit la
+  carte si son cache est périmé, écrit `plan.png` à côté des tranches et
+  imprime le recensement du paysage (pente, parts de pas > 30°/45°, murs
+  par km, relief par 250 m, sol à plus de 100 m, lacs, rivières) ; une
+  ligne d'historique par exécution dans `terrain-cache/<seed>/landscape-report.log`.
+
+Le cache des cartes est clé sur les valeurs du pupitre : changer un
+réglage invalide la carte, qui se re-cuit à la demande (le jeu, le cooker
+et les tests partagent le même mappage `game::makeTerrainBakeParams`).
+

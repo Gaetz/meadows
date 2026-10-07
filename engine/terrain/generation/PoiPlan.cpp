@@ -386,37 +386,15 @@ bool lowerRank(i32 ax, i32 az, i32 bx, i32 bz) {
 // Memo of typed sites (and the moyen edges) per cell. Thread-local, so
 // workers never share it; re-keyed by the params that shape it.
 struct Memo {
-    u32 paramsKey { 0 };
+    u64 paramsKey { 0 };
     std::unordered_map<u64, CellSite> sites;
     std::unordered_map<u64, vector<PoiSite>> rawEdges; // moyen: partners
 };
 
-u32 paramsKeyOf(const WorldLayerParams& world, const PoiPlanParams& plan) {
-    u32 h = core::hashU32(world.seed);
-    const auto mixF = [&](f32 v) {
-        u32 bits;
-        static_assert(sizeof(bits) == sizeof(v));
-        std::memcpy(&bits, &v, sizeof(bits));
-        h = core::hashU32(h ^ bits);
-    };
-    mixF(world.startX);
-    mixF(world.startZ);
-    mixF(world.startLowRadius);
-    mixF(world.startLowFade);
-    mixF(plan.grandCell);
-    mixF(plan.moyenCell);
-    mixF(plan.petitCell);
-    mixF(plan.petitChance);
-    mixF(plan.grandHeightMin);
-    mixF(plan.grandHeightMax);
-    mixF(plan.moyenHeightMin);
-    mixF(plan.moyenHeightMax);
-    mixF(plan.petitHeightMin);
-    mixF(plan.petitHeightMax);
-    mixF(plan.edgeReach);
-    mixF(static_cast<f32>(plan.edgeMax));
-    mixF(plan.grandStartClearance);
-    return h;
+// The whole of both params: the sites' typing reads the world sample
+// and the master network, so any field can move a site.
+u64 paramsKeyOf(const WorldLayerParams& world, const PoiPlanParams& plan) {
+    return hashParams(world) ^ (hashParams(plan) * 0x9e3779b97f4a7c15ull);
 }
 
 // The memo is only ever CLEARED at a public entry point (memoReady):
@@ -428,7 +406,7 @@ Memo& memoFor(const WorldLayerParams&, const PoiPlanParams&) {
 
 Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan) {
     Memo& memo = memoFor(world, plan);
-    const u32 key = paramsKeyOf(world, plan);
+    const u64 key = paramsKeyOf(world, plan);
     if (memo.paramsKey != key || memo.sites.size() > 32768) {
         memo.sites.clear();
         memo.rawEdges.clear();
@@ -899,6 +877,47 @@ constexpr CharacterStyle kCharacters[] = {
 };
 
 } // namespace
+
+u64 hashParams(const PoiPlanParams& p) {
+    u64 h = 1469598103934665603ull;
+    const auto mix = [&](const void* data, size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            h ^= bytes[i];
+            h *= 1099511628211ull;
+        }
+    };
+    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
+    const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
+    f(p.grandCell);
+    f(p.moyenCell);
+    f(p.petitCell);
+    f(p.petitChance);
+    f(p.grandHeightMin);
+    f(p.grandHeightMax);
+    f(p.moyenHeightMin);
+    f(p.moyenHeightMax);
+    f(p.petitHeightMin);
+    f(p.petitHeightMax);
+    f(p.edgeReach);
+    u(p.edgeMax);
+    f(p.waterPoiReach);
+    f(p.grandStartClearance);
+    f(p.coneSlopeMinDeg);
+    f(p.coneSlopeMaxDeg);
+    f(p.verticality);
+    f(p.coneSlopeSteepMinDeg);
+    f(p.coneSlopeSteepMaxDeg);
+    f(p.corridorHalfWidthMin);
+    f(p.corridorHalfWidthMax);
+    f(p.screenHeightMin);
+    f(p.screenHeightMax);
+    f(p.screenHalfLengthMin);
+    f(p.screenHalfLengthMax);
+    f(p.screenHalfWidth);
+    f(p.screenNotch);
+    return h;
+}
 
 PlanSample planSampleAt(const WorldLayerParams& world,
                         const PoiPlanParams& plan, f32 x, f32 z) {

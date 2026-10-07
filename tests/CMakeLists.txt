@@ -83,6 +83,7 @@
     MapRasterTest.cpp
     MapRecordsTest.cpp
     MapBakerTest.cpp
+    TerrainGenTuningTest.cpp
     MasterNetworkTest.cpp
     MeleeStrikeTest.cpp
     MeleeSwingTest.cpp

@@ -191,6 +191,11 @@ struct RhythmParams {
     f32 intimateRadiusMax { 600.0f };
 };
 
+// FNV-1a over EVERY field of the rhythm / macro params (memo keys and
+// the analytic border veto: a pupitre edit must never serve a stale
+// decision). Add a field = add a line in TerrainGen.cpp.
+u64 hashParams(const RhythmParams& p);
+
 // Sandbox controls: every field derives from ONE sample of the world
 // layer (sea, floor, étage, massif, coast, climate) plus the local
 // rhythm. Pure functions of (seed, x, z) — infinite, deterministic,
@@ -299,6 +304,9 @@ struct MacroParams {
     f32 recurveHigh { 0.75f };
     f32 recurveSpan { 700.0f };
 };
+
+// FNV-1a over every MacroParams field (see hashParams(RhythmParams)).
+u64 hashParams(const MacroParams& p);
 
 struct MacroResult {
     GridSpec spec;
