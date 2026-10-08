@@ -50,7 +50,7 @@ struct ZoneArchetype {
 };
 
 struct ZoneParams {
-    f32 cellSize { 1000.0f };
+    f32 cellSize { 512.0f }; // dev 2026-10-08: twice the rhythm of 1 km
     f32 jitter { 0.6f };            // site jitter, fraction of the cell
     f32 borderWarp { 150.0f };      // meters of border wander
     f32 borderWarpWavelength { 600.0f };

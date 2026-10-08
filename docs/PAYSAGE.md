@@ -1947,6 +1947,20 @@ briques Z0-Z5 dans le fichier de plan.
   spawn (12 128, 1 035, 4 407) : pente 48,8 %, pas > 30° 20,5 %, > 45°
   13,1 %, murs 5,0/km (max 417 m), 176 lacs. Si le départ doit redevenir
   bas : `worldAnchorRadius`/`worldAnchorFade` dans le pupitre.
+- **2026-10-08 — « C'est pas mal mais les variations ne sont pas assez
+  rapides : des zones de 512 m plutôt que 1 km. »** `zoneCellSize`
+  512 m par défaut (code et pupitre) ; les rayons des pièces de zone,
+  écrits pour 1 km, suivent la taille de cellule (une mare de 180 m ne
+  remplit pas une zone de 512 m). Les tests de continuité à la ligne
+  (zones et couche monde) ont pour borne la courbure d'un ressaut lisse
+  (3 m), pas 2. **Mesuré** (v78, hash 5026885998955634159) : carte
+  (0,0) spawn (3 944, 969, 3 057) ; autour du spawn pente 73,7 %, pas
+  > 30° 23,2 %, > 45° 14,0 %, **murs 8,3/km** (médiane 24 m, max 327 m
+  — était 3,7/km à 1 km), relief 53 m / 250 m, montée p95 199 m ;
+  carte : relief 69 m / 250 m (était 36), sol > 100 m 90 %, 222 lacs
+  (113 près d'un mur) ; carte (1,0) : pente 64 %, murs 7,4/km (max
+  442 m), 174 lacs. Les disques de 2 km avec ≥ 100 m d'étendue de socle :
+  45 sur 49. Jugement dev EN ATTENTE.
 
 ---
 

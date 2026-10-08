@@ -582,7 +582,7 @@ struct TerrainGenTuningForm : Form {
     f32 macroValleyStretch { 2.5f };
     // --- Zones (ZonePlan.hpp ZoneParams; the archetype table is ZoneArchetypeForm)
     bool rhythmZones { true };
-    f32 zoneCellSize { 1000.0f };
+    f32 zoneCellSize { 512.0f };
     f32 zoneJitter { 0.6f };
     f32 zoneBorderWarp { 150.0f };
     f32 zoneBorderWarpWavelength { 600.0f };

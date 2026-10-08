@@ -284,12 +284,16 @@ Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
 // The zone's small landform at (x, z) from its site: a knoll, a
 // clearing, a pond, a rock knob, a grove mound (the August intimate
 // grid, one per zone, typed by the archetype).
-void pieceAt(const ZoneArchetype& a, const Zone& zone, f32 x, f32 z,
-             ZoneSample& out) {
+void pieceAt(const ZoneParams& zones, const ZoneArchetype& a,
+             const Zone& zone, f32 x, f32 z, ZoneSample& out) {
     if (a.piece == 0) {
         return;
     }
-    const f32 radius = glm::max(a.pieceRadius * zone.pieceScale, 10.0f);
+    // The table's radii are written for 1 km zones: a piece keeps its
+    // share of the zone whatever the cell size.
+    const f32 radius = glm::max(a.pieceRadius * zone.pieceScale *
+                                    (zones.cellSize / 1000.0f),
+                                10.0f);
     const f32 height = a.pieceHeight * zone.pieceScale;
     const f32 n = std::hypot(x - zone.x, z - zone.z) / radius;
     if (n >= 1.0f) {
@@ -456,9 +460,9 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     out.wetBias = glm::mix(gb.wetBias, ga.wetBias, tg);
     out.coverBias = glm::mix(gb.coverBias, ga.coverBias, tg);
     out.palette = ga.palette;
-    pieceAt(ga, a, x, z, out);
+    pieceAt(zones, ga, a, x, z, out);
     if (b != n.a) {
-        pieceAt(gb, *b, x, z, out);
+        pieceAt(zones, gb, *b, x, z, out);
     }
     last.key = key;
     last.x = x;
