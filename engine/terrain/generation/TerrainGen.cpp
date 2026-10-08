@@ -661,6 +661,7 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     const WorldSample w = worldSampleAt(p.world, x, z);
     f32 coverBias = 0.0f;
     u8 namedPalette = 0;
+    f32 base = glm::max(w.base, 0.0f);
     if (p.rhythm.plan && p.rhythm.zones) {
         const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
         coverBias = zs.coverBias;
@@ -670,6 +671,11 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
             0.5f) {
             namedPalette = 8;
         }
+        // The floor the palette's altitude rules read: the zone's
+        // storey on the world's base (the lattice sample's).
+        base = glm::max(w.base + zs.storeyHeight *
+                                     noise::smoothstep01(2.0f, 12.0f, base),
+                        0.0f);
     } else if (p.rhythm.plan) {
         const PlanCharacter pc = planCharacterAt(p.world, p.poi, x, z);
         coverBias = pc.coverBias;
@@ -685,8 +691,8 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
             namedPalette = 8;
         }
     }
-    return paletteIdFor(w.temperature, w.moisture, glm::max(w.base, 0.0f),
-                        w.cover + coverBias, namedPalette);
+    return paletteIdFor(w.temperature, w.moisture, base, w.cover + coverBias,
+                        namedPalette);
 }
 
 MacroResult synthesizeMacro(const ControlSource& controls,

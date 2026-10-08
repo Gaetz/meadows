@@ -498,12 +498,12 @@ struct TerrainGenTuningForm : Form {
     f32 worldPlateauEdge { 0.18f };
     f32 worldPlateauStartGap { 1600.0f };
     f32 worldStartEtage { 0.30f };
-    f32 worldStartRadius { 1200.0f };
-    f32 worldStartFade { 4000.0f };
+    f32 worldStartRadius { 0.0f };
+    f32 worldStartFade { 0.0f };
     f32 worldStartLowRadius { 4000.0f };
-    f32 worldStartLowFade { 8000.0f };
-    f32 worldAnchorRadius { 12000.0f };
-    f32 worldAnchorFade { 24000.0f };
+    f32 worldStartLowFade { 4000.0f };
+    f32 worldAnchorRadius { 0.0f };
+    f32 worldAnchorFade { 0.0f };
     f32 worldClimateWavelength { 9000.0f };
     f32 worldLapsePerKm { 0.25f };
     f32 worldCoverWavelength { 600.0f };
@@ -593,7 +593,7 @@ struct TerrainGenTuningForm : Form {
     f32 zoneWallWidthOne { 90.0f };
     f32 zoneWallWidthHigh { 60.0f };
     f32 zoneRampWidth { 400.0f };
-    f32 zoneStartGap { 1600.0f };
+    f32 zoneStartGap { 0.0f };
     // --- Bake (TileBake.hpp, FluvialErosion.hpp, ThermalErosion.hpp)
     f32 bakeMacroTexel { 16.0f };
     f32 bakeCalmCut { 0.5f };

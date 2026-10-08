@@ -1918,6 +1918,35 @@ briques Z0-Z5 dans le fichier de plan.
   un réglage de zone. Jugement dev EN ATTENTE ; leviers : la table
   d'archétypes (poids, conditions, grammaires), `zoneStepHeight`,
   `zoneStoreys`, `zoneTrendWavelength`, `zoneStartGap`.
+- **2026-10-08 — « Je ne comprends pas pourquoi tu me mets ce disque de
+  départ plat, plus grand qu'une carte ; je n'en ai pas besoin ; en plus
+  on commence sur une gigantesque colline. » Le départ est le monde tel
+  quel.** Retirés : la prairie aplatie (1,2 km + 4 km), l'ancre d'étage
+  (12 km + 24 km), les zones forcées en prairie (1,6 km) et le spawn
+  « belvédère » (le sommet du POI le plus proche du centre, que j'avais
+  mis pour juger le relief). Il reste un anneau de 4 km + 4 km de fondu
+  (terre, pas de massif, climat tempéré) qui n'aplatit rien : sans lui,
+  la carte (0,0) de la seed 1337 est en mer. Le spawn redevient la
+  spirale « doux, sec, tempéré » depuis le centre. Deux bugs au passage :
+  `noise::smoothstep01` divisait par zéro sur une bande nulle (un fondu
+  à 0 m donnait des hauteurs NaN lues comme de la mer : « 4 lacs,
+  0 rivière ») ; et le socle des zones, calculé sur les deux sites les
+  plus proches, **pliait à chaque sommet de Voronoï** de la moitié de
+  l'écart de palier (11 m mesurés à la ligne x = 8 192) — il est
+  maintenant une **partition lisse sur les neuf sites voisins** (poids
+  qui s'éteint à `zoneWallWidthOne` derrière le plus proche), continue
+  partout ; la largeur par pas (`zoneWallWidthHigh` × pas) ne sert plus
+  qu'au masque de mur. Le test de continuité à la ligne lit la dérivée
+  seconde du socle avec la courbure d'un ressaut lisse pour borne (3 m).
+  **Mesuré** (v78, hash 15662755146518221576) : carte (0,0) spawn
+  (4 248, 860, 5 135) — le départ de la seed 1337 est à 860 m, pays haut
+  sans ancre ; autour du spawn pente 26,5 %, pas > 30° 12,7 %, > 45°
+  5,7 %, murs 3,7/km (médiane 23 m, max 324 m), relief 34 m / 250 m,
+  sol > 100 m 97 % ; carte : relief 36 m / 250 m, 234 lacs (94 près
+  d'un mur, 8 sur une mare, 132 ailleurs), 152 rivières. Carte (1,0)
+  spawn (12 128, 1 035, 4 407) : pente 48,8 %, pas > 30° 20,5 %, > 45°
+  13,1 %, murs 5,0/km (max 417 m), 176 lacs. Si le départ doit redevenir
+  bas : `worldAnchorRadius`/`worldAnchorFade` dans le pupitre.
 
 ---
 

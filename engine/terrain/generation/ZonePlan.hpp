@@ -59,9 +59,9 @@ struct ZoneParams {
     f32 trendWavelength { 4000.0f }; // the long carrier of the storeys
     f32 trendContrast { 1.6f };
     f32 wallWidthOne { 90.0f };     // riser width of a one-step wall
-    f32 wallWidthHigh { 60.0f };    // riser width of a two-step+ escarpment
+    f32 wallWidthHigh { 60.0f };    // riser width PER STEP of a two-step+ escarpment
     f32 rampWidth { 400.0f };       // the corridors' ramp across a border
-    f32 startGap { 1600.0f };       // past the meadow before the storeys rise
+    f32 startGap { 0.0f };          // meters past the start ring without storeys (0 = none)
     vector<ZoneArchetype> archetypes; // empty = defaultZoneArchetypes()
 };
 

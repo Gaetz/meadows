@@ -237,6 +237,10 @@ struct Nearest {
     const Zone* b { nullptr }; // second nearest
     f32 da { 1.0e30f };
     f32 db { 1.0e30f };
+    // The nine candidates (the 3x3 cells around the warped point).
+    const Zone* zones[9] {};
+    f32 dist[9] {};
+    u32 count { 0 };
 };
 
 Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
@@ -260,6 +264,9 @@ Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
         for (i32 dx = -1; dx <= 1; ++dx) {
             const Zone& zone = zoneCell(world, zones, cx + dx, cz + dz);
             const f32 d = std::hypot(wx - zone.x, wz - zone.z);
+            n.zones[n.count] = &zone;
+            n.dist[n.count] = d;
+            ++n.count;
             if (d < n.da) {
                 n.b = n.a;
                 n.db = n.da;
@@ -407,14 +414,33 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     // the step count (one step = a band to scramble, more = an
     // escarpment); the corridors' ramp is wider and linear-ish.
     out.wallSteps = static_cast<f32>(std::abs(a.storey - b->storey));
-    const f32 width = out.wallSteps >= 2.0f ? zones.wallWidthHigh
-                                            : zones.wallWidthOne;
-    const f32 t = noise::smoothstep01(-0.5f * width, 0.5f * width,
-                                      out.borderDist);
-    out.storeyHeight = glm::mix(b->storeyHeight, a.storeyHeight, t);
-    const f32 ts = noise::smoothstep01(-0.5f * zones.rampWidth,
-                                       0.5f * zones.rampWidth, out.borderDist);
-    out.storeyHeightSmooth = glm::mix(b->storeyHeight, a.storeyHeight, ts);
+    // The floor: a smooth PARTITION over the nine sites — a site's
+    // weight fades out as it falls behind the nearest by the riser
+    // width — continuous everywhere (bisectors and corners alike; the
+    // former "nearest two" formulation kinked at every Voronoi vertex
+    // by half a storey). The riser width per site follows the step
+    // count against the nearest zone.
+    const auto widthFor = [&](const Zone& other) {
+        const f32 steps = static_cast<f32>(std::abs(a.storey - other.storey));
+        return steps >= 2.0f ? zones.wallWidthHigh * steps : zones.wallWidthOne;
+    };
+    f32 wsum = 0.0f, hsum = 0.0f, ssum = 0.0f, wsumS = 0.0f;
+    for (u32 i = 0; i < n.count; ++i) {
+        const Zone& zi = *n.zones[i];
+        const f32 behind = n.dist[i] - n.da;
+        // ONE blend width for every site: a width that depended on the
+        // nearest zone jumped when the nearest changed (a 10 m kink on
+        // the bisectors). The per-step width only sizes the wall MASK.
+        const f32 w = 1.0f - noise::smoothstep01(0.0f, zones.wallWidthOne, behind);
+        wsum += w;
+        hsum += w * zi.storeyHeight;
+        const f32 ws = 1.0f - noise::smoothstep01(0.0f, zones.rampWidth, behind);
+        wsumS += ws;
+        ssum += ws * zi.storeyHeight;
+    }
+    out.storeyHeight = wsum > 0.0f ? hsum / wsum : a.storeyHeight;
+    out.storeyHeightSmooth = wsumS > 0.0f ? ssum / wsumS : a.storeyHeight;
+    const f32 width = widthFor(*b);
     out.wall = out.wallSteps > 0.0f && a.storeyHeight != b->storeyHeight
                    ? 1.0f - noise::smoothstep01(0.35f * width, 0.6f * width,
                                                 std::abs(out.borderDist))

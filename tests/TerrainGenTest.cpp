@@ -655,8 +655,20 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
         if (!a.sea && !b.sea) {
             // A seam shows as a kink (second difference); a ramp, even
             // an escarpment's, is linear over 8 m.
-            worstJump = glm::max(worstJump,
-                                 std::abs(b.base - 2.0f * m.base + a.base));
+            const f32 kink = std::abs(b.base - 2.0f * m.base + a.base);
+            if (kink > worstJump) {
+                worstJump = kink;
+                const ZoneSample zs = zoneSampleAt(
+                    controls.params().world, controls.params().zones,
+                    8192.0f, z);
+                MESSAGE("kink ", kink, " m at z ", z, ": base ", a.base, " ",
+                        m.base, " ", b.base, "; corridor ", m.corridor,
+                        " scarp ", m.scarp, " borderDist ", zs.borderDist,
+                        " wallSteps ", zs.wallSteps, " storey ",
+                        zs.storeyHeight, " smooth ", zs.storeyHeightSmooth,
+                        " pieceLift ", zs.pieceLift, " archetype ",
+                        zs.archetype);
+            }
         }
         for (f32 x = -20000.0f; x <= 28000.0f; x += 500.0f) {
             WorldSample w;
@@ -710,12 +722,15 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
     MESSAGE("floor jump across x = 8192: ", worstJump,
             " m; worst inland floor gradient: ", worstGrad,
             "; worst stepped-floor gradient (escarpments): ", worstScarp);
-    CHECK(worstJump < 1.5f);
+    // A seam reads as tens of meters; a smooth riser's own curvature
+    // (a four-storey step of 240 m over the 90 m blend width: ~2.8 m
+    // of second difference over 4 m samples) is not one.
+    CHECK(worstJump < 3.0f);
     CHECK(worstGrad <= 0.3f); // the province table + the plateau ramp
-    CHECK(worstScarp <= 2.5f); // a 120 m escarpment over >= 50 m
+    CHECK(worstScarp <= 3.0f); // a four-storey wall (240 m) over the 90 m riser
 }
 
-TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
+TEST_CASE("world layer: the start is land, temperate, off the massifs for any seed") {
     for (const u32 seed :
          { 1u, 7u, 42u, 99u, 1337u, 2024u, 31337u, 65535u }) {
         ProceduralControlParams pc;
@@ -731,8 +746,10 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
         const auto temperateFamily = [](u8 id) {
             return id == 0 || id == 4 || id == 5 || (id >= 6 && id <= 9);
         };
+        // The short start ring: land, no massif, temperate at the
+        // centre — no flattened meadow, no étage anchor any more (dev
+        // decision 2026-10-08).
         CHECK_FALSE(centre.sea);
-        CHECK(centre.base <= 80.0f);
         CHECK(w.massif < 0.05f);
         CHECK(temperateFamily(centre.biome));
         // The start map's rect: land, temperate, almost everywhere.
@@ -745,8 +762,8 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
                 temperate += !s.sea && temperateFamily(s.biome);
             }
         }
-        CHECK(100 * land >= 90 * samples);
-        CHECK(100 * temperate >= 75 * samples);
+        CHECK(100 * land >= 50 * samples);
+        CHECK(100 * temperate >= 35 * samples);
         // The 6 km disc around it (the low-country ring): land, a
         // coast may show at its edge.
         u32 discSamples = 0, discLand = 0;
@@ -760,7 +777,7 @@ TEST_CASE("world layer: the start is a low temperate meadow for any seed") {
                     !controls.at(world.startX + dx, world.startZ + dz).sea;
             }
         }
-        CHECK(100 * discLand >= 85 * discSamples);
+        CHECK(100 * discLand >= 40 * discSamples);
     }
 }
 
@@ -1116,7 +1133,10 @@ TEST_CASE("variety at 45 s: an event every 250 m along a walk") {
     // 320 on the analytic (the regime selector's flips went with the
     // zones; the walls and gates of Z3 are the next events); the baked
     // instrument (water, POI) is the judge against the 250 m target.
-    CHECK((gaps ? gapSum / gaps : 1.0e9) <= 320.0);
+    // 340 on the analytic since the start is the world as drawn (high
+    // country: the climate palette flips less); the baked instrument
+    // (water, POI, walls) is the judge against the 250 m target.
+    CHECK((gaps ? gapSum / gaps : 1.0e9) <= 340.0);
     CHECK(worst <= 1500.0f); // one transect may run a calm reach
 }
 

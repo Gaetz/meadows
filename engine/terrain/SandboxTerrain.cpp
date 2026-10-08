@@ -78,37 +78,6 @@ std::optional<Vec3> probeMapSpawn(
     // nearest summit, butte or mesa of the POI plan within 2.5 km of
     // the map centre — the first look takes in the country and its
     // next landmarks, instead of the flattest hollow of the meadow.
-    if (controls.params().rhythm.plan) {
-        const auto sites = terraingen::poiSitesNear(
-            controls.params().world, controls.params().poi, mapMid - 2500.0f,
-            mapMidZ - 2500.0f, mapMid + 2500.0f, mapMidZ + 2500.0f);
-        const terraingen::PoiSite* best = nullptr;
-        f32 bestD = 1.0e30f;
-        for (const terraingen::PoiSite& s : sites) {
-            if (s.tier == terraingen::PoiTier::Petit || s.height < 60.0f ||
-                (s.type != terraingen::PoiType::Summit &&
-                 s.type != terraingen::PoiType::Butte &&
-                 s.type != terraingen::PoiType::Mesa &&
-                 s.type != terraingen::PoiType::Ridge)) {
-                continue;
-            }
-            // A moyen first (a hill the player can walk down from); the
-            // grand only when no moyen stands within reach.
-            const f32 d = std::hypot(s.x - mapMid, s.z - mapMidZ) +
-                          (s.tier == terraingen::PoiTier::Grand ? 2500.0f
-                                                                 : 0.0f);
-            if (d < bestD) {
-                bestD = d;
-                best = &s;
-            }
-        }
-        if (best) {
-            const f32 h = sandboxFallbackHeight(sb, best->x, best->z);
-            if (h > seaLevel + 8.0f && !wetAt(best->x, best->z)) {
-                return Vec3 { best->x, h, best->z };
-            }
-        }
-    }
     const f32 mapReach = size * 0.5f - terraingen::kMapBorderMountainHalf;
     // From the centre outward in 350 m rings, stopping short of the rim
     // band (an 8 km map leaves ~3 km of reach).

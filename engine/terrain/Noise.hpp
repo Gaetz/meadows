@@ -136,6 +136,11 @@ inline f32 fbm3(u32 seed, const glm::vec3& p, f32 frequency, i32 octaves,
 }
 
 inline f32 smoothstep01(f32 low, f32 high, f32 x) {
+    // A zero-width band is a step (a fade of 0 m is a switch, never a
+    // division by zero: NaN heights read as sea).
+    if (high <= low) {
+        return x >= high ? 1.0f : 0.0f;
+    }
     const f32 t = glm::clamp((x - low) / (high - low), 0.0f, 1.0f);
     return t * t * (3.0f - 2.0f * t);
 }
