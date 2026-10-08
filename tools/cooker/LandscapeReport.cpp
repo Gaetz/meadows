@@ -16,6 +16,10 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/generation/MapExport.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
+#include "engine/terrain/generation/PoiPlan.hpp"
+#include "engine/terrain/generation/TerrainGen.hpp"
+#include "engine/terrain/generation/WorldLayer.hpp"
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
 #include "game/MapView.hpp"
@@ -238,7 +242,46 @@ int landscapeReport(char** argv, int argc) {
                           std::to_string(tuning.terrainSeed);
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
+    render::terraingen::setMasterNetworkCacheDir(cacheDir);
 
+    // Cold costs of the stage-0 network and the plan's typing (what a
+    // load pays in the spawn probe, what a bake pays in the imprint):
+    // measured BEFORE the bake warms the process-wide memos.
+    {
+        render::terraingen::ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        const f32 mapSize =
+            params.tileSize * static_cast<f32>(game::kMapTilesPerSide);
+        const f32 cx = (static_cast<f32>(mapX) + 0.5f) * mapSize;
+        const f32 cz = (static_cast<f32>(mapZ) + 0.5f) * mapSize;
+        auto t0 = std::chrono::steady_clock::now();
+        const auto lapMs = [&] {
+            const auto now = std::chrono::steady_clock::now();
+            const f64 ms =
+                std::chrono::duration<f64, std::milli>(now - t0).count();
+            t0 = now;
+            return ms;
+        };
+        const auto sites = render::terraingen::poiSitesNear(
+            cp.world, cp.poi, cx - 2500.0f, cz - 2500.0f, cx + 2500.0f,
+            cz + 2500.0f);
+        LOG_INFO("  cold: poiSitesNear (5 km rect, typing incl. the plan-free "
+                 "network) {:.0f} ms, {} sites",
+                 lapMs(), sites.size());
+        const render::terraingen::ProceduralControls controls { cp };
+        render::terraingen::MasterNetworkParams net = params.network;
+        net.seaLevel = params.macro.seaLevel;
+        const auto rivers = render::terraingen::masterRiversNear(
+            controls, params.macro, net, cx - 0.5f * mapSize,
+            cz - 0.5f * mapSize, cx + 0.5f * mapSize, cz + 0.5f * mapSize);
+        LOG_INFO("  cold: masterRiversNear (plan on, the map rect) {:.0f} ms, "
+                 "{} courses",
+                 lapMs(), rivers.size());
+        render::terraingen::masterRiversNear(
+            controls, params.macro, net, cx - 0.5f * mapSize,
+            cz - 0.5f * mapSize, cx + 0.5f * mapSize, cz + 0.5f * mapSize);
+        LOG_INFO("  warm: masterRiversNear {:.1f} ms", lapMs());
+    }
     const auto start = std::chrono::steady_clock::now();
     f64 bakeSeconds = 0.0;
     if (!game::mapBakedAndValid(cacheDir, mapX, mapZ, game::kMapTilesPerSide,
@@ -284,6 +327,50 @@ int landscapeReport(char** argv, int argc) {
         LOG_INFO("landscape-report: plan -> {}", png.string());
     }
 
+    // The analytic's cost per call (the far terrain, the far water, the
+    // spawn probe and the control lattice all pay it).
+    {
+        render::terraingen::ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        const render::terraingen::ProceduralControls controls { cp };
+        constexpr u32 kCalls = 20000;
+        f32 sink = 0.0f;
+        const auto timed = [&](const char* name, auto&& fn) {
+            const auto t0 = std::chrono::steady_clock::now();
+            for (u32 i = 0; i < kCalls; ++i) {
+                const f32 x = view->minX + 400.0f +
+                              static_cast<f32>((i * 7919u) % 7000u);
+                const f32 z = view->minZ + 400.0f +
+                              static_cast<f32>((i * 104729u) % 7000u);
+                sink += fn(x, z);
+            }
+            const f64 us = std::chrono::duration<f64, std::micro>(
+                               std::chrono::steady_clock::now() - t0)
+                               .count() /
+                           kCalls;
+            LOG_INFO("  cost: {} {:.1f} us/call", name, us);
+        };
+        timed("worldSampleAt", [&](f32 x, f32 z) {
+            return render::terraingen::worldSampleAt(cp.world, x, z).base;
+        });
+        timed("planSampleAt", [&](f32 x, f32 z) {
+            return render::terraingen::planSampleAt(cp.world, cp.poi, x, z)
+                .lift;
+        });
+        timed("controls.at", [&](f32 x, f32 z) {
+            return controls.at(x, z).base;
+        });
+        timed("biomeIdAt", [&](f32 x, f32 z) {
+            return static_cast<f32>(controls.biomeIdAt(x, z, 0.0f));
+        });
+        timed("macroHeightAnalytic", [&](f32 x, f32 z) {
+            return render::terraingen::macroHeightAnalytic(controls,
+                                                           params.macro, x, z);
+        });
+        if (sink == 12345.678f) {
+            LOG_INFO("  (sink {})", sink);
+        }
+    }
     const Vec3 spawn = view->spawn();
     const Census c = census(*view, spawn);
     const u64 key = game::mapBakeKey(params, game::kMapTilesPerSide);

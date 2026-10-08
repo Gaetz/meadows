@@ -1,3 +1,6 @@
+#include <chrono>
+
+#include "engine/core/Log.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
@@ -630,6 +633,14 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.scarp.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
+    const auto clockStart = std::chrono::steady_clock::now();
+    auto clockLap = clockStart;
+    f64 latticeSec = 0.0, texelSec = 0.0, heightSec = 0.0;
+    const auto lapTo = [&](f64& into) {
+        const auto now = std::chrono::steady_clock::now();
+        into += std::chrono::duration<f64>(now - clockLap).count();
+        clockLap = now;
+    };
     // Control sampling on a COARSE grid, bilinearly interpolated to
     // the sim texels: every control field runs at >= 350 m of
     // wavelength, a 64 m lattice over-samples all of them (5+ samples
@@ -724,6 +735,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
         out.character = nearest.character;
         return out;
     };
+    lapTo(latticeSec);
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n + col;
@@ -751,6 +763,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.scarp[i] = s.sea ? 0.0f : s.scarp;
         }
     }
+    lapTo(texelSec);
     out.seaDist = signedSeaDistance(spec, seaMask);
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
@@ -765,6 +778,10 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                              out.seaDist[i], samples[i].hardness);
         }
     }
+    lapTo(heightSec);
+    LOG_INFO("synthesis {}x{} (lattice step {}): controls {:.2f} s | "
+             "per-texel floor+biome {:.2f} s | landHeight+coast {:.2f} s",
+             spec.n, spec.n, step, latticeSec, texelSec, heightSec);
     return out;
 }
 

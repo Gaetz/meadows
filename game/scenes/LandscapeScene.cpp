@@ -100,6 +100,7 @@
 #include "world/scene/Spawner.hpp"
 #include "world/scene/TriggerSystem.hpp"
 #include "engine/terrain/SandboxTerrain.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "world/terrain/BiomeMapBuilder.hpp"
 #include "world/terrain/TerrainPatches.hpp"
 #include "world/terrain/TerrainRegions.hpp"
@@ -126,10 +127,24 @@ void LandscapeScene::onEnter() {
         std::filesystem::remove(savePath(bootLoadSlot), removeErr);
         bootLoadSlot.clear();
     }
+    // One line per load step (docs/CPU-PERF.md): where a slow load
+    // goes, Debug or Release alike.
+    auto stepStart = std::chrono::steady_clock::now();
+    const auto step = [&](const char* name) {
+        const auto now = std::chrono::steady_clock::now();
+        LOG_INFO("Load: {} {:.1f} ms", name,
+                 std::chrono::duration<f64, std::milli> { now - stepStart }
+                     .count());
+        stepStart = now;
+    };
     createRenderResources(device);
+    step("render resources");
     setupGameplay();
+    step("gameplay");
     setupWorldAndStreaming();
+    step("world and streaming");
     spawnInitialWorld(device);
+    step("initial world");
     LOG_INFO("Load: scene rebuild {:.1f} ms total",
              std::chrono::duration<f64, std::milli> {
                  std::chrono::steady_clock::now() - enterStart }
@@ -247,11 +262,22 @@ void LandscapeScene::bootstrapData() {
     publishWaterBodies();
     renderer.terrainParams().biomes = world::buildBiomeSet(forms, assetDb);
     activeSnowLine = tuning.snowLine;
+    // Boot clocks (docs/CPU-PERF.md): the steps of the data bootstrap
+    // that touch the terrain and the renderer.
+    auto bootStep = std::chrono::steady_clock::now();
+    const auto bootLap = [&](const char* name) {
+        const auto now = std::chrono::steady_clock::now();
+        LOG_INFO("Load: bootstrap {} {:.1f} ms", name,
+                 std::chrono::duration<f64, std::milli> { now - bootStep }
+                     .count());
+        bootStep = now;
+    };
     if (tuning.sandboxTerrain) {
         // Data-forced sandbox (headless/mod override); the normal entry
         // is the main menu's mode pick.
         setSandboxMode(true);
     }
+    bootLap("sandbox mode");
 
     // Terrain shape + startup values for every live-adjustable knob: the
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
@@ -260,8 +286,10 @@ void LandscapeScene::bootstrapData() {
                                 terrainBase, activeSnowLine);
     // Tree builder: generation knobs ride two ordinary
     // records (§5) — mods retune the species; the Trees panel edits live.
+    bootLap("render tuning");
     RenderTuningIo::applyTreeTuning(renderer, data::resolveLobeTreeTuning(forms),
                              data::resolveColonizedTreeTuning(forms));
+    bootLap("tree tuning");
     // Species per slot: named tree-type records (the TreeCreationScene
     // library, §5-layered) assigned to the variant partition — broadleaf
     // low slots, conifer high slots; the altitude bands pick among them.
@@ -314,7 +342,9 @@ void LandscapeScene::bootstrapData() {
             }
         }
     }
+    bootLap("tree species");
     RenderTuningIo::applyRcTuning(renderer, data::resolveRcTuning(forms));
+    bootLap("rc tuning");
     atmos.fogDensity = tuning.fogDensity;
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
     atmos.fogLowBoost = tuning.fogLowBoost;
@@ -2402,21 +2432,36 @@ void LandscapeScene::setSandboxMode(bool enable) {
     sandboxActive = enable;
     render::TerrainParams& params = renderer.terrainParams();
     if (enable) {
+        auto sandboxClock = std::chrono::steady_clock::now();
+        const auto sandboxLap = [&](const char* name) {
+            const auto now = std::chrono::steady_clock::now();
+            LOG_INFO("Load: sandbox {} {:.1f} ms", name,
+                     std::chrono::duration<f64, std::milli> { now - sandboxClock }
+                         .count());
+            sandboxClock = now;
+        };
+        // The stage-0 networks read/written next to the map caches.
+        render::terraingen::setMasterNetworkCacheDir(
+            platform::executableDir() / "terrain-cache" /
+            std::to_string(tuning.terrainSeed));
         // Sandbox world: infinite generated terrain. The analytic macro
         // becomes the fallback (far silhouettes agree with future
         // tiles); the streamer bakes/caches super-tiles around the
         // player and publishes them through publishBakedTile.
         applyMapWorld(0, 0);
+        sandboxLap("apply map world");
         // Park the terrain/grass/vegetation rings until the first tile
         // publishes: chunks meshed against the empty base are ALL remeshed
         // on publish — double work that competed with the bakes for
         // workers and stretched the loading gate.
         renderer.setStreamingHold(true);
         sandboxSpawn = probeSandboxSpawn();
+        sandboxLap("spawn probe");
         sandboxSpawnValid = true;
         // The warmup machine bakes the ring at the probed spawn, then
         // validates it ONCE on the final baked+water world.
         armWarmup(sandboxSpawn, true, false);
+        sandboxLap("arm warmup");
     } else {
         sandboxSpawnValid = false;
         params.sandbox = nullptr;

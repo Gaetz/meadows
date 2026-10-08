@@ -10,6 +10,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
 #include "game/TerrainGenTuning.hpp"
@@ -88,6 +89,7 @@ int preBake(char** argv, int argc) {
                           std::to_string(tuning.terrainSeed);
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
+    render::terraingen::setMasterNetworkCacheDir(cacheDir);
 
     // Bounded maps (chantier CARTES): the pre-bake unit is a whole map
     // — every map overlapping the rect, island rim (the game default),

@@ -1,14 +1,21 @@
 #include "engine/terrain/generation/MasterNetwork.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <future>
 #include <mutex>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Log.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
+#include "engine/terrain/generation/PoiPlan.hpp"
+#include "engine/terrain/generation/WorldLayer.hpp"
 
 namespace render::terraingen {
 
@@ -68,6 +75,136 @@ MasterNetwork computeMasterNetworkUncached(
     const ProceduralControls& controls, const MacroParams& macro,
     const MasterNetworkParams& params, i32 superX, i32 superZ);
 
+// ---- the disk cache ------------------------------------------------
+std::mutex gCacheDirMutex;
+std::filesystem::path gCacheDir;
+
+std::filesystem::path cacheDirCopy() {
+    std::lock_guard<std::mutex> lock { gCacheDirMutex };
+    return gCacheDir;
+}
+
+u64 networkFileKey(const ProceduralControls& controls,
+                   const MacroParams& macro,
+                   const MasterNetworkParams& params) {
+    u64 h = 1469598103934665603ull;
+    const auto mix = [&](const void* data, size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            h ^= bytes[i];
+            h *= 1099511628211ull;
+        }
+    };
+    const auto mix64 = [&](u64 v) { mix(&v, sizeof(v)); };
+    const auto mixF = [&](f32 v) { mix(&v, sizeof(v)); };
+    const ProceduralControlParams& cp = controls.params();
+    mix(&cp.seed, sizeof(cp.seed));
+    mix64(hashParams(cp.world));
+    mix64(hashParams(cp.rhythm));
+    mix64(hashParams(cp.poi));
+    mix64(hashParams(macro));
+    mixF(params.superRegionSize);
+    mixF(params.apron);
+    mixF(params.texel);
+    mixF(params.fleuveArea);
+    mixF(params.seaLevel);
+    mixF(params.minSlope);
+    const u32 version = 1; // the file format below
+    mix(&version, sizeof(version));
+    return h;
+}
+
+std::filesystem::path networkFilePath(const std::filesystem::path& dir,
+                                      u64 key, i32 superX, i32 superZ) {
+    char name[96];
+    std::snprintf(name, sizeof(name), "network_%d_%d_%016llx.bin", superX,
+                  superZ, static_cast<unsigned long long>(key));
+    return dir / name;
+}
+
+bool readNetworkFile(const std::filesystem::path& path, MasterNetwork& out) {
+    std::ifstream file { path, std::ios::binary };
+    if (!file) {
+        return false;
+    }
+    char magic[4];
+    file.read(magic, 4);
+    if (!file || std::memcmp(magic, "MNW1", 4) != 0) {
+        return false;
+    }
+    f32 originX = 0.0f, originZ = 0.0f, texel = 0.0f;
+    u32 n = 0, riverCount = 0;
+    file.read(reinterpret_cast<char*>(&originX), sizeof(originX));
+    file.read(reinterpret_cast<char*>(&originZ), sizeof(originZ));
+    file.read(reinterpret_cast<char*>(&texel), sizeof(texel));
+    file.read(reinterpret_cast<char*>(&n), sizeof(n));
+    file.read(reinterpret_cast<char*>(&riverCount), sizeof(riverCount));
+    if (!file || n == 0 || riverCount > 100000) {
+        return false;
+    }
+    out.grid = GridSpec { originX, originZ, texel, n };
+    out.rivers.clear();
+    out.rivers.reserve(riverCount);
+    for (u32 r = 0; r < riverCount; ++r) {
+        MasterRiver river;
+        u8 sea = 0;
+        u32 nodes = 0;
+        file.read(reinterpret_cast<char*>(&sea), sizeof(sea));
+        file.read(reinterpret_cast<char*>(&nodes), sizeof(nodes));
+        if (!file || nodes > 1000000) {
+            return false;
+        }
+        river.reachesSea = sea != 0;
+        river.nodes.resize(nodes);
+        file.read(reinterpret_cast<char*>(river.nodes.data()),
+                  static_cast<std::streamsize>(nodes * sizeof(MasterNode)));
+        if (!file) {
+            return false;
+        }
+        out.rivers.push_back(std::move(river));
+    }
+    return true;
+}
+
+void writeNetworkFile(const std::filesystem::path& path,
+                      const MasterNetwork& net) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    const std::filesystem::path tmp = path.string() + ".tmp";
+    {
+        std::ofstream file { tmp, std::ios::binary | std::ios::trunc };
+        if (!file) {
+            return;
+        }
+        file.write("MNW1", 4);
+        const u32 n = net.grid.n;
+        const u32 riverCount = static_cast<u32>(net.rivers.size());
+        file.write(reinterpret_cast<const char*>(&net.grid.originX),
+                   sizeof(f32));
+        file.write(reinterpret_cast<const char*>(&net.grid.originZ),
+                   sizeof(f32));
+        file.write(reinterpret_cast<const char*>(&net.grid.texelSize),
+                   sizeof(f32));
+        file.write(reinterpret_cast<const char*>(&n), sizeof(n));
+        file.write(reinterpret_cast<const char*>(&riverCount),
+                   sizeof(riverCount));
+        for (const MasterRiver& river : net.rivers) {
+            const u8 sea = river.reachesSea ? 1 : 0;
+            const u32 nodes = static_cast<u32>(river.nodes.size());
+            file.write(reinterpret_cast<const char*>(&sea), sizeof(sea));
+            file.write(reinterpret_cast<const char*>(&nodes), sizeof(nodes));
+            file.write(reinterpret_cast<const char*>(river.nodes.data()),
+                       static_cast<std::streamsize>(nodes *
+                                                    sizeof(MasterNode)));
+        }
+    }
+    // A concurrent writer of the same file loses the race harmlessly.
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+    }
+}
+
 sptr<const NetworkMemo> masterNetworkFor(const ProceduralControls& controls,
                                          const MacroParams& macro,
                                          const MasterNetworkParams& params,
@@ -94,8 +231,21 @@ sptr<const NetworkMemo> masterNetworkFor(const ProceduralControls& controls,
     memo->controls = controls.params();
     memo->macro = macro;
     memo->params = params;
-    memo->net = computeMasterNetworkUncached(controls, macro, params,
-                                             superX, superZ);
+    const std::filesystem::path dir = cacheDirCopy();
+    std::filesystem::path file;
+    bool fromDisk = false;
+    if (!dir.empty()) {
+        file = networkFilePath(dir, networkFileKey(controls, macro, params),
+                               superX, superZ);
+        fromDisk = readNetworkFile(file, memo->net);
+    }
+    if (!fromDisk) {
+        memo->net = computeMasterNetworkUncached(controls, macro, params,
+                                                 superX, superZ);
+        if (!file.empty()) {
+            writeNetworkFile(file, memo->net);
+        }
+    }
     {
         std::lock_guard<std::mutex> lock { gNetworkMemoMutex };
         gNetworkMemo[key].push_back(memo);
@@ -112,6 +262,11 @@ MasterNetwork computeMasterNetwork(const ProceduralControls& controls,
     return masterNetworkFor(controls, macro, params, superX, superZ)->net;
 }
 
+void setMasterNetworkCacheDir(const std::filesystem::path& dir) {
+    std::lock_guard<std::mutex> lock { gCacheDirMutex };
+    gCacheDir = dir;
+}
+
 namespace {
 
 MasterNetwork computeMasterNetworkUncached(
@@ -126,6 +281,7 @@ MasterNetwork computeMasterNetworkUncached(
     const u32 n = static_cast<u32>(std::lround(span / params.texel)) + 1;
     out.grid = GridSpec { originX, originZ, params.texel, n };
 
+    const auto clock0 = std::chrono::steady_clock::now();
     vector<f32> height(out.grid.cells());
     for (u32 row = 0; row < n; ++row) {
         for (u32 col = 0; col < n; ++col) {
@@ -134,10 +290,17 @@ MasterNetwork computeMasterNetworkUncached(
                                     out.grid.z(row));
         }
     }
+    const auto clock1 = std::chrono::steady_clock::now();
     const vector<f32> filled = priorityFloodFill(
         out.grid, height, params.seaLevel, params.minSlope);
     const FlowRouting flow =
         routeFlow(out.grid, filled, height, params.seaLevel);
+    const auto clock2 = std::chrono::steady_clock::now();
+    LOG_INFO("master network super ({}, {}) {}x{}: analytic samples "
+             "{:.2f} s | flood+route {:.2f} s",
+             superX, superZ, n, n,
+             std::chrono::duration<f64>(clock1 - clock0).count(),
+             std::chrono::duration<f64>(clock2 - clock1).count());
 
     // Channel cells: TRUE drainage above the fleuve threshold, on dry
     // ground. Heads = channel cells fed by no channel donor.
@@ -226,6 +389,23 @@ vector<MasterRiver> masterRiversNear(const ProceduralControls& controls,
         std::floor((minZ - reach) / params.superRegionSize));
     const i32 sz1 = static_cast<i32>(
         std::floor((maxZ + reach) / params.superRegionSize));
+    // The super cells not memoized yet compute IN PARALLEL (each is a
+    // pure function: ~100 k analytic samples, 0.2-3 s): a cold bake
+    // or load pays one cell's time, not the sum. Duplicates in the
+    // memo are impossible (one task per cell).
+    {
+        vector<std::future<void>> tasks;
+        for (i32 sz = sz0; sz <= sz1; ++sz) {
+            for (i32 sx = sx0; sx <= sx1; ++sx) {
+                tasks.push_back(std::async(std::launch::async, [&, sx, sz] {
+                    (void)masterNetworkFor(controls, macro, params, sx, sz);
+                }));
+            }
+        }
+        for (auto& task : tasks) {
+            task.wait();
+        }
+    }
     for (i32 sz = sz0; sz <= sz1; ++sz) {
         for (i32 sx = sx0; sx <= sx1; ++sx) {
             // Through the memo: the shared network is read in place,

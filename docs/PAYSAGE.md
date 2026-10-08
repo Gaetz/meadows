@@ -1856,6 +1856,20 @@ briques Z0-Z5 dans le fichier de plan.
   re-baké et **livré** dans les deux dossiers de lancement (règle « pas de
   bump sans cache »). Les caractères (six grammaires) ne sont pas exposés :
   ils deviennent la table d'archétypes des zones en Z2.
+- **2026-10-08 — Z1 livrée : la performance (mesurer d'abord).**
+  Chronomètres de chargement (`Load: bootstrap …`, `Load: sandbox …`) et
+  de bake (phases du stage-1, de la synthèse, du réseau maître), bloc
+  `cost:` et mesures à froid dans `cooker landscape-report`. Le
+  coupable : le réseau maître des fleuves recalculé sur l'analytique à
+  chaque chargement (sonde de spawn 7,7 s, 43 s en Debug) et à chaque
+  bake (imprint 6,6 s) — 25 super-cellules × 321² échantillons à 6 µs.
+  Correctifs : cache disque des super-cellules (clé = tous les
+  paramètres, à côté des cartes) et calcul parallèle des cellules
+  manquantes. **Release** : reconstruction de scène 10,8 → 3,0 s, sonde
+  7,7 s → 9 ms, lightmap à +5 s (était +13), bake à froid 25 → 15 s
+  (stage-1 19,6 → 12,5). La régression 18 → 41 s du 6 octobre était pour
+  moitié mes chaînes Debug en parallèle. Détail et restes (planSampleAt
+  3,6 µs, double `worldSampleAt` par texel) : `docs/CPU-PERF.md` § Z1.
 
 ---
 

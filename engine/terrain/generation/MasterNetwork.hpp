@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -60,6 +62,15 @@ MasterNetwork computeMasterNetwork(const ProceduralControls& controls,
                                    const MacroParams& macro,
                                    const MasterNetworkParams& params,
                                    i32 superX, i32 superZ);
+
+// The DISK cache of the super-cell networks (docs/CPU-PERF.md, Z1): a
+// network is a pure function of (params, super cell) and costs seconds
+// of analytic sampling (6-7 s per map at 6 us a sample) — paid by
+// every bake (the imprint) and every load (the far water, the spawn
+// probe) until written here once, keyed on every parameter. Set by
+// the game and the cooker to terrain-cache/<seed>; empty = the
+// in-memory memo only (tests, benches).
+void setMasterNetworkCacheDir(const std::filesystem::path& dir);
 
 // Master rivers of every super cell overlapping the aabb (ownership
 // by head cell — deterministic for all callers), pruned to courses

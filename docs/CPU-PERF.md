@@ -408,3 +408,59 @@ les requêtes grass/veg via le holdRequests existant).
   par appel pèse ~220 octets de stack (<1 % d'un appel analytique) ; l'éviter
   demanderait un membre-référence (piège de lifetime) ou un cache d'état.
   Non rentable — décision : ne rien faire.
+
+## Z1 — la génération et le chargement du sandbox (2026-10-08, chantier PAYSAGE)
+
+Le dev : « le paysage apparaissait quasi instantanément, maintenant il
+prend à nouveau du temps à se charger ». Mesuré avec les nouveaux
+chronomètres (`Load: bootstrap …`, `Load: sandbox …`, `stage-1 (…) :
+synthesis | borders+dimple | imprint+budget | fluvial | thermal | rounding |
+fusion`, `synthesis … controls | per-texel | landHeight`, `master network
+super (…) : analytic samples | flood+route`, et le bloc `cost:` de
+`cooker landscape-report`) :
+
+| Mesure (Release, cache de carte valide) | avant | après Z1 |
+|---|---|---|
+| reconstruction de scène au boot | 10,8 s | **3,0 s** |
+| dont sonde de spawn (`probeSandboxSpawn`) | 7,7 s | 9 ms |
+| lightmap après le boot | +13 s | +5 s |
+| bake d'une carte 2×2, à froid | 25 s (stage-1 19,6) | **15 s (stage-1 12,5)** |
+| dont imprint des fleuves (réseau maître) | 6,6 s | 1,7 s à froid, 0 à chaud |
+| réseau maître plan-on, 25 super-cellules, à froid | 6,6 s | 2,5 s (parallèle), 1 ms (cache) |
+| typage des POI (réseau plan-off, 4 super-cellules) | 0,8 s | 0,2 s / 2 ms |
+| coût par appel : `worldSampleAt` / `planSampleAt` / `controls.at` / `biomeIdAt` / `macroHeightAnalytic` | — | 0,7 / 3,6 / 5,8 / 2,6 / 6,1 µs |
+
+**Le coupable** : le réseau maître des fleuves (stage 0, `MasterNetwork`)
+est une fonction pure de (paramètres, super-cellule de 24,6 km + apron
+8 km = 321² échantillons de l'analytique) ; `masterRiversNear` sur un rect
+de carte touche **25 super-cellules** (le rect + l'apron + l'anneau de
+propriété des cours), soit 2,5 millions d'appels à `macroHeightAnalytic`
+à 6 µs (le plan de POI en fait 3,6) = 6,6 s, recalculés **à chaque
+chargement** (eau lointaine des cartes voisines non bakées, oracle
+d'humidité de la sonde de spawn) et **à chaque bake** (l'imprint). La
+régression 18 → 41 s du bake mesurée la veille était pour moitié mes
+chaînes Debug tournant en parallèle (seul : 25 s), pour l'autre le coût
+de l'analytique sous le plan.
+
+**Les correctifs** :
+- **cache disque des super-cellules** (`setMasterNetworkCacheDir`,
+  `terrain-cache/<seed>/network_<sx>_<sz>_<clé>.bin`, format MNW1, clé =
+  seed + `hashParams` monde/rythme/POI/macro + paramètres réseau) : écrit
+  une fois, lu par le jeu (`setSandboxMode`), `pre-bake`, `bake-map` et
+  `landscape-report` ; un cache périmé par un réglage du pupitre se
+  recalcule tout seul (clé) ;
+- **calcul parallèle des super-cellules manquantes** (`std::async` par
+  cellule dans `masterRiversNear`) : 6,6 → 2,5 s à froid (la cellule la
+  plus chère, 2,8 s, borne) ;
+- la règle « pas de bump de version sans cache livré » (mémoire) : les
+  cinq bumps du 6 octobre faisaient re-baker la carte au dev à chaque
+  lancement — ce qu'il a vu.
+
+**Reste à faire (noté, pas fait)** : `planSampleAt` coûte 3,6 µs des 5,8
+de `controls.at` et jusqu'à 28 µs par échantillon près du départ (la
+boucle des marches sans bbox) — à traiter en Z2 quand le plan passe aux
+zones ; la synthèse lit deux fois `worldSampleAt` par texel
+(`refineFloor` + `biomeIdAt`, ~0,6 s) ; en Debug : reconstruction de scène
+50,5 → 7,9 s (sonde 43 s → 47 ms, ressources de rendu 7 s), lightmap à
++37 s (était +78) — le reste est le coût Debug lui-même.
+

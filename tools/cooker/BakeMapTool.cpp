@@ -13,6 +13,7 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/TerrainBase.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "game/AllForms.hpp"
 #include "game/TerrainGenTuning.hpp"
 #include "game/MapBaker.hpp"
@@ -111,6 +112,7 @@ int bakeMapCmd(char** argv, int argc) {
 
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);
+    render::terraingen::setMasterNetworkCacheDir(cacheDir);
     LOG_INFO("bake-map: seed {} | map ({}, {}) = {}x{} slices "
              "({:.0f} m)",
              params.worldSeed, mapX, mapZ, tilesPerSide, tilesPerSide,

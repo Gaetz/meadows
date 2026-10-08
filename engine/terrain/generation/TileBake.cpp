@@ -1,3 +1,7 @@
+#include <chrono>
+#include <cstdio>
+
+#include "engine/core/Log.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 
@@ -81,8 +85,28 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     MacroParams macroParams = params.macro;
     macroParams.hillChainWavelength = controlParams.rhythm.crestWavelength;
     macroParams.bedWavelength = controlParams.rhythm.bedWavelength;
+    // Phase clock (docs/CPU-PERF.md, Z1): one line per stage-1 with
+    // the seconds of each pass — the measure the perf bricks read.
+    const auto phaseStart = std::chrono::steady_clock::now();
+    auto lapStart = phaseStart;
+    char phases[512];
+    size_t phasesLen = 0;
+    const auto lap = [&](const char* name) {
+        const auto now = std::chrono::steady_clock::now();
+        const f64 sec =
+            std::chrono::duration<f64>(now - lapStart).count();
+        lapStart = now;
+        const int n = std::snprintf(phases + phasesLen,
+                                    sizeof(phases) - phasesLen, "%s%s %.2f",
+                                    phasesLen ? " | " : "", name, sec);
+        if (n > 0) {
+            phasesLen = glm::min(phasesLen + static_cast<size_t>(n),
+                                 sizeof(phases) - 1);
+        }
+    };
     MacroResult macro =
         synthesizeMacro(controls, out.sim, macroParams, params.worldSeed);
+    lap("synthesis");
     // Bounded-map border transitions: shaped BEFORE the imprint (a
     // master course may carve its gorge through a range — the river
     // exit) and BEFORE the erosion (a sea arm is a perfect drainage
@@ -172,6 +196,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     {
         MasterNetworkParams network = params.network;
         network.seaLevel = params.macro.seaLevel;
+        lap("borders+dimple");
         imprintMasterChannels(out.sim, macro, imprintKeep, controls,
                               macroParams, network, params.imprint,
                               params.hydrology.widthCoef,
@@ -331,6 +356,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     }
     out.macroHeight = macro.height;
     out.budget = maxCut;
+    lap("imprint+budget");
     const FluvialResult eroded = erodeFluvial(
         out.sim, macro.height, macro.uplift, fluvial,
         keep.empty() ? nullptr : &keep,
@@ -345,6 +371,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
 
     ThermalParams thermal = params.thermal;
     thermal.seaLevel = params.macro.seaLevel;
+    lap("fluvial");
     ThermalResult relaxed = erodeThermal(
         out.sim, eroded.height, thermal,
         character.talusScale.empty() ? nullptr : &character.talusScale,
@@ -374,6 +401,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
             crestWeight[i] =
                 glm::smoothstep(0.15f, 0.5f, macro.uplift[i]);
         }
+        lap("thermal");
         const vector<f32> rounded =
             roundRidges(out.sim, out.eroded, rounding, &crestWeight);
         for (size_t i = 0; i < out.eroded.size(); ++i) {
@@ -393,6 +421,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     // lake basin (those belong to the water). Pure gathers — the
     // stage-1 determinism contract holds.
     out.calm = macro.calm;
+    lap("rounding");
     {
         vector<f32> mean = out.eroded;
         for (u32 pass = 0; pass < 10; ++pass) {
@@ -423,6 +452,12 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     out.gentle = std::move(macro.gentle);
     out.uplift = std::move(macro.uplift);
     out.trunk = macro.trunk;
+    lap("fusion");
+    LOG_INFO("stage-1 ({}, {}) {}x{}: {} | total {:.1f} s", tx, tz,
+             out.sim.n, out.sim.n, phases,
+             std::chrono::duration<f64>(std::chrono::steady_clock::now() -
+                                        phaseStart)
+                 .count());
     return out;
 }
 
