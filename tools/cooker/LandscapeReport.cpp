@@ -20,6 +20,7 @@
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
+#include "engine/terrain/generation/ZonePlan.hpp"
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
 #include "game/MapView.hpp"
@@ -237,7 +238,7 @@ int landscapeReport(char** argv, int argc) {
     const data::LandscapeTuningForm tuning =
         data::resolveLandscapeTuning(forms);
     const TileBakeParams params = game::makeTerrainBakeParams(
-        tuning, data::resolveTerrainGenTuning(forms));
+        tuning, data::resolveTerrainGenTuning(forms), &forms);
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);
     std::error_code ec;
@@ -367,6 +368,45 @@ int landscapeReport(char** argv, int argc) {
             return render::terraingen::macroHeightAnalytic(controls,
                                                            params.macro, x, z);
         });
+        // The SWEEP: 40 km at 200 m, every sample in fresh country (the
+        // headless tests' pattern: memo misses dominate).
+        const auto sweep = [&](const char* name, auto&& fn) {
+            const auto t0 = std::chrono::steady_clock::now();
+            u32 calls = 0;
+            for (f32 z = -40000.0f; z <= 40000.0f; z += 200.0f) {
+                for (f32 x = -40000.0f; x <= 40000.0f; x += 200.0f) {
+                    sink += fn(x, z);
+                    ++calls;
+                }
+            }
+            const f64 us = std::chrono::duration<f64, std::micro>(
+                               std::chrono::steady_clock::now() - t0)
+                               .count() /
+                           glm::max(calls, 1u);
+            LOG_INFO("  sweep 80 km @200 m: {} {:.1f} us/call", name, us);
+        };
+        sweep("worldSampleAt", [&](f32 x, f32 z) {
+            return render::terraingen::worldSampleAt(cp.world, x, z).base;
+        });
+        sweep("zoneSampleAt", [&](f32 x, f32 z) {
+            return render::terraingen::zoneSampleAt(cp.world, cp.zones, x, z)
+                .storeyHeight;
+        });
+        sweep("planSampleAt", [&](f32 x, f32 z) {
+            return render::terraingen::planSampleAt(cp.world, cp.poi, x, z)
+                .lift;
+        });
+        sweep("controls.at", [&](f32 x, f32 z) {
+            return controls.at(x, z).base;
+        });
+        // The headless tests' params: the C++ defaults, no archetype
+        // records (the default table), no network cache dir.
+        render::terraingen::ProceduralControlParams defaults;
+        defaults.seed = 1337;
+        const render::terraingen::ProceduralControls defControls { defaults };
+        sweep("controls.at (C++ defaults)", [&](f32 x, f32 z) {
+            return defControls.at(x, z).base;
+        });
         if (sink == 12345.678f) {
             LOG_INFO("  (sink {})", sink);
         }
@@ -387,6 +427,30 @@ int landscapeReport(char** argv, int argc) {
     LOG_INFO("  map: relief {:.0f} m / 250 m, ground > 100 m {:.0f} %, "
              "lakes {}, rivers {}",
              c.relief250Map, c.highGroundMap, c.lakes, c.rivers);
+    {
+        // Where the lakes sit against the zones: on a wall's foot or
+        // rim (a hollow the storey step traps), on a piece pond, or
+        // elsewhere (the hydrology's own).
+        render::terraingen::ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        u32 nearWall = 0, onPond = 0, other = 0;
+        for (const auto& lake : view->lakes) {
+            const f32 lx = 0.5f * (lake.minX + lake.maxX);
+            const f32 lz = 0.5f * (lake.minZ + lake.maxZ);
+            const render::terraingen::ZoneSample zs =
+                render::terraingen::zoneSampleAt(cp.world, cp.zones, lx, lz);
+            if (zs.wallSteps > 0.0f && std::abs(zs.borderDist) < 200.0f) {
+                ++nearWall;
+            } else if (zs.pieceBasin > 0.5f) {
+                ++onPond;
+            } else {
+                ++other;
+            }
+        }
+        LOG_INFO("  lakes vs zones: within 200 m of a wall {}, on a piece pond "
+                 "{}, elsewhere {}",
+                 nearWall, onPond, other);
+    }
     // One line of history per run.
     std::ofstream log { cacheDir / "landscape-report.log", std::ios::app };
     if (log) {

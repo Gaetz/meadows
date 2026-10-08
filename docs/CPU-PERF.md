@@ -464,3 +464,15 @@ zones ; la synthèse lit deux fois `worldSampleAt` par texel
 50,5 → 7,9 s (sonde 43 s → 47 ms, ressources de rendu 7 s), lightmap à
 +37 s (était +78) — le reste est le coût Debug lui-même.
 
+**Addendum Z2 (2026-10-08)** : le mémo mémoire du réseau maître
+(`masterNetworkFor`) comparait les structs de paramètres **octet par
+octet, padding compris** (`memcmp` sur `ProceduralControlParams`, qui
+contient des `bool` suivis de `f32`) : une copie fraîche sur la pile a
+un padding indéterminé, donc le mémo ratait et recalculait une
+super-cellule (0,2-3 s) à chaque typage de POI d'eau — invisible avec
+le cache disque (lecture en ms), mais la suite headless, qui n'a pas de
+cache disque, a tourné **2 h 17** sur cinq tests de 200 km. Le mémo est
+clé sur le hash des paramètres (`networkFileKey`, zones incluses). Règle
+retenue : **jamais de `memcmp` sur un struct de paramètres** — un hash
+champ par champ (`hashParams`), toujours.
+

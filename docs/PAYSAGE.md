@@ -1870,6 +1870,54 @@ briques Z0-Z5 dans le fichier de plan.
   (stage-1 19,6 → 12,5). La régression 18 → 41 s du 6 octobre était pour
   moitié mes chaînes Debug en parallèle. Détail et restes (planSampleAt
   3,6 µs, double `worldSampleAt` par texel) : `docs/CPU-PERF.md` § Z1.
+- **2026-10-08 — Z2 livrée : les zones de 1 km.** `ZonePlan`
+  (`engine/terrain/generation/ZonePlan.hpp/.cpp`) : réseau de cellules
+  de 1 000 m jitterées ancrées monde, Voronoï à frontières gauchies
+  (150 m), mémo thread-local par cellule ; par zone un **archétype**
+  tiré d'une table (14 lignes : prairie, bocage, collines, replat boisé,
+  plateau-mesa, haut plateau, bassin, marais, badlands, pierrier, lande,
+  crête-massif, falaises de côte, côte basse — conditions sur étage,
+  massif, côte, humidité du monde au centre de la zone), un **palier**
+  (la tendance longue à 4 km arrondie par pas de 60 m, 0..4, + le biais
+  de l'archétype ; **règle anti-cuvette** : une zone ne descend sous
+  toutes ses voisines que si son archétype tient l'eau), une
+  **grammaire** (amplitude et longueur d'onde du roulis, force et pas
+  des gradins, crêtes ridgées, dureté, humidité, couvert, palette) et
+  sa **pièce** (butte, clairière, mare, bloc, bosquet — l'ancienne
+  grille intime, une par zone). Deux zones de paliers différents se
+  rencontrent sur un **mur** dont la largeur suit l'écart (90 m pour un
+  pas = bande franchissable, 60 m au-delà = escarpement, `scarp` tenu
+  par la thermique et le budget), les corridors des marches le
+  traversent en **rampe** (400 m) ; le relief se calme sur 250 m de
+  part et d'autre d'un mur. `ProceduralControls::at` lit la zone
+  (`RhythmParams::zones`, A/B : off = plateaux + caractères + régime +
+  bande de calme + grille intime, qui tombent après validation) ;
+  `refineFloor` et `biomeIdAt` par texel aussi (résultat partagé entre
+  les deux) ; `ControlSample::cliffStep` par zone ; les plateaux de
+  `WorldLayer` passent à 0 niveau. **La table est une donnée** :
+  `ZoneArchetypeForm`, 14 records dans `landscape.toml` (ordonnés par
+  `rank`), résolus par `makeTerrainBakeParams(…, forms)` ; la clé de
+  cache les hache ; 13 réglages de zones dans le pupitre ;
+  `terrain-map` teinte la mosaïque par archétype. Au passage, **le mémo
+  du réseau maître comparait les paramètres octet par octet, padding
+  compris** : les tests headless (sans cache disque) ont tourné 2 h 17
+  avant que le mémo soit clé sur le hash (CPU-PERF.md, addendum Z2).
+  v78, hash 4975195498282976419. **Mesuré** (carte (0,0), `landscape-report`) : bake
+  à froid 21 s (stage-1 18,7 : synthèse 6,2) ; autour du spawn pente
+  48 %, pas > 30° 38,9 %, > 45° 4,2 %, murs 2,5/km (médiane 17 m, max
+  149 m), relief 126 m / 250 m, montée p95 91 m, sol > 100 m 61 % ;
+  carte : relief 35 m / 250 m, sol > 100 m 68 % ; archétypes sur 32 km
+  de terre : prairie 48 % (le disque de départ en est), bocage 18 %,
+  lande 13 %, bassin 6 %, plateau-mesa 3 %, replat boisé 3 %, marais
+  0,6 %, badlands 0,9 % ; 27 disques de 2 km hors prairie, 24 avec
+  ≥ 100 m d'étendue de socle. **Rouge : les lacs**, 229 (179 naturels +
+  61 mares de POI, 42 par 4×4 km) contre 117 avant les zones — 55 à
+  moins de 200 m d'un mur, 3 sur une mare de zone, 171 ailleurs ; le
+  calme du relief le long des murs n'en a retiré que 11 : c'est la
+  percée des exutoires (enquête eau du plan) qui doit les traiter, pas
+  un réglage de zone. Jugement dev EN ATTENTE ; leviers : la table
+  d'archétypes (poids, conditions, grammaires), `zoneStepHeight`,
+  `zoneStoreys`, `zoneTrendWavelength`, `zoneStartGap`.
 
 ---
 

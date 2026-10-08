@@ -29,43 +29,16 @@ namespace {
 // equality (memcmp / field compare) — equal inputs make the cached pure
 // result correct by construction; padding-driven false misses only cost
 // a recompute. Thread-safe: bake workers share it.
-bool sameTrivial(const void* a, const void* b, size_t n) {
-    return std::memcmp(a, b, n) == 0;
-}
 
-bool sameMacro(const MacroParams& a, const MacroParams& b) {
-    if (a.tiers.size() != b.tiers.size()) {
-        return false;
-    }
-    for (size_t i = 0; i < a.tiers.size(); ++i) {
-        if (!sameTrivial(&a.tiers[i], &b.tiers[i], sizeof(TierLevel))) {
-            return false;
-        }
-    }
-    return a.seaLevel == b.seaLevel && a.seaFloor == b.seaFloor &&
-           a.shallowDepth == b.shallowDepth &&
-           a.shelfWidth == b.shelfWidth && a.shelfDepth == b.shelfDepth &&
-           a.shelfEnd == b.shelfEnd && a.seaFalloff == b.seaFalloff &&
-           a.shoreWidth == b.shoreWidth &&
-           a.shoreHeight == b.shoreHeight &&
-           a.cliffTierStart == b.cliffTierStart &&
-           a.cliffTierEnd == b.cliffTierEnd &&
-           a.hillChainWavelength == b.hillChainWavelength &&
-           a.bedWavelength == b.bedWavelength &&
-           a.valleyStretch == b.valleyStretch &&
-           a.terraceStep == b.terraceStep &&
-           a.terraceEdge == b.terraceEdge &&
-           a.warpWavelength == b.warpWavelength &&
-           a.warpStrength == b.warpStrength &&
-           a.recurveLow == b.recurveLow && a.recurveMid == b.recurveMid &&
-           a.recurveHigh == b.recurveHigh &&
-           a.recurveSpan == b.recurveSpan;
-}
 
+// Memo identity by the params HASH (world, rhythm, POI, zones, macro,
+// network params): a byte comparison of the param structs compared
+// their padding too (indeterminate on the stack: every fresh copy
+// missed the memo and recomputed a super cell, 0.2-3 s each — the
+// headless tests ran for hours) and could not see past the archetype
+// table's heap buffer.
 struct NetworkMemo {
-    ProceduralControlParams controls;
-    MacroParams macro;
-    MasterNetworkParams params;
+    u64 paramsHash { 0 };
     MasterNetwork net;
 };
 std::mutex gNetworkMemoMutex;
@@ -103,6 +76,7 @@ u64 networkFileKey(const ProceduralControls& controls,
     mix64(hashParams(cp.rhythm));
     mix64(hashParams(cp.poi));
     mix64(hashParams(macro));
+    mix64(hashParams(cp.zones));
     mixF(params.superRegionSize);
     mixF(params.apron);
     mixF(params.texel);
@@ -212,31 +186,25 @@ sptr<const NetworkMemo> masterNetworkFor(const ProceduralControls& controls,
     const u64 key = (static_cast<u64>(controls.params().seed) << 32) ^
                     (static_cast<u64>(static_cast<u32>(superX)) << 16) ^
                     static_cast<u64>(static_cast<u32>(superZ));
+    const u64 paramsHash = networkFileKey(controls, macro, params);
     {
         std::lock_guard<std::mutex> lock { gNetworkMemoMutex };
         const auto it = gNetworkMemo.find(key);
         if (it != gNetworkMemo.end()) {
             for (const sptr<const NetworkMemo>& memo : it->second) {
-                if (sameTrivial(&memo->controls, &controls.params(),
-                                sizeof(ProceduralControlParams)) &&
-                    sameTrivial(&memo->params, &params,
-                                sizeof(MasterNetworkParams)) &&
-                    sameMacro(memo->macro, macro)) {
+                if (memo->paramsHash == paramsHash) {
                     return memo;
                 }
             }
         }
     }
     auto memo = std::make_shared<NetworkMemo>();
-    memo->controls = controls.params();
-    memo->macro = macro;
-    memo->params = params;
+    memo->paramsHash = paramsHash;
     const std::filesystem::path dir = cacheDirCopy();
     std::filesystem::path file;
     bool fromDisk = false;
     if (!dir.empty()) {
-        file = networkFilePath(dir, networkFileKey(controls, macro, params),
-                               superX, superZ);
+        file = networkFilePath(dir, paramsHash, superX, superZ);
         fromDisk = readNetworkFile(file, memo->net);
     }
     if (!fromDisk) {

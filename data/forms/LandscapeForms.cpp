@@ -36,6 +36,7 @@ void registerLandscapeFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<ColonizedTreeTuningForm>();
     registry.registerFormType<RcTuningForm>();
     registry.registerFormType<TerrainGenTuningForm>();
+    registry.registerFormType<ZoneArchetypeForm>();
     registry.registerFormType<WeatherForm>();
 }
 

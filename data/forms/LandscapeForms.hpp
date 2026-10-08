@@ -494,7 +494,7 @@ struct TerrainGenTuningForm : Form {
     f32 worldBenchAmp { 0.2f };
     f32 worldPlateauWavelength { 3000.0f };
     f32 worldPlateauStep { 120.0f };
-    u32 worldPlateauLevels { 2 };
+    u32 worldPlateauLevels { 0 };
     f32 worldPlateauEdge { 0.18f };
     f32 worldPlateauStartGap { 1600.0f };
     f32 worldStartEtage { 0.30f };
@@ -580,6 +580,20 @@ struct TerrainGenTuningForm : Form {
     f32 macroWarpWavelength { 3500.0f };
     f32 macroWarpStrength { 700.0f };
     f32 macroValleyStretch { 2.5f };
+    // --- Zones (ZonePlan.hpp ZoneParams; the archetype table is ZoneArchetypeForm)
+    bool rhythmZones { true };
+    f32 zoneCellSize { 1000.0f };
+    f32 zoneJitter { 0.6f };
+    f32 zoneBorderWarp { 150.0f };
+    f32 zoneBorderWarpWavelength { 600.0f };
+    f32 zoneStepHeight { 60.0f };
+    u32 zoneStoreys { 4 };
+    f32 zoneTrendWavelength { 4000.0f };
+    f32 zoneTrendContrast { 1.6f };
+    f32 zoneWallWidthOne { 90.0f };
+    f32 zoneWallWidthHigh { 60.0f };
+    f32 zoneRampWidth { 400.0f };
+    f32 zoneStartGap { 1600.0f };
     // --- Bake (TileBake.hpp, FluvialErosion.hpp, ThermalErosion.hpp)
     f32 bakeMacroTexel { 16.0f };
     f32 bakeCalmCut { 0.5f };
@@ -686,6 +700,19 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(macroWarpWavelength)
         REFLECT_FIELD(macroWarpStrength)
         REFLECT_FIELD(macroValleyStretch)
+        REFLECT_FIELD(rhythmZones)
+        REFLECT_FIELD(zoneCellSize)
+        REFLECT_FIELD(zoneJitter)
+        REFLECT_FIELD(zoneBorderWarp)
+        REFLECT_FIELD(zoneBorderWarpWavelength)
+        REFLECT_FIELD(zoneStepHeight)
+        REFLECT_FIELD(zoneStoreys)
+        REFLECT_FIELD(zoneTrendWavelength)
+        REFLECT_FIELD(zoneTrendContrast)
+        REFLECT_FIELD(zoneWallWidthOne)
+        REFLECT_FIELD(zoneWallWidthHigh)
+        REFLECT_FIELD(zoneRampWidth)
+        REFLECT_FIELD(zoneStartGap)
         REFLECT_FIELD(bakeMacroTexel)
         REFLECT_FIELD(bakeCalmCut)
         REFLECT_FIELD(bakeRoughCut)
@@ -697,6 +724,65 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(bakeThermalIterations)
         REFLECT_FIELD(bakeTalusTan)
         REFLECT_FIELD(bakeRoundingStrength)
+    REFLECT_END()
+};
+
+// ZoneArchetypeForm — one row of the zones' archetype table (docs/
+// POI-CATALOGUE.md §E, PAYSAGE.md §4 bis): where a 1 km zone may take
+// this nature, and the grammar it draws with. Records are ordered by
+// `rank`; absent records = the C++ default table (ZonePlan.cpp). The
+// fields mirror render::terraingen::ZoneArchetype one to one.
+struct ZoneArchetypeForm : Form {
+    str name;
+    u32 rank { 0 };
+    f32 weight { 1.0f };
+    f32 minEtage { 0.0f };
+    f32 maxEtage { 1.0f };
+    f32 minMassif { 0.0f };
+    f32 maxMassif { 1.0f };
+    f32 minCoast { 0.0f };
+    f32 maxCoast { 1.0f };
+    f32 minMoisture { 0.0f };
+    f32 maxMoisture { 1.0f };
+    i32 storeyBias { 0 };
+    f32 reliefMul { 1.0f };
+    f32 wavelengthMul { 1.0f };
+    f32 terrace { 0.0f };
+    f32 cliffStep { 30.0f };
+    f32 hillCrests { 0.0f };
+    f32 hardBias { 0.0f };
+    f32 wetBias { 0.0f };
+    f32 coverBias { 0.0f };
+    u32 palette { 0 };
+    u32 piece { 0 };
+    f32 pieceHeight { 40.0f };
+    f32 pieceRadius { 120.0f };
+
+    REFLECT_BEGIN(ZoneArchetypeForm, Form)
+        REFLECT_FIELD(name)
+        REFLECT_FIELD(rank)
+        REFLECT_FIELD(weight)
+        REFLECT_FIELD(minEtage)
+        REFLECT_FIELD(maxEtage)
+        REFLECT_FIELD(minMassif)
+        REFLECT_FIELD(maxMassif)
+        REFLECT_FIELD(minCoast)
+        REFLECT_FIELD(maxCoast)
+        REFLECT_FIELD(minMoisture)
+        REFLECT_FIELD(maxMoisture)
+        REFLECT_FIELD(storeyBias)
+        REFLECT_FIELD(reliefMul)
+        REFLECT_FIELD(wavelengthMul)
+        REFLECT_FIELD(terrace)
+        REFLECT_FIELD(cliffStep)
+        REFLECT_FIELD(hillCrests)
+        REFLECT_FIELD(hardBias)
+        REFLECT_FIELD(wetBias)
+        REFLECT_FIELD(coverBias)
+        REFLECT_FIELD(palette)
+        REFLECT_FIELD(piece)
+        REFLECT_FIELD(pieceHeight)
+        REFLECT_FIELD(pieceRadius)
     REFLECT_END()
 };
 

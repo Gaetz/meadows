@@ -280,7 +280,9 @@ TEST_CASE("poi plan: characters cover the land in shares, blended at borders") {
                 continue;
             }
             ++land;
-            ++counts[s.character % 6];
+            // The POI characters (the plan's own, under the zones the
+            // archetype takes their place in ControlSample::character).
+            ++counts[planCharacterAt(world, plan, x, z).character % 6];
             const PlanSample ps = planSampleAt(world, plan, x, z);
             CHECK(ps.reliefMul >= 0.35f);
             CHECK(ps.reliefMul <= 1.3f);

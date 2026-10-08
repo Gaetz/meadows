@@ -4,6 +4,7 @@
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
+#include "engine/terrain/generation/ZonePlan.hpp"
 
 // Terrain generation pipeline — stage S1 (macro synthesis). Headless
 // (lib meadows): the bake runs on JobSystem workers or in doctests, never
@@ -57,6 +58,8 @@ struct ControlSample {
     // ground by MacroParams::cliffStep with it, the bake's thermal
     // pass holds the walls it makes.
     f32 terrace { 0.0f };
+    // Bench height (m) of the terrace above; 0 = MacroParams::cliffStep.
+    f32 cliffStep { 0.0f };
     // [0,1] inside a walk's corridor (the plan's tubes): the floor's
     // escarpments ramp here (refineFloor reads it per texel).
     f32 corridor { 0.0f };
@@ -171,6 +174,11 @@ struct RhythmParams {
     // the jittered pieces + the story mountains (the A/B reference).
     bool plan { true };
     f32 planStoryScale { 0.8f }; // story mountains under the plan
+    // The ZONES (docs/PAYSAGE.md §4 bis, ZonePlan): storeys, walls and
+    // grammars per ~1 km place, replacing the plateaus, the regime,
+    // the calm band, the intimate grid and the POI characters below.
+    // Off = that previous layering (the A/B reference).
+    bool zones { true };
     // The VARIETY AT 45 s (docs/PAYSAGE.md §7.6, P3 — the August
     // layers in their new role): a walk of ~250 m must meet a point of
     // interest or a new landscape. Type selectors run SHORT.
@@ -203,6 +211,7 @@ u64 hashParams(const RhythmParams& p);
 struct ProceduralControlParams {
     u32 seed { 1337 }; // copied into world.seed by ProceduralControls
     WorldLayerParams world;
+    ZoneParams zones;
     RhythmParams rhythm;
     PoiPlanParams poi; // the POI plan (docs/POI-CATALOGUE.md)
 };

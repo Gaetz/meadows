@@ -659,3 +659,444 @@ leafSolidEnd = 7.0
 # same triplanar tiling, so oak and spruce bark share proportions.
 tubeSides = 12
 sideMinFraction = 0.5
+
+# --- The zones' archetype table (docs/PAYSAGE.md §4 bis, POI-CATALOGUE.md §E):
+# one ZoneArchetypeForm per nature a 1 km zone may take, ordered by rank;
+# conditions on the world sample at the zone's site (etage, massif, coast,
+# moisture in [0,1]); the grammar draws the zone (relief, benches, crests,
+# palette, its small landform `piece`: 1 knoll, 2 clearing, 3 pond, 4 rock
+# knob, 5 grove mound). Mirrors the C++ default table (ZonePlan.cpp).
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000001"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-meadow"
+name = "meadow"
+rank = 0
+weight = 1.2
+minEtage = 0.0
+maxEtage = 0.62
+minMassif = 0.0
+maxMassif = 0.5
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.3
+maxMoisture = 0.8
+storeyBias = 0
+reliefMul = 1.0
+wavelengthMul = 1.0
+terrace = 0.15
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.0
+wetBias = 0.0
+coverBias = 0.0
+palette = 0
+piece = 1
+pieceHeight = 35.0
+pieceRadius = 140.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000002"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-bocage"
+name = "bocage"
+rank = 1
+weight = 1.0
+minEtage = 0.0
+maxEtage = 0.55
+minMassif = 0.0
+maxMassif = 0.4
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.45
+maxMoisture = 0.9
+storeyBias = 0
+reliefMul = 0.8
+wavelengthMul = 0.8
+terrace = 0.1
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.0
+wetBias = 0.1
+coverBias = 0.0
+palette = 7
+piece = 5
+pieceHeight = 8.0
+pieceRadius = 90.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000003"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-hills"
+name = "hills"
+rank = 2
+weight = 1.0
+minEtage = 0.3
+maxEtage = 0.75
+minMassif = 0.0
+maxMassif = 0.6
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 0
+reliefMul = 1.3
+wavelengthMul = 0.9
+terrace = 0.3
+cliffStep = 30.0
+hillCrests = 90.0
+hardBias = 0.0
+wetBias = 0.0
+coverBias = 0.0
+palette = 0
+piece = 1
+pieceHeight = 50.0
+pieceRadius = 160.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000004"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-woodedHills"
+name = "woodedHills"
+rank = 3
+weight = 0.9
+minEtage = 0.25
+maxEtage = 0.8
+minMassif = 0.0
+maxMassif = 0.6
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.5
+maxMoisture = 1.0
+storeyBias = 0
+reliefMul = 1.2
+wavelengthMul = 0.85
+terrace = 0.4
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.0
+wetBias = 0.0
+coverBias = 0.0
+palette = 6
+piece = 2
+pieceHeight = 0.0
+pieceRadius = 150.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000005"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-mesaPlateau"
+name = "mesaPlateau"
+rank = 4
+weight = 0.9
+minEtage = 0.35
+maxEtage = 0.9
+minMassif = 0.0
+maxMassif = 0.6
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 0.7
+storeyBias = 1
+reliefMul = 0.6
+wavelengthMul = 1.4
+terrace = 0.9
+cliffStep = 40.0
+hillCrests = 0.0
+hardBias = 0.35
+wetBias = -0.2
+coverBias = -0.1
+palette = 5
+piece = 4
+pieceHeight = 15.0
+pieceRadius = 45.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000006"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-highPlateau"
+name = "highPlateau"
+rank = 5
+weight = 0.6
+minEtage = 0.5
+maxEtage = 1.0
+minMassif = 0.0
+maxMassif = 0.7
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 2
+reliefMul = 0.7
+wavelengthMul = 1.2
+terrace = 0.6
+cliffStep = 45.0
+hillCrests = 0.0
+hardBias = 0.2
+wetBias = -0.1
+coverBias = 0.2
+palette = 4
+piece = 3
+pieceHeight = 6.0
+pieceRadius = 80.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000007"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-basin"
+name = "basin"
+rank = 6
+weight = 0.6
+minEtage = 0.0
+maxEtage = 0.7
+minMassif = 0.0
+maxMassif = 0.5
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.5
+maxMoisture = 1.0
+storeyBias = -1
+reliefMul = 0.5
+wavelengthMul = 1.1
+terrace = 0.0
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.0
+wetBias = 0.4
+coverBias = 0.0
+palette = 0
+piece = 3
+pieceHeight = 8.0
+pieceRadius = 180.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000008"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-marsh"
+name = "marsh"
+rank = 7
+weight = 0.5
+minEtage = 0.0
+maxEtage = 0.45
+minMassif = 0.0
+maxMassif = 0.3
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.6
+maxMoisture = 1.0
+storeyBias = 0
+reliefMul = 0.35
+wavelengthMul = 1.2
+terrace = 0.0
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = -0.1
+wetBias = 0.6
+coverBias = 0.2
+palette = 9
+piece = 3
+pieceHeight = 4.0
+pieceRadius = 120.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-000000000009"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-badlands"
+name = "badlands"
+rank = 8
+weight = 0.5
+minEtage = 0.3
+maxEtage = 0.9
+minMassif = 0.0
+maxMassif = 0.6
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 0.45
+storeyBias = 0
+reliefMul = 1.5
+wavelengthMul = 0.35
+terrace = 0.7
+cliffStep = 15.0
+hillCrests = 0.0
+hardBias = 0.3
+wetBias = -0.2
+coverBias = -0.3
+palette = 5
+piece = 4
+pieceHeight = 20.0
+pieceRadius = 50.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-00000000000a"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-rockField"
+name = "rockField"
+rank = 9
+weight = 0.4
+minEtage = 0.4
+maxEtage = 1.0
+minMassif = 0.3
+maxMassif = 1.0
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 0
+reliefMul = 1.0
+wavelengthMul = 0.9
+terrace = 0.5
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.4
+wetBias = -0.1
+coverBias = 0.1
+palette = 0
+piece = 4
+pieceHeight = 12.0
+pieceRadius = 40.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-00000000000b"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-heath"
+name = "heath"
+rank = 10
+weight = 0.8
+minEtage = 0.2
+maxEtage = 0.8
+minMassif = 0.0
+maxMassif = 0.5
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.3
+maxMoisture = 0.7
+storeyBias = 0
+reliefMul = 0.9
+wavelengthMul = 1.8
+terrace = 0.5
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = 0.1
+wetBias = -0.1
+coverBias = 0.3
+palette = 4
+piece = 1
+pieceHeight = 25.0
+pieceRadius = 150.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-00000000000c"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-ridgeCountry"
+name = "ridgeCountry"
+rank = 11
+weight = 1.0
+minEtage = 0.3
+maxEtage = 1.0
+minMassif = 0.5
+maxMassif = 1.0
+minCoast = 0.0
+maxCoast = 0.5
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 1
+reliefMul = 1.4
+wavelengthMul = 1.0
+terrace = 0.5
+cliffStep = 35.0
+hillCrests = 150.0
+hardBias = 0.3
+wetBias = -0.1
+coverBias = 0.0
+palette = 0
+piece = 4
+pieceHeight = 25.0
+pieceRadius = 60.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-00000000000d"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-coastCliffs"
+name = "coastCliffs"
+rank = 12
+weight = 1.0
+minEtage = 0.25
+maxEtage = 1.0
+minMassif = 0.0
+maxMassif = 1.0
+minCoast = 0.5
+maxCoast = 1.0
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 1
+reliefMul = 0.8
+wavelengthMul = 1.0
+terrace = 0.8
+cliffStep = 40.0
+hillCrests = 0.0
+hardBias = 0.3
+wetBias = 0.0
+coverBias = 0.0
+palette = 0
+piece = 4
+pieceHeight = 15.0
+pieceRadius = 50.0
+
+[[records]]
+form = "7a0e0000-0000-4000-8000-00000000000e"
+type = "ZoneArchetypeForm"
+new = true
+[records.fields]
+editorId = "zone-lowCoast"
+name = "lowCoast"
+rank = 13
+weight = 1.0
+minEtage = 0.0
+maxEtage = 0.4
+minMassif = 0.0
+maxMassif = 0.4
+minCoast = 0.5
+maxCoast = 1.0
+minMoisture = 0.0
+maxMoisture = 1.0
+storeyBias = 0
+reliefMul = 0.4
+wavelengthMul = 0.6
+terrace = 0.0
+cliffStep = 30.0
+hillCrests = 0.0
+hardBias = -0.1
+wetBias = 0.0
+coverBias = -0.2
+palette = 5
+piece = 1
+pieceHeight = 12.0
+pieceRadius = 80.0

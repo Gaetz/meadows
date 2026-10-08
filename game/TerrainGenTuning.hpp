@@ -32,7 +32,13 @@ u64 hashTerrainGenTuning(const render::terraingen::TileBakeParams& params);
 // recurve (LandscapeTuningForm) + the pupitre, borders on.
 render::terraingen::TileBakeParams
 makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
-                      const data::TerrainGenTuningForm& gen);
+                      const data::TerrainGenTuningForm& gen,
+                      const data::FormDatabase* forms = nullptr);
+
+// The zones' archetype table from its records (ordered by rank); empty
+// when the stack ships none (the C++ default table applies).
+vector<render::terraingen::ZoneArchetype>
+resolveZoneArchetypes(const data::FormDatabase& forms);
 
 // The pupitre as a one-record plugin file (a §5 patch on the canonical
 // record): the overlay data/mods/terrain-gen.toml the stack loads, or a

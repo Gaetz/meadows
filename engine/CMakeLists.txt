@@ -46,6 +46,7 @@ add_library(meadows STATIC
     terrain/generation/Hydrology.cpp
     terrain/generation/MapExport.cpp
     terrain/generation/PoiPlan.cpp
+    terrain/generation/ZonePlan.cpp
     terrain/generation/MasterNetwork.cpp
     terrain/generation/TerrainGen.cpp
     terrain/generation/WorldLayer.cpp

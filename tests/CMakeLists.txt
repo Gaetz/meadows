@@ -78,6 +78,7 @@
     AuthoringTest.cpp
     SpawnDiagnosticTest.cpp
     PoiPlanTest.cpp
+    ZonePlanTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
     MapRasterTest.cpp

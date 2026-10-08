@@ -50,7 +50,7 @@ struct WorldLayerParams {
     // corridor (ControlSample reads baseSmooth there). 0 levels = off.
     f32 plateauWavelength { 3000.0f };
     f32 plateauStep { 120.0f };
-    u32 plateauLevels { 2 };
+    u32 plateauLevels { 0 }; // 0 = off: the zones carry the storeys
     f32 plateauEdge { 0.18f };     // fraction of a level band kept as riser
     f32 plateauStartGap { 1600.0f }; // meters past the meadow before they rise
     // Start decree, three reaches. The ANCHOR: the étage field is

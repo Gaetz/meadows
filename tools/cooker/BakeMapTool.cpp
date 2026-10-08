@@ -107,7 +107,7 @@ int bakeMapCmd(char** argv, int argc) {
         data::resolveLandscapeTuning(forms);
 
     render::terraingen::TileBakeParams params = game::makeTerrainBakeParams(
-        tuning, data::resolveTerrainGenTuning(forms));
+        tuning, data::resolveTerrainGenTuning(forms), &forms);
     params.mapGrid.valid = borders; // MapBaker fills the spec
 
     const auto cacheDir = gameDir / "terrain-cache" /

@@ -141,3 +141,23 @@ Le cache des cartes est clé sur les valeurs du pupitre : changer un
 réglage invalide la carte, qui se re-cuit à la demande (le jeu, le cooker
 et les tests partagent le même mappage `game::makeTerrainBakeParams`).
 
+### La table d'archétypes des zones
+
+Le sandbox est une mosaïque de zones d'environ 1 km, chacune d'un
+archétype (prairie, bocage, collines, replat boisé, plateau-mesa, haut
+plateau, bassin, marais, badlands, pierrier, lande, crête-massif, falaises
+de côte, côte basse). La table est faite de records `ZoneArchetypeForm`
+dans `base/landscape.toml` (un par archétype, ordonnés par `rank`) : les
+conditions (`minEtage`/`maxEtage`, `minMassif`/`maxMassif`,
+`minCoast`/`maxCoast`, `minMoisture`/`maxMoisture`, lues sur la couche
+monde au centre de la zone), le `weight` du tirage, le `storeyBias`
+(paliers ajoutés : +1 plateau, −1 bassin) et la grammaire (`reliefMul`,
+`wavelengthMul`, `terrace`, `cliffStep`, `hillCrests`, `hardBias`,
+`wetBias`, `coverBias`, `palette`, et la petite forme `piece` : 1 butte,
+2 clairière, 3 mare, 4 bloc rocheux, 5 bosquet, avec `pieceHeight` et
+`pieceRadius`). Un mod peut patcher une ligne (§5) ou en créer une
+nouvelle ; sans aucun record, le jeu utilise la même table en C++.
+Les réglages de la mosaïque elle-même (taille de cellule, pas de palier,
+nombre de paliers, tendance longue, largeur des murs, rampe des
+corridors) sont dans le pupitre, groupe `zone`.
+

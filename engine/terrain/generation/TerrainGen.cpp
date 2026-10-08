@@ -288,15 +288,16 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
         const f32 q = (cell + soft) * p.terraceStep;
         h = glm::mix(h, q, t.terrace);
     }
-    if (s.terrace > 0.0f && p.cliffStep > 0.0f) {
+    const f32 cliffStep = s.cliffStep > 0.0f ? s.cliffStep : p.cliffStep;
+    if (s.terrace > 0.0f && cliffStep > 0.0f) {
         // The plan's cliffs: benches at the cliff step, a short riser
         // between — the slope becomes a staircase of walls.
-        const f32 cell = std::floor(h / p.cliffStep);
-        const f32 frac = h / p.cliffStep - cell;
+        const f32 cell = std::floor(h / cliffStep);
+        const f32 frac = h / cliffStep - cell;
         const f32 edge = glm::clamp(p.cliffEdge, 0.01f, 0.49f);
         const f32 soft =
             noise::smoothstep01(0.5f - edge, 0.5f + edge, frac);
-        const f32 q = (cell + soft) * p.cliffStep;
+        const f32 q = (cell + soft) * cliffStep;
         h = glm::mix(h, q, s.terrace);
     }
     return h;
@@ -458,7 +459,58 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
     f32 characterCover = 0.0f;
     f32 clearingPalette = 0.0f;
     f32 terraceRaw = 0.0f;
-    if (r.plan) {
+    u32 zonePalette = 0;
+    if (r.plan && r.zones) {
+        // THE ZONES (docs/PAYSAGE.md §4 bis): the place's storey, wall,
+        // grammar and small landform; the POI plan's kernels, walks
+        // and screens on top.
+        const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
+        const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
+        piece.add = zs.pieceLift;
+        // A clearing is walk-scale country: never a decree against a
+        // massif's orogeny (August's rule), never under a POI.
+        piece.clearing =
+            zs.pieceClearing * (1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif));
+        clearingPalette = piece.clearing;
+        piece.clearing *= 1.0f - noise::smoothstep01(30.0f, 80.0f, ps.lift);
+        designedLift = glm::max(ps.lift, piece.add);
+        // Hill country: the archetype's ridged crests (off the beach).
+        regimeHills = zs.hillCrests * noise::smoothstep01(8.0f, 40.0f, s.base);
+        lift = glm::max(designedLift, storyMountain * r.planStoryScale);
+        piece.mesaTop = glm::max(piece.mesaTop, ps.mesaTop);
+        piece.ridgeFlank = glm::max(piece.ridgeFlank, ps.flank);
+        corridor = ps.corridor;
+        // The storey: the zone's floor lift, stepped at the walls,
+        // ramped along a walk's corridor (a pass, not a wall).
+        const f32 zoneLift =
+            glm::mix(zs.storeyHeight, zs.storeyHeightSmooth, corridor) *
+            shoreGate;
+        s.base = glm::max(w.base + zoneLift, 0.0f);
+        s.tier = etageIndexFor(p.world, s.base);
+        s.corridor = corridor;
+        s.scarp = zs.wall * (1.0f - corridor);
+        terraceRaw = glm::max(zs.terrace * p.poi.verticality, s.scarp);
+        s.basinDepth = (ps.basin + zs.pieceBasin) * shoreGate;
+        // The relief calms along a wall (both sides, ~250 m): a relief
+        // trough against a riser is a closed hollow — a lake the walk
+        // never asked for (measured: 62 lakes on the walls of one map).
+        const f32 wallBand =
+            zs.wallSteps > 0.0f
+                ? 1.0f - noise::smoothstep01(100.0f, 250.0f,
+                                             std::abs(zs.borderDist))
+                : 0.0f;
+        s.reliefScale = (1.0f - 0.7f * piece.mesaTop) *
+                        (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor) *
+                        (1.0f - 0.75f * piece.clearing) *
+                        (1.0f - 0.6f * wallBand) * zs.reliefMul;
+        s.reliefWavelengthScale = zs.wavelengthMul;
+        s.cliffStep = zs.cliffStep;
+        s.character = static_cast<u8>(zs.archetype);
+        characterWet = zs.wetBias;
+        characterHard = zs.hardBias;
+        characterCover = zs.coverBias;
+        zonePalette = zs.palette;
+    } else if (r.plan) {
         const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
         // The intimate grid (the August landmark grid): a marked hill,
         // a knoll or a clearing every ~1.2 km between the plan's sites.
@@ -571,7 +623,9 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
                  (1.0f + characterWet);
     // The character names the temperate palette (dense woods, bocage,
     // marsh); a clearing of the intimate grid is a clearing (8).
-    u8 namedPalette = r.plan ? characterPalette(s.character) : 0;
+    u8 namedPalette = r.plan ? (r.zones ? static_cast<u8>(zonePalette)
+                                        : characterPalette(s.character))
+                             : 0;
     if (r.plan && clearingPalette > 0.5f) {
         namedPalette = 8;
     }
@@ -582,6 +636,18 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
 
 void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
     const WorldSample w = worldSampleAt(p.world, x, z);
+    if (p.rhythm.plan && p.rhythm.zones) {
+        const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
+        const f32 shoreGate =
+            noise::smoothstep01(2.0f, 12.0f, glm::max(w.base, 0.0f));
+        const f32 zoneLift =
+            glm::mix(zs.storeyHeight, zs.storeyHeightSmooth, s.corridor) *
+            shoreGate;
+        s.base = glm::max(w.base + zoneLift, 0.0f);
+        s.tier = etageIndexFor(p.world, s.base);
+        s.scarp = zs.wall * (1.0f - s.corridor);
+        return;
+    }
     s.base = glm::max(glm::mix(w.base, w.baseSmooth, s.corridor), 0.0f);
     s.tier = etageIndexFor(p.world, s.base);
     s.scarp = w.scarp * (1.0f - s.corridor);
@@ -595,7 +661,16 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
     const WorldSample w = worldSampleAt(p.world, x, z);
     f32 coverBias = 0.0f;
     u8 namedPalette = 0;
-    if (p.rhythm.plan) {
+    if (p.rhythm.plan && p.rhythm.zones) {
+        const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
+        coverBias = zs.coverBias;
+        namedPalette = static_cast<u8>(zs.palette);
+        if (zs.pieceClearing *
+                (1.0f - noise::smoothstep01(0.35f, 0.6f, w.massif)) >
+            0.5f) {
+            namedPalette = 8;
+        }
+    } else if (p.rhythm.plan) {
         const PlanCharacter pc = planCharacterAt(p.world, p.poi, x, z);
         coverBias = pc.coverBias;
         namedPalette = characterPalette(pc.character);
@@ -726,6 +801,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                            s11.terrace);
         out.corridor = lerp(s00.corridor, s10.corridor, s01.corridor,
                             s11.corridor);
+        out.cliffStep = lerp(s00.cliffStep, s10.cliffStep, s01.cliffStep,
+                             s11.cliffStep);
         out.scarp = lerp(s00.scarp, s10.scarp, s01.scarp, s11.scarp);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
@@ -1054,6 +1131,7 @@ MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
     key ^= hashParams(controls.params().rhythm) * 0xc2b2ae3d27d4eb4full;
     key ^= hashParams(controls.params().poi) * 0x165667b19e3779f9ull;
     key ^= hashParams(macro) * 0x27d4eb2f165667c5ull;
+    key ^= hashParams(controls.params().zones) * 0x85ebca6b0c2b2ae3ull;
     if (const auto it = memo.find(key); it != memo.end()) {
         return it->second;
     }

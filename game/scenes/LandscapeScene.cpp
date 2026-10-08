@@ -3111,7 +3111,7 @@ render::terraingen::TileBakeParams
 LandscapeScene::makeMapBakeParams() const {
     // ONE mapping shared with the cooker and the tests: the two tuning
     // records -> the bake params (borders on).
-    return makeTerrainBakeParams(tuning, genTuning);
+    return makeTerrainBakeParams(tuning, genTuning, &forms);
 }
 
 // The pupitre files: the overlay the plugin stack loads at boot

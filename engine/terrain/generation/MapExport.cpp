@@ -1,3 +1,4 @@
+#include "engine/terrain/generation/ZonePlan.hpp"
 #include "engine/terrain/generation/MapExport.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
 
@@ -91,6 +92,25 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
                 c = { 0.85f, 0.77f, 0.54f }; // sand line
             } else {
                 c = landColor(h - sea);
+                if (controls.params().rhythm.plan &&
+                    controls.params().rhythm.zones) {
+                    // The zones: a hue per archetype, light, so the
+                    // mosaic reads under the shading.
+                    static const Rgb kZoneHue[14] = {
+                        { 0.55f, 0.85f, 0.35f }, { 0.35f, 0.75f, 0.35f },
+                        { 0.75f, 0.70f, 0.30f }, { 0.20f, 0.55f, 0.25f },
+                        { 0.85f, 0.60f, 0.35f }, { 0.80f, 0.45f, 0.60f },
+                        { 0.30f, 0.60f, 0.85f }, { 0.35f, 0.80f, 0.75f },
+                        { 0.85f, 0.35f, 0.30f }, { 0.60f, 0.60f, 0.60f },
+                        { 0.70f, 0.50f, 0.85f }, { 0.55f, 0.40f, 0.30f },
+                        { 0.90f, 0.85f, 0.50f }, { 0.95f, 0.90f, 0.70f },
+                    };
+                    const u32 a = zoneArchetypeAt(
+                        controls.params().world, controls.params().zones,
+                        minX + static_cast<f32>(col) * texel,
+                        minZ + static_cast<f32>(row) * texel);
+                    c = mix(c, kZoneHue[a % 14], 0.3f);
+                }
                 // Hillshade (light from the north-west).
                 const f32 sx = (at(static_cast<i32>(col) + 1,
                                    static_cast<i32>(row)) -

@@ -92,6 +92,8 @@ u64 mapBakeKey(const TileBakeParams& params, i32 tilesPerSide) {
     // edit is a different map, re-baked on demand.
     const u64 gen = hashTerrainGenTuning(params);
     mix(&gen, sizeof(gen));
+    const u64 zones = render::terraingen::hashParams(params.controls.zones);
+    mix(&zones, sizeof(zones));
     return h;
 }
 

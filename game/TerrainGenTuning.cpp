@@ -6,6 +6,9 @@
 
 #include "engine/core/Hash.hpp"
 
+#include <algorithm>
+
+#include "data/forms/FormQuery.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Record.hpp"
 #include "data/plugins/TomlWriter.hpp"
@@ -127,6 +130,19 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.thermal.iterations = form.bakeThermalIterations;
     params.thermal.talusTan = form.bakeTalusTan;
     params.rounding.strength = form.bakeRoundingStrength;
+    params.controls.rhythm.zones = form.rhythmZones;
+    params.controls.zones.cellSize = form.zoneCellSize;
+    params.controls.zones.jitter = form.zoneJitter;
+    params.controls.zones.borderWarp = form.zoneBorderWarp;
+    params.controls.zones.borderWarpWavelength = form.zoneBorderWarpWavelength;
+    params.controls.zones.stepHeight = form.zoneStepHeight;
+    params.controls.zones.storeys = form.zoneStoreys;
+    params.controls.zones.trendWavelength = form.zoneTrendWavelength;
+    params.controls.zones.trendContrast = form.zoneTrendContrast;
+    params.controls.zones.wallWidthOne = form.zoneWallWidthOne;
+    params.controls.zones.wallWidthHigh = form.zoneWallWidthHigh;
+    params.controls.zones.rampWidth = form.zoneRampWidth;
+    params.controls.zones.startGap = form.zoneStartGap;
 }
 
 data::TerrainGenTuningForm
@@ -238,7 +254,65 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.bakeThermalIterations = params.thermal.iterations;
     form.bakeTalusTan = params.thermal.talusTan;
     form.bakeRoundingStrength = params.rounding.strength;
+    form.rhythmZones = params.controls.rhythm.zones;
+    form.zoneCellSize = params.controls.zones.cellSize;
+    form.zoneJitter = params.controls.zones.jitter;
+    form.zoneBorderWarp = params.controls.zones.borderWarp;
+    form.zoneBorderWarpWavelength = params.controls.zones.borderWarpWavelength;
+    form.zoneStepHeight = params.controls.zones.stepHeight;
+    form.zoneStoreys = params.controls.zones.storeys;
+    form.zoneTrendWavelength = params.controls.zones.trendWavelength;
+    form.zoneTrendContrast = params.controls.zones.trendContrast;
+    form.zoneWallWidthOne = params.controls.zones.wallWidthOne;
+    form.zoneWallWidthHigh = params.controls.zones.wallWidthHigh;
+    form.zoneRampWidth = params.controls.zones.rampWidth;
+    form.zoneStartGap = params.controls.zones.startGap;
     return form;
+}
+
+vector<render::terraingen::ZoneArchetype>
+resolveZoneArchetypes(const data::FormDatabase& forms) {
+    struct Row {
+        u32 rank;
+        render::terraingen::ZoneArchetype a;
+    };
+    vector<Row> rows;
+    data::forEach<data::ZoneArchetypeForm>(
+        forms, [&](const data::ZoneArchetypeForm& f) {
+            render::terraingen::ZoneArchetype a;
+            a.name = f.name;
+            a.weight = f.weight;
+            a.minEtage = f.minEtage;
+            a.maxEtage = f.maxEtage;
+            a.minMassif = f.minMassif;
+            a.maxMassif = f.maxMassif;
+            a.minCoast = f.minCoast;
+            a.maxCoast = f.maxCoast;
+            a.minMoisture = f.minMoisture;
+            a.maxMoisture = f.maxMoisture;
+            a.storeyBias = f.storeyBias;
+            a.reliefMul = f.reliefMul;
+            a.wavelengthMul = f.wavelengthMul;
+            a.terrace = f.terrace;
+            a.cliffStep = f.cliffStep;
+            a.hillCrests = f.hillCrests;
+            a.hardBias = f.hardBias;
+            a.wetBias = f.wetBias;
+            a.coverBias = f.coverBias;
+            a.palette = f.palette;
+            a.piece = f.piece;
+            a.pieceHeight = f.pieceHeight;
+            a.pieceRadius = f.pieceRadius;
+            rows.push_back({ f.rank, std::move(a) });
+        });
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const Row& l, const Row& r) { return l.rank < r.rank; });
+    vector<render::terraingen::ZoneArchetype> out;
+    out.reserve(rows.size());
+    for (Row& row : rows) {
+        out.push_back(std::move(row.a));
+    }
+    return out;
 }
 
 u64 hashTerrainGenTuning(const TileBakeParams& params) {
@@ -279,7 +353,8 @@ u64 hashTerrainGenTuning(const TileBakeParams& params) {
 }
 
 TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
-                                     const data::TerrainGenTuningForm& gen) {
+                                     const data::TerrainGenTuningForm& gen,
+                                     const data::FormDatabase* forms) {
     TileBakeParams params;
     params.worldSeed = tuning.terrainSeed;
     params.controls.seed = tuning.terrainSeed;
@@ -291,6 +366,11 @@ TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
     // overwrites it from its own map config either way).
     params.mapGrid.valid = true;
     applyTerrainGenTuning(gen, params);
+    if (forms) {
+        // The archetype table of the zones (records, moddable); none =
+        // the C++ default table.
+        params.controls.zones.archetypes = resolveZoneArchetypes(*forms);
+    }
     return params;
 }
 

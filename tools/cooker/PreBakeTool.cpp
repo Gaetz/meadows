@@ -83,7 +83,7 @@ int preBake(char** argv, int argc) {
     // The SAME mapping as the game (the pupitre included): a pre-bake
     // with different params would poison the cache.
     render::terraingen::TileBakeParams params = game::makeTerrainBakeParams(
-        tuning, data::resolveTerrainGenTuning(forms));
+        tuning, data::resolveTerrainGenTuning(forms), &forms);
 
     const auto cacheDir = gameDir / "terrain-cache" /
                           std::to_string(tuning.terrainSeed);
