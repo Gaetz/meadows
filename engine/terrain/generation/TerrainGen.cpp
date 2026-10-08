@@ -505,6 +505,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
                         (1.0f - 0.6f * wallBand) * zs.reliefMul;
         s.reliefWavelengthScale = zs.wavelengthMul;
         s.cliffStep = zs.cliffStep;
+        s.erosionCut = zs.erosionCut;
         s.character = static_cast<u8>(zs.archetype);
         characterWet = zs.wetBias;
         characterHard = zs.hardBias;
@@ -712,6 +713,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.basin.resize(spec.cells());
     out.cliff.resize(spec.cells());
     out.scarp.resize(spec.cells());
+    out.cut.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     const auto clockStart = std::chrono::steady_clock::now();
@@ -810,6 +812,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
         out.cliffStep = lerp(s00.cliffStep, s10.cliffStep, s01.cliffStep,
                              s11.cliffStep);
         out.scarp = lerp(s00.scarp, s10.scarp, s01.scarp, s11.scarp);
+        out.erosionCut = lerp(s00.erosionCut, s10.erosionCut, s01.erosionCut,
+                              s11.erosionCut);
         const ControlSample& nearest =
             coarse[static_cast<size_t>(tr < 0.5f ? r0 : r1) * coarseN +
                    (tc < 0.5f ? c0 : c1)];
@@ -844,6 +848,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.basin[i] = s.sea ? 0.0f : s.basinDepth;
             out.cliff[i] = s.sea ? 0.0f : s.terrace;
             out.scarp[i] = s.sea ? 0.0f : s.scarp;
+            out.cut[i] = s.sea ? 0.0f : s.erosionCut;
         }
     }
     lapTo(texelSec);

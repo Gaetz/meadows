@@ -1961,6 +1961,23 @@ briques Z0-Z5 dans le fichier de plan.
   (113 près d'un mur) ; carte (1,0) : pente 64 %, murs 7,4/km (max
   442 m), 174 lacs. Les disques de 2 km avec ≥ 100 m d'étendue de socle :
   45 sur 49. Jugement dev EN ATTENTE.
+- **2026-10-08 — « Et ajouter un peu plus d'érosion en haut ? »** Chaque
+  archétype porte son **budget d'érosion** (`ZoneArchetype::erosionCut`,
+  en données : 0 prairie / bocage / marais / bassin / côte basse, 10
+  lande, 15 plateau-mesa, 20 replat boisé et haut plateau, 40 collines,
+  60 falaises de côte, 80 pierrier, 120 badlands, 200 crête-massif) :
+  un plancher sous la règle calme/versant du stage-1, hors flancs des
+  POI, les murs gardent leur budget léger. Avant, l'intérieur des zones
+  était calme par la règle (0,5 m) et les crêtes de 150 m restaient
+  brutes. Mesuré (clé 873a480d5fe2a38d) : carte (0,0) spawn déplacé
+  (5 095, 933, 2 249), pente 30,6 % (était 73,7), pas > 30° 10,3 %,
+  murs 3,4/km, relief carte 66 m / 250 m, 211 lacs ; carte (1,0)
+  quasi inchangée (pente 65 %, murs 7,3/km, 167 lacs) — le budget ne
+  mord qu'autant que le fastscape a d'itérations (48,
+  `bakeFluvialIterations` dans le pupitre). **Rappel dev le même jour :
+  plus de rebuild Debug ni de tests avant un commit sauf nécessité** —
+  règle durcie en mémoire ; le hash de `MapBakerTest` est ré-épinglé
+  au push. Jugement dev EN ATTENTE.
 
 ---
 

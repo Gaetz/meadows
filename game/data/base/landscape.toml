@@ -697,6 +697,7 @@ palette = 0
 piece = 1
 pieceHeight = 35.0
 pieceRadius = 140.0
+erosionCut = 0.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000002"
@@ -728,6 +729,7 @@ palette = 7
 piece = 5
 pieceHeight = 8.0
 pieceRadius = 90.0
+erosionCut = 0.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000003"
@@ -759,6 +761,7 @@ palette = 0
 piece = 1
 pieceHeight = 50.0
 pieceRadius = 160.0
+erosionCut = 40.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000004"
@@ -790,6 +793,7 @@ palette = 6
 piece = 2
 pieceHeight = 0.0
 pieceRadius = 150.0
+erosionCut = 20.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000005"
@@ -821,6 +825,7 @@ palette = 5
 piece = 4
 pieceHeight = 15.0
 pieceRadius = 45.0
+erosionCut = 15.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000006"
@@ -852,6 +857,7 @@ palette = 4
 piece = 3
 pieceHeight = 6.0
 pieceRadius = 80.0
+erosionCut = 20.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000007"
@@ -883,6 +889,7 @@ palette = 0
 piece = 3
 pieceHeight = 8.0
 pieceRadius = 180.0
+erosionCut = 0.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000008"
@@ -914,6 +921,7 @@ palette = 9
 piece = 3
 pieceHeight = 4.0
 pieceRadius = 120.0
+erosionCut = 0.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000009"
@@ -945,6 +953,7 @@ palette = 5
 piece = 4
 pieceHeight = 20.0
 pieceRadius = 50.0
+erosionCut = 120.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000a"
@@ -976,6 +985,7 @@ palette = 0
 piece = 4
 pieceHeight = 12.0
 pieceRadius = 40.0
+erosionCut = 80.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000b"
@@ -1007,6 +1017,7 @@ palette = 4
 piece = 1
 pieceHeight = 25.0
 pieceRadius = 150.0
+erosionCut = 10.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000c"
@@ -1038,6 +1049,7 @@ palette = 0
 piece = 4
 pieceHeight = 25.0
 pieceRadius = 60.0
+erosionCut = 200.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000d"
@@ -1069,6 +1081,7 @@ palette = 0
 piece = 4
 pieceHeight = 15.0
 pieceRadius = 50.0
+erosionCut = 60.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000e"
@@ -1100,3 +1113,4 @@ palette = 5
 piece = 1
 pieceHeight = 12.0
 pieceRadius = 80.0
+erosionCut = 0.0

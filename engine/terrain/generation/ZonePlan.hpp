@@ -47,6 +47,10 @@ struct ZoneArchetype {
     u32 piece { 0 };
     f32 pieceHeight { 40.0f }; // meters (depth for a pond)
     f32 pieceRadius { 120.0f };
+    // The erosion BUDGET of the zone's interior (meters the fastscape
+    // may cut, a floor under the calm/rough rule): 0 = the socle's own
+    // (raw); hill country, badlands and ranges dissect.
+    f32 erosionCut { 0.0f };
 };
 
 struct ZoneParams {
@@ -86,6 +90,7 @@ struct ZoneSample {
     f32 wetBias { 0.0f };
     f32 coverBias { 0.0f };
     u32 palette { 0 };
+    f32 erosionCut { 0.0f };
 };
 
 ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,

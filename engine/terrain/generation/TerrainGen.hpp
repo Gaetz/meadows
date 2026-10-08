@@ -67,6 +67,9 @@ struct ControlSample {
     // corridors): a designed wall — the bake dissects it lightly, never
     // carves it to the plain (that carve depended on the window).
     f32 scarp { 0.0f };
+    // The zone's erosion budget (m): a floor under the bake's calm/
+    // rough rule for the zone's interior (ZoneArchetype::erosionCut).
+    f32 erosionCut { 0.0f };
     // Relief-regime extras (defaults keep painted/test sources legacy):
     f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
@@ -345,6 +348,8 @@ struct MacroResult {
     // [0,1] ControlSample::scarp per texel: the erosion budget of a
     // designed landform (TileBake's maxCut).
     vector<f32> scarp;
+    // ControlSample::erosionCut per texel (m): the zone's dissection.
+    vector<f32> cut;
 };
 
 // Erosion keep from the base lift (TileBake stage 1 and the analytic

@@ -757,6 +757,7 @@ struct ZoneArchetypeForm : Form {
     u32 piece { 0 };
     f32 pieceHeight { 40.0f };
     f32 pieceRadius { 120.0f };
+    f32 erosionCut { 0.0f };
 
     REFLECT_BEGIN(ZoneArchetypeForm, Form)
         REFLECT_FIELD(name)
@@ -783,6 +784,7 @@ struct ZoneArchetypeForm : Form {
         REFLECT_FIELD(piece)
         REFLECT_FIELD(pieceHeight)
         REFLECT_FIELD(pieceRadius)
+        REFLECT_FIELD(erosionCut)
     REFLECT_END()
 };
 

@@ -334,7 +334,7 @@ const vector<ZoneArchetype>& defaultZoneArchetypes() {
                              i32 bias, f32 relief, f32 wavelength,
                              f32 terrace, f32 step, f32 crests, f32 hard,
                              f32 wet, f32 cover, u32 palette, u32 piece,
-                             f32 pieceH, f32 pieceR) {
+                             f32 pieceH, f32 pieceR, f32 cut) {
             ZoneArchetype a;
             a.name = name;
             a.weight = weight;
@@ -359,23 +359,24 @@ const vector<ZoneArchetype>& defaultZoneArchetypes() {
             a.piece = piece;
             a.pieceHeight = pieceH;
             a.pieceRadius = pieceR;
+            a.erosionCut = cut;
             t.push_back(a);
         };
         //   name           w    etage      massif     coast      moisture   bias relief wl   terr step crest hard  wet   cover pal piece h    r
-        row("meadow",       1.2f, 0.0f, 0.62f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.8f, 0, 1.0f, 1.0f, 0.15f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 35.0f, 140.0f);
-        row("bocage",       1.0f, 0.0f, 0.55f, 0.0f, 0.4f, 0.0f, 0.5f, 0.45f, 0.9f, 0, 0.8f, 0.8f, 0.1f, 30.0f, 0.0f, 0.0f, 0.1f, 0.0f, 7, 5, 8.0f, 90.0f);
-        row("hills",        1.0f, 0.3f, 0.75f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.3f, 0.9f, 0.3f, 30.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0, 1, 50.0f, 160.0f);
-        row("woodedHills",  0.9f, 0.25f, 0.8f, 0.0f, 0.6f, 0.0f, 0.5f, 0.5f, 1.0f, 0, 1.2f, 0.85f, 0.4f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 6, 2, 0.0f, 150.0f);
-        row("mesaPlateau",  0.9f, 0.35f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.7f, 1, 0.6f, 1.4f, 0.9f, 40.0f, 0.0f, 0.35f, -0.2f, -0.1f, 5, 4, 15.0f, 45.0f);
-        row("highPlateau",  0.6f, 0.5f, 1.0f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 1.0f, 2, 0.7f, 1.2f, 0.6f, 45.0f, 0.0f, 0.2f, -0.1f, 0.2f, 4, 3, 6.0f, 80.0f);
-        row("basin",        0.6f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 1.0f, -1, 0.5f, 1.1f, 0.0f, 30.0f, 0.0f, 0.0f, 0.4f, 0.0f, 0, 3, 8.0f, 180.0f);
-        row("marsh",        0.5f, 0.0f, 0.45f, 0.0f, 0.3f, 0.0f, 0.5f, 0.6f, 1.0f, 0, 0.35f, 1.2f, 0.0f, 30.0f, 0.0f, -0.1f, 0.6f, 0.2f, 9, 3, 4.0f, 120.0f);
-        row("badlands",     0.5f, 0.3f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.45f, 0, 1.5f, 0.35f, 0.7f, 15.0f, 0.0f, 0.3f, -0.2f, -0.3f, 5, 4, 20.0f, 50.0f);
-        row("rockField",    0.4f, 0.4f, 1.0f, 0.3f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.0f, 0.9f, 0.5f, 30.0f, 0.0f, 0.4f, -0.1f, 0.1f, 0, 4, 12.0f, 40.0f);
-        row("heath",        0.8f, 0.2f, 0.8f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.7f, 0, 0.9f, 1.8f, 0.5f, 30.0f, 0.0f, 0.1f, -0.1f, 0.3f, 4, 1, 25.0f, 150.0f);
-        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f);
-        row("coastCliffs",  1.0f, 0.25f, 1.0f, 0.0f, 1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 1, 0.8f, 1.0f, 0.8f, 40.0f, 0.0f, 0.3f, 0.0f, 0.0f, 0, 4, 15.0f, 50.0f);
-        row("lowCoast",     1.0f, 0.0f, 0.4f, 0.0f, 0.4f, 0.5f, 1.0f, 0.0f, 1.0f, 0, 0.4f, 0.6f, 0.0f, 30.0f, 0.0f, -0.1f, 0.0f, -0.2f, 5, 1, 12.0f, 80.0f);
+        row("meadow",       1.2f, 0.0f, 0.62f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.8f, 0, 1.0f, 1.0f, 0.15f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 35.0f, 140.0f, 0.0f);
+        row("bocage",       1.0f, 0.0f, 0.55f, 0.0f, 0.4f, 0.0f, 0.5f, 0.45f, 0.9f, 0, 0.8f, 0.8f, 0.1f, 30.0f, 0.0f, 0.0f, 0.1f, 0.0f, 7, 5, 8.0f, 90.0f, 0.0f);
+        row("hills",        1.0f, 0.3f, 0.75f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.3f, 0.9f, 0.3f, 30.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0, 1, 50.0f, 160.0f, 40.0f);
+        row("woodedHills",  0.9f, 0.25f, 0.8f, 0.0f, 0.6f, 0.0f, 0.5f, 0.5f, 1.0f, 0, 1.2f, 0.85f, 0.4f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 6, 2, 0.0f, 150.0f, 20.0f);
+        row("mesaPlateau",  0.9f, 0.35f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.7f, 1, 0.6f, 1.4f, 0.9f, 40.0f, 0.0f, 0.35f, -0.2f, -0.1f, 5, 4, 15.0f, 45.0f, 15.0f);
+        row("highPlateau",  0.6f, 0.5f, 1.0f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 1.0f, 2, 0.7f, 1.2f, 0.6f, 45.0f, 0.0f, 0.2f, -0.1f, 0.2f, 4, 3, 6.0f, 80.0f, 20.0f);
+        row("basin",        0.6f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 1.0f, -1, 0.5f, 1.1f, 0.0f, 30.0f, 0.0f, 0.0f, 0.4f, 0.0f, 0, 3, 8.0f, 180.0f, 0.0f);
+        row("marsh",        0.5f, 0.0f, 0.45f, 0.0f, 0.3f, 0.0f, 0.5f, 0.6f, 1.0f, 0, 0.35f, 1.2f, 0.0f, 30.0f, 0.0f, -0.1f, 0.6f, 0.2f, 9, 3, 4.0f, 120.0f, 0.0f);
+        row("badlands",     0.5f, 0.3f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.45f, 0, 1.5f, 0.35f, 0.7f, 15.0f, 0.0f, 0.3f, -0.2f, -0.3f, 5, 4, 20.0f, 50.0f, 120.0f);
+        row("rockField",    0.4f, 0.4f, 1.0f, 0.3f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.0f, 0.9f, 0.5f, 30.0f, 0.0f, 0.4f, -0.1f, 0.1f, 0, 4, 12.0f, 40.0f, 80.0f);
+        row("heath",        0.8f, 0.2f, 0.8f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.7f, 0, 0.9f, 1.8f, 0.5f, 30.0f, 0.0f, 0.1f, -0.1f, 0.3f, 4, 1, 25.0f, 150.0f, 10.0f);
+        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f, 200.0f);
+        row("coastCliffs",  1.0f, 0.25f, 1.0f, 0.0f, 1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 1, 0.8f, 1.0f, 0.8f, 40.0f, 0.0f, 0.3f, 0.0f, 0.0f, 0, 4, 15.0f, 50.0f, 60.0f);
+        row("lowCoast",     1.0f, 0.0f, 0.4f, 0.0f, 0.4f, 0.5f, 1.0f, 0.0f, 1.0f, 0, 0.4f, 0.6f, 0.0f, 30.0f, 0.0f, -0.1f, 0.0f, -0.2f, 5, 1, 12.0f, 80.0f, 0.0f);
         return t;
     }();
     return table;
@@ -459,6 +460,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     out.hardBias = glm::mix(gb.hardBias, ga.hardBias, tg);
     out.wetBias = glm::mix(gb.wetBias, ga.wetBias, tg);
     out.coverBias = glm::mix(gb.coverBias, ga.coverBias, tg);
+    out.erosionCut = glm::mix(gb.erosionCut, ga.erosionCut, tg);
     out.palette = ga.palette;
     pieceAt(zones, ga, a, x, z, out);
     if (b != n.a) {
@@ -526,6 +528,7 @@ u64 hashParams(const ZoneParams& p) {
         u(a.piece);
         f(a.pieceHeight);
         f(a.pieceRadius);
+        f(a.erosionCut);
     }
     return h;
 }

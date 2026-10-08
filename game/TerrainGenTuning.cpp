@@ -303,6 +303,7 @@ resolveZoneArchetypes(const data::FormDatabase& forms) {
             a.piece = f.piece;
             a.pieceHeight = f.pieceHeight;
             a.pieceRadius = f.pieceRadius;
+            a.erosionCut = f.erosionCut;
             rows.push_back({ f.rank, std::move(a) });
         });
     std::stable_sort(rows.begin(), rows.end(),

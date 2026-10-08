@@ -155,7 +155,8 @@ monde au centre de la zone), le `weight` du tirage, le `storeyBias`
 `wavelengthMul`, `terrace`, `cliffStep`, `hillCrests`, `hardBias`,
 `wetBias`, `coverBias`, `palette`, et la petite forme `piece` : 1 butte,
 2 clairière, 3 mare, 4 bloc rocheux, 5 bosquet, avec `pieceHeight` et
-`pieceRadius`). Un mod peut patcher une ligne (§5) ou en créer une
+`pieceRadius`, et `erosionCut` : le budget d'érosion de l'intérieur de la
+zone en mètres, 0 = socle brut, 200 = versants disséqués). Un mod peut patcher une ligne (§5) ou en créer une
 nouvelle ; sans aucun record, le jeu utilise la même table en C++.
 Les réglages de la mosaïque elle-même (taille de cellule, pas de palier,
 nombre de paliers, tendance longue, largeur des murs, rampe des

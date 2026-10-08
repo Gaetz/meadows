@@ -343,6 +343,13 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         // dissection, never a carve to the plain.
         cut = glm::mix(cut, 4.0f * params.calmCut,
                        glm::smoothstep(30.0f, 80.0f, macro.plateau[i]));
+        // The zone's own dissection (its archetype's erosionCut): a
+        // floor under the rule, off the designed landforms' flanks.
+        if (i < macro.cut.size()) {
+            cut = glm::max(cut, macro.cut[i] * (1.0f - glm::smoothstep(
+                                                     30.0f, 80.0f,
+                                                     macro.plateau[i])));
+        }
         // A plateau's escarpment is a designed wall too: dissected
         // lightly, never carved to the plain (a carve that depended on
         // the window's drainage).
