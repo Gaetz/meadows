@@ -82,6 +82,45 @@ TEST_CASE("zones: the rampart — no storey step down toward a Ridges map line")
     CHECK(withRule < without);
 }
 
+TEST_CASE("zones: gates through the walls — ramped, scarp off, typed by the border") {
+    // On a 6 km square: gate samples exist, each lies on a border
+    // with a step (or a ridge), and the control sample there is a
+    // ramp (terrace and scarp near zero).
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    const auto& zones = controls.params().zones;
+    u32 gateSamples = 0, wallSamples = 0, offBorder = 0;
+    f32 worstScarp = 0.0f, worstTerrace = 0.0f;
+    for (f32 z = 1000.0f; z <= 7000.0f; z += 32.0f) {
+        for (f32 x = 1000.0f; x <= 7000.0f; x += 32.0f) {
+            const ZoneSample zs = zoneSampleAt(world, zones, x, z);
+            if (zs.wall > 0.5f && zs.gate < 0.5f) {
+                ++wallSamples;
+            }
+            if (zs.gate < 0.9f) {
+                continue;
+            }
+            ++gateSamples;
+            if (zs.wallSteps < 1.0f && zs.borderStyle != 3) {
+                ++offBorder;
+            }
+            const ControlSample s = controls.at(x, z);
+            worstScarp = glm::max(worstScarp, s.scarp);
+            worstTerrace = glm::max(worstTerrace, s.terrace);
+        }
+    }
+    MESSAGE("gate samples ", gateSamples, " (off a border ", offBorder,
+            "), wall samples ", wallSamples, ", worst scarp ", worstScarp,
+            ", worst terrace ", worstTerrace);
+    CHECK(gateSamples >= 100);
+    CHECK(wallSamples >= 100);
+    CHECK(offBorder * 20 <= gateSamples);
+    CHECK(worstScarp <= 0.15f);
+    CHECK(worstTerrace <= 0.2f);
+}
+
 TEST_CASE("zones: every archetype draws somewhere, none everywhere") {
     ProceduralControlParams pc;
     pc.seed = 1337;

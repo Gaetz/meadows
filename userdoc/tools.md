@@ -166,3 +166,17 @@ dessous d'une voisine (la chaîne de bordure naît sur une ligne de
 partage des eaux, aucune rivière ne longe la frontière) ;
 `zoneRampartSteps` ajoute des paliers à cette rangée (0 par défaut).
 
+**Murs et portes.** Deux zones d'étages différents sont séparées par un
+mur : une **bande de falaise** pour un palier (franchissable à ses
+**encoches**), un **escarpement** pour deux paliers ou plus (percé de
+**brèches-rampes**) ; deux zones de massif de même étage se rejoignent
+sur une **crête** (`zoneRidgeHeight`, 30 m, 0 = aucune) coupée à ses
+**cols**. Chaque frontière a une porte, parfois deux (`zoneGateExtra`,
+probabilité de la seconde) : un couloir de `zoneGateHalfWidth` (60 m de
+demi-largeur, ×1,5 pour une brèche) qui rampe le palier sur
+`zoneRampWidth`, sans falaise, avec un replat de révélation en haut de
+la rampe. Le rapport `landscape-report` compte les portes par type et
+les tronçons de mur sans passage (aucun ne devrait dépasser 400 m) ; le
+`plan.png` dessine les murs en sombre, les portes en blanc, les crêtes
+en violet.
+

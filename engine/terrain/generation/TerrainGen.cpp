@@ -479,11 +479,17 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         lift = glm::max(designedLift, storyMountain * r.planStoryScale);
         piece.mesaTop = glm::max(piece.mesaTop, ps.mesaTop);
         piece.ridgeFlank = glm::max(piece.ridgeFlank, ps.flank);
-        corridor = ps.corridor;
+        // A walk's corridor or a zone gate (a notch, a breach, a col):
+        // the same ramp through the wall.
+        corridor = glm::max(ps.corridor, zs.gate);
         // The storey: the zone's floor lift, stepped at the walls,
-        // ramped along a walk's corridor (a pass, not a wall).
+        // ramped along a corridor (a pass, not a wall), crested on a
+        // ridge border.
         const f32 zoneLift =
-            glm::mix(zs.storeyHeight, zs.storeyHeightSmooth, corridor) *
+            (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
+                               ps.corridor),
+                      zs.gateFloor, zs.gate) +
+             zs.ridge) *
             shoreGate;
         s.base = glm::max(w.base + zoneLift, 0.0f);
         s.tier = etageIndexFor(p.world, s.base);
@@ -500,7 +506,8 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
                                              std::abs(zs.borderDist))
                 : 0.0f;
         s.reliefScale = (1.0f - 0.7f * piece.mesaTop) *
-                        (1.0f - 0.8f * ps.padFlat) * (1.0f - 0.5f * corridor) *
+                        (1.0f - 0.8f * glm::max(ps.padFlat, zs.gatePad)) *
+                        (1.0f - 0.5f * corridor) *
                         (1.0f - 0.75f * piece.clearing) *
                         (1.0f - 0.6f * wallBand) * zs.reliefMul;
         s.reliefWavelengthScale = zs.wavelengthMul;
@@ -641,12 +648,17 @@ void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
         const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
         const f32 shoreGate =
             noise::smoothstep01(2.0f, 12.0f, glm::max(w.base, 0.0f));
+        const f32 corridor = glm::max(s.corridor, zs.gate);
         const f32 zoneLift =
-            glm::mix(zs.storeyHeight, zs.storeyHeightSmooth, s.corridor) *
+            (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
+                               s.corridor),
+                      zs.gateFloor, zs.gate) +
+             zs.ridge) *
             shoreGate;
         s.base = glm::max(w.base + zoneLift, 0.0f);
         s.tier = etageIndexFor(p.world, s.base);
-        s.scarp = zs.wall * (1.0f - s.corridor);
+        s.corridor = corridor;
+        s.scarp = zs.wall * (1.0f - corridor);
         return;
     }
     s.base = glm::max(glm::mix(w.base, w.baseSmooth, s.corridor), 0.0f);

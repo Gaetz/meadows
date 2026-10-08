@@ -23,6 +23,8 @@ struct TerrainMapParams {
     // The POI plan: sites (disc by tier, colour by family) and the
     // walks between moyen sites (thin lines through their waypoint).
     bool drawPoi { false };
+    // The zones' walls (dark) and gates (white) over the mosaic.
+    bool drawGates { false };
 };
 
 // RGB8, size*size*3, row 0 = north (centerZ - span/2).

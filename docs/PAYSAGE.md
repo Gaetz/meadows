@@ -2018,6 +2018,50 @@ briques Z0-Z5 dans le fichier de plan.
   relief 42 m. Test différentiel `zones: the rampart` (taux de
   violation avec/sans la règle). Jugement dev EN ATTENTE ; la suite =
   Z3 murs et portes.
+- **2026-10-09 — Z3 livrée : murs et portes.** Chaque frontière entre
+  zones a un **style** (`BorderStyle`, lu au `zoneSampleAt`) : un
+  palier d'écart = **bande de falaise** (franchissable à ses encoches),
+  deux ou plus = **escarpement** (brèches-rampes), deux zones de massif
+  (`minMassif ≥ 0,3`) de même étage = **crête** (`ridgeHeight` 30 m,
+  coupée à ses cols ; aucune paire de ce genre sur les cartes (0,0) et
+  (1,0) : 0 col). Les **portes** sont hachées par paire de zones (sans
+  ordre), une par frontière, une seconde avec `gateExtra` 0,35,
+  glissées le long de la médiatrice ; leur masque vit dans le repère
+  gauchi comme la frontière (la rampe est sur le ressaut où qu'il
+  serpente) ; toutes les paires candidates sont lues (continu aux
+  sommets de Voronoï), pondérées par « la paire est bien les deux plus
+  proches ». Une porte = le **couloir** existant (`corridor` = max du
+  couloir de marche et de la porte : pas de scarp, terrasses nulles,
+  relief calmé) avec **sa propre rampe** (`gateFloor` : les deux étages
+  joints sur une demi-longueur = 0,6 × largeur du ressaut + 60 m, ou
+  ce qu'il faut pour rester sous 35 %), largeur `gateHalfWidth` 40 m
+  (×1,75 pour une brèche), et un **replat de révélation** en haut de
+  la rampe (`gatePad`, règle du triangle : le mur cache, l'encoche
+  révèle). Première version à 600 m de tube sur la rampe de 400 m des
+  marches : 43 % de la carte en « porte » sur le `plan.png` — ramenée
+  à des coupes courtes. Pupitre : `zoneGateHalfWidth`, `zoneGateExtra`,
+  `zoneRidgeHeight`. Instrument « walls and gates » (raster 16 m,
+  composantes 4-connexes, transformée de distance chanfrein) :
+  carte (0,0) 506 portes (463 encoches, 43 brèches), **tout point de
+  mur à moins de 267 m d'une porte (p95 123 m)** — la règle d'août
+  « aucun mur de 400 m sans passage » tenue ; carte (1,0) 252 portes,
+  277 m / 117 m. Les « tronçons » en bbox (976 / 1 408 m) chaînent
+  plusieurs frontières par les sommets : ce n'est pas la mesure utile.
+  Lacs 213 → 165 sur (0,0) (les rampes drainent des creux). Le
+  `plan.png` dessine murs (sombre), portes (blanc), crêtes (violet).
+  Test « zones: gates through the walls ». Jugement dev EN ATTENTE ;
+  la suite = Z4 POI emboîtés et visibilité.
+- **2026-10-09 — « D'où vient le fleuve entouré de murs sur la carte
+  zéro ? »** Le rapport liste maintenant les cours maîtres qui touchent
+  la carte (source, fin, bassin, mer / confluence / bord de routage).
+  Celui de la carte (0,0) naît à (5 504, 256), juste sous la ligne
+  nord, bassin de 289 km², et **atteint la mer 38 km plus loin, à
+  (19 712, 23 936)** — carte (2,2), au sud-est ; il reçoit un affluent
+  de 15 km venu de 3 km au nord de la carte (96 km²) et deux autres de
+  59 et 75 km². Les murs qui l'encadrent : un cours maître suit la
+  ligne la plus basse de l'analytique, qui avec les étages de zones
+  est le pied des murs — il coule donc entre les ressauts, et
+  l'empreinte creuse son lit de 23 m en plus.
 
 ---
 

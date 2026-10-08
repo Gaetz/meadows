@@ -148,6 +148,9 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.zones.startGap = form.zoneStartGap;
     params.controls.zones.rampartSteps =
         static_cast<i32>(form.zoneRampartSteps);
+    params.controls.zones.gateHalfWidth = form.zoneGateHalfWidth;
+    params.controls.zones.gateExtra = form.zoneGateExtra;
+    params.controls.zones.ridgeHeight = form.zoneRidgeHeight;
 }
 
 data::TerrainGenTuningForm
@@ -274,6 +277,9 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.zoneStartGap = params.controls.zones.startGap;
     form.zoneRampartSteps =
         static_cast<u32>(glm::max(params.controls.zones.rampartSteps, 0));
+    form.zoneGateHalfWidth = params.controls.zones.gateHalfWidth;
+    form.zoneGateExtra = params.controls.zones.gateExtra;
+    form.zoneRidgeHeight = params.controls.zones.ridgeHeight;
     return form;
 }
 

@@ -78,6 +78,9 @@ u64 paramsKey(const WorldLayerParams& world, const ZoneParams& zones) {
     f(zones.startGap);
     f(zones.mapSize);
     mix(&zones.rampartSteps, sizeof(zones.rampartSteps));
+    f(zones.gateHalfWidth);
+    f(zones.gateExtra);
+    f(zones.ridgeHeight);
     for (const ZoneArchetype& a : zones.archetypes) {
         f(a.weight);
         mix(&a.storeyBias, sizeof(a.storeyBias));
@@ -284,6 +287,7 @@ struct Nearest {
     const Zone* zones[9] {};
     f32 dist[9] {};
     u32 count { 0 };
+    f32 wx { 0.0f }, wz { 0.0f }; // the warped query (the borders' frame)
 };
 
 Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
@@ -303,6 +307,8 @@ Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
     const i32 cx = static_cast<i32>(std::floor(wx / zones.cellSize - 0.5f));
     const i32 cz = static_cast<i32>(std::floor(wz / zones.cellSize - 0.5f));
     Nearest n;
+    n.wx = wx;
+    n.wz = wz;
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
             const Zone& zone = zoneCell(world, zones, cx + dx, cz + dz);
@@ -493,6 +499,120 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
                    ? 1.0f - noise::smoothstep01(0.35f * width, 0.6f * width,
                                                 std::abs(out.borderDist))
                    : 0.0f;
+    // The border's style and its gates. A massif archetype is one
+    // that asks for the range belt (minMassif): two of them at one
+    // storey meet on a crest, not a hedge.
+    const auto massifLike = [](const ZoneArchetype& g) {
+        return g.minMassif >= 0.3f;
+    };
+    const auto styleFor = [&](const Zone& o, const ZoneArchetype& go) {
+        const i32 steps = std::abs(a.storey - o.storey);
+        if (steps >= 2) {
+            return BorderStyle::Escarpment;
+        }
+        if (steps == 1) {
+            return BorderStyle::CliffBand;
+        }
+        if (zones.ridgeHeight > 0.0f && massifLike(ga) && massifLike(go)) {
+            return BorderStyle::Ridge;
+        }
+        return BorderStyle::None;
+    };
+    out.borderStyle = static_cast<u8>(styleFor(*b, gb));
+    // Gates are hashed per PAIR (order-free), one or two per border,
+    // slid along the bisector of the two sites; their mask lives in
+    // the WARPED frame like the border itself, so the ramp sits on the
+    // riser wherever the border wanders. Every candidate pair is
+    // read (continuous at the Voronoi vertices), gated by the pair
+    // being the two nearest (its border).
+    for (u32 i = 0; i < n.count; ++i) {
+        const Zone& o = *n.zones[i];
+        if (&o == &a) {
+            continue;
+        }
+        const ZoneArchetype& go =
+            table[glm::min<size_t>(o.archetype, table.size() - 1)];
+        const BorderStyle st = styleFor(o, go);
+        if (st == BorderStyle::None) {
+            continue;
+        }
+        const f32 adjacency =
+            1.0f - noise::smoothstep01(0.0f, zones.wallWidthOne,
+                                       n.dist[i] - n.db);
+        if (adjacency <= 0.0f) {
+            continue;
+        }
+        const f32 dxs = o.x - a.x;
+        const f32 dzs = o.z - a.z;
+        const f32 len = glm::max(std::hypot(dxs, dzs), 1.0f);
+        const f32 ux = dxs / len;
+        const f32 uz = dzs / len;
+        const f32 qx = n.wx - 0.5f * (a.x + o.x);
+        const f32 qz = n.wz - 0.5f * (a.z + o.z);
+        const f32 along = qx * ux + qz * uz;   // toward o
+        const f32 across = -qx * uz + qz * ux; // along the border
+        const u32 pairHash = core::hashU32(
+            glm::min(a.hash, o.hash) ^
+            core::hashU32(glm::max(a.hash, o.hash) * 0x9e3779b9u));
+        const u32 count =
+            1 + (roll01(pairHash, 1) < zones.gateExtra ? 1u : 0u);
+        const f32 halfWidth = zones.gateHalfWidth *
+                              (st == BorderStyle::Escarpment ? 1.75f : 1.0f);
+        // The ramp's half-length: the riser plus a margin, longer
+        // when the step needs it to stay under ~35 %.
+        const f32 stepRise =
+            std::abs(a.storeyHeight - o.storeyHeight);
+        const f32 halfLen =
+            glm::max(0.6f * widthFor(o) + 60.0f, 0.5f * stepRise / 0.35f);
+        // The high side: where the ramp tops out (the reveal).
+        const f32 highSign = o.storey > a.storey ? 1.0f : -1.0f;
+        f32 g = 0.0f;
+        f32 pad = 0.0f;
+        for (u32 k = 0; k < count; ++k) {
+            const f32 slot = count == 1 ? 0.0f : (k == 0 ? -0.25f : 0.25f);
+            const f32 slide =
+                (slot + (roll01(pairHash, 2 + k) - 0.5f) * 0.3f) * len;
+            const f32 dAcross = std::abs(across - slide);
+            const f32 lateral =
+                1.0f - noise::smoothstep01(halfWidth, 1.6f * halfWidth, dAcross);
+            g = glm::max(g, lateral * (1.0f - noise::smoothstep01(
+                                                  halfLen, halfLen + 60.0f,
+                                                  std::abs(along))));
+            if (st != BorderStyle::Ridge) {
+                const f32 alongHigh = along * highSign;
+                pad = glm::max(
+                    pad, (1.0f - noise::smoothstep01(halfWidth, 2.0f * halfWidth,
+                                                     dAcross)) *
+                             noise::smoothstep01(0.7f * halfLen, halfLen,
+                                                 alongHigh) *
+                             (1.0f - noise::smoothstep01(halfLen + 60.0f,
+                                                         halfLen + 160.0f,
+                                                         alongHigh)));
+            }
+        }
+        g *= adjacency;
+        pad *= adjacency;
+        if (g > out.gate) {
+            out.gate = g;
+            // The gate's own ramp: the two storeys joined across the
+            // border over the ramp's length.
+            out.gateFloor = glm::mix(a.storeyHeight, o.storeyHeight,
+                                     noise::smoothstep01(-halfLen, halfLen, along));
+            out.gateKind = static_cast<u8>(
+                st == BorderStyle::CliffBand    ? GateKind::Notch
+                : st == BorderStyle::Escarpment ? GateKind::Breach
+                                                : GateKind::Col);
+        }
+        out.gatePad = glm::max(out.gatePad, pad);
+        if (st == BorderStyle::Ridge) {
+            // The crest along the border, cut at its cols.
+            const f32 dBorder = 0.5f * (n.dist[i] - n.da);
+            out.ridge = glm::max(
+                out.ridge, zones.ridgeHeight *
+                               (1.0f - noise::smoothstep01(0.0f, 120.0f, dBorder)) *
+                               (1.0f - g) * adjacency);
+        }
+    }
     // The grammar: the nearest zone's, blended over ~150 m at a border.
     const f32 tg = noise::smoothstep01(-75.0f, 75.0f, out.borderDist);
     out.reliefMul = glm::mix(gb.reliefMul, ga.reliefMul, tg);
@@ -549,6 +669,9 @@ u64 hashParams(const ZoneParams& p) {
     f(p.startGap);
     f(p.mapSize);
     i(p.rampartSteps);
+    f(p.gateHalfWidth);
+    f(p.gateExtra);
+    f(p.ridgeHeight);
     for (const ZoneArchetype& a : zoneArchetypesOf(p)) {
         mix(a.name.data(), a.name.size());
         f(a.weight);

@@ -321,6 +321,7 @@ int landscapeReport(char** argv, int argc) {
         mp.span = view->mapSize + 1000.0f;
         mp.size = 1024;
         mp.drawPoi = true;
+        mp.drawGates = true;
         const vector<u8> pixels =
             render::terraingen::renderTerrainMap(controls, params.macro, mp);
         const auto png = view->mapDir / "plan.png";
@@ -451,6 +452,124 @@ int landscapeReport(char** argv, int argc) {
         LOG_INFO("  lakes vs zones: within 200 m of a wall {}, on a piece pond "
                  "{}, elsewhere {}",
                  nearWall, onPond, other);
+        // Walls and gates (Z3): a 16 m raster of the map; gate blobs
+        // and wall stretches between them (4-connected components),
+        // the longest stretch without a passage (August's rule: none
+        // over 400 m).
+        {
+            const f32 step = 16.0f;
+            const u32 n = static_cast<u32>(view->mapSize / step) + 1;
+            vector<u8> kind(static_cast<size_t>(n) * n, 0); // 1 wall, 2 gate, 3 ridge
+            vector<u8> gateKind(kind.size(), 0);
+            u32 notch = 0, breach = 0, col = 0;
+            for (u32 row = 0; row < n; ++row) {
+                for (u32 c = 0; c < n; ++c) {
+                    const render::terraingen::ZoneSample zs =
+                        render::terraingen::zoneSampleAt(
+                            cp.world, cp.zones, view->minX + c * step,
+                            view->minZ + row * step);
+                    u8 k = 0;
+                    if (zs.gate > 0.5f) {
+                        k = 2;
+                        gateKind[static_cast<size_t>(row) * n + c] = zs.gateKind;
+                    } else if (zs.wall > 0.5f) {
+                        k = 1;
+                    } else if (zs.ridge > 0.5f * cp.zones.ridgeHeight) {
+                        k = 3;
+                    }
+                    kind[static_cast<size_t>(row) * n + c] = k;
+                }
+            }
+            // Distance from every wall texel to the nearest gate (a 3-4
+            // chamfer transform): how far one walks along a wall before
+            // a passage. The honest form of "no wall over 400 m".
+            vector<u32> dt(kind.size(), 1u << 20);
+            for (u32 i = 0; i < kind.size(); ++i) {
+                if (kind[i] == 2) {
+                    dt[i] = 0;
+                }
+            }
+            const auto relax = [&](u32 i, i32 dr, i32 dc, u32 cost) {
+                const i32 r = static_cast<i32>(i / n) + dr;
+                const i32 c = static_cast<i32>(i % n) + dc;
+                if (r < 0 || c < 0 || r >= static_cast<i32>(n) || c >= static_cast<i32>(n)) {
+                    return;
+                }
+                const u32 j = static_cast<u32>(r) * n + static_cast<u32>(c);
+                dt[i] = glm::min(dt[i], dt[j] + cost);
+            };
+            for (u32 i = 0; i < kind.size(); ++i) {
+                relax(i, -1, -1, 4); relax(i, -1, 0, 3); relax(i, -1, 1, 4); relax(i, 0, -1, 3);
+            }
+            for (u32 i = static_cast<u32>(kind.size()); i-- > 0;) {
+                relax(i, 1, 1, 4); relax(i, 1, 0, 3); relax(i, 1, -1, 4); relax(i, 0, 1, 3);
+            }
+            vector<f32> wallToGate;
+            for (u32 i = 0; i < kind.size(); ++i) {
+                if (kind[i] == 1 && dt[i] < (1u << 20)) {
+                    wallToGate.push_back(static_cast<f32>(dt[i]) / 3.0f * step);
+                }
+            }
+            std::sort(wallToGate.begin(), wallToGate.end());
+            const f32 farthest = wallToGate.empty() ? 0.0f : wallToGate.back();
+            const f32 far95 = wallToGate.empty() ? 0.0f : wallToGate[wallToGate.size() * 95 / 100];
+            vector<u32> label(kind.size(), 0);
+            u32 gates = 0, stretches = 0;
+            vector<f32> extents;
+            vector<u32> stack;
+            for (u32 i = 0; i < kind.size(); ++i) {
+                if (kind[i] == 0 || kind[i] == 3 || label[i]) {
+                    continue;
+                }
+                const u8 k = kind[i];
+                u32 minC = n, maxC = 0, minR = n, maxR = 0;
+                stack.assign(1, i);
+                label[i] = 1;
+                while (!stack.empty()) {
+                    const u32 j = stack.back();
+                    stack.pop_back();
+                    const u32 r = j / n, c = j % n;
+                    minC = glm::min(minC, c); maxC = glm::max(maxC, c);
+                    minR = glm::min(minR, r); maxR = glm::max(maxR, r);
+                    const i32 dr[4] = { 0, 0, -1, 1 };
+                    const i32 dc[4] = { -1, 1, 0, 0 };
+                    for (u32 d = 0; d < 4; ++d) {
+                        const i32 rr = static_cast<i32>(r) + dr[d];
+                        const i32 cc = static_cast<i32>(c) + dc[d];
+                        if (rr < 0 || cc < 0 || rr >= static_cast<i32>(n) ||
+                            cc >= static_cast<i32>(n)) {
+                            continue;
+                        }
+                        const u32 jj = static_cast<u32>(rr) * n + static_cast<u32>(cc);
+                        if (kind[jj] == k && !label[jj]) {
+                            label[jj] = 1;
+                            stack.push_back(jj);
+                        }
+                    }
+                }
+                if (k == 2) {
+                    ++gates;
+                    notch += gateKind[i] == 1;
+                    breach += gateKind[i] == 2;
+                    col += gateKind[i] == 3;
+                } else {
+                    ++stretches;
+                    extents.push_back(static_cast<f32>(glm::max(maxC - minC, maxR - minR)) * step);
+                }
+            }
+            std::sort(extents.begin(), extents.end());
+            const f32 longest = extents.empty() ? 0.0f : extents.back();
+            const f32 p95 = extents.empty() ? 0.0f : extents[extents.size() * 95 / 100];
+            u32 over400 = 0;
+            for (const f32 e : extents) {
+                over400 += e > 400.0f;
+            }
+            LOG_INFO("  walls and gates: {} gates ({} notches, {} breaches, {} cols), "
+                     "{} wall stretches, longest {:.0f} m, p95 {:.0f} m, {} over 400 m; "
+                     "wall point to its nearest gate p95 {:.0f} m, farthest {:.0f} m",
+                     gates, notch, breach, col, stretches, longest, p95, over400,
+                     far95, farthest);
+        }
         // Rivers hugging a map line (dev bug report 2026-10-08): nodes
         // within 150 m of the map's four border lines, per tier, and
         // the longest run of consecutive nodes that stays there.
@@ -543,6 +662,48 @@ int landscapeReport(char** argv, int argc) {
                      "within 150 m of a line, longest run {} nodes (last at "
                      "{:.0f}, {:.0f})",
                      master.size(), mNear, mTotal, mRun, mX, mZ);
+            // Each fleuve course touching the map: where it rises, where
+            // it ends, whether the routing reached the sea or the
+            // super-cell rim (the dev's question: a fleuve walled in
+            // mid-map — does it come from anywhere, go anywhere?).
+            for (const auto& river : master) {
+                if (river.nodes.empty()) {
+                    continue;
+                }
+                const auto& first = river.nodes.front();
+                const auto& lastNode = river.nodes.back();
+                f32 length = 0.0f;
+                for (size_t k = 1; k < river.nodes.size(); ++k) {
+                    length += std::hypot(river.nodes[k].x - river.nodes[k - 1].x,
+                                         river.nodes[k].z - river.nodes[k - 1].z);
+                }
+                // A course that stops on another course's node is a
+                // tributary (the tracer breaks at the confluence).
+                bool joins = false;
+                for (const auto& other : master) {
+                    if (&other == &river) {
+                        continue;
+                    }
+                    for (const auto& node : other.nodes) {
+                        if (node.x == lastNode.x && node.z == lastNode.z) {
+                            joins = true;
+                            break;
+                        }
+                    }
+                    if (joins) {
+                        break;
+                    }
+                }
+                LOG_INFO("    fleuve: {} nodes, {:.1f} km, from ({:.0f}, {:.0f}) "
+                         "surface {:.0f} m to ({:.0f}, {:.0f}) surface {:.0f} m, "
+                         "area {:.0f} km2, {}",
+                         river.nodes.size(), length / 1000.0f, first.x, first.z,
+                         first.surface, lastNode.x, lastNode.z, lastNode.surface,
+                         lastNode.area / 1.0e6f,
+                         river.reachesSea ? "reaches the sea"
+                         : joins          ? "joins another course"
+                                          : "ends at the routing rim");
+            }
         }
         // The ground ACROSS the line at the longest run (16 m steps,
         // -400..400 m): is the run in a trough, on a crest, at a rim?

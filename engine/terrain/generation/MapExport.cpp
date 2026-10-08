@@ -110,6 +110,19 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
                         minX + static_cast<f32>(col) * texel,
                         minZ + static_cast<f32>(row) * texel);
                     c = mix(c, kZoneHue[a % 14], 0.3f);
+                    if (params.drawGates) {
+                        const ZoneSample zs = zoneSampleAt(
+                            controls.params().world, controls.params().zones,
+                            minX + static_cast<f32>(col) * texel,
+                            minZ + static_cast<f32>(row) * texel);
+                        if (zs.gate > 0.5f) {
+                            c = Rgb { 1.0f, 1.0f, 1.0f };
+                        } else if (zs.wall > 0.5f) {
+                            c = mix(c, Rgb { 0.1f, 0.05f, 0.05f }, 0.7f);
+                        } else if (zs.ridge > 0.5f * controls.params().zones.ridgeHeight) {
+                            c = mix(c, Rgb { 0.5f, 0.2f, 0.6f }, 0.6f);
+                        }
+                    }
                 }
                 // Hillshade (light from the north-west).
                 const f32 sx = (at(static_cast<i32>(col) + 1,

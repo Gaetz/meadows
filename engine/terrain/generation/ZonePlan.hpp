@@ -53,6 +53,18 @@ struct ZoneArchetype {
     f32 erosionCut { 0.0f };
 };
 
+// The style of the border between two zones (docs/PAYSAGE.md §4 bis,
+// principle 3 — the verticality is at the borders): decided by the
+// storey step and the archetypes. CliffBand = one step, a band to
+// scramble at its notches; Escarpment = two or more, a wall with
+// breaches; Ridge = a crest between two massif zones of one storey,
+// crossed at its cols.
+enum class BorderStyle : u8 { None = 0, CliffBand = 1, Escarpment = 2, Ridge = 3 };
+
+// The gate through a border (principle 4 — every wall has its doors,
+// and a door is a real geographic structure), typed by the border.
+enum class GateKind : u8 { None = 0, Notch = 1, Breach = 2, Col = 3 };
+
 struct ZoneParams {
     f32 cellSize { 512.0f }; // dev 2026-10-08: twice the rhythm of 1 km
     f32 jitter { 0.6f };            // site jitter, fraction of the cell
@@ -72,6 +84,14 @@ struct ZoneParams {
     // no master course runs along its foot.
     f32 mapSize { 0.0f };
     i32 rampartSteps { 0 };
+    // The gates: one per border, a second with probability gateExtra,
+    // slid along the border; a notch is gateHalfWidth wide, a breach
+    // 1.75x; the ramp through a gate is as long as the riser needs
+    // to stay under ~35 % (its own floor, not the walks' 400 m ramp).
+    f32 gateHalfWidth { 40.0f };
+    f32 gateExtra { 0.35f };
+    // The crest between two massif zones of one storey (0 = none).
+    f32 ridgeHeight { 30.0f };
     vector<ZoneArchetype> archetypes; // empty = defaultZoneArchetypes()
 };
 
@@ -86,6 +106,17 @@ struct ZoneSample {
     f32 pieceLift { 0.0f };          // the zone's small landform (m)
     f32 pieceBasin { 0.0f };         // (m)
     f32 pieceClearing { 0.0f };      // [0,1]
+    // The border and its gates (BorderStyle / GateKind): `gate` is the
+    // corridor mask through the nearest wall (ramped, scarp off),
+    // `gatePad` the flat reveal at the top of its ramp (the triangle
+    // rule: the wall hides, the notch reveals), `ridge` the crest lift
+    // between massif zones of one storey, cut at its cols.
+    u8 borderStyle { 0 };
+    u8 gateKind { 0 };
+    f32 gate { 0.0f };
+    f32 gateFloor { 0.0f }; // the storey lift ramped through the gate (m)
+    f32 gatePad { 0.0f };
+    f32 ridge { 0.0f };
     // The grammar (the archetype's, blended over ~150 m at a border).
     f32 reliefMul { 1.0f };
     f32 wavelengthMul { 1.0f };
