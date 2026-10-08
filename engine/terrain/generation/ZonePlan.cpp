@@ -8,6 +8,7 @@
 
 #include "engine/core/Hash.hpp"
 #include "engine/terrain/Noise.hpp"
+#include "engine/terrain/generation/MapGrid.hpp"
 
 namespace render::terraingen {
 
@@ -75,6 +76,8 @@ u64 paramsKey(const WorldLayerParams& world, const ZoneParams& zones) {
     f(zones.wallWidthHigh);
     f(zones.rampWidth);
     f(zones.startGap);
+    f(zones.mapSize);
+    mix(&zones.rampartSteps, sizeof(zones.rampartSteps));
     for (const ZoneArchetype& a : zones.archetypes) {
         f(a.weight);
         mix(&a.storeyBias, sizeof(a.storeyBias));
@@ -145,9 +148,14 @@ RawCell rawCell(const WorldLayerParams& world, const ZoneParams& zones, i32 cx,
     c.hash = core::hashU32(world.seed ^ kSaltZone ^
                            core::hashU32(static_cast<u32>(cx) ^
                                          (static_cast<u32>(cz) * 0x85ebca6bu)));
-    c.x = (static_cast<f32>(cx) + 0.5f + (roll01(c.hash, 1) - 0.5f) * zones.jitter) *
+    // The lattice is anchored HALF A CELL off the world origin: a map
+    // line (a multiple of 8192 = 16 cells of 512) must never coincide
+    // with a cell row, or the walls between rows run along the border
+    // and the master drainage follows their foot (dev bug report
+    // 2026-10-08: a river along the map line).
+    c.x = (static_cast<f32>(cx) + 1.0f + (roll01(c.hash, 1) - 0.5f) * zones.jitter) *
           zones.cellSize;
-    c.z = (static_cast<f32>(cz) + 0.5f + (roll01(c.hash, 2) - 0.5f) * zones.jitter) *
+    c.z = (static_cast<f32>(cz) + 1.0f + (roll01(c.hash, 2) - 0.5f) * zones.jitter) *
           zones.cellSize;
     const WorldSample w = worldSampleAt(world, c.x, c.z);
     c.dStart = std::hypot(c.x - world.startX, c.z - world.startZ);
@@ -190,6 +198,27 @@ RawCell rawCell(const WorldLayerParams& world, const ZoneParams& zones, i32 cx,
     return c;
 }
 
+// Does a Ridges map line cross this cell's row or column? Read on the
+// NOMINAL (unjittered) site: the lattice sits a half cell off the
+// origin (rawCell), so a line falls on a site row — one row of cells
+// straddles it when cellSize divides mapSize.
+bool ridgeLineCrossesCell(const WorldLayerParams& world,
+                          const ZoneParams& zones, i32 cx, i32 cz) {
+    const f32 sx = (static_cast<f32>(cx) + 1.0f) * zones.cellSize;
+    const f32 sz = (static_cast<f32>(cz) + 1.0f) * zones.cellSize;
+    const auto crosses = [&](f32 across, f32 along, bool vertical) {
+        const i32 line = static_cast<i32>(std::lround(across / zones.mapSize));
+        if (std::abs(across - static_cast<f32>(line) * zones.mapSize) >
+            0.5f * zones.cellSize + 1.0f) {
+            return false;
+        }
+        const i32 cell = static_cast<i32>(std::floor(along / zones.mapSize));
+        return mapBorderSegmentStyle(world, zones.mapSize, line, cell,
+                                     vertical) == MapEdgeStyle::Ridges;
+    };
+    return crosses(sx, sz, true) || crosses(sz, sx, false);
+}
+
 const Zone& zoneCell(const WorldLayerParams& world, const ZoneParams& zones,
                      i32 cx, i32 cz) {
     Memo& memo = memoFor(world, zones);
@@ -210,18 +239,32 @@ const Zone& zoneCell(const WorldLayerParams& world, const ZoneParams& zones,
         // The bowl rule: a zone never sits below ALL its neighbours
         // unless its archetype holds water (a basin, a marsh) — every
         // other local minimum would be a lake by construction.
-        if (!table.empty() && !holdsWater(table[zone.archetype])) {
-            i32 lowest = 1 << 20;
-            for (i32 dz = -1; dz <= 1; ++dz) {
-                for (i32 dx = -1; dx <= 1; ++dx) {
-                    if (dx == 0 && dz == 0) {
-                        continue;
-                    }
-                    const RawCell n = rawCell(world, zones, cx + dx, cz + dz);
-                    lowest = glm::min(lowest, n.storey);
+        i32 lowest = 1 << 20;
+        i32 highest = -(1 << 20);
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dz == 0) {
+                    continue;
                 }
+                const RawCell n = rawCell(world, zones, cx + dx, cz + dz);
+                lowest = glm::min(lowest, n.storey);
+                highest = glm::max(highest, n.storey);
             }
+        }
+        if (!table.empty() && !holdsWater(table[zone.archetype])) {
             zone.storey = glm::max(zone.storey, lowest);
+        }
+        // The rampart rule: the row a Ridges map line crosses never
+        // sits below any neighbour. The border range (TerrainGen's
+        // additive lift) then rises out of a divide: no zone wall
+        // drops TOWARD the line, so no trough runs along its foot for
+        // the master drainage to follow (the river-along-the-border
+        // bug). A Sea segment keeps its shore.
+        if (zones.mapSize > 0.0f &&
+            ridgeLineCrossesCell(world, zones, cx, cz)) {
+            zone.storey = glm::clamp(
+                glm::max(zone.storey, highest) + zones.rampartSteps, 0,
+                static_cast<i32>(zones.storeys));
         }
         const f32 gate = noise::smoothstep01(
             world.startRadius + zones.startGap * 0.25f,
@@ -257,8 +300,8 @@ Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
                         1.0f / zones.borderWarpWavelength, 2, 2.0f, 0.5f) -
              0.5f) *
                 2.0f * zones.borderWarp;
-    const i32 cx = static_cast<i32>(std::floor(wx / zones.cellSize));
-    const i32 cz = static_cast<i32>(std::floor(wz / zones.cellSize));
+    const i32 cx = static_cast<i32>(std::floor(wx / zones.cellSize - 0.5f));
+    const i32 cz = static_cast<i32>(std::floor(wz / zones.cellSize - 0.5f));
     Nearest n;
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
@@ -374,7 +417,7 @@ const vector<ZoneArchetype>& defaultZoneArchetypes() {
         row("badlands",     0.5f, 0.3f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.45f, 0, 1.5f, 0.35f, 0.7f, 15.0f, 0.0f, 0.3f, -0.2f, -0.3f, 5, 4, 20.0f, 50.0f, 120.0f);
         row("rockField",    0.4f, 0.4f, 1.0f, 0.3f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.0f, 0.9f, 0.5f, 30.0f, 0.0f, 0.4f, -0.1f, 0.1f, 0, 4, 12.0f, 40.0f, 80.0f);
         row("heath",        0.8f, 0.2f, 0.8f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.7f, 0, 0.9f, 1.8f, 0.5f, 30.0f, 0.0f, 0.1f, -0.1f, 0.3f, 4, 1, 25.0f, 150.0f, 10.0f);
-        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f, 200.0f);
+        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f, 160.0f);
         row("coastCliffs",  1.0f, 0.25f, 1.0f, 0.0f, 1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 1, 0.8f, 1.0f, 0.8f, 40.0f, 0.0f, 0.3f, 0.0f, 0.0f, 0, 4, 15.0f, 50.0f, 60.0f);
         row("lowCoast",     1.0f, 0.0f, 0.4f, 0.0f, 0.4f, 0.5f, 1.0f, 0.0f, 1.0f, 0, 0.4f, 0.6f, 0.0f, 30.0f, 0.0f, -0.1f, 0.0f, -0.2f, 5, 1, 12.0f, 80.0f, 0.0f);
         return t;
@@ -504,6 +547,8 @@ u64 hashParams(const ZoneParams& p) {
     f(p.wallWidthHigh);
     f(p.rampWidth);
     f(p.startGap);
+    f(p.mapSize);
+    i(p.rampartSteps);
     for (const ZoneArchetype& a : zoneArchetypesOf(p)) {
         mix(a.name.data(), a.name.size());
         f(a.weight);

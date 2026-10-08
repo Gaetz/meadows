@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -450,6 +451,176 @@ int landscapeReport(char** argv, int argc) {
         LOG_INFO("  lakes vs zones: within 200 m of a wall {}, on a piece pond "
                  "{}, elsewhere {}",
                  nearWall, onPond, other);
+        // Rivers hugging a map line (dev bug report 2026-10-08): nodes
+        // within 150 m of the map's four border lines, per tier, and
+        // the longest run of consecutive nodes that stays there.
+        u32 nodesTotal = 0, nodesNear = 0;
+        u32 longestRun = 0;
+        u8 longestTier = 0;
+        f32 longestX = 0.0f, longestZ = 0.0f;
+        const auto lineDist = [&](f32 x, f32 z) {
+            return glm::min(
+                glm::min(std::abs(x - view->minX), std::abs(x - view->maxX)),
+                glm::min(std::abs(z - view->minZ), std::abs(z - view->maxZ)));
+        };
+        // A run's EXTENT along the line (meters between its first and
+        // last node, projected on the line) tells a hug from an oblique
+        // crossing: a 25-degree crossing stays within 150 m over 650 m
+        // without ever running along.
+        f32 longestAlong = 0.0f, longestAcross = 0.0f;
+        for (const auto& river : view->rivers) {
+            u32 run = 0;
+            f32 runX0 = 0.0f, runZ0 = 0.0f;
+            for (const auto& node : river.points) {
+                ++nodesTotal;
+                if (lineDist(node.x, node.z) < 150.0f) {
+                    ++nodesNear;
+                    if (run == 0) {
+                        runX0 = node.x;
+                        runZ0 = node.z;
+                    }
+                    ++run;
+                    // Which line: the nearer axis decides along/across.
+                    const f32 dx = glm::min(std::abs(node.x - view->minX),
+                                            std::abs(node.x - view->maxX));
+                    const f32 dz = glm::min(std::abs(node.z - view->minZ),
+                                            std::abs(node.z - view->maxZ));
+                    const bool vertical = dx < dz;
+                    const f32 along = vertical ? std::abs(node.z - runZ0)
+                                               : std::abs(node.x - runX0);
+                    // The worst run is the one that goes FURTHEST along
+                    // the line, whatever its node count.
+                    if (along > longestAlong) {
+                        longestAlong = along;
+                        longestAcross = vertical ? std::abs(node.x - runX0)
+                                                 : std::abs(node.z - runZ0);
+                        longestRun = run;
+                        longestTier = river.tier;
+                        longestX = node.x;
+                        longestZ = node.z;
+                    }
+                } else {
+                    run = 0;
+                }
+            }
+        }
+        LOG_INFO("  rivers vs map lines: {} of {} nodes within 150 m of a line, "
+                 "longest run {} nodes, tier {} (last at {:.0f}, {:.0f}; ground "
+                 "there {:.1f} m, sea level {:.1f}); it spans {:.0f} m along "
+                 "the line for {:.0f} m across",
+                 nodesNear, nodesTotal, longestRun, longestTier, longestX,
+                 longestZ, view->height(longestX, longestZ), view->seaLevel(),
+                 longestAlong, longestAcross);
+        // The MASTER network's own courses (analytic, 128 m, no map
+        // border shape): if a master course hugs the line, the imprint
+        // carves it there whatever the bake does afterwards.
+        {
+            render::terraingen::MasterNetworkParams network = params.network;
+            network.seaLevel = params.macro.seaLevel;
+            const auto master = render::terraingen::masterRiversNear(
+                render::terraingen::ProceduralControls { cp }, params.macro,
+                network, view->minX - 1024.0f, view->minZ - 1024.0f,
+                view->maxX + 1024.0f, view->maxZ + 1024.0f);
+            u32 mTotal = 0, mNear = 0, mRun = 0;
+            f32 mX = 0.0f, mZ = 0.0f;
+            for (const auto& river : master) {
+                u32 run = 0;
+                for (const auto& node : river.nodes) {
+                    ++mTotal;
+                    if (lineDist(node.x, node.z) < 150.0f) {
+                        ++mNear;
+                        if (++run > mRun) {
+                            mRun = run;
+                            mX = node.x;
+                            mZ = node.z;
+                        }
+                    } else {
+                        run = 0;
+                    }
+                }
+            }
+            LOG_INFO("  master courses vs map lines: {} courses, {} of {} nodes "
+                     "within 150 m of a line, longest run {} nodes (last at "
+                     "{:.0f}, {:.0f})",
+                     master.size(), mNear, mTotal, mRun, mX, mZ);
+        }
+        // The ground ACROSS the line at the longest run (16 m steps,
+        // -400..400 m): is the run in a trough, on a crest, at a rim?
+        {
+            const bool vertical =
+                std::abs(longestX - view->minX) < 150.0f ||
+                std::abs(longestX - view->maxX) < 150.0f;
+            const f32 line = vertical
+                                 ? (std::abs(longestX - view->minX) < 150.0f
+                                        ? view->minX
+                                        : view->maxX)
+                                 : (std::abs(longestZ - view->minZ) < 150.0f
+                                        ? view->minZ
+                                        : view->maxZ);
+            str profile;
+            for (f32 d = -400.0f; d <= 400.0f; d += 32.0f) {
+                const f32 x = vertical ? line + d : longestX;
+                const f32 z = vertical ? longestZ : line + d;
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), "%.0f ", view->height(x, z));
+                profile += buf;
+            }
+            LOG_INFO("  ground across the line at the run ({} line {:.0f}, "
+                     "-400..+400 m by 32): {}",
+                     vertical ? "vertical" : "horizontal", line, profile);
+            // The same transect on the ANALYTIC and its components: which
+            // layer digs the trough.
+            const render::terraingen::ProceduralControls ctl { cp };
+            str an, base, plateau, basin, bed, storey;
+            for (f32 d = -400.0f; d <= 400.0f; d += 32.0f) {
+                const f32 x = vertical ? line + d : longestX;
+                const f32 z = vertical ? longestZ : line + d;
+                char buf[20];
+                std::snprintf(buf, sizeof(buf), "%.0f ",
+                              render::terraingen::macroHeightAnalytic(
+                                  ctl, params.macro, x, z));
+                an += buf;
+                const render::terraingen::ControlSample cs = ctl.at(x, z);
+                std::snprintf(buf, sizeof(buf), "%.0f ", cs.base);
+                base += buf;
+                std::snprintf(buf, sizeof(buf), "%.0f ", cs.plateau);
+                plateau += buf;
+                std::snprintf(buf, sizeof(buf), "%.0f ", cs.basinDepth);
+                basin += buf;
+                std::snprintf(buf, sizeof(buf), "%.0f ", cs.bedDepth);
+                bed += buf;
+                const render::terraingen::ZoneSample zs =
+                    render::terraingen::zoneSampleAt(cp.world, cp.zones, x, z);
+                std::snprintf(buf, sizeof(buf), "%.0f ", zs.storeyHeight);
+                storey += buf;
+            }
+            LOG_INFO("  analytic: {}", an);
+            LOG_INFO("  base: {}", base);
+            LOG_INFO("  plateau (POI lift): {}", plateau);
+            LOG_INFO("  basinDepth: {}", basin);
+            LOG_INFO("  bedDepth: {}", bed);
+            LOG_INFO("  zone storey: {}", storey);
+        }
+        // The four border lines' resolved styles (a Sea arm IS a water
+        // channel along the line).
+        render::terraingen::MapGridSpec grid;
+        grid.valid = true;
+        grid.seed = params.worldSeed;
+        grid.mapSize = view->mapSize;
+        grid.seaLevel = params.macro.seaLevel;
+        const render::terraingen::ProceduralControls controls { cp };
+        const auto styleName = [](render::terraingen::MapEdgeStyle st) {
+            return st == render::terraingen::MapEdgeStyle::Sea ? "Sea" : "Ridges";
+        };
+        LOG_INFO("  border lines: west {} | east {} | south {} | north {}",
+                 styleName(render::terraingen::mapBorderStyleResolved(
+                     controls, params.macro, grid, mapX, mapZ, true)),
+                 styleName(render::terraingen::mapBorderStyleResolved(
+                     controls, params.macro, grid, mapX + 1, mapZ, true)),
+                 styleName(render::terraingen::mapBorderStyleResolved(
+                     controls, params.macro, grid, mapZ, mapX, false)),
+                 styleName(render::terraingen::mapBorderStyleResolved(
+                     controls, params.macro, grid, mapZ + 1, mapX, false)));
     }
     // One line of history per run.
     std::ofstream log { cacheDir / "landscape-report.log", std::ios::app };

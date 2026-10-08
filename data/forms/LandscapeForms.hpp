@@ -594,6 +594,7 @@ struct TerrainGenTuningForm : Form {
     f32 zoneWallWidthHigh { 60.0f };
     f32 zoneRampWidth { 400.0f };
     f32 zoneStartGap { 0.0f };
+    u32 zoneRampartSteps { 0 }; // storeys ADDED to the map-line rampart row
     // --- Bake (TileBake.hpp, FluvialErosion.hpp, ThermalErosion.hpp)
     f32 bakeMacroTexel { 16.0f };
     f32 bakeCalmCut { 0.5f };
@@ -713,6 +714,7 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(zoneWallWidthHigh)
         REFLECT_FIELD(zoneRampWidth)
         REFLECT_FIELD(zoneStartGap)
+        REFLECT_FIELD(zoneRampartSteps)
         REFLECT_FIELD(bakeMacroTexel)
         REFLECT_FIELD(bakeCalmCut)
         REFLECT_FIELD(bakeRoughCut)

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <map>
 
+#include "engine/terrain/generation/MapGrid.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/ZonePlan.hpp"
@@ -33,6 +34,52 @@ TEST_CASE("zones: deterministic and identical from both sides of a map line") {
         const f32 h2 = controls.at(8192.0f + 4.0f, z).base;
         CHECK(std::abs(h2 - 2.0f * h1 + h0) < 3.0f);
     }
+}
+
+TEST_CASE("zones: the rampart — no storey step down toward a Ridges map line") {
+    // Along a Ridges segment of the line z = 8192 (map (0,0) | (0,1)),
+    // the row the line crosses is never below the rows beside it. With
+    // the rule off, the trend steps freely: the violation rate is the
+    // control.
+    ProceduralControlParams pc;
+    pc.seed = 1337;
+    const ProceduralControls controls { pc };
+    const auto& world = controls.params().world;
+    ZoneParams on = controls.params().zones;
+    on.mapSize = 8192.0f;
+    ZoneParams off = on;
+    off.mapSize = 0.0f;
+    const auto violations = [&](const ZoneParams& zones) {
+        u32 n = 0, bad = 0;
+        for (i32 cell = -2; cell <= 2; ++cell) {
+            if (mapBorderSegmentStyle(world, 8192.0f, 1, cell, false) !=
+                MapEdgeStyle::Ridges) {
+                continue;
+            }
+            for (f32 x = static_cast<f32>(cell) * 8192.0f + 64.0f;
+                 x < static_cast<f32>(cell + 1) * 8192.0f; x += 64.0f) {
+                const i32 band = zoneSampleAt(world, zones, x, 8192.0f).storey;
+                const i32 south =
+                    zoneSampleAt(world, zones, x, 8192.0f - 450.0f).storey;
+                const i32 north =
+                    zoneSampleAt(world, zones, x, 8192.0f + 450.0f).storey;
+                ++n;
+                if (band < south || band < north) {
+                    ++bad;
+                }
+            }
+        }
+        REQUIRE(n > 100);
+        return static_cast<f32>(bad) / static_cast<f32>(n);
+    };
+    const f32 withRule = violations(on);
+    const f32 without = violations(off);
+    MESSAGE("rampart violations: with rule " << withRule << ", without "
+                                             << without);
+    // A thin row (jitter + warp) can put a 450 m probe in the band
+    // itself or two rows over: a few percent, never the free trend's.
+    CHECK(withRule < 0.1f);
+    CHECK(withRule < without);
 }
 
 TEST_CASE("zones: every archetype draws somewhere, none everywhere") {

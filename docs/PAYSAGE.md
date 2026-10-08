@@ -1978,6 +1978,46 @@ briques Z0-Z5 dans le fichier de plan.
   plus de rebuild Debug ni de tests avant un commit sauf nécessité** —
   règle durcie en mémoire ; le hash de `MapBakerTest` est ré-épinglé
   au push. Jugement dev EN ATTENTE.
+- **2026-10-08 — « Mets plutôt 160 en budget érosion pour crête-massif.
+  Attention, j'ai repéré un bug quand une rivière longe une frontière de
+  map. »** Crête-massif à 160 m. Le bug, mesuré par deux nouveaux
+  recensements du rapport (« rivers vs map lines » : nœuds à moins de
+  150 m d'une ligne, pire série avec son étendue LE LONG de la ligne,
+  son tier, le profil du sol et de l'analytique en travers ; « master
+  courses vs map lines » : la même chose sur le réseau maître) : un
+  fleuve (tier 2) longeait la ligne nord de la carte (1,0) sur 1,5 km
+  et un autre la ligne sud de la (0,0) sur 1 km, et le réseau maître
+  lui-même y avait des séries de 1 à 2,5 km. **Cause** : le réseau de
+  zones est aligné sur les axes, donc ses murs sont parallèles aux
+  lignes de carte ; un mur à moins de 300 m d'une ligne qui descend
+  VERS elle, plus la chaîne de bordure (un relief additif), font une
+  gouttière entre les deux ; le réseau maître (analytique, sans la
+  chaîne) la suit, l'empreinte la creuse, le fastscape la garde. Le
+  profil pointu de la crête (t²) et un budget léger dans la bande de
+  crête n'y ont rien changé ; décaler le réseau d'une demi-cellule
+  (gardé : une rangée de zones chevauche chaque ligne) n'a fait que
+  déplacer les murs à ±256 m. **Règle retenue (une règle de zone, pas
+  une rustine d'hydrologie) : le rempart.** La rangée de cellules
+  qu'une ligne de style crêtes traverse n'est jamais en dessous d'une
+  voisine (`ZonePlan` : `ridgeLineCrossesCell`, max des 8 étages bruts
+  + `rampartSteps`, pupitre `zoneRampartSteps`, 0 par défaut) : la
+  chaîne de bordure naît sur une ligne de partage des eaux, aucun mur
+  ne descend vers la ligne. Pour que les zones lisent le style des
+  segments, `MapGrid.hpp/.cpp` porte désormais `MapEdgeStyle`,
+  `mapBorderStyle` et le **veto Mer lu sur la couche monde**
+  (`mapBorderSegmentStyle`, 9 échantillons `worldSampleAt`, sous
+  2 m = océan) ; `mapBorderStyleResolved` de TerrainGen y délègue (le
+  veto lisait l'analytique, qui dépend des zones : circulaire).
+  Mesuré (clé 7d8cc932079f62e4) : nœuds à moins de 150 m d'une ligne
+  173 → 79 sur (0,0), 127 → 42 sur (1,0) ; **pire série le long d'une
+  ligne 126 m sur chaque carte** (des traversées obliques ; avant
+  1,5 km et 1 km) ; réseau maître : séries max 20 → 8 nœuds ; l'étage
+  de zone est plat en travers des lignes (180/240 m). Effets de bord :
+  carte (0,0) spawn pente 74 % (le départ tombe maintenant sur un
+  versant, 213 lacs, relief 55 m / 250 m) ; carte (1,0) 161 lacs,
+  relief 42 m. Test différentiel `zones: the rampart` (taux de
+  violation avec/sans la règle). Jugement dev EN ATTENTE ; la suite =
+  Z3 murs et portes.
 
 ---
 

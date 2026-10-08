@@ -875,7 +875,6 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 
 namespace {
 
-constexpr u32 kSaltBorderStyle = 0xb02de125u;
 // Meters of shore per continent unit per wavelength (the carrier's
 // typical gradient after contrast): hand-tuned against the bake's
 // distance field.
@@ -888,7 +887,12 @@ constexpr u32 kSaltBorderWander = 0x3a2de300u;
 f32 mountainProfile(f32 dist) {
     const f32 t =
         1.0f - glm::clamp(dist / kMapBorderMountainHalf, 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t); // smooth rise, crest on the line
+    // A PEAKED crest (slope at the line, soft foot): a smoothstep's
+    // flat top let the along-line peaks-and-saddles variation rule the
+    // drainage there, and rivers ran ALONG the border for a kilometer
+    // (dev bug report 2026-10-08). With a cross slope at the crest the
+    // water takes the flanks; the saddles stay the passes.
+    return t * t;
 }
 
 f32 seaProfile(f32 dist) {
@@ -1097,77 +1101,13 @@ u64 hashParams(const MacroParams& p) {
     return h.h;
 }
 
-MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
-                            bool vertical) {
-    u64 h = 14695981039346656037ull;
-    const auto mix = [&h](u64 v) {
-        for (int byte = 0; byte < 8; ++byte) {
-            h ^= (v >> (byte * 8)) & 0xFF;
-            h *= 1099511628211ull;
-        }
-    };
-    mix(seed ^ kSaltBorderStyle);
-    mix(static_cast<u64>(static_cast<u32>(lineIndex)));
-    mix(static_cast<u64>(static_cast<u32>(cellCross)));
-    mix(vertical ? 0x76ull : 0x68ull);
-    return (h & 1ull) != 0ull ? MapEdgeStyle::Ridges
-                              : MapEdgeStyle::Sea;
-}
-
 MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
-                                    const MacroParams& macro,
+                                    const MacroParams& /*macro*/,
                                     const MapGridSpec& spec,
                                     i32 lineIndex, i32 cellCross,
                                     bool vertical) {
-    const MapEdgeStyle proposed =
-        mapBorderStyle(spec.seed, lineIndex, cellCross, vertical);
-    if (proposed != MapEdgeStyle::Sea) {
-        return proposed;
-    }
-    // Sea veto: a sea arm only stands where the analytic world already
-    // reads coastal along the segment — deep inland it demotes to the
-    // canonical land-land border (Ridges). Memoized per segment (the
-    // analytic samples are the cost); thread-local keeps it pure.
-    thread_local std::unordered_map<u64, MapEdgeStyle> memo;
-    u64 key = static_cast<u64>(static_cast<u32>(lineIndex)) |
-              (static_cast<u64>(static_cast<u32>(cellCross)) << 32);
-    key ^= vertical ? 0x9e3779b97f4a7c15ull : 0xc2b2ae3d27d4eb4full;
-    key ^= static_cast<u64>(spec.seed) * 0x100000001b3ull;
-    key ^= static_cast<u64>(
-               static_cast<i64>(spec.seaLevel * 64.0f)) << 17;
-    key ^= static_cast<u64>(spec.mapSize) << 3;
-    // The analytic samples below read every control param: a pupitre
-    // edit must never serve a stale veto.
-    key ^= hashParams(controls.params().world) * 0x9e3779b97f4a7c15ull;
-    key ^= hashParams(controls.params().rhythm) * 0xc2b2ae3d27d4eb4full;
-    key ^= hashParams(controls.params().poi) * 0x165667b19e3779f9ull;
-    key ^= hashParams(macro) * 0x27d4eb2f165667c5ull;
-    key ^= hashParams(controls.params().zones) * 0x85ebca6b0c2b2ae3ull;
-    if (const auto it = memo.find(key); it != memo.end()) {
-        return it->second;
-    }
-    constexpr u32 kSamples = 9;
-    u32 oceanish = 0;
-    for (u32 i = 0; i < kSamples; ++i) {
-        const f32 along =
-            (static_cast<f32>(cellCross) +
-             (static_cast<f32>(i) + 0.5f) / static_cast<f32>(kSamples)) *
-            spec.mapSize;
-        const f32 lineAt = static_cast<f32>(lineIndex) * spec.mapSize;
-        const f32 sx = vertical ? lineAt : along;
-        const f32 sz = vertical ? along : lineAt;
-        if (macroHeightAnalytic(controls, macro, sx, sz) <
-            spec.seaLevel + 2.0f) {
-            ++oceanish;
-        }
-    }
-    const MapEdgeStyle resolved =
-        static_cast<f32>(oceanish) <
-                kMapBorderSeaVetoOceanFrac * static_cast<f32>(kSamples)
-            ? MapEdgeStyle::Ridges
-            : MapEdgeStyle::Sea;
-    memo.emplace(key, resolved);
-    return resolved;
+    return mapBorderSegmentStyle(controls.params().world, spec.mapSize,
+                                 lineIndex, cellCross, vertical);
 }
 
 f32 applyMapGridShape(const ProceduralControls& controls,

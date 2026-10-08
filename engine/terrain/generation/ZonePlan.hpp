@@ -66,6 +66,12 @@ struct ZoneParams {
     f32 wallWidthHigh { 60.0f };    // riser width PER STEP of a two-step+ escarpment
     f32 rampWidth { 400.0f };       // the corridors' ramp across a border
     f32 startGap { 0.0f };          // meters past the start ring without storeys (0 = none)
+    // The map lattice (MapGrid.hpp), 0 = none: the cells a Ridges map
+    // line crosses form a RAMPART — never below any neighbour, plus
+    // rampartSteps — so the border range rises out of a divide and
+    // no master course runs along its foot.
+    f32 mapSize { 0.0f };
+    i32 rampartSteps { 0 };
     vector<ZoneArchetype> archetypes; // empty = defaultZoneArchetypes()
 };
 

@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
+#include "engine/terrain/generation/MapGrid.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 #include "engine/terrain/generation/ZonePlan.hpp"
@@ -388,13 +389,8 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 // Corners compose by construction: two mountain lines join (max of
 // profiles); a mountain line dives into a sea line as coastal cliffs
 // (the sea cut applies after the lift); sea+sea is open ocean.
-enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1 };
-
-// The hashed style PROPOSAL of one border LINE segment: `lineIndex` is
-// the grid index of the line (x = lineIndex * mapSize for vertical),
-// `cellCross` the map coordinate along the crossing axis.
-MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
-                            bool vertical);
+// MapEdgeStyle, mapBorderStyle and the Sea veto live in MapGrid.hpp:
+// the zones read the same segment styles (their rampart rule).
 
 
 struct MapGridSpec {
@@ -427,16 +423,9 @@ constexpr f32 kMapBorderLandFadeHigh = 24.0f; // full strength above
 // two styles cross-fade over this band along the line — a sea arm
 // closes into a bay while the range rises, never a dead-end channel.
 constexpr f32 kMapBorderStyleBlend = 900.0f;
-// A Sea proposal needs at least this fraction of its segment's samples
-// under sea in the ANALYTIC world to stand; otherwise it demotes to
-// Ridges (no 4 km canal dug across a continent).
-constexpr f32 kMapBorderSeaVetoOceanFrac = 0.34f;
-
-// The RESOLVED style of a segment: the hashed proposal, with the Sea
-// veto above applied against the analytic ground sampled along the
-// nominal line (memoized per segment). Every caller passes the same
-// (controls, macro) it feeds macroHeightAnalytic, so the bakes and
-// the runtime fallback resolve identically.
+// The RESOLVED style of a segment (mapBorderSegmentStyle on the
+// controls' world layer and the spec's map size): the bakes, the
+// zones and the runtime fallback resolve identically.
 MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,
                                     const MacroParams& macro,
                                     const MapGridSpec& spec,

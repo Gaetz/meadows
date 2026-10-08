@@ -1049,7 +1049,7 @@ palette = 0
 piece = 4
 pieceHeight = 25.0
 pieceRadius = 60.0
-erosionCut = 200.0
+erosionCut = 160.0
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000d"

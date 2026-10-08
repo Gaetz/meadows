@@ -356,8 +356,17 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         if (i < macro.scarp.size()) {
             cut = glm::mix(cut, 4.0f * params.calmCut, macro.scarp[i]);
         }
-        if (imprintKeep[i] > 0.0f || ridgeFactor[i] > 0.2f) {
+        if (imprintKeep[i] > 0.0f) {
             cut = params.roughCut;
+        } else if (ridgeFactor[i] > 0.2f) {
+            // A border range is a DESIGNED landform: the light budget
+            // of a piece. The band used to take the rough budget to
+            // carve its cols, and the fastscape, fed along the crest
+            // into every saddle, dug a 250 m trench ALONG the line — a
+            // river running the border for a kilometer (dev bug report
+            // 2026-10-08). A saddle is walkable by its own lowered
+            // crest (a third of the lift over 900 m): no carve needed.
+            cut = 4.0f * params.calmCut;
         }
         maxCut[i] = cut;
     }

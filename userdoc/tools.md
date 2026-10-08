@@ -160,5 +160,9 @@ zone en mètres, 0 = socle brut, 200 = versants disséqués). Un mod peut patche
 nouvelle ; sans aucun record, le jeu utilise la même table en C++.
 Les réglages de la mosaïque elle-même (taille de cellule, pas de palier,
 nombre de paliers, tendance longue, largeur des murs, rampe des
-corridors) sont dans le pupitre, groupe `zone`.
+corridors) sont dans le pupitre, groupe `zone`. Les lignes de carte de
+style « crêtes » traversent une rangée de zones **rempart** : jamais en
+dessous d'une voisine (la chaîne de bordure naît sur une ligne de
+partage des eaux, aucune rivière ne longe la frontière) ;
+`zoneRampartSteps` ajoute des paliers à cette rangée (0 par défaut).
 

@@ -8,11 +8,14 @@
 
 #include <algorithm>
 
+#include <glm/glm.hpp>
+
 #include "data/forms/FormQuery.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Record.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
+#include "game/MapBaker.hpp"
 #include "engine/reflect/Visit.hpp"
 
 namespace game {
@@ -143,6 +146,8 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.zones.wallWidthHigh = form.zoneWallWidthHigh;
     params.controls.zones.rampWidth = form.zoneRampWidth;
     params.controls.zones.startGap = form.zoneStartGap;
+    params.controls.zones.rampartSteps =
+        static_cast<i32>(form.zoneRampartSteps);
 }
 
 data::TerrainGenTuningForm
@@ -267,6 +272,8 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.zoneWallWidthHigh = params.controls.zones.wallWidthHigh;
     form.zoneRampWidth = params.controls.zones.rampWidth;
     form.zoneStartGap = params.controls.zones.startGap;
+    form.zoneRampartSteps =
+        static_cast<u32>(glm::max(params.controls.zones.rampartSteps, 0));
     return form;
 }
 
@@ -366,6 +373,10 @@ TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
     // Border transitions on (bakeMap fills the grid spec; the streamer
     // overwrites it from its own map config either way).
     params.mapGrid.valid = true;
+    // The zones read the map lattice (their rampart rule): the same
+    // size bakeMap puts in the grid spec.
+    params.controls.zones.mapSize =
+        params.tileSize * static_cast<f32>(kMapTilesPerSide);
     applyTerrainGenTuning(gen, params);
     if (forms) {
         // The archetype table of the zones (records, moddable); none =

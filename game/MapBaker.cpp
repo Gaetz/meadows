@@ -173,6 +173,7 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         mapParams.mapGrid.mapSize = mapParams.tileSize;
         mapParams.mapGrid.seaLevel = params.macro.seaLevel;
     }
+    mapParams.controls.zones.mapSize = mapParams.tileSize;
     const auto s1Start = std::chrono::steady_clock::now();
     const TileStage1 mapS1 = bakeTileStage1(mapParams, mapX, mapZ,
                                             cancel);
