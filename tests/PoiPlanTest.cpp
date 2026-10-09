@@ -61,15 +61,33 @@ TEST_CASE("poi plan: deterministic and typed") {
 }
 
 TEST_CASE("poi plan: densities per 8 km map") {
-    // Over 16 maps: one grand each, 16 moyens each (one per 2 km cell),
-    // moyens never closer than a kilometer, a few hundred petits.
+    // Over the LAND maps of the start continent: one grand each, 16
+    // moyens each (one per 2 km cell), moyens never closer than a
+    // kilometer, a few hundred petits. Archipelago world: the open
+    // ocean composes nothing, so the sweep stays on the host core
+    // (maps 0..2 of continent (0,0)).
     const ProceduralControlParams pc = paramsFor(1337);
-    u32 grands = 0, moyens = 0, petits = 0;
+    u32 grands = 0, moyens = 0, petits = 0, landMaps = 0;
     f32 closest = 1.0e9f;
-    for (i32 mz = -2; mz < 2; ++mz) {
-        for (i32 mx = -2; mx < 2; ++mx) {
+    for (i32 mz = 0; mz < 3; ++mz) {
+        for (i32 mx = 0; mx < 3; ++mx) {
             const f32 x0 = static_cast<f32>(mx) * 8192.0f;
             const f32 z0 = static_cast<f32>(mz) * 8192.0f;
+            // The densities hold on the maps that are themselves land;
+            // a coastal map loses its ocean share of the lattice.
+            u32 wet = 0;
+            for (u32 sz = 0; sz < 5; ++sz) {
+                for (u32 sx = 0; sx < 5; ++sx) {
+                    wet += worldSampleAt(pc.world,
+                                         x0 + (0.5f + static_cast<f32>(sx)) *
+                                                  (8192.0f / 5.0f),
+                                         z0 + (0.5f + static_cast<f32>(sz)) *
+                                                  (8192.0f / 5.0f))
+                               .sea;
+                }
+            }
+            const bool landMap = wet == 0;
+            landMaps += landMap;
             const auto sites =
                 poiSitesNear(pc.world, pc.poi, x0, z0, x0 + 8192.0f, z0 + 8192.0f);
             u32 g = 0, m = 0, p = 0;
@@ -84,9 +102,11 @@ TEST_CASE("poi plan: densities per 8 km map") {
                     ++p;
                 }
             }
-            CHECK(g == 1);
-            CHECK(m >= 14);
-            CHECK(m <= 18);
+            if (landMap) {
+                CHECK(g == 1);
+                CHECK(m >= 14);
+                CHECK(m <= 18);
+            }
             for (size_t i = 0; i < ms.size(); ++i) {
                 for (size_t j = i + 1; j < ms.size(); ++j) {
                     closest = std::min(
@@ -99,10 +119,12 @@ TEST_CASE("poi plan: densities per 8 km map") {
             petits += p;
         }
     }
-    MESSAGE("16 maps: grands ", grands, ", moyens ", moyens, ", petits ",
-            petits, ", closest moyen pair ", closest, " m");
+    MESSAGE("9 maps (", landMaps, " land): grands ", grands, ", moyens ",
+            moyens, ", petits ", petits, ", closest moyen pair ", closest,
+            " m");
+    CHECK(landMaps >= 2);
     CHECK(closest >= 1000.0f);
-    CHECK(petits >= 16 * 150);
+    CHECK(petits >= landMaps * 150);
 }
 
 TEST_CASE("poi plan: symmetric at a map line") {
@@ -168,7 +190,10 @@ TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
     MESSAGE("moyens ", moyens, ", edges ", edges.size(), ", isolated ",
             isolated, ", alike-adjacent ", alike, ", distinct types ",
             typeCounts.size());
-    CHECK(isolated == 0);
+    // Archipelago coasts: a headland site can stand alone on its
+    // stretch of coast, every land partner slot drowned — a walk
+    // cannot reach it and that is the geography's say.
+    CHECK(isolated <= 1);
     // F3 compares a site with its lower-rank neighbour on one draw:
     // a few alike pairs survive (measured 4-8 % by world).
     CHECK(100 * alike <= 10 * static_cast<u32>(edges.size())); // water fallbacks re-type after the F3 pass

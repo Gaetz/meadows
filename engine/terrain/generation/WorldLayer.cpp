@@ -25,6 +25,88 @@ constexpr u32 kSaltTemperatureSlow = 0x7ea7be58u;
 constexpr u32 kSaltMoistureSlow = 0x6d015746u;
 constexpr u32 kSaltCoverT = 0xc0ec0e01u;
 constexpr u32 kSaltCoverM = 0xc0ec0e02u;
+constexpr u32 kSaltContinentCell = 0xa2c41ce1u;
+constexpr u32 kSaltContinentShape = 0x5ba9e002u;
+
+// The edge guard of the archipelago lattice: land dies this far inside
+// the host core (the coast detail may push it back up to ~350 m, the
+// guarantee keeps ~290 m of margin).
+constexpr f32 kContinentEdgeMargin = 640.0f;
+constexpr f32 kContinentEdgeFalloff = 2048.0f;
+
+u32 continentHash(const WorldLayerParams& p, i32 i, i32 j) {
+    return (p.seed ^ kSaltContinentCell) ^
+           (static_cast<u32>(i) * 0x9e3779b9u) ^
+           (static_cast<u32>(j) * 0x85ebca6bu);
+}
+
+// Radial continent field of the nearest lattice continents, in v units
+// (1 at a heart, 0 at the nominal coast, negative at sea). Warp enters
+// through the shape fbm only: the geometry stays unwarped so the edge
+// guard's arithmetic holds.
+f32 latticeBlob(const WorldLayerParams& p, f32 x, f32 z, f32 wx, f32 wz) {
+    const f32 superSize = p.continentSuperSize;
+    const f32 pitch =
+        superSize * static_cast<f32>(p.continentCellSupers);
+    const i32 i0 = static_cast<i32>(std::floor(x / pitch));
+    const i32 j0 = static_cast<i32>(std::floor(z / pitch));
+    f32 best = -8.0f;
+    for (i32 j = j0 - 1; j <= j0 + 1; ++j) {
+        for (i32 i = i0 - 1; i <= i0 + 1; ++i) {
+            const u32 hash = continentHash(p, i, j);
+            f32 jx = (static_cast<f32>(hash & 0xffffu) *
+                          (1.0f / 65535.0f) * 2.0f -
+                      1.0f) *
+                     p.continentJitter;
+            f32 jz = (static_cast<f32>((hash >> 16) & 0xffffu) *
+                          (1.0f / 65535.0f) * 2.0f -
+                      1.0f) *
+                     p.continentJitter;
+            if (i == 0 && j == 0) {
+                // Start decree: the start sits 11.6 km from the host
+                // center — the forced south-west offset puts it inside
+                // the nominal coast for every seed.
+                jx = -p.continentJitter;
+                jz = -p.continentJitter;
+            }
+            const f32 cx = static_cast<f32>(i) * pitch +
+                           superSize * 0.5f + jx;
+            const f32 cz = static_cast<f32>(j) * pitch +
+                           superSize * 0.5f + jz;
+            const f32 d = std::hypot(x - cx, z - cz);
+            if (d > pitch) {
+                continue; // saturated sea either way, spare the fbm
+            }
+            const f32 shape =
+                noise::fbm(hash ^ kSaltContinentShape, wx, wz,
+                           1.0f / p.continentShapeWavelength, 2, 2.0f,
+                           0.5f);
+            const f32 rEff =
+                p.continentRadius *
+                (1.0f + p.continentShapeAmp * (shape * 2.0f - 1.0f));
+            best = glm::max(best, 1.0f - d / glm::max(rEff, 1.0f));
+        }
+    }
+    return best;
+}
+
+// Signed guard field, in v units: >= 0 only inside a host super-cell
+// core, margin deep. min/max of continuous axis distances — continuous
+// across every super and pitch line.
+f32 latticeGuard(const WorldLayerParams& p, f32 x, f32 z) {
+    const f32 superSize = p.continentSuperSize;
+    const f32 pitch =
+        superSize * static_cast<f32>(p.continentCellSupers);
+    const auto axis = [&](f32 v) {
+        const f32 h0 = std::floor(v / pitch) * pitch;
+        const f32 sd0 = glm::min(v - h0, h0 + superSize - v);
+        const f32 sd1 =
+            glm::min(v - (h0 + pitch), h0 + pitch + superSize - v);
+        return glm::max(sd0, sd1);
+    };
+    const f32 dEdge = glm::min(axis(x), axis(z));
+    return (dEdge - kContinentEdgeMargin) / kContinentEdgeFalloff;
+}
 
 // Province altitude from the raw étage field: a monotone table, the
 // low end wide (most land is low country), the high end rare.
@@ -97,11 +179,18 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
                  2.0f -
              1.0f) *
                 p.continentWarpStrength;
-    f32 c = noise::fbm(p.seed ^ kSaltContinent, wx, wz,
+    const bool lattice = p.continentCellSupers > 0;
+    f32 c;
+    if (lattice) {
+        c = p.seaThreshold +
+            kContinentGain * latticeBlob(p, x, z, wx, wz);
+    } else {
+        c = noise::fbm(p.seed ^ kSaltContinent, wx, wz,
                        1.0f / p.continentWavelength, 3, 2.0f, 0.5f);
-    // Contrast: raw fbm hugs its midline; stretched so land and sea
-    // are decided and the coast belt stays a belt.
-    c = 0.5f + (c - 0.5f) * 1.6f;
+        // Contrast: raw fbm hugs its midline; stretched so land and
+        // sea are decided and the coast belt stays a belt.
+        c = 0.5f + (c - 0.5f) * 1.6f;
+    }
     // Start decree: land, low, temperate around the start. `pull` is
     // the meadow, `pullLow` the low country around it.
     const f32 dStart = std::hypot(x - p.startX, z - p.startZ);
@@ -113,6 +202,13 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
                                    p.startLowRadius + p.startLowFade,
                                    dStart);
     c = glm::mix(c, glm::max(c, p.seaThreshold + 0.14f), pullLow);
+    if (lattice) {
+        // The edge guard wins over everything, start pull included:
+        // land past a host core would hand a river head to a window
+        // that cannot trace it.
+        c = glm::min(c, p.seaThreshold +
+                            kContinentGain * latticeGuard(p, x, z));
+    }
     // The carrier alone paces the inland ramp below: the coast detail
     // is a 5 km field, a floor ramped on it would cliff.
     const f32 carrier = c;
@@ -248,6 +344,12 @@ u64 hashParams(const WorldLayerParams& p) {
     const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
     u(p.seed);
     f(p.continentWavelength);
+    u(p.continentCellSupers);
+    f(p.continentSuperSize);
+    f(p.continentRadius);
+    f(p.continentJitter);
+    f(p.continentShapeWavelength);
+    f(p.continentShapeAmp);
     f(p.coastDetailWavelength);
     f(p.coastDetailAmp);
     f(p.continentWarpWavelength);

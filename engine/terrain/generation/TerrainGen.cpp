@@ -1187,10 +1187,13 @@ f32 macroHeightAnalytic(const ProceduralControls& controls,
     // Shore distance approximated from the continent value: the
     // carrier's typical slope turns continent units into meters (good
     // enough for silhouettes and boundary conditions; the bake's grid
-    // distance field is the truth inside a map).
+    // distance field is the truth inside a map). The lattice carrier
+    // is radial by construction, so its conversion is exact.
     const WorldLayerParams& world = controls.params().world;
     const f32 d = (w.continent - world.seaThreshold) *
-                  world.continentWavelength * kShoreProxy;
+                  (world.continentCellSupers > 0
+                       ? world.continentRadius / kContinentGain
+                       : world.continentWavelength * kShoreProxy);
     return coastProfile(params, land, s.tier, d, s.hardness);
 }
 

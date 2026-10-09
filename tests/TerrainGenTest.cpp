@@ -784,8 +784,11 @@ TEST_CASE("world layer: the start is land, temperate, off the massifs for any se
 }
 
 TEST_CASE("world layer: etage distribution over 200 km") {
-    // The world is mostly low country with hills, plateaus rarer, the
-    // high mountain rare; the sea a real share; massifs a minority.
+    // Archipelago world: the statistics that matter are the ones INSIDE
+    // the host cores (a continent and its coastal waters) — the ocean
+    // between continents is decided by the lattice pitch, not by the
+    // land character. Land is mostly low country with hills, plateaus
+    // rarer, the high mountain rare; massifs a minority.
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
@@ -793,10 +796,21 @@ TEST_CASE("world layer: etage distribution over 200 km") {
         massif = 0;
     const WorldLayerParams& world = controls.params().world;
     const f32 anchored = world.anchorRadius + world.anchorFade;
+    const f32 superSize = world.continentSuperSize;
+    const f32 pitch =
+        superSize * static_cast<f32>(world.continentCellSupers);
+    const auto inHostCore = [&](f32 v) {
+        const f32 local = v - std::floor(v / pitch) * pitch;
+        return local >= 0.0f && local < superSize;
+    };
     for (f32 z = -100000.0f; z <= 100000.0f; z += 1000.0f) {
         for (f32 x = -100000.0f; x <= 100000.0f; x += 1000.0f) {
             // Outside the start anchor: the world's own statistics.
             if (std::hypot(x - world.startX, z - world.startZ) < anchored) {
+                continue;
+            }
+            if (world.continentCellSupers > 0 &&
+                (!inHostCore(x) || !inHostCore(z))) {
                 continue;
             }
             WorldSample w;
@@ -829,8 +843,11 @@ TEST_CASE("world layer: etage distribution over 200 km") {
     MESSAGE("sea ", seaPct, "% of the world; land: < 150 m ", lowPct,
             "%, 150-450 ", hillsPct, "%, 450-800 ", plateauPct,
             "%, >= 800 ", highPct, "%; massif > 0.5: ", massifPct, "%");
+    // In-core sea is the continent's own coastal belt (land fills
+    // ~pi R^2 of the core): a bigger share than the old infinite-world
+    // 20-25 % target, which the ocean between continents now carries.
     CHECK(seaPct >= 15.0);
-    CHECK(seaPct <= 35.0);
+    CHECK(seaPct <= 45.0);
     // The zones' storeys lift the land by 0-4 steps: the provinces
     // read a step higher than the étage table alone.
     CHECK(lowPct >= 10.0);
@@ -982,7 +999,9 @@ TEST_CASE("controls v3: landmark summits on every map") {
             landMaps, " min ", least, ", any map max ", worst);
     CHECK(static_cast<f64>(peaks) / 64.0 >= 5.0);
     CHECK(static_cast<f64>(peaks) / 64.0 <= 60.0);
-    CHECK(landMaps >= 20);
+    // Archipelago world: the sweep holds ONE full continent (~9 maps,
+    // the coastal ones partly sea) plus another's tip.
+    CHECK(landMaps >= 6);
     CHECK(least >= 1); // never an empty land map
     CHECK(worst <= 90);
 }

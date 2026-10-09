@@ -504,6 +504,14 @@ const CellSite& typedSite(const WorldLayerParams& world,
     if (cell.present) {
         PoiSite& s = cell.site;
         const WorldSample w = worldSampleAt(world, s.x, s.z);
+        // Open ocean composes nothing (archipelago world): a site only
+        // stands on land or on the shoreline belt, where its sea types
+        // (islet, fjord, sea stack) belong. Without this, the moyen
+        // lattice sprinkles cone islets across every strait.
+        if (w.sea && w.coast <= 0.0f) {
+            cell.present = false;
+            return memo.sites.emplace(key, cell).first->second;
+        }
         const bool startDisc = startDiscAt(world, s.x, s.z);
         u32 alt = 0;
         s.type = drawType(tier, w, startDisc, s.hash, alt);

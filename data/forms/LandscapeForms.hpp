@@ -486,6 +486,11 @@ struct LandscapeTuningForm : Form {
 struct TerrainGenTuningForm : Form {
     // --- World layer (engine/terrain/generation/WorldLayer.hpp)
     f32 worldContinentWavelength { 45000.0f };
+    u32 worldContinentCellSupers { 2 }; // 0 = legacy infinite carrier
+    f32 worldContinentRadius { 11000.0f };
+    f32 worldContinentJitter { 788.0f };
+    f32 worldContinentShapeWavelength { 15000.0f };
+    f32 worldContinentShapeAmp { 0.18f };
     f32 worldSeaThreshold { 0.47f };
     f32 worldEtageWavelength { 28000.0f };
     f32 worldMassifWavelength { 26000.0f };
@@ -629,6 +634,11 @@ struct TerrainGenTuningForm : Form {
 
     REFLECT_BEGIN(TerrainGenTuningForm, Form)
         REFLECT_FIELD(worldContinentWavelength)
+        REFLECT_FIELD(worldContinentCellSupers)
+        REFLECT_FIELD(worldContinentRadius)
+        REFLECT_FIELD(worldContinentJitter)
+        REFLECT_FIELD(worldContinentShapeWavelength)
+        REFLECT_FIELD(worldContinentShapeAmp)
         REFLECT_FIELD(worldSeaThreshold)
         REFLECT_FIELD(worldEtageWavelength)
         REFLECT_FIELD(worldMassifWavelength)

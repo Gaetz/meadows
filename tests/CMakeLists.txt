@@ -147,6 +147,7 @@
     VegetationScatterTest.cpp
     VertexAoTest.cpp
     WeaponMeshesTest.cpp
+    WorldLayerTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

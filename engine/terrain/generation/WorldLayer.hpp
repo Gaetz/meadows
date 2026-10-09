@@ -18,11 +18,34 @@
 
 namespace render::terraingen {
 
+// Carrier units per v unit of the archipelago lattice field: the
+// lattice writes `seaThreshold + kContinentGain * v` so the downstream
+// consumers (coast belt, inland ramp, sea floor, shore-distance proxy)
+// read the same carrier scale as the legacy fbm. 0.5 saturates the
+// inland ramp at a continent's heart even for the high provinces
+// (coastBand * 5.5 = 0.44 < gain) — lower, the hearts lose their
+// mountains.
+inline constexpr f32 kContinentGain = 0.5f;
+
 struct WorldLayerParams {
     u32 seed { 1337 };
     // Continent carrier (sea vs land), warped so coasts wander; the
     // coast detail articulates bays and headlands on the belt only.
     f32 continentWavelength { 45000.0f };
+    // Archipelago lattice (docs/PAYSAGE.md §7.8): finite continents on
+    // a deterministic grid, ocean between — 0 supers = the legacy
+    // infinite fbm carrier above. A continent is hosted by ONE master
+    // super-cell (continentSuperSize MUST equal MasterNetworkParams::
+    // superRegionSize) every `continentCellSupers` cells, and its LAND
+    // is kept inside that cell's half-open CORE by a hard edge guard:
+    // every river head then belongs to the host cell and no course
+    // needs cross-super stitching (MasterNetwork.hpp ownership).
+    u32 continentCellSupers { 2 };
+    f32 continentSuperSize { 24576.0f };
+    f32 continentRadius { 11000.0f };
+    f32 continentJitter { 788.0f };
+    f32 continentShapeWavelength { 15000.0f };
+    f32 continentShapeAmp { 0.18f };
     f32 coastDetailWavelength { 5000.0f };
     f32 coastDetailAmp { 0.12f };
     f32 continentWarpWavelength { 12000.0f };

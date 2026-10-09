@@ -2150,6 +2150,47 @@ l'hydrologie définitive).
   identité bit-exacte ; pas de bump (la clé bouge via le hash du Form).
   Mesuré : les 2 cas `TerrainGenTuningTest` verts (défauts champ à
   champ, round-trip + clé). Jugement dev EN ATTENTE.
+- **2026-10-09 — E1 livrée : l'archipel.** Le porteur fbm 45 km cède à
+  un **treillis de continents** dans `worldSampleAt` : un continent par
+  super-cellule hôte (i·P, j·P), P = `worldContinentCellSupers` 2 (soit
+  un tous les 49 152 m), champ radial 1 − d/R_eff (R
+  `worldContinentRadius` 11 000, forme fbm 15 km ± 18 %), converti en
+  unités porteur par `kContinentGain` **0,5** — à 0,35 la rampe côtière
+  (`coastBand` × 5,5 = 0,44) ne saturait jamais : les cœurs de
+  continents perdaient leurs hauts étages (≥ 800 m : 1,2 % → 4,1 %).
+  Warp 12 km et détail de côte 5 km inchangés (le warp n'entre que par
+  le fbm de forme : la géométrie reste exacte). **Garde de cœur** :
+  champ signé continu (marge 640 m, falloff 2 048 m) qui plafonne le
+  porteur APRÈS le décret de départ — aucune terre ne sort jamais du
+  cœur de la super-cellule hôte, donc chaque tête de cours appartient à
+  sa fenêtre et la couture cross-super meurt par construction
+  (`WorldLayerTest` : terre ⊆ cœur sur 5 seeds, départ à terre,
+  continuité 16 m). Jitter des centres ±788 m, **forcé sud-ouest pour
+  le continent (0,0)** (le départ (4096,4096) est à 11,6 km du centre
+  de cellule : l'offset le met ~500 m à l'intérieur de la côte
+  nominale — départ côtier, quadrant SO). Le proxy de distance de côte
+  de `macroHeightAnalytic` devient exact en treillis (R/gain au lieu de
+  longueur d'onde × `kShoreProxy`). **Les POI d'océan profond ne se
+  posent plus** (`typedSite` : `sea && coast ≤ 0` = absent) — sans ça
+  le treillis moyen semait des îlots-cônes de 80 m au pas de 2 km dans
+  chaque détroit ; les îlots/fjords de la ceinture côtière restent.
+  A/B : `worldContinentCellSupers` 0 = porteur hérité intégral.
+  Pupitre : `worldContinentCellSupers/Radius/Jitter/ShapeWavelength/
+  ShapeAmp`. Bump **v79**. Mesuré (seed 1337) : dans les cœurs hôtes
+  sur 200 km — mer 38,3 % (la ceinture côtière du continent ; l'océan
+  inter-continents porte le reste), terre < 150 m 29,5 %, 150-450
+  49,4 %, 450-800 17,1 %, ≥ 800 4,1 %, massif 11,1 % ; cœur (0,0) :
+  9 cartes dont 2 pleinement terrestres, 9 grands / 121 moyens / 2 397
+  petits, paires adjacentes de même type 5/79, 1 moyen isolé toléré
+  (bout de côte sans voisin terrestre à 2,2 km) ; carte 8 km : stage-1
+  6,6 s + tranches 4,1 s (M1 Release). Suite complète Release
+  **807/807** ; tests ré-ancrés : distribution d'étages lue dans les
+  cœurs (mer ≤ 45 %), sommets-amers 6 cartes de terre min, densités
+  POI sur cartes terrestres seules. Hash cartes AppleClang
+  14247880702678614143 ; le pin MSVC (7395177285592674686, v78) est
+  périmé — à ré-épingler à la première suite dev. Jugement dev EN
+  ATTENTE (valider au `landscape-report` : l'archipel au cran 100 km,
+  le départ côtier, la silhouette du continent).
 
 ---
 

@@ -31,6 +31,12 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
         params.macro.tiers.resize(4);
     }
     params.controls.world.continentWavelength = form.worldContinentWavelength;
+    params.controls.world.continentCellSupers = form.worldContinentCellSupers;
+    params.controls.world.continentRadius = form.worldContinentRadius;
+    params.controls.world.continentJitter = form.worldContinentJitter;
+    params.controls.world.continentShapeWavelength =
+        form.worldContinentShapeWavelength;
+    params.controls.world.continentShapeAmp = form.worldContinentShapeAmp;
     params.controls.world.seaThreshold = form.worldSeaThreshold;
     params.controls.world.etageWavelength = form.worldEtageWavelength;
     params.controls.world.massifWavelength = form.worldMassifWavelength;
@@ -173,6 +179,12 @@ captureTerrainGenTuning(const TileBakeParams& params) {
         return form;
     }
     form.worldContinentWavelength = params.controls.world.continentWavelength;
+    form.worldContinentCellSupers = params.controls.world.continentCellSupers;
+    form.worldContinentRadius = params.controls.world.continentRadius;
+    form.worldContinentJitter = params.controls.world.continentJitter;
+    form.worldContinentShapeWavelength =
+        params.controls.world.continentShapeWavelength;
+    form.worldContinentShapeAmp = params.controls.world.continentShapeAmp;
     form.worldSeaThreshold = params.controls.world.seaThreshold;
     form.worldEtageWavelength = params.controls.world.etageWavelength;
     form.worldMassifWavelength = params.controls.world.massifWavelength;
