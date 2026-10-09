@@ -196,6 +196,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     {
         MasterNetworkParams network = params.network;
         network.seaLevel = params.macro.seaLevel;
+        network.mapGrid = params.mapGrid;
         lap("borders+dimple");
         imprintMasterChannels(out.sim, macro, imprintKeep, controls,
                               macroParams, network, params.imprint,
@@ -513,6 +514,7 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
         cp.seed = params.worldSeed;
         MasterNetworkParams network = params.network;
         network.seaLevel = params.macro.seaLevel;
+        network.mapGrid = params.mapGrid;
         const f32 windowMaxX =
             out.window.originX +
             static_cast<f32>(out.window.n - 1) * out.window.texelSize;

@@ -1253,6 +1253,7 @@ TEST_CASE("fleuve locator diagnostic" * doctest::skip()) {
     const ProceduralControls controls = controlsOf(w);
     MasterNetworkParams network = w.params.network;
     network.seaLevel = w.seaLevel();
+    network.mapGrid = w.params.mapGrid;
     const Vec3 spawn = spawnOf(w);
     const f32 px = spawn.x;
     const f32 pz = spawn.z;

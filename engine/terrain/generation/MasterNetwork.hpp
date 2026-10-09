@@ -44,6 +44,14 @@ struct MasterNetworkParams {
     f32 superRegionSize { 24576.0f };
     f32 apron { 8192.0f };
     f32 texel { 128.0f };
+    // Routing ground (passe EAU E3): with a valid spec the network
+    // routes on the border-SHAPED surface (applyMapGridShape) — the
+    // ridge lines are real divides and courses cross them at their
+    // cols instead of ignoring walls the bake then raises around them.
+    // Invalid spec or flag off = the bare analytic (tests, benches,
+    // the POI plan-free network, the map-export image).
+    MapGridSpec mapGrid {};
+    bool routeOnShaped { true };
     // Drainage area that makes a FLEUVE (the real obstacle tier):
     // ~20 m of half-width through the sqrt(A) law, and low enough
     // that the tier begins well inland (at 1.5e7 the courses were

@@ -2214,6 +2214,31 @@ l'hydrologie définitive).
   styles hérités (ils testent la règle et les profils, pas
   l'emplacement des lignes). Bump **v80**. Suite complète Release
   **808/808**. Jugement dev EN ATTENTE.
+- **2026-10-10 — E3 livrée : le réseau maître route sur la surface
+  façonnée.** `computeMasterNetwork` échantillonne
+  `applyMapGridShape(macroHeightAnalytic)` quand
+  `MasterNetworkParams::mapGrid` est valide (nouveau membre, haché dans
+  la clé du cache MNW avec `routeOnShaped`) : les remparts Ridges
+  deviennent de vraies lignes de partage des eaux et les cours
+  franchissent aux COLS de la crête — fini le cours maître qui ignore
+  un mur que le bake élève ensuite autour de lui (le « fleuve entouré
+  de murs » du journal du 2026-10-09). Le spec est plombé partout où un
+  `MasterNetworkParams` se construit : l'empreinte et la promotion
+  (TileBake), le far-water et les sources de sim (LandscapeScene), les
+  outils (`water-solve`, `landscape-report`), la fixture de test — et
+  `makeTerrainBakeParams` remplit désormais le spec complet (seed,
+  mapSize, seaLevel) à la source. Le réseau POI reste VOLONTAIREMENT
+  non façonné en plus d'être plan-free (le façonnage lit les zones qui
+  lisent le plan qu'il type — même cycle) ; l'image `terrain-map`
+  (dev, échelle continent) dessine le réseau nu, différence aux cols
+  seulement. Défaut périmé corrigé : `MapGridSpec::mapSize` 24 576 →
+  8 192. A/B : `networkRouteOnShaped` (pupitre). Bump **v81**.
+  Mesuré : suite complète Release **808/808** ; hash cartes AppleClang
+  14247880702678614143 (E1) → 14335405370102949114 (E2+E3 : frontières
+  monde + routage façonné actifs dans le bake). Jugement dev EN ATTENTE
+  (au `landscape-report` : « master courses vs map lines » ≈ 0 run le
+  long des lignes Ridges, % cours à la mer stable, surcoût
+  d'échantillonnage du routage dans la ligne « analytic samples »).
 
 ---
 

@@ -210,6 +210,9 @@ PoiCourseHit poiNearestCourse(const WorldLayerParams& world,
     pc.rhythm.plan = false;
     const ProceduralControls controls { pc };
     const MacroParams macro;
+    // Plan-free AND unshaped (mapGrid invalid): the border shaping
+    // reads the zones, which read the plan this network types for —
+    // the same cycle the plan-free macro avoids.
     MasterNetworkParams net;
     net.seaLevel = macro.seaLevel;
     // Down to the riviere tier: a waterfall or a gorge belongs to a

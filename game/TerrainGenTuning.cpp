@@ -161,6 +161,7 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.zones.ridgeHeight = form.zoneRidgeHeight;
     params.network.fleuveArea = form.networkFleuveArea;
     params.network.texel = form.networkTexel;
+    params.network.routeOnShaped = form.networkRouteOnShaped;
     params.hydrology.riverArea = form.hydroRiverArea;
     params.hydrology.riviereArea = form.hydroRiviereArea;
     params.hydrology.widthCoef = form.hydroWidthCoef;
@@ -311,6 +312,7 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.zoneRidgeHeight = params.controls.zones.ridgeHeight;
     form.networkFleuveArea = params.network.fleuveArea;
     form.networkTexel = params.network.texel;
+    form.networkRouteOnShaped = params.network.routeOnShaped;
     form.hydroRiverArea = params.hydrology.riverArea;
     form.hydroRiviereArea = params.hydrology.riviereArea;
     form.hydroWidthCoef = params.hydrology.widthCoef;
@@ -418,9 +420,14 @@ TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
     params.macro.recurveLow = tuning.terrainRecurveLow;
     params.macro.recurveMid = tuning.terrainRecurveMid;
     params.macro.recurveHigh = tuning.terrainRecurveHigh;
-    // Border transitions on (bakeMap fills the grid spec; the streamer
-    // overwrites it from its own map config either way).
+    // Border transitions on, the spec complete from here (bakeMap and
+    // the streamer re-fill it from their own map config either way;
+    // the master network routes on it — E3).
     params.mapGrid.valid = true;
+    params.mapGrid.seed = tuning.terrainSeed;
+    params.mapGrid.mapSize =
+        params.tileSize * static_cast<f32>(kMapTilesPerSide);
+    params.mapGrid.seaLevel = tuning.seaLevel;
     // The zones read the map lattice (their rampart rule): the same
     // size bakeMap puts in the grid spec.
     params.controls.zones.mapSize =

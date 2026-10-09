@@ -2221,6 +2221,7 @@ render::WaterSystem::FarWaterFn LandscapeScene::makeFarWaterProvider(
     cp.seed = bake.worldSeed;
     render::terraingen::MasterNetworkParams net = bake.network;
     net.seaLevel = bake.macro.seaLevel;
+    net.mapGrid = grid;
     return [cp, macro = bake.macro, net, grid, sea = tuning.seaLevel,
             tileSize = bake.tileSize,
             cacheRoot = platform::executableDir() / "terrain-cache" /
@@ -2302,6 +2303,7 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
         render::terraingen::MasterNetworkParams net =
             bakeParams.network;
         net.seaLevel = bakeParams.macro.seaLevel;
+        net.mapGrid = sandbox->grid;
         render::terraingen::WaterSolveParams solveParams =
             bakeParams.waterSolve;
         solveParams.seaLevel = bakeParams.macro.seaLevel;

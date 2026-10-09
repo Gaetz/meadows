@@ -396,7 +396,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 struct MapGridSpec {
     bool valid { false };
     u32 seed { 0 };
-    f32 mapSize { 24576.0f };
+    f32 mapSize { 8192.0f }; // the game map (tileSize * kMapTilesPerSide)
     f32 seaLevel { kDefaultSeaLevel };
 };
 

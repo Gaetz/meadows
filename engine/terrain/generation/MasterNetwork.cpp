@@ -83,6 +83,14 @@ u64 networkFileKey(const ProceduralControls& controls,
     mixF(params.fleuveArea);
     mixF(params.seaLevel);
     mixF(params.minSlope);
+    const u32 shaped =
+        params.routeOnShaped && params.mapGrid.valid ? 1u : 0u;
+    mix(&shaped, sizeof(shaped));
+    if (shaped != 0u) {
+        mix(&params.mapGrid.seed, sizeof(params.mapGrid.seed));
+        mixF(params.mapGrid.mapSize);
+        mixF(params.mapGrid.seaLevel);
+    }
     const u32 version = 1; // the file format below
     mix(&version, sizeof(version));
     return h;
@@ -253,9 +261,14 @@ MasterNetwork computeMasterNetworkUncached(
     vector<f32> height(out.grid.cells());
     for (u32 row = 0; row < n; ++row) {
         for (u32 col = 0; col < n; ++col) {
-            height[static_cast<size_t>(row) * n + col] =
-                macroHeightAnalytic(controls, macro, out.grid.x(col),
-                                    out.grid.z(row));
+            const f32 x = out.grid.x(col);
+            const f32 z = out.grid.z(row);
+            f32 h = macroHeightAnalytic(controls, macro, x, z);
+            if (params.routeOnShaped && params.mapGrid.valid) {
+                h = applyMapGridShape(controls, macro, params.mapGrid,
+                                      x, z, h);
+            }
+            height[static_cast<size_t>(row) * n + col] = h;
         }
     }
     const auto clock1 = std::chrono::steady_clock::now();

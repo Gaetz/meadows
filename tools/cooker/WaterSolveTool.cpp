@@ -70,6 +70,8 @@ int waterSolve(char** argv, int argc) {
         cp.seed = seed;
         MasterNetworkParams net = params.network;
         net.seaLevel = params.macro.seaLevel;
+        net.mapGrid = params.mapGrid;
+        net.mapGrid.seed = seed;
         const f32 maxX =
             spec.originX + static_cast<f32>(spec.n - 1) * texel;
         const f32 maxZ =

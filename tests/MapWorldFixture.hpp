@@ -72,6 +72,10 @@ inline TileBakeParams gameLikeParams(u32 seed = 1337) {
     params.worldSeed = seed;
     params.controls.seed = seed;
     params.mapGrid.valid = true;
+    params.mapGrid.seed = seed;
+    params.mapGrid.mapSize =
+        params.tileSize * static_cast<f32>(game::kMapTilesPerSide);
+    params.mapGrid.seaLevel = params.macro.seaLevel;
     // The zones read the map lattice (their rampart rule) from the
     // same params the slices and the runtime read: never set it on a
     // local copy (the stage-1 alone with ramparts drifted 180 m from

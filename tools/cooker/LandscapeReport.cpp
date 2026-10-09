@@ -273,6 +273,7 @@ int landscapeReport(char** argv, int argc) {
         const render::terraingen::ProceduralControls controls { cp };
         render::terraingen::MasterNetworkParams net = params.network;
         net.seaLevel = params.macro.seaLevel;
+        net.mapGrid = params.mapGrid;
         const auto rivers = render::terraingen::masterRiversNear(
             controls, params.macro, net, cx - 0.5f * mapSize,
             cz - 0.5f * mapSize, cx + 0.5f * mapSize, cz + 0.5f * mapSize);
@@ -630,12 +631,14 @@ int landscapeReport(char** argv, int argc) {
                  nodesNear, nodesTotal, longestRun, longestTier, longestX,
                  longestZ, view->height(longestX, longestZ), view->seaLevel(),
                  longestAlong, longestAcross);
-        // The MASTER network's own courses (analytic, 128 m, no map
-        // border shape): if a master course hugs the line, the imprint
-        // carves it there whatever the bake does afterwards.
+        // The MASTER network's own courses (128 m, routed on the
+        // border-SHAPED surface since E3): if a master course hugs the
+        // line, the imprint carves it there whatever the bake does
+        // afterwards.
         {
             render::terraingen::MasterNetworkParams network = params.network;
             network.seaLevel = params.macro.seaLevel;
+            network.mapGrid = params.mapGrid;
             const auto master = render::terraingen::masterRiversNear(
                 render::terraingen::ProceduralControls { cp }, params.macro,
                 network, view->minX - 1024.0f, view->minZ - 1024.0f,
