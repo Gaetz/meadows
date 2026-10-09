@@ -2239,6 +2239,26 @@ l'hydrologie définitive).
   (au `landscape-report` : « master courses vs map lines » ≈ 0 run le
   long des lignes Ridges, % cours à la mer stable, surcoût
   d'échantillonnage du routage dans la ligne « analytic samples »).
+- **2026-10-10 — E4a livrée : le débit (qArea).** `routeFlow` accepte
+  des poids de ruissellement par cellule (multiplicateur de l'aire de
+  cellule avant accumulation) ; le réseau maître les tire du
+  `WorldSample` déjà sous la main (`macroHeightAnalytic` gagne une
+  surcharge qui le rend) : `mix(hydroRunoffDryMin 0,4,
+  hydroRunoffWetMax 1,6, moisture) × (1 + hydroSnowBonus 0,8 ×
+  froideur sous hydroSnowlineTemp 0,25)` — les montagnes humides ou
+  enneigées portent plus d'eau que leur aire nue, les plaines sèches
+  moins ; ~1 en tempéré, les seuils gardent leur sens. Le nœud maître
+  porte **`qArea`** (accumulation pondérée, second balayage du même
+  graphe de receveurs) à côté de l'aire topographique brute — les LOIS
+  (largeur, tiers, débits de bord) la liront en E4b ; il réserve aussi
+  `flags` (bit lac, E5) et `headType` (typologie, E6) → format
+  **MNW2** en un seul bump, nœud sans padding. L'érosion reste NON
+  pondérée (décision actée, `erodeFluvial` passe nullptr). A/B :
+  `hydroRunoffWeights` ; poids neutres ⇒ `qArea == area` bit-exact
+  (testé). Pas de bump tuile (aucun consommateur encore : sortie
+  publiée identique, vérifié par le hash cartes stable). Mesuré (seed
+  1337, super (0,0)) : qArea s'écarte de l'aire de > 1 % sur **481 des
+  517 nœuds**. Jugement dev EN ATTENTE.
 
 ---
 

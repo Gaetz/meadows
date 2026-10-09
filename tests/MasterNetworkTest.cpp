@@ -218,3 +218,37 @@ TEST_CASE("master imprint: carves a channel, never dams, protects it") {
 }
 
 TEST_SUITE_END();
+
+TEST_CASE("master network: qArea — neutral weights are bit-exact, the "
+          "climate bends the real ones") {
+    ProceduralControlParams controlParams;
+    controlParams.seed = 1337;
+    const ProceduralControls controls { controlParams };
+    const MacroParams macro;
+    MasterNetworkParams neutral;
+    neutral.runoffDryMin = 1.0f;
+    neutral.runoffWetMax = 1.0f;
+    neutral.snowBonus = 0.0f;
+    const MasterNetwork n =
+        computeMasterNetwork(controls, macro, neutral, 0, 0);
+    for (const MasterRiver& river : n.rivers) {
+        for (const MasterNode& node : river.nodes) {
+            CHECK(node.qArea == node.area);
+        }
+    }
+    MasterNetworkParams weighted; // the defaults
+    const MasterNetwork w =
+        computeMasterNetwork(controls, macro, weighted, 0, 0);
+    u32 nodes = 0, bent = 0;
+    for (const MasterRiver& river : w.rivers) {
+        for (const MasterNode& node : river.nodes) {
+            ++nodes;
+            bent += std::abs(node.qArea - node.area) >
+                    0.01f * node.area;
+            CHECK(node.qArea > 0.0f);
+        }
+    }
+    MESSAGE("qArea differs from area by > 1% on ", bent, " of ", nodes,
+            " nodes");
+    CHECK(bent * 2 > nodes); // the climate is not a no-op
+}

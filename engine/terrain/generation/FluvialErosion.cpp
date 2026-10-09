@@ -65,7 +65,8 @@ vector<f32> priorityFloodFill(const GridSpec& spec,
 }
 
 FlowRouting routeFlow(const GridSpec& spec, const vector<f32>& routed,
-                      const vector<f32>& trueHeight, f32 seaLevel) {
+                      const vector<f32>& trueHeight, f32 seaLevel,
+                      const vector<f32>* runoff) {
     const i32 n = static_cast<i32>(spec.n);
     const size_t cells = spec.cells();
     const f32 cellArea = spec.texelSize * spec.texelSize;
@@ -73,7 +74,14 @@ FlowRouting routeFlow(const GridSpec& spec, const vector<f32>& routed,
     flow.receiver.resize(cells);
     flow.recvDist.resize(cells);
     flow.order.resize(cells);
-    flow.area.assign(cells, cellArea);
+    if (runoff != nullptr) {
+        flow.area.resize(cells);
+        for (size_t i = 0; i < cells; ++i) {
+            flow.area[i] = cellArea * (*runoff)[i];
+        }
+    } else {
+        flow.area.assign(cells, cellArea);
+    }
     // Steepest-descent receivers on the routed surface.
     for (i32 cz = 0; cz < n; ++cz) {
         for (i32 cx = 0; cx < n; ++cx) {

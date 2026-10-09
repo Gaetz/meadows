@@ -13,6 +13,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
@@ -91,7 +92,16 @@ u64 networkFileKey(const ProceduralControls& controls,
         mixF(params.mapGrid.mapSize);
         mixF(params.mapGrid.seaLevel);
     }
-    const u32 version = 1; // the file format below
+    const u32 weighted = params.runoffWeights ? 1u : 0u;
+    mix(&weighted, sizeof(weighted));
+    if (weighted != 0u) {
+        mixF(params.runoffDryMin);
+        mixF(params.runoffWetMax);
+        mixF(params.snowBonus);
+        mixF(params.snowlineTemp);
+    }
+    const u32 version = 2; // the file format below (MNW2: qArea,
+                           // flags, headType on the node)
     mix(&version, sizeof(version));
     return h;
 }
@@ -111,7 +121,7 @@ bool readNetworkFile(const std::filesystem::path& path, MasterNetwork& out) {
     }
     char magic[4];
     file.read(magic, 4);
-    if (!file || std::memcmp(magic, "MNW1", 4) != 0) {
+    if (!file || std::memcmp(magic, "MNW2", 4) != 0) {
         return false;
     }
     f32 originX = 0.0f, originZ = 0.0f, texel = 0.0f;
@@ -158,7 +168,7 @@ void writeNetworkFile(const std::filesystem::path& path,
         if (!file) {
             return;
         }
-        file.write("MNW1", 4);
+        file.write("MNW2", 4);
         const u32 n = net.grid.n;
         const u32 riverCount = static_cast<u32>(net.rivers.size());
         file.write(reinterpret_cast<const char*>(&net.grid.originX),
@@ -259,16 +269,32 @@ MasterNetwork computeMasterNetworkUncached(
 
     const auto clock0 = std::chrono::steady_clock::now();
     vector<f32> height(out.grid.cells());
+    vector<f32> runoff(params.runoffWeights ? out.grid.cells() : 0,
+                       1.0f);
     for (u32 row = 0; row < n; ++row) {
         for (u32 col = 0; col < n; ++col) {
             const f32 x = out.grid.x(col);
             const f32 z = out.grid.z(row);
-            f32 h = macroHeightAnalytic(controls, macro, x, z);
+            WorldSample w;
+            f32 h = macroHeightAnalytic(controls, macro, x, z, w);
             if (params.routeOnShaped && params.mapGrid.valid) {
                 h = applyMapGridShape(controls, macro, params.mapGrid,
                                       x, z, h);
             }
-            height[static_cast<size_t>(row) * n + col] = h;
+            const size_t i = static_cast<size_t>(row) * n + col;
+            height[i] = h;
+            if (params.runoffWeights) {
+                const f32 cold =
+                    1.0f - noise::smoothstep01(params.snowlineTemp,
+                                               params.snowlineTemp +
+                                                   0.15f,
+                                               w.temperature);
+                runoff[i] = glm::mix(params.runoffDryMin,
+                                     params.runoffWetMax,
+                                     glm::clamp(w.moisture, 0.0f,
+                                                1.0f)) *
+                            (1.0f + params.snowBonus * cold);
+            }
         }
     }
     const auto clock1 = std::chrono::steady_clock::now();
@@ -276,6 +302,16 @@ MasterNetwork computeMasterNetworkUncached(
         out.grid, height, params.seaLevel, params.minSlope);
     const FlowRouting flow =
         routeFlow(out.grid, filled, height, params.seaLevel);
+    // The effective-discharge accumulation (qArea) rides a second
+    // sweep over the same receiver graph: the LAWS read it, the
+    // channel extraction below keeps the raw topographic area.
+    const FlowRouting flowQ =
+        params.runoffWeights
+            ? routeFlow(out.grid, filled, height, params.seaLevel,
+                        &runoff)
+            : FlowRouting {};
+    const vector<f32>& qAreaOf =
+        params.runoffWeights ? flowQ.area : flow.area;
     const auto clock2 = std::chrono::steady_clock::now();
     LOG_INFO("master network super ({}, {}) {}x{}: analytic samples "
              "{:.2f} s | flood+route {:.2f} s",
@@ -326,7 +362,8 @@ MasterNetwork computeMasterNetworkUncached(
             const u32 col = static_cast<u32>(i % n);
             const u32 row = static_cast<u32>(i / n);
             river.nodes.push_back({ out.grid.x(col), out.grid.z(row),
-                                    filled[i], flow.area[i] });
+                                    filled[i], flow.area[i],
+                                    qAreaOf[i], 0u, 0u });
             if (claimed[i]) {
                 break; // joined an earlier course (confluence)
             }

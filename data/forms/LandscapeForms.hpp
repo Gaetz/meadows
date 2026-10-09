@@ -623,6 +623,11 @@ struct TerrainGenTuningForm : Form {
     f32 networkFleuveArea { 6.0e6f };
     f32 networkTexel { 128.0f };
     bool networkRouteOnShaped { true }; // route on the bordered ground
+    bool hydroRunoffWeights { true };   // qArea = climate-weighted area
+    f32 hydroRunoffDryMin { 0.4f };
+    f32 hydroRunoffWetMax { 1.6f };
+    f32 hydroSnowBonus { 0.8f };
+    f32 hydroSnowlineTemp { 0.25f };
     f32 hydroRiverArea { 150000.0f };
     f32 hydroRiviereArea { 2.0e6f };
     f32 hydroWidthCoef { 0.008f };
@@ -766,6 +771,11 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(networkFleuveArea)
         REFLECT_FIELD(networkTexel)
         REFLECT_FIELD(networkRouteOnShaped)
+        REFLECT_FIELD(hydroRunoffWeights)
+        REFLECT_FIELD(hydroRunoffDryMin)
+        REFLECT_FIELD(hydroRunoffWetMax)
+        REFLECT_FIELD(hydroSnowBonus)
+        REFLECT_FIELD(hydroSnowlineTemp)
         REFLECT_FIELD(hydroRiverArea)
         REFLECT_FIELD(hydroRiviereArea)
         REFLECT_FIELD(hydroWidthCoef)

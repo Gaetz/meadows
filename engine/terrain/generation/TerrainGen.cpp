@@ -1187,9 +1187,15 @@ f32 mapGridRidgeFactor(const ProceduralControls& controls,
 
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
+    WorldSample w;
+    return macroHeightAnalytic(controls, params, x, z, w);
+}
+
+f32 macroHeightAnalytic(const ProceduralControls& controls,
+                        const MacroParams& params, f32 x, f32 z,
+                        WorldSample& w) {
     // The sample's own world sample serves the shore distance below:
     // one evaluation instead of two.
-    WorldSample w;
     const ControlSample s = controls.at(x, z, w);
     const f32 land = recurveLand(
         params, landHeight(params, controls.params().seed, s,

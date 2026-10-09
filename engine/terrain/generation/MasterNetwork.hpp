@@ -28,11 +28,20 @@
 
 namespace render::terraingen {
 
+// Node flags (the lake bit lands with E5).
+constexpr u32 kMasterNodeLake = 1u << 0;
+
 struct MasterNode {
     f32 x { 0.0f };
     f32 z { 0.0f };
     f32 surface { 0.0f }; // routed water surface, monotone downstream
     f32 area { 0.0f };    // m² of TRUE drainage at this node
+    // m² of EFFECTIVE drainage: cell areas weighted by the climate
+    // runoff (passe EAU E4a) — what the width/tier laws read. Equals
+    // `area` when the weights are off or neutral.
+    f32 qArea { 0.0f };
+    u32 flags { 0 };    // kMasterNode* (E5: lake-crossing nodes)
+    u32 headType { 0 }; // E6: source typology of the course's head
 };
 
 struct MasterRiver {
@@ -52,6 +61,19 @@ struct MasterNetworkParams {
     // the POI plan-free network, the map-export image).
     MapGridSpec mapGrid {};
     bool routeOnShaped { true };
+    // Climate runoff weights (E4a): per-cell multiplier
+    // mix(runoffDryMin, runoffWetMax, moisture) * (1 + snowBonus *
+    // coldness) accumulated into qArea — wet or snow-fed mountains
+    // carry more water than their bare area, dry plains less. Neutral
+    // around 1 in temperate country so the thresholds keep their
+    // meaning. Off = qArea == area, bit-exact.
+    bool runoffWeights { true };
+    f32 runoffDryMin { 0.4f };
+    f32 runoffWetMax { 1.6f };
+    f32 snowBonus { 0.8f };
+    // Temperature below which the head country reads snow-fed (the
+    // coldness smoothstep spans +0.15 above it).
+    f32 snowlineTemp { 0.25f };
     // Drainage area that makes a FLEUVE (the real obstacle tier):
     // ~20 m of half-width through the sqrt(A) law, and low enough
     // that the tier begins well inland (at 1.5e7 the courses were

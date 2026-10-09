@@ -162,6 +162,11 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.network.fleuveArea = form.networkFleuveArea;
     params.network.texel = form.networkTexel;
     params.network.routeOnShaped = form.networkRouteOnShaped;
+    params.network.runoffWeights = form.hydroRunoffWeights;
+    params.network.runoffDryMin = form.hydroRunoffDryMin;
+    params.network.runoffWetMax = form.hydroRunoffWetMax;
+    params.network.snowBonus = form.hydroSnowBonus;
+    params.network.snowlineTemp = form.hydroSnowlineTemp;
     params.hydrology.riverArea = form.hydroRiverArea;
     params.hydrology.riviereArea = form.hydroRiviereArea;
     params.hydrology.widthCoef = form.hydroWidthCoef;
@@ -313,6 +318,11 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.networkFleuveArea = params.network.fleuveArea;
     form.networkTexel = params.network.texel;
     form.networkRouteOnShaped = params.network.routeOnShaped;
+    form.hydroRunoffWeights = params.network.runoffWeights;
+    form.hydroRunoffDryMin = params.network.runoffDryMin;
+    form.hydroRunoffWetMax = params.network.runoffWetMax;
+    form.hydroSnowBonus = params.network.snowBonus;
+    form.hydroSnowlineTemp = params.network.snowlineTemp;
     form.hydroRiverArea = params.hydrology.riverArea;
     form.hydroRiviereArea = params.hydrology.riviereArea;
     form.hydroWidthCoef = params.hydrology.widthCoef;

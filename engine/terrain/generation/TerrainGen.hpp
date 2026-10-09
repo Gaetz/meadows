@@ -453,5 +453,11 @@ f32 mapGridRidgeFactor(const ProceduralControls& controls,
 // keeps the baked ground near this surface — docs/PAYSAGE.md §7.5).
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z);
+// Same surface, the point's world sample handed back (it is computed
+// inside anyway): the master network reads moisture/temperature for
+// its runoff weights without sampling the world twice.
+f32 macroHeightAnalytic(const ProceduralControls& controls,
+                        const MacroParams& params, f32 x, f32 z,
+                        WorldSample& outWorld);
 
 } // namespace render::terraingen

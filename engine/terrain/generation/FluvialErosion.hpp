@@ -125,7 +125,13 @@ struct FlowRouting {
     vector<u32> order;    // indices, routed surface ascending
     vector<f32> area;     // m², donors accumulated into receivers
 };
+// `runoff` (optional, spec.cells()): a per-cell multiplier of the cell
+// area before accumulation — `area` then reads as an effective
+// DISCHARGE area (qArea, passe EAU): wet mountains contribute more
+// than dry plains. nullptr or all-ones = the raw topographic area,
+// bit-exact.
 FlowRouting routeFlow(const GridSpec& spec, const vector<f32>& routed,
-                      const vector<f32>& trueHeight, f32 seaLevel);
+                      const vector<f32>& trueHeight, f32 seaLevel,
+                      const vector<f32>* runoff = nullptr);
 
 } // namespace render::terraingen
