@@ -34,6 +34,12 @@ struct FinalizeParams {
     f32 fleuveBankShoulder { 3.2f };
     f32 fordDepth { 0.4f };
     f32 fordRadius { 9.0f }; // full-cap core; the cap fades out by 2x
+    // A water carve (bed, bank shoulder, lake bed) never lowers a texel
+    // by more than its depth plus this bank: ground standing well
+    // above the waterline is a hillside or a cliff the ribbon clips,
+    // never a trench to dig (a stream along a 270 m zone wall notched
+    // it to the waterline over a 2 m band).
+    f32 bankMaxCut { 3.0f };
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach

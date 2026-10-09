@@ -493,10 +493,13 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);
                     const f32 n = dist / glm::max(half, 0.01f);
+                    // The deepest this carve may go below the untouched
+                    // ground: the bed plus a bank (bankMaxCut).
+                    const f32 floorCut = preCarve[i] - depth - params.bankMaxCut;
                     if (n <= 1.0f) {
                         // Parabolic bed up to the waterline at the bank.
                         const f32 bed = surface - depth * (1.0f - n * n);
-                        out.height[i] = glm::min(out.height[i], bed);
+                        out.height[i] = glm::max(glm::min(out.height[i], bed), floorCut);
                     } else if (n <= 1.0f + params.bankShoulder) {
                         // Bank shoulder: never below the waterline, and
                         // blending up into the untouched hillside.
@@ -506,8 +509,9 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                                 n);
                         const f32 cap =
                             glm::mix(surface, out.height[i], blend);
-                        out.height[i] = glm::min(
-                            out.height[i], glm::max(cap, surface));
+                        out.height[i] = glm::max(
+                            glm::min(out.height[i], glm::max(cap, surface)),
+                            floorCut);
                     }
                 }
             }
@@ -591,8 +595,11 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                     const size_t i =
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);
-                    out.height[i] =
-                        glm::min(out.height[i], lake.level - depth);
+                    // A shore cliff inside the 16 m mask keeps its face:
+                    // the bed plus a bank at most (bankMaxCut).
+                    out.height[i] = glm::max(
+                        glm::min(out.height[i], lake.level - depth),
+                        out.height[i] - depth - params.bankMaxCut);
                 }
             }
         }

@@ -487,7 +487,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         // ridge border.
         const f32 zoneLift =
             (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
-                               ps.corridor),
+                               corridor),
                       zs.gateFloor, zs.gate) +
              zs.ridge) *
             shoreGate;
@@ -651,7 +651,7 @@ void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
         const f32 corridor = glm::max(s.corridor, zs.gate);
         const f32 zoneLift =
             (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
-                               s.corridor),
+                               corridor),
                       zs.gateFloor, zs.gate) +
              zs.ridge) *
             shoreGate;
@@ -686,7 +686,9 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
         }
         // The floor the palette's altitude rules read: the zone's
         // storey on the world's base (the lattice sample's).
-        base = glm::max(w.base + zs.storeyHeight *
+        base = glm::max(w.base + (glm::mix(zs.storeyHeight, zs.gateFloor,
+                                           zs.gate) +
+                                  zs.ridge) *
                                      noise::smoothstep01(2.0f, 12.0f, base),
                         0.0f);
     } else if (p.rhythm.plan) {

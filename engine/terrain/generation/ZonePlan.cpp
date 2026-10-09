@@ -525,6 +525,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     // riser wherever the border wanders. Every candidate pair is
     // read (continuous at the Voronoi vertices), gated by the pair
     // being the two nearest (its border).
+    f32 floorSum = 0.0f, floorWeight = 0.0f;
     for (u32 i = 0; i < n.count; ++i) {
         const Zone& o = *n.zones[i];
         if (&o == &a) {
@@ -542,14 +543,18 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         if (adjacency <= 0.0f) {
             continue;
         }
-        const f32 dxs = o.x - a.x;
-        const f32 dzs = o.z - a.z;
+        // The pair's frame never depends on which site is nearest:
+        // from the lower hash (lo) to the higher (hi).
+        const Zone& lo = a.hash < o.hash ? a : o;
+        const Zone& hi = a.hash < o.hash ? o : a;
+        const f32 dxs = hi.x - lo.x;
+        const f32 dzs = hi.z - lo.z;
         const f32 len = glm::max(std::hypot(dxs, dzs), 1.0f);
         const f32 ux = dxs / len;
         const f32 uz = dzs / len;
-        const f32 qx = n.wx - 0.5f * (a.x + o.x);
-        const f32 qz = n.wz - 0.5f * (a.z + o.z);
-        const f32 along = qx * ux + qz * uz;   // toward o
+        const f32 qx = n.wx - 0.5f * (lo.x + hi.x);
+        const f32 qz = n.wz - 0.5f * (lo.z + hi.z);
+        const f32 along = qx * ux + qz * uz;   // toward hi
         const f32 across = -qx * uz + qz * ux; // along the border
         const u32 pairHash = core::hashU32(
             glm::min(a.hash, o.hash) ^
@@ -565,7 +570,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         const f32 halfLen =
             glm::max(0.6f * widthFor(o) + 60.0f, 0.5f * stepRise / 0.35f);
         // The high side: where the ramp tops out (the reveal).
-        const f32 highSign = o.storey > a.storey ? 1.0f : -1.0f;
+        const f32 highSign = hi.storey > lo.storey ? 1.0f : -1.0f;
         f32 g = 0.0f;
         f32 pad = 0.0f;
         for (u32 k = 0; k < count; ++k) {
@@ -594,14 +599,19 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         pad *= adjacency;
         if (g > out.gate) {
             out.gate = g;
-            // The gate's own ramp: the two storeys joined across the
-            // border over the ramp's length.
-            out.gateFloor = glm::mix(a.storeyHeight, o.storeyHeight,
-                                     noise::smoothstep01(-halfLen, halfLen, along));
             out.gateKind = static_cast<u8>(
                 st == BorderStyle::CliffBand    ? GateKind::Notch
                 : st == BorderStyle::Escarpment ? GateKind::Breach
                                                 : GateKind::Col);
+        }
+        // The gate's own ramp: the two storeys joined across the border
+        // over the ramp's length; where two gates' masks overlap, the
+        // floors blend by mask (an argmax pick jumped between ramps).
+        if (g > 0.0f) {
+            floorSum += g * glm::mix(lo.storeyHeight, hi.storeyHeight,
+                                     noise::smoothstep01(-halfLen, halfLen,
+                                                         along));
+            floorWeight += g;
         }
         out.gatePad = glm::max(out.gatePad, pad);
         if (st == BorderStyle::Ridge) {
@@ -613,6 +623,8 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
                                (1.0f - g) * adjacency);
         }
     }
+    out.gateFloor =
+        floorWeight > 0.0f ? floorSum / floorWeight : out.storeyHeight;
     // The grammar: the nearest zone's, blended over ~150 m at a border.
     const f32 tg = noise::smoothstep01(-75.0f, 75.0f, out.borderDist);
     out.reliefMul = glm::mix(gb.reliefMul, ga.reliefMul, tg);

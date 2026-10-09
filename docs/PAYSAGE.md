@@ -2062,6 +2062,36 @@ briques Z0-Z5 dans le fichier de plan.
   ligne la plus basse de l'analytique, qui avec les étages de zones
   est le pied des murs — il coule donc entre les ressauts, et
   l'empreinte creuse son lit de 23 m en plus.
+- **2026-10-09 — Push de la refonte (33 commits depuis le 2026-10-05) :
+  la suite complète en Release a trouvé cinq cas rouges, dont trois
+  vrais bugs.** (1) **Porte en miroir** : le repère de la porte
+  dépendait de la zone la plus proche ; en traversant la frontière, la
+  glissière changeait de signe et la rampe se pliait (3,2 m de seconde
+  différence) — repère ordonné par le hash des deux sites, et le sol
+  des portes est une moyenne pondérée par masque des rampes de toutes
+  les paires (l'argmax sautait d'une rampe à l'autre). (2) **Rempart
+  du stage-1 seul** : `zones.mapSize` était posé sur une copie locale
+  dans `bakeMap` ; les tranches et le runtime lisaient les params de
+  l'appelant sans rempart — 180 m d'écart entre overview et tranches.
+  Une seule source : `makeTerrainBakeParams` et la fixture de test.
+  (3) **Entaille des cours d'eau dans les falaises** : la gravure des
+  rivières (lit parabolique + épaulement de berge) et celle des lits
+  de lac abaissaient à la ligne d'eau tout texel du ruban, falaise
+  comprise — une entaille de 200 m sur 2 m de large là où un ruisseau
+  longe un mur de zone (diagnostic : texels bruts du stage-1 contre la
+  tranche au même endroit). Invisible avant les murs raides. Borne
+  `FinalizeParams::bankMaxCut` 3 m : une coupe d'eau ne descend jamais
+  sous le sol intact de plus que le lit plus une berge. Trois jauges
+  re-exprimées, pas des bugs : l'overview à 64 m ne peut pas suivre un
+  ressaut de 240 m tenu dans un texel de 16 m (jauge = part des
+  échantillons à plus de 60 m ≤ 8 %, pire < 400 m) ; le pli de 4,7 m
+  sur x = 8 192 est le ressaut d'un mur du rempart sous la compression
+  du gauchissement (jauge 6 m, un raccord se lit en dizaines de
+  mètres) ; le bouton `verticality` n'ajoute plus que moitié aux pas
+  > 45° (les murs de zones et leurs portes tiennent à 0 aussi) —
+  jauge 1,5×. `biomeIdAt` lit le même plancher que `at()` (rampe de
+  porte, crête). Hash de `MapBakerTest` ré-épinglé
+  (7395177285592674686, v78).
 
 ---
 

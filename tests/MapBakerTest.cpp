@@ -97,17 +97,35 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     CHECK(world.sandbox->overview.size() == overview->heights.size());
 
     // The published ground and the overview agree to the upsampling
-    // error inside the map (the fallback is the map's own truth).
+    // error inside the map (the fallback is the map's own truth) —
+    // except across the zone walls: a 64 m overview cannot follow a
+    // 240 m riser that the 16 m stage-1 holds in one texel, so the
+    // worst drift is a wall's height and the gate is the SHARE of
+    // samples off by more than 60 m (a few percent: the risers).
     f32 worstDrift = 0.0f;
+    f32 worstX = 0.0f, worstZ = 0.0f, worstPub = 0.0f, worstOv = 0.0f;
+    u32 over60 = 0, drifts = 0;
     for (f32 z = 1500.0f; z < mapSize - 1500.0f; z += 333.0f) {
         for (f32 x = 1500.0f; x < mapSize - 1500.0f; x += 333.0f) {
-            worstDrift = std::max(
-                worstDrift,
-                std::abs(world.height(x, z) - world.overviewHeight(x, z)));
+            const f32 pub = world.height(x, z);
+            const f32 ov = world.overviewHeight(x, z);
+            ++drifts;
+            over60 += std::abs(pub - ov) > 60.0f;
+            if (std::abs(pub - ov) > worstDrift) {
+                worstDrift = std::abs(pub - ov);
+                worstX = x;
+                worstZ = z;
+                worstPub = pub;
+                worstOv = ov;
+            }
         }
     }
-    MESSAGE("overview vs published ground, worst drift ", worstDrift, " m");
-    CHECK(worstDrift < 60.0f);
+    MESSAGE("overview vs published ground, worst drift ", worstDrift,
+            " m at (", worstX, ", ", worstZ, "): published ", worstPub,
+            " overview ", worstOv, "; ", over60, " of ", drifts,
+            " samples over 60 m");
+    CHECK(over60 * 100 <= drifts * 8);
+    CHECK(worstDrift < 400.0f); // four storeys and a border range at most
 
     // The spawn probe finds temperate land on this map, inside the rim
     // band, on ground that is not under water.
@@ -152,7 +170,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     const u64 hash = maptest::heightsHash(world);
     MESSAGE("map heights hash: ", hash);
 #if defined(_MSC_VER)
-    CHECK(hash == 5026885998955634159ull); // MSVC (Debug == Release), kTileBakeVersion 75
+    CHECK(hash == 7395177285592674686ull); // MSVC (Debug == Release), kTileBakeVersion 78
 #endif
 
     // Without its manifest the map is not a map (bake cancelled or
@@ -165,3 +183,4 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
 }
 
 TEST_SUITE_END();
+
