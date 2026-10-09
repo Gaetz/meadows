@@ -950,34 +950,45 @@ BorderSample sampleBorders(const ProceduralControls& controls,
             2.0f * kMapBorderWander;
         const f32 dist = std::abs(
             across - (static_cast<f32>(lineIndex) * g.mapSize + wander));
-        // Style is hashed per SEGMENT (line x crossed cell); near a
-        // segment junction the two styles CROSS-FADE along the line —
-        // a sea arm closes into a bay while the range rises out of it,
-        // instead of a channel stopping dead at the corner.
+        // Style is per SEGMENT (line x crossed cell); near a segment
+        // junction the styles CROSS-FADE along the line — a sea arm
+        // closes into a bay while the range rises out of it, instead
+        // of a channel stopping dead at the corner. Ridge and sea
+        // carry separate weights: an Open segment contributes NOTHING
+        // (the landscape continues), it is not "the other style".
         const f32 cellF = along / g.mapSize;
         const i32 cellCross = static_cast<i32>(std::floor(cellF));
         const f32 local =
             (cellF - static_cast<f32>(cellCross)) * g.mapSize;
-        const auto ridges = [&](i32 cell) {
-            return mapBorderStyleResolved(controls, macroParams, g,
-                                          lineIndex, cell, vertical) ==
-                           MapEdgeStyle::Ridges
-                       ? 1.0f
-                       : 0.0f;
+        const auto weightsOf = [&](i32 cell, f32& wr, f32& ws) {
+            const MapEdgeStyle st = mapBorderStyleResolved(
+                controls, macroParams, g, lineIndex, cell, vertical);
+            wr = st == MapEdgeStyle::Ridges ? 1.0f : 0.0f;
+            ws = st == MapEdgeStyle::Sea ? 1.0f : 0.0f;
         };
-        f32 r = ridges(cellCross);
+        f32 r = 0.0f;
+        f32 sWeight = 0.0f;
+        weightsOf(cellCross, r, sWeight);
         if (local < kMapBorderStyleBlend) {
             const f32 t = 0.5f + 0.5f * noise::smoothstep01(
                                             0.0f, 1.0f,
                                             local / kMapBorderStyleBlend);
-            r = glm::mix(ridges(cellCross - 1), r, t);
+            f32 nr = 0.0f;
+            f32 ns = 0.0f;
+            weightsOf(cellCross - 1, nr, ns);
+            r = glm::mix(nr, r, t);
+            sWeight = glm::mix(ns, sWeight, t);
         } else if (local > g.mapSize - kMapBorderStyleBlend) {
             const f32 t =
                 0.5f + 0.5f * noise::smoothstep01(
                                   0.0f, 1.0f,
                                   (g.mapSize - local) /
                                       kMapBorderStyleBlend);
-            r = glm::mix(ridges(cellCross + 1), r, t);
+            f32 nr = 0.0f;
+            f32 ns = 0.0f;
+            weightsOf(cellCross + 1, nr, ns);
+            r = glm::mix(nr, r, t);
+            sWeight = glm::mix(ns, sWeight, t);
         }
         if (r > 0.0f) {
             const f32 p = mountainProfile(dist) * r;
@@ -997,8 +1008,8 @@ BorderSample sampleBorders(const ProceduralControls& controls,
                 out.mountainRaw = glm::max(out.mountainRaw, varied);
             }
         }
-        if (r < 1.0f) {
-            const f32 p = seaProfile(dist) * (1.0f - r);
+        if (sWeight > 0.0f) {
+            const f32 p = seaProfile(dist) * sWeight;
             if (p > 0.0f) {
                 out.sea = glm::max(out.sea, p);
                 // Occasional islets mid-channel: land appearing
@@ -1011,7 +1022,7 @@ BorderSample sampleBorders(const ProceduralControls& controls,
                 out.island = glm::max(
                     out.island,
                     noise::smoothstep01(0.68f, 0.8f, isle) *
-                        (1.0f - r) * centered * centered *
+                        sWeight * centered * centered *
                         (3.0f - 2.0f * centered));
             }
         }

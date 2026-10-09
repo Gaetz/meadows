@@ -350,6 +350,8 @@ u64 hashParams(const WorldLayerParams& p) {
     f(p.continentJitter);
     f(p.continentShapeWavelength);
     f(p.continentShapeAmp);
+    u(p.borderFromWorld ? 1u : 0u);
+    f(p.borderMassifMin);
     f(p.coastDetailWavelength);
     f(p.coastDetailAmp);
     f(p.continentWarpWavelength);

@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "engine/terrain/generation/MapGrid.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
 // The archipelago lattice (docs/PAYSAGE.md §7.8, E1): finite continents
@@ -97,5 +98,41 @@ TEST_CASE("world layer: the lattice carrier is continuous") {
         }
         prevBase = w.base;
         first = false;
+    }
+}
+
+TEST_CASE("map borders: styles read off the world") {
+    // Archipelago defaults: an open-ocean line is Sea, the continent's
+    // internal lines split between Ridges (massif) and Open (the
+    // landscape continues) — the hashed 50/50 is gone. The legacy knob
+    // keeps the two-style world.
+    WorldLayerParams p;
+    const f32 mapSize = 8192.0f;
+    // x = 4 * 8192 = 32768: mid-strait between host cores.
+    CHECK(mapBorderSegmentStyle(p, mapSize, 4, 0, true) ==
+          MapEdgeStyle::Sea);
+    u32 open = 0, ridges = 0, seaStyles = 0;
+    for (i32 line = 0; line <= 3; ++line) {
+        for (i32 cell = 0; cell < 3; ++cell) {
+            for (const bool vertical : { true, false }) {
+                switch (mapBorderSegmentStyle(p, mapSize, line, cell,
+                                              vertical)) {
+                case MapEdgeStyle::Open: ++open; break;
+                case MapEdgeStyle::Ridges: ++ridges; break;
+                default: ++seaStyles; break;
+                }
+            }
+        }
+    }
+    MESSAGE("continent (0,0) lines: open ", open, ", ridges ", ridges,
+            ", sea ", seaStyles);
+    CHECK(open >= 1); // « ouvert ailleurs » exists in the start country
+    WorldLayerParams legacy;
+    legacy.borderFromWorld = false;
+    for (i32 line = 0; line <= 3; ++line) {
+        for (i32 cell = 0; cell < 3; ++cell) {
+            CHECK(mapBorderSegmentStyle(legacy, mapSize, line, cell,
+                                        true) != MapEdgeStyle::Open);
+        }
     }
 }

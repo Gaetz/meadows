@@ -2191,6 +2191,29 @@ l'hydrologie définitive).
   périmé — à ré-épingler à la première suite dev. Jugement dev EN
   ATTENTE (valider au `landscape-report` : l'archipel au cran 100 km,
   le départ côtier, la silhouette du continent).
+- **2026-10-10 — E2 livrée : les frontières lues sur le monde (le cœur
+  de N4).** `MapEdgeStyle` gagne **`Open`** — la ligne n'est RIEN, le
+  paysage continue — et `mapBorderSegmentStyle` lit le monde le long du
+  segment (les 9 échantillons existants) : majorité océanique ⇒ Mer,
+  moyenne de `massif` ≥ `worldBorderMassifMin` (0,45) ⇒ Ridges, sinon
+  Open. Le hachage 50/50 et le veto disparaissent du chemin par défaut
+  (`worldBorderFromWorld` off = styles hachés hérités, le veto Mer
+  seul conservé). `sampleBorders` passe en poids séparés crête/mer
+  (un segment Open ne contribue à rien — il n'est pas « l'autre
+  style ») ; le rempart des zones ne s'applique qu'aux lignes Ridges,
+  comme avant. Nouvel instrument **`cooker bake-map … --pair <bx>
+  <bz>`** : bake des deux cartes adjacentes, RMS + max des hauteurs
+  sur la bande partagée (±`overlapMargin`), appariement des points de
+  rivière de part et d'autre de la ligne (orphelins à > 50 m, delta de
+  surface des appariés), style du segment dans la ligne de log — la
+  jauge de couture de la passe (E7 la consommera). Mesuré (seed
+  1337) : continent (0,0), 24 segments internes/périphériques → **10
+  Open, 1 Ridges, 13 Mer** (le pays de départ s'ouvre ; le massif y
+  est rare — `worldBorderMassifMin` est le levier si le dev veut plus
+  de murs) ; tests rempart et formes de bordure re-ancrés sur les
+  styles hérités (ils testent la règle et les profils, pas
+  l'emplacement des lignes). Bump **v80**. Suite complète Release
+  **808/808**. Jugement dev EN ATTENTE.
 
 ---
 

@@ -44,7 +44,11 @@ TEST_CASE("zones: the rampart — no storey step down toward a Ridges map line")
     ProceduralControlParams pc;
     pc.seed = 1337;
     const ProceduralControls controls { pc };
-    const auto& world = controls.params().world;
+    // The subject is the rampart RULE, not where Ridges lines sit: the
+    // legacy hashed styles guarantee Ridges segments on this line (the
+    // world-read styles of E2 may leave it Open or Sea).
+    WorldLayerParams world = controls.params().world;
+    world.borderFromWorld = false;
     ZoneParams on = controls.params().zones;
     on.mapSize = 8192.0f;
     ZoneParams off = on;

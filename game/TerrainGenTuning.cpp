@@ -37,6 +37,8 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.world.continentShapeWavelength =
         form.worldContinentShapeWavelength;
     params.controls.world.continentShapeAmp = form.worldContinentShapeAmp;
+    params.controls.world.borderFromWorld = form.worldBorderFromWorld;
+    params.controls.world.borderMassifMin = form.worldBorderMassifMin;
     params.controls.world.seaThreshold = form.worldSeaThreshold;
     params.controls.world.etageWavelength = form.worldEtageWavelength;
     params.controls.world.massifWavelength = form.worldMassifWavelength;
@@ -185,6 +187,8 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.worldContinentShapeWavelength =
         params.controls.world.continentShapeWavelength;
     form.worldContinentShapeAmp = params.controls.world.continentShapeAmp;
+    form.worldBorderFromWorld = params.controls.world.borderFromWorld;
+    form.worldBorderMassifMin = params.controls.world.borderMassifMin;
     form.worldSeaThreshold = params.controls.world.seaThreshold;
     form.worldEtageWavelength = params.controls.world.etageWavelength;
     form.worldMassifWavelength = params.controls.world.massifWavelength;

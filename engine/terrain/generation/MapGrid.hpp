@@ -5,16 +5,21 @@
 
 // The MAP LATTICE as a world structure (docs/PAYSAGE.md, chantier
 // CARTES): maps are mapSize squares on a grid; every grid line is a
-// border transition — a mountain range (Ridges) or a sea arm (Sea),
-// hashed per line segment. The style of a segment is a world-level
-// fact read by TWO layers: the zones (a Ridges line crosses a rampart
-// of cells that never sit below their neighbours, so the range rises
-// out of a divide) and the border shaping of TerrainGen (the lift and
-// the sea cut). Both read it HERE, so they never disagree.
+// border transition — a mountain range (Ridges), a sea arm (Sea) or
+// nothing at all (Open: the landscape just continues). Since the passe
+// EAU (§7.8, E2) the style is READ off the world layer along the
+// segment (ocean majority = Sea, massif mean = Ridges, else Open); the
+// hashed 50/50 proposal survives behind
+// WorldLayerParams::borderFromWorld = false. The style of a segment is
+// a world-level fact read by TWO layers: the zones (a Ridges line
+// crosses a rampart of cells that never sit below their neighbours, so
+// the range rises out of a divide) and the border shaping of
+// TerrainGen (the lift and the sea cut). Both read it HERE, so they
+// never disagree.
 
 namespace render::terraingen {
 
-enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1 };
+enum class MapEdgeStyle : i32 { Sea = 0, Ridges = 1, Open = 2 };
 
 // A Sea proposal needs at least this fraction of its segment's samples
 // under sea in the WORLD layer to stand; otherwise it demotes to

@@ -491,6 +491,8 @@ struct TerrainGenTuningForm : Form {
     f32 worldContinentJitter { 788.0f };
     f32 worldContinentShapeWavelength { 15000.0f };
     f32 worldContinentShapeAmp { 0.18f };
+    bool worldBorderFromWorld { true }; // false = hashed legacy styles
+    f32 worldBorderMassifMin { 0.45f };
     f32 worldSeaThreshold { 0.47f };
     f32 worldEtageWavelength { 28000.0f };
     f32 worldMassifWavelength { 26000.0f };
@@ -639,6 +641,8 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(worldContinentJitter)
         REFLECT_FIELD(worldContinentShapeWavelength)
         REFLECT_FIELD(worldContinentShapeAmp)
+        REFLECT_FIELD(worldBorderFromWorld)
+        REFLECT_FIELD(worldBorderMassifMin)
         REFLECT_FIELD(worldSeaThreshold)
         REFLECT_FIELD(worldEtageWavelength)
         REFLECT_FIELD(worldMassifWavelength)

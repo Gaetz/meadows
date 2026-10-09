@@ -459,6 +459,10 @@ TEST_CASE("map border transitions: shared lines, coherent shapes") {
 
     ProceduralControlParams pc;
     pc.seed = 1337;
+    // The subject is the border SHAPES (profiles, channel, islets),
+    // not where the world puts them: the legacy hashed styles
+    // guarantee both kinds exist among the nearby lines.
+    pc.world.borderFromWorld = false;
     const ProceduralControls controls { pc };
     MacroParams macro;
     macro.seaLevel = 21.0f;

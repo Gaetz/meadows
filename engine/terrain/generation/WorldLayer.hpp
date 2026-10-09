@@ -46,6 +46,11 @@ struct WorldLayerParams {
     f32 continentJitter { 788.0f };
     f32 continentShapeWavelength { 15000.0f };
     f32 continentShapeAmp { 0.18f };
+    // Map-border styles read off this layer (MapGrid.hpp, E2): ocean
+    // majority = Sea, massif mean above the threshold = Ridges, else
+    // Open. false = the legacy hashed 50/50 proposal + Sea veto.
+    bool borderFromWorld { true };
+    f32 borderMassifMin { 0.45f };
     f32 coastDetailWavelength { 5000.0f };
     f32 coastDetailAmp { 0.12f };
     f32 continentWarpWavelength { 12000.0f };

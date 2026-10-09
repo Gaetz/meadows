@@ -771,7 +771,11 @@ int landscapeReport(char** argv, int argc) {
         grid.seaLevel = params.macro.seaLevel;
         const render::terraingen::ProceduralControls controls { cp };
         const auto styleName = [](render::terraingen::MapEdgeStyle st) {
-            return st == render::terraingen::MapEdgeStyle::Sea ? "Sea" : "Ridges";
+            switch (st) {
+            case render::terraingen::MapEdgeStyle::Sea: return "Sea";
+            case render::terraingen::MapEdgeStyle::Ridges: return "Ridges";
+            default: return "Open";
+            }
         };
         LOG_INFO("  border lines: west {} | east {} | south {} | north {}",
                  styleName(render::terraingen::mapBorderStyleResolved(

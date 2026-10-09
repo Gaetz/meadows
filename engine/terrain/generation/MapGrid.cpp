@@ -33,14 +33,14 @@ MapEdgeStyle mapBorderSegmentStyle(const WorldLayerParams& world,
                                    i32 cellCross, bool vertical) {
     const MapEdgeStyle proposed =
         mapBorderStyle(world.seed, lineIndex, cellCross, vertical);
-    if (proposed != MapEdgeStyle::Sea) {
+    if (!world.borderFromWorld && proposed != MapEdgeStyle::Sea) {
         return proposed;
     }
-    // Sea veto: a sea arm only stands where the world already reads
-    // coastal along the segment — deep inland it demotes to the
-    // canonical land-land border (Ridges). Memoized per segment; the
-    // key reads every world param so a pupitre edit never serves a
-    // stale veto.
+    // The world decides (passe EAU E2): ocean majority = Sea, massif
+    // mean = Ridges, else Open — the landscape continues. The legacy
+    // path keeps only the Sea veto of its hashed proposal. Memoized
+    // per segment; the key reads every world param so a pupitre edit
+    // never serves a stale style.
     thread_local std::unordered_map<u64, MapEdgeStyle> memo;
     u64 key = static_cast<u64>(static_cast<u32>(lineIndex)) |
               (static_cast<u64>(static_cast<u32>(cellCross)) << 32);
@@ -52,6 +52,7 @@ MapEdgeStyle mapBorderSegmentStyle(const WorldLayerParams& world,
     }
     constexpr u32 kSamples = 9;
     u32 oceanish = 0;
+    f32 massifSum = 0.0f;
     for (u32 i = 0; i < kSamples; ++i) {
         const f32 along =
             (static_cast<f32>(cellCross) +
@@ -64,12 +65,23 @@ MapEdgeStyle mapBorderSegmentStyle(const WorldLayerParams& world,
         if (w.sea || w.base < 2.0f) {
             ++oceanish;
         }
+        massifSum += w.massif;
     }
-    const MapEdgeStyle resolved =
-        static_cast<f32>(oceanish) <
-                kMapBorderSeaVetoOceanFrac * static_cast<f32>(kSamples)
-            ? MapEdgeStyle::Ridges
-            : MapEdgeStyle::Sea;
+    const bool oceanLine =
+        static_cast<f32>(oceanish) >=
+        kMapBorderSeaVetoOceanFrac * static_cast<f32>(kSamples);
+    MapEdgeStyle resolved;
+    if (!world.borderFromWorld) {
+        // Legacy: a hashed Sea proposal stands only on a coastal line.
+        resolved = oceanLine ? MapEdgeStyle::Sea : MapEdgeStyle::Ridges;
+    } else if (oceanLine) {
+        resolved = MapEdgeStyle::Sea;
+    } else if (massifSum >=
+               world.borderMassifMin * static_cast<f32>(kSamples)) {
+        resolved = MapEdgeStyle::Ridges;
+    } else {
+        resolved = MapEdgeStyle::Open;
+    }
     memo.emplace(key, resolved);
     return resolved;
 }

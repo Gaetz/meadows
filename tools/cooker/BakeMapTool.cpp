@@ -52,6 +52,75 @@ std::optional<render::TerrainRegion> readSlice(
     return world::readTrgFile(mapDir / stem);
 }
 
+// The seam instrument of two ADJACENT maps (passe EAU E2, `--pair`):
+// the two bakes never share a window, so the shared overlap band
+// (±overlapMargin) is where their divergence is measured — heights as
+// RMS + max, water as orphan river points (a course on one side with
+// no counterpart within `kPairWaterMatch` on the other) and the
+// surface delta of the matched ones.
+constexpr f32 kPairWaterMatch = 50.0f;
+
+struct PairWater {
+    u32 pointsA { 0 };
+    u32 pointsB { 0 };
+    u32 orphans { 0 };
+    f32 orphanWidestHalf { 0.0f };
+    f32 surfaceDeltaMax { 0.0f };
+};
+
+void collectLinePoints(const std::filesystem::path& mapDir, i32 tx,
+                       i32 tz, bool vertical, f32 lineAt, f32 band,
+                       vector<render::terraingen::RiverPoint>& out) {
+    char stem[64];
+    std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u", tx, tz,
+                  render::terraingen::kTileBakeVersion);
+    vector<render::terraingen::Lake> lakes;
+    vector<render::terraingen::River> rivers;
+    if (!game::readWaterFile(mapDir / (str { stem } + ".twb"), lakes,
+                             rivers)) {
+        return;
+    }
+    for (const auto& river : rivers) {
+        for (const auto& pt : river.points) {
+            const f32 across = vertical ? pt.x : pt.z;
+            if (std::abs(across - lineAt) <= band) {
+                out.push_back(pt);
+            }
+        }
+    }
+}
+
+PairWater pairWater(const vector<render::terraingen::RiverPoint>& a,
+                    const vector<render::terraingen::RiverPoint>& b) {
+    PairWater out;
+    out.pointsA = static_cast<u32>(a.size());
+    out.pointsB = static_cast<u32>(b.size());
+    const auto match = [&](const auto& from, const auto& to) {
+        for (const auto& p : from) {
+            f32 best = 1.0e30f;
+            f32 surface = 0.0f;
+            for (const auto& q : to) {
+                const f32 d = std::hypot(p.x - q.x, p.z - q.z);
+                if (d < best) {
+                    best = d;
+                    surface = q.surface;
+                }
+            }
+            if (best > kPairWaterMatch) {
+                ++out.orphans;
+                out.orphanWidestHalf =
+                    glm::max(out.orphanWidestHalf, p.halfWidth);
+            } else {
+                out.surfaceDeltaMax = glm::max(
+                    out.surfaceDeltaMax, std::abs(p.surface - surface));
+            }
+        }
+    };
+    match(a, b);
+    match(b, a);
+    return out;
+}
+
 } // namespace
 
 int bakeMapCmd(char** argv, int argc) {
@@ -70,13 +139,24 @@ int bakeMapCmd(char** argv, int argc) {
     // emits the map as an ordinary §5 plugin (M5.2).
     bool borders = true;
     const char* exportName = nullptr;
+    bool pair = false;
+    i32 pairX = 0;
+    i32 pairZ = 0;
     for (int i = 5; i < argc; ++i) {
         if (std::strcmp(argv[i], "--") == 0) {
             borders = false;
         } else if (std::strcmp(argv[i], "--export-plugin") == 0 &&
                    i + 1 < argc) {
             exportName = argv[++i];
+        } else if (std::strcmp(argv[i], "--pair") == 0 && i + 2 < argc) {
+            pair = true;
+            pairX = std::atoi(argv[++i]);
+            pairZ = std::atoi(argv[++i]);
         }
+    }
+    if (pair && std::abs(pairX - mapX) + std::abs(pairZ - mapZ) != 1) {
+        LOG_ERROR("bake-map: --pair needs an ADJACENT map");
+        return 1;
     }
 
     // Game bake params (the pre-bake resolution path: the SAME plugin-
@@ -297,6 +377,116 @@ int bakeMapCmd(char** argv, int argc) {
                      n[b]);
         }
     }
+    // --pair: the SEAM instrument of two adjacent maps (passe EAU E2).
+    // Two independent bakes meet on their shared overlap band: heights
+    // compared as RMS + max there, river points matched across the
+    // line (orphans = a course one bake has and the other does not).
+    if (pair) {
+        if (!game::mapBakedAndValid(cacheDir, pairX, pairZ, tilesPerSide,
+                                    &params)) {
+            const game::MapBakeStats statsB = game::bakeMap(
+                params, pairX, pairZ, cacheDir, &jobs, tilesPerSide);
+            if (statsB.slicesWritten !=
+                static_cast<u32>(tilesPerSide) *
+                    static_cast<u32>(tilesPerSide)) {
+                LOG_ERROR("bake-map: incomplete pair bake");
+                return 1;
+            }
+        }
+        const auto mapDirB = game::mapCacheDir(cacheDir, pairX, pairZ);
+        const bool vertical = pairX != mapX;
+        const f32 mapSize = tileSize * static_cast<f32>(tilesPerSide);
+        const i32 lineIndex =
+            vertical ? glm::max(mapX, pairX) : glm::max(mapZ, pairZ);
+        const f32 lineAt = static_cast<f32>(lineIndex) * mapSize;
+        f64 sum2 = 0.0;
+        u64 nSamples = 0;
+        f32 worstPair = 0.0f;
+        vector<render::terraingen::RiverPoint> ptsA;
+        vector<render::terraingen::RiverPoint> ptsB;
+        for (i32 k = 0; k < tilesPerSide; ++k) {
+            i32 taX, taZ, tbX, tbZ;
+            if (vertical) {
+                taX = (pairX > mapX ? tx0 + tilesPerSide - 1 : tx0);
+                tbX = (pairX > mapX ? pairX * tilesPerSide
+                                    : pairX * tilesPerSide +
+                                          tilesPerSide - 1);
+                taZ = tz0 + k;
+                tbZ = taZ;
+            } else {
+                taZ = (pairZ > mapZ ? tz0 + tilesPerSide - 1 : tz0);
+                tbZ = (pairZ > mapZ ? pairZ * tilesPerSide
+                                    : pairZ * tilesPerSide +
+                                          tilesPerSide - 1);
+                taX = tx0 + k;
+                tbX = taX;
+            }
+            const auto a = readSlice(mapDir, taX, taZ);
+            const auto b = readSlice(mapDirB, tbX, tbZ);
+            if (!a || !b) {
+                LOG_ERROR("bake-map: pair cannot re-read facing slices "
+                          "({}, {}) / ({}, {})",
+                          taX, taZ, tbX, tbZ);
+                return 1;
+            }
+            const f32 alongMin =
+                (vertical ? static_cast<f32>(taZ)
+                          : static_cast<f32>(taX)) *
+                tileSize;
+            for (f32 d = -margin + 2.0f; d <= margin - 2.0f; d += 4.0f) {
+                for (f32 s = alongMin + 2.0f; s < alongMin + tileSize;
+                     s += 4.0f) {
+                    const f32 x = vertical ? lineAt + d : s;
+                    const f32 z = vertical ? s : lineAt + d;
+                    const f32 delta =
+                        render::terrain::baseHeight(*a, x, z) -
+                        render::terrain::baseHeight(*b, x, z);
+                    sum2 += static_cast<f64>(delta) *
+                            static_cast<f64>(delta);
+                    ++nSamples;
+                    worstPair = glm::max(worstPair, std::abs(delta));
+                }
+            }
+            collectLinePoints(mapDir, taX, taZ, vertical, lineAt, margin,
+                              ptsA);
+            collectLinePoints(mapDirB, tbX, tbZ, vertical, lineAt,
+                              margin, ptsB);
+        }
+        const PairWater water = pairWater(ptsA, ptsB);
+        const render::terraingen::ProceduralControls styleControls { [&] {
+            render::terraingen::ProceduralControlParams cp =
+                params.controls;
+            cp.seed = params.worldSeed;
+            return cp;
+        }() };
+        render::terraingen::MapGridSpec styleSpec = params.mapGrid;
+        styleSpec.seed = params.worldSeed;
+        styleSpec.mapSize = mapSize;
+        styleSpec.seaLevel = params.macro.seaLevel;
+        const auto style = render::terraingen::mapBorderStyleResolved(
+            styleControls, params.macro, styleSpec, lineIndex,
+            vertical ? mapZ : mapX, vertical);
+        const char* styleName =
+            style == render::terraingen::MapEdgeStyle::Sea ? "Sea"
+            : style == render::terraingen::MapEdgeStyle::Ridges
+                ? "Ridges"
+                : "Open";
+        const f32 rms =
+            nSamples > 0
+                ? static_cast<f32>(std::sqrt(
+                      sum2 / static_cast<f64>(nSamples)))
+                : 0.0f;
+        LOG_INFO("bake-map: pair ({}, {})/({}, {}) line {} [{}] — "
+                 "heights RMS {:.2f} m, max {:.2f} m ({} samples) | "
+                 "water: {}+{} line points, {} orphans (widest half "
+                 "{:.1f} m), matched surface delta max {:.2f} m",
+                 mapX, mapZ, pairX, pairZ,
+                 vertical ? "vertical" : "horizontal", styleName, rms,
+                 worstPair, nSamples, water.pointsA, water.pointsB,
+                 water.orphans, water.orphanWidestHalf,
+                 water.surfaceDeltaMax);
+    }
+
     // --export-plugin (M5.2): the baked map as an ORDINARY §5 mod —
     // slices copied under data/mods/terrain/, records staged through
     // stageMapRecords, one TOML out. Deterministic guids (map guid =
