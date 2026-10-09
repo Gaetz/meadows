@@ -610,6 +610,22 @@ struct TerrainGenTuningForm : Form {
     i32 bakeThermalIterations { 60 };
     f32 bakeTalusTan { 0.65f };
     f32 bakeRoundingStrength { 0.6f };
+    // --- Water (MasterNetwork.hpp, Hydrology.hpp, WaterSolve.hpp).
+    // waterRainRate's reference default is TileBakeParams::waterSolve
+    // (4e-6), not the WaterSolveParams struct default.
+    f32 networkFleuveArea { 6.0e6f };
+    f32 networkTexel { 128.0f };
+    f32 hydroRiverArea { 150000.0f };
+    f32 hydroRiviereArea { 2.0e6f };
+    f32 hydroWidthCoef { 0.008f };
+    f32 hydroWidthExponent { 0.5f };
+    f32 hydroFleuveWidthScale { 1.6f };
+    f32 hydroMinLakeDepth { 0.6f };
+    u32 hydroMinLakeCells { 12 };
+    f32 imprintBedDepth { 5.0f };
+    f32 imprintPlainFactor { 3.0f };
+    f32 imprintMinGradient { 0.0015f };
+    f32 waterRainRate { 4.0e-6f };
 
     REFLECT_BEGIN(TerrainGenTuningForm, Form)
         REFLECT_FIELD(worldContinentWavelength)
@@ -732,6 +748,19 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(bakeThermalIterations)
         REFLECT_FIELD(bakeTalusTan)
         REFLECT_FIELD(bakeRoundingStrength)
+        REFLECT_FIELD(networkFleuveArea)
+        REFLECT_FIELD(networkTexel)
+        REFLECT_FIELD(hydroRiverArea)
+        REFLECT_FIELD(hydroRiviereArea)
+        REFLECT_FIELD(hydroWidthCoef)
+        REFLECT_FIELD(hydroWidthExponent)
+        REFLECT_FIELD(hydroFleuveWidthScale)
+        REFLECT_FIELD(hydroMinLakeDepth)
+        REFLECT_FIELD(hydroMinLakeCells)
+        REFLECT_FIELD(imprintBedDepth)
+        REFLECT_FIELD(imprintPlainFactor)
+        REFLECT_FIELD(imprintMinGradient)
+        REFLECT_FIELD(waterRainRate)
     REFLECT_END()
 };
 

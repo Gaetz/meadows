@@ -151,6 +151,19 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.zones.gateHalfWidth = form.zoneGateHalfWidth;
     params.controls.zones.gateExtra = form.zoneGateExtra;
     params.controls.zones.ridgeHeight = form.zoneRidgeHeight;
+    params.network.fleuveArea = form.networkFleuveArea;
+    params.network.texel = form.networkTexel;
+    params.hydrology.riverArea = form.hydroRiverArea;
+    params.hydrology.riviereArea = form.hydroRiviereArea;
+    params.hydrology.widthCoef = form.hydroWidthCoef;
+    params.hydrology.widthExponent = form.hydroWidthExponent;
+    params.hydrology.fleuveWidthScale = form.hydroFleuveWidthScale;
+    params.hydrology.minLakeDepth = form.hydroMinLakeDepth;
+    params.hydrology.minLakeCells = form.hydroMinLakeCells;
+    params.imprint.bedDepth = form.imprintBedDepth;
+    params.imprint.plainFactor = form.imprintPlainFactor;
+    params.imprint.minGradient = form.imprintMinGradient;
+    params.waterSolve.rainRate = form.waterRainRate;
 }
 
 data::TerrainGenTuningForm
@@ -280,6 +293,19 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.zoneGateHalfWidth = params.controls.zones.gateHalfWidth;
     form.zoneGateExtra = params.controls.zones.gateExtra;
     form.zoneRidgeHeight = params.controls.zones.ridgeHeight;
+    form.networkFleuveArea = params.network.fleuveArea;
+    form.networkTexel = params.network.texel;
+    form.hydroRiverArea = params.hydrology.riverArea;
+    form.hydroRiviereArea = params.hydrology.riviereArea;
+    form.hydroWidthCoef = params.hydrology.widthCoef;
+    form.hydroWidthExponent = params.hydrology.widthExponent;
+    form.hydroFleuveWidthScale = params.hydrology.fleuveWidthScale;
+    form.hydroMinLakeDepth = params.hydrology.minLakeDepth;
+    form.hydroMinLakeCells = params.hydrology.minLakeCells;
+    form.imprintBedDepth = params.imprint.bedDepth;
+    form.imprintPlainFactor = params.imprint.plainFactor;
+    form.imprintMinGradient = params.imprint.minGradient;
+    form.waterRainRate = params.waterSolve.rainRate;
     return form;
 }
 

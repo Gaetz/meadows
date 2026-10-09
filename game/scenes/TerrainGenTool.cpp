@@ -185,8 +185,8 @@ void TerrainGenTool::drawPupitre(const GenContext& ctx) {
         }
     }
     ImGui::SetNextItemWidth(200.0f);
-    ImGui::InputText("filter (world/rhythm/poi/macro/bake)", fieldFilter,
-                     sizeof(fieldFilter));
+    ImGui::InputText("filter (world/rhythm/poi/macro/bake/hydro)",
+                     fieldFilter, sizeof(fieldFilter));
     if (ImGui::BeginChild("pupitre-fields", ImVec2(0.0f, 320.0f),
                           ImGuiChildFlags_Borders)) {
         drawReflectedStruct(ctx.genTuning,

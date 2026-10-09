@@ -2093,6 +2093,64 @@ briques Z0-Z5 dans le fichier de plan.
   porte, crête). Hash de `MapBakerTest` ré-épinglé
   (7395177285592674686, v78).
 
+### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
+
+Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que
+j'imagine que c'est la source » — un cours maître naît au seuil
+`fleuveArea` à ~38 m de large (plancher 12 m × 1,6), sans amont ; et la
+mer n'apparaît qu'au cran 100 km de la minimap. Vision validée : un
+monde cohérent fait de continents, les fleuves coulent jusqu'à la mer à
+travers les cartes ; en montagne les sources sont des résurgences, de
+la fonte ou des exutoires de gros lacs — les lacs font partie du
+réseau ; la far view et la carte traversée racontent la même eau.
+
+**Décisions dev (2026-10-09).** (1) **Archipel infini** : continents
+finis sur une grille déterministe, océan entre, le sandbox reste
+infini ; chaque continent = unité hydrologique complète. (2)
+**Continent ≈ 3×3 cartes** : la masse terrestre tient dans le CŒUR
+d'une super-région du réseau maître (propriété des têtes demi-ouverte)
+— diamètre ~21-22 km, R ≈ 10,5-11 km, un continent par super-cellule
+(i·P, j·P), P = `worldContinentCellSupers` (défaut 2 → un continent
+tous les 49 km) ; plus aucune couture cross-super (zéro tête chez les
+voisins). (3) **Maintenant, avant Z4/Z5** : la passe absorbe l'enquête
+eau des lacs (percée des exutoires) et le cœur de N4 (frontières lues
+sur l'étage monde, Ouvert ailleurs). Principes : l'accumulation devient
+un DÉBIT (`qArea`, ruissellement climatique), la loi de largeur est
+UNIQUE et continue (plancher 12 m supprimé, ×1,6 en rampe), le tier est
+PAR POINT (guéable en amont, obstacle en aval, monotone par
+construction), les lacs sont des nœuds. Le plan détaillé vit dans le
+plan de session ; l'érosion reste NON pondérée (knob réservé).
+
+| # | Brique | Contenu | Mesure de sortie |
+|---|---|---|---|
+| E0 | Pupitre eau | params réseau/hydro/empreinte/pluie dans le Form (la clé de carte les suit enfin) | zéro delta visuel ; round-trip + clé testés |
+| E1 | Archipel | treillis de continents dans `worldSampleAt` (A/B : `worldContinentCellSupers` 0 = porteur hérité) | terre ⊆ cœur de super-cellule ; (0,0) à terre ; (3,3) océan |
+| E2 | Frontières lues sur le monde | `Open` + styles depuis `worldSampleAt`, hash/veto supprimés ; `bake-map --pair` | répartition Mer/Ridges/Open ; divergence Open < 10 m RMS ; baseline orphelins d'eau |
+| E3 | Routage façonné | le réseau maître route sur `applyMapGridShape` (remparts = partages des eaux) | 0 cours le long des lignes Ridges ; % cours à la mer stable+ |
+| E4a | Débit | `routeFlow` pondéré (climat au 128 m, biome au 16 m), `qArea` (MNW2) | poids=1 ⇒ bit-exact ; ratio largeur humide/sec mesuré |
+| E4b | Continuum | extraction à 1,5e6, largeur continue sans plancher, tier par point (TWB4), gués tier 1, far-water unifié | tête ≤ 2× le gabarit local ; tiers monotones ; gués tier 1 seuls |
+| E5 | Lacs | bassins maîtres nœuds, percée des exutoires, `catchment` → largeur d'exutoire | 3-6 lacs/carte (vs 165) ; 0 lac sans exutoire hors retenus |
+| E6 | Sources | typologie des têtes (source/névé/glacier/lac), taper + bonus par type | histogramme des types ; exutoires 100 % typés lac |
+| E7 | Cohérence | bilan par continent, `--pair` surfaces d'eau, vérif far-view | ≥ 95 % des cours à la mer ; 0 orphelin > 10 m |
+
+Différés de la passe : deltas/estuaires, traversée des détroits,
+habillage visuel des sources, couche peinte histoire, flowSpeed par
+nœud, pondération de l'érosion, peuplement (Z4/Z5 suivent sur
+l'hydrologie définitive).
+
+- **2026-10-09 — E0 livrée : le pupitre eau.** Treize knobs entrent au
+  Form (et donc dans la clé de carte, qui ne hachait NI `network` NI
+  `hydrology` NI `imprint` NI `waterSolve` — changer un défaut C++
+  était invisible du cache) : `networkFleuveArea`, `networkTexel`,
+  `hydroRiverArea`, `hydroRiviereArea`, `hydroWidthCoef`,
+  `hydroWidthExponent`, `hydroFleuveWidthScale`, `hydroMinLakeDepth`,
+  `hydroMinLakeCells`, `imprintBedDepth`, `imprintPlainFactor`,
+  `imprintMinGradient`, `waterRainRate` (référence = le défaut
+  `TileBakeParams::waterSolve` 4e-6, pas celui de la struct). Défauts =
+  identité bit-exacte ; pas de bump (la clé bouge via le hash du Form).
+  Mesuré : les 2 cas `TerrainGenTuningTest` verts (défauts champ à
+  champ, round-trip + clé). Jugement dev EN ATTENTE.
+
 ---
 
 ## 8. Glossaire
