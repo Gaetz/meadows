@@ -20,7 +20,7 @@ using render::terraingen::Lake;
 using render::terraingen::River;
 using render::terraingen::RiverPoint;
 
-constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '3' };
+constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '4' };
 
 } // namespace
 
@@ -56,6 +56,10 @@ bool writeWaterFile(const std::filesystem::path& path,
     write(static_cast<u32>(rivers.size()));
     for (const River& river : rivers) {
         write(river.tier);
+        write(river.mouthArea);
+        write(river.lakeFed);
+        write(river.sourceLake);
+        write(river.headType);
         write(static_cast<u32>(river.fords.size()));
         for (const Vec2& ford : river.fords) {
             write(ford.x);
@@ -114,6 +118,10 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
     rivers.resize(riverCount);
     for (River& river : rivers) {
         read(river.tier);
+        read(river.mouthArea);
+        read(river.lakeFed);
+        read(river.sourceLake);
+        read(river.headType);
         u32 fords = 0;
         file.read(reinterpret_cast<char*>(&fords), sizeof(fords));
         if (!file || fords > 100000) {
@@ -429,7 +437,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
-    const render::terraingen::MapGridSpec& grid, f32 seaLevel,
+    const render::terraingen::MapGridSpec& grid,
+    const render::terraingen::RiverWidthLaw& law, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan) {
     render::WaterSystem::FarWaterSet set;
     const f32 minX = cx - halfSpan;
@@ -586,9 +595,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
                 run = {};
                 continue;
             }
-            const f32 hw = glm::clamp(
-                render::terraingen::riverHalfWidthFromArea(node.area),
-                4.0f, 60.0f);
+            // The shared width law on the effective discharge, so the
+            // far ribbon and the baked one agree at the frontier; the
+            // 4 m floor is only the far-geometry visibility guard.
+            const f32 hw = glm::max(
+                render::terraingen::riverLawHalfWidth(law, node.qArea),
+                4.0f);
             run.nodes.push_back({ node.x, node.z, node.surface, hw });
         }
         if (run.nodes.size() >= 2) {

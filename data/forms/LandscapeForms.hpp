@@ -621,8 +621,12 @@ struct TerrainGenTuningForm : Form {
     // waterRainRate's reference default is TileBakeParams::waterSolve
     // (4e-6), not the WaterSolveParams struct default.
     f32 networkFleuveArea { 6.0e6f };
+    f32 networkRiverExtractArea { 1.5e6f };
     f32 networkTexel { 128.0f };
     bool networkRouteOnShaped { true }; // route on the bordered ground
+    f32 hydroFleuveRampLow { 4.0e6f };
+    f32 hydroFleuveRampHigh { 1.0e7f };
+    f32 hydroTier2MinHalfWidth { 12.0f };
     bool hydroRunoffWeights { true };   // qArea = climate-weighted area
     f32 hydroRunoffDryMin { 0.4f };
     f32 hydroRunoffWetMax { 1.6f };
@@ -769,8 +773,12 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(bakeTalusTan)
         REFLECT_FIELD(bakeRoundingStrength)
         REFLECT_FIELD(networkFleuveArea)
+        REFLECT_FIELD(networkRiverExtractArea)
         REFLECT_FIELD(networkTexel)
         REFLECT_FIELD(networkRouteOnShaped)
+        REFLECT_FIELD(hydroFleuveRampLow)
+        REFLECT_FIELD(hydroFleuveRampHigh)
+        REFLECT_FIELD(hydroTier2MinHalfWidth)
         REFLECT_FIELD(hydroRunoffWeights)
         REFLECT_FIELD(hydroRunoffDryMin)
         REFLECT_FIELD(hydroRunoffWetMax)

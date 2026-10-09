@@ -405,7 +405,7 @@ vector<WaterSource> masterBoundarySources(
             if (!inside(river.nodes[k - 1]) && inside(river.nodes[k])) {
                 sources.push_back(
                     { river.nodes[k].x, river.nodes[k].z,
-                      runoffDischarge(river.nodes[k].area, params) });
+                      runoffDischarge(river.nodes[k].qArea, params) });
             }
         }
     }

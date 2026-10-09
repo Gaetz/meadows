@@ -74,10 +74,14 @@ struct MasterNetworkParams {
     // Temperature below which the head country reads snow-fed (the
     // coldness smoothstep spans +0.15 above it).
     f32 snowlineTemp { 0.25f };
-    // Drainage area that makes a FLEUVE (the real obstacle tier):
-    // ~20 m of half-width through the sqrt(A) law, and low enough
-    // that the tier begins well inland (at 1.5e7 the courses were
-    // 1-2 km coastal stubs — this world's basins are compact).
+    // qArea that EXTRACTS a master course (E4b): low enough that the
+    // courses are traced from the mountains (a ~5 m half-width head
+    // through the width law — the readable minimum at the 128 m
+    // texel); the continuum ruisseau → rivière → fleuve then lives
+    // along ONE course instead of beginning at the fleuve threshold.
+    f32 riverExtractArea { 1.5e6f };
+    // qArea of the FLEUVE tier (the real obstacle): no longer the
+    // extraction threshold, only where tier 2 begins along a course.
     f32 fleuveArea { 6.0e6f };
     f32 seaLevel { kDefaultSeaLevel };
     f32 minSlope { 1.0e-4f };
@@ -132,15 +136,15 @@ struct MasterImprintParams {
 };
 // `extraKeep` (sim.cells(), caller-zeroed) receives the erosion
 // protection to max into the bake's keep grid. Width law shared with
-// classifyRivers (widthCoef/exponent/fleuveWidthScale) so the imprinted
-// channel and the promoted ribbon agree.
+// classifyRivers (Hydrology.hpp RiverWidthLaw, on the node's qArea) so
+// the imprinted channel and the promoted ribbon agree.
+struct RiverWidthLaw;
 void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
                            vector<f32>& extraKeep,
                            const ProceduralControls& controls,
                            const MacroParams& macroParams,
                            const MasterNetworkParams& network,
                            const MasterImprintParams& imprint,
-                           f32 widthCoef, f32 widthExponent,
-                           f32 fleuveWidthScale);
+                           const RiverWidthLaw& law);
 
 } // namespace render::terraingen

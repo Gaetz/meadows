@@ -218,6 +218,7 @@ PoiCourseHit poiNearestCourse(const WorldLayerParams& world,
     // Down to the riviere tier: a waterfall or a gorge belongs to a
     // real river, not only to the rare fleuves (the memo keys on the
     // params, so this finer network lives beside the imprint's).
+    net.riverExtractArea = 1.5e6f;
     net.fleuveArea = 1.5e6f;
     const auto rivers = masterRiversNear(controls, macro, net, x - reach,
                                          z - reach, x + reach, z + reach);

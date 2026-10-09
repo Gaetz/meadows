@@ -15,6 +15,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
+#include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
@@ -81,6 +82,7 @@ u64 networkFileKey(const ProceduralControls& controls,
     mixF(params.superRegionSize);
     mixF(params.apron);
     mixF(params.texel);
+    mixF(params.riverExtractArea);
     mixF(params.fleuveArea);
     mixF(params.seaLevel);
     mixF(params.minSlope);
@@ -319,13 +321,15 @@ MasterNetwork computeMasterNetworkUncached(
              std::chrono::duration<f64>(clock1 - clock0).count(),
              std::chrono::duration<f64>(clock2 - clock1).count());
 
-    // Channel cells: TRUE drainage above the fleuve threshold, on dry
-    // ground. Heads = channel cells fed by no channel donor.
+    // Channel cells: effective discharge above the EXTRACTION
+    // threshold (rivière gabarit — the tier thresholds slice the
+    // course later), on dry ground. Heads = channel cells fed by no
+    // channel donor.
     const size_t cells = out.grid.cells();
     vector<u8> channel(cells, 0);
     vector<u8> hasChannelDonor(cells, 0);
     for (size_t i = 0; i < cells; ++i) {
-        channel[i] = flow.area[i] >= params.fleuveArea &&
+        channel[i] = qAreaOf[i] >= params.riverExtractArea &&
                      height[i] > params.seaLevel;
     }
     for (size_t i = 0; i < cells; ++i) {
@@ -454,8 +458,7 @@ void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
                            const MacroParams& macroParams,
                            const MasterNetworkParams& network,
                            const MasterImprintParams& imprint,
-                           f32 widthCoef, f32 widthExponent,
-                           f32 fleuveWidthScale) {
+                           const RiverWidthLaw& law) {
     const f32 simMaxX =
         sim.originX + static_cast<f32>(sim.n - 1) * sim.texelSize;
     const f32 simMaxZ =
@@ -488,15 +491,9 @@ void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
             const MasterNode& b = river.nodes[s + 1];
             // Width law shared with classifyRivers: the imprinted
             // channel and the promoted ribbon agree by construction.
-            const auto halfOf = [&](f32 area) {
-                return glm::clamp(widthCoef *
-                                      std::pow(glm::max(area, 0.0f),
-                                               widthExponent),
-                                  12.0f, 45.0f) *
-                       fleuveWidthScale;
-            };
-            const f32 halfA = halfOf(a.area);
-            const f32 halfB = halfOf(b.area);
+            // On qArea, floor-free: the head digs its own gabarit.
+            const f32 halfA = riverLawHalfWidth(law, a.qArea);
+            const f32 halfB = riverLawHalfWidth(law, b.qArea);
             const f32 reach =
                 glm::max(halfA, halfB) * imprint.plainFactor +
                 sim.texelSize;

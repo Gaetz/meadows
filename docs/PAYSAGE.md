@@ -2259,6 +2259,40 @@ l'hydrologie définitive).
   publiée identique, vérifié par le hash cartes stable). Mesuré (seed
   1337, super (0,0)) : qArea s'écarte de l'aire de > 1 % sur **481 des
   517 nœuds**. Jugement dev EN ATTENTE.
+- **2026-10-10 — E4b livrée : le continuum ruisseau → rivière →
+  fleuve.** La réponse à la question d'origine du chantier (« un gros
+  fleuve naît sur la carte zéro ») : (1) **l'extraction descend au
+  gabarit rivière** — `networkRiverExtractArea` 1,5e6 m² de qArea
+  (demi-largeur ~5 m, le minimum lisible au texel 128) remplace
+  `fleuveArea` comme seuil d'extraction du réseau ; `fleuveArea` 6e6 ne
+  marque plus que le TIER obstacle. (2) **Une seule loi de largeur
+  continue** (`RiverWidthLaw`, Hydrology.hpp) partagée empreinte /
+  classification / far-water : `min(coef·q^exp, 45) × rampe(fleuve)` —
+  le **plancher 12 m est supprimé** (une tête naît à ~10 m de large et
+  grossit à chaque confluent) et le ×1,6 « GRAND » devient une rampe
+  smoothstep sur le débit (`hydroFleuveRampLow` 4e6 →
+  `hydroFleuveRampHigh` 1e7) au lieu de multiplier le cours entier.
+  (3) **Le tier est PAR POINT** (`RiverPoint::tier`, u32 sans padding)
+  depuis le qArea du nœud maître apparié (≥ riviereArea = 1, ≥
+  fleuveArea = 2), monotone aval par running-max : un même cours est
+  rivière guéable dans ses montagnes et fleuve-obstacle dans sa
+  plaine — remonter le fleuve pour le franchir devient un motif de
+  jeu. Garantie obstacle : `hydroTier2MinHalfWidth` 12 m au point
+  tier 2. `River::tier` = max des points (compat lecteurs) ; gués
+  adoptés sur les seuls points tier 1 ; la porte « ≥ 50 % des points
+  matchés » disparaît (le match est par point). (4) **TWB4** :
+  `mouthArea`, `lakeFed` sérialisés (la reclassification au rechargement
+  suit le bake), `sourceLake`/`headType` réservés (E5/E6). (5) Le
+  far-water et `masterBoundarySources` lisent la loi et le qArea
+  (largeurs et débits de bord cohérents avec l'empreinte). Différé :
+  le ruissellement par biome au 16 m local (le climat entre déjà par
+  le qArea maître ; à ajouter si le dev veut des ruisseaux locaux
+  sensibles au biome). Bump **v82**. Mesuré : tête de cours au seuil =
+  ~9,8 m de demi-largeur par la loi (contre 19,2 plancher avant) ;
+  suite complète Release **809/809**, hash cartes AppleClang
+  1720697667797144396. Jugement dev EN ATTENTE (remonter le fleuve de
+  la carte (0,0) : continuum lisible, gués en amont, obstacle en
+  aval).
 
 ---
 

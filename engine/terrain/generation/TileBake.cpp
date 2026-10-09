@@ -200,9 +200,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         lap("borders+dimple");
         imprintMasterChannels(out.sim, macro, imprintKeep, controls,
                               macroParams, network, params.imprint,
-                              params.hydrology.widthCoef,
-                              params.hydrology.widthExponent,
-                              params.hydrology.fleuveWidthScale);
+                              params.hydrology.widthLaw());
     }
     BiomeCharacter character =
         biomeCharacter(out.sim, macro.biome, params.biomeErosion);

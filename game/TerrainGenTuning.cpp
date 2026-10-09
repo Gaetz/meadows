@@ -160,7 +160,13 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.zones.gateExtra = form.zoneGateExtra;
     params.controls.zones.ridgeHeight = form.zoneRidgeHeight;
     params.network.fleuveArea = form.networkFleuveArea;
+    params.network.riverExtractArea = form.networkRiverExtractArea;
     params.network.texel = form.networkTexel;
+    // The tier-2 cut of classifyRivers mirrors the network's.
+    params.hydrology.fleuveArea = form.networkFleuveArea;
+    params.hydrology.fleuveRampLow = form.hydroFleuveRampLow;
+    params.hydrology.fleuveRampHigh = form.hydroFleuveRampHigh;
+    params.hydrology.tier2MinHalfWidth = form.hydroTier2MinHalfWidth;
     params.network.routeOnShaped = form.networkRouteOnShaped;
     params.network.runoffWeights = form.hydroRunoffWeights;
     params.network.runoffDryMin = form.hydroRunoffDryMin;
@@ -316,7 +322,11 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.zoneGateExtra = params.controls.zones.gateExtra;
     form.zoneRidgeHeight = params.controls.zones.ridgeHeight;
     form.networkFleuveArea = params.network.fleuveArea;
+    form.networkRiverExtractArea = params.network.riverExtractArea;
     form.networkTexel = params.network.texel;
+    form.hydroFleuveRampLow = params.hydrology.fleuveRampLow;
+    form.hydroFleuveRampHigh = params.hydrology.fleuveRampHigh;
+    form.hydroTier2MinHalfWidth = params.hydrology.tier2MinHalfWidth;
     form.networkRouteOnShaped = params.network.routeOnShaped;
     form.hydroRunoffWeights = params.network.runoffWeights;
     form.hydroRunoffDryMin = params.network.runoffDryMin;

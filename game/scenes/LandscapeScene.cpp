@@ -2222,13 +2222,14 @@ render::WaterSystem::FarWaterFn LandscapeScene::makeFarWaterProvider(
     render::terraingen::MasterNetworkParams net = bake.network;
     net.seaLevel = bake.macro.seaLevel;
     net.mapGrid = grid;
-    return [cp, macro = bake.macro, net, grid, sea = tuning.seaLevel,
+    return [cp, macro = bake.macro, net, grid,
+            law = bake.hydrology.widthLaw(), sea = tuning.seaLevel,
             tileSize = bake.tileSize,
             cacheRoot = platform::executableDir() / "terrain-cache" /
                         std::to_string(tuning.terrainSeed),
             mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
         return collectFarWater(cacheRoot, mapX, mapZ, tileSize, cp, macro,
-                               net, grid, sea, cx, cz, halfSpan);
+                               net, grid, law, sea, cx, cz, halfSpan);
     };
 }
 

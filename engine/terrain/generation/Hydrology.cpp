@@ -629,22 +629,31 @@ HydrologyResult extractHydrology(const GridSpec& spec,
 
 void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
                     u32 seed, const vector<MasterRiver>& master) {
+    const RiverWidthLaw law = params.widthLaw();
     for (River& river : rivers) {
         if (river.points.size() < 2) {
             continue;
         }
-        river.tier = river.mouthArea >= params.riviereArea ? 1 : 0;
-        // Fleuve promotion: a course matching a MASTER river inherits
-        // the obstacle tier and a width floor from the TRUE drainage
-        // area (the tile window truncates areas — a fleuve cannot be
-        // known locally, only recognized). Match = most points within
-        // two master texels of the master polyline.
-        u32 matched = 0;
+        const u32 baseTier =
+            river.mouthArea >= params.riviereArea ? 1u : 0u;
+        // Tier and width floor PER POINT from the nearest master
+        // node's effective discharge (the tile window truncates areas —
+        // a big course cannot be known locally, only recognized): one
+        // course is a wadeable rivière in its mountains and the
+        // obstacle fleuve in its plain. WORLD-stable (the master's
+        // qAreas grow downstream wherever the window truncates the
+        // local ones, so neighbours agree) and MONOTONE via the
+        // running max: an obstacle never pinches back into a
+        // crossable brook. The fleuve GRAND read is the law's own
+        // discharge ramp now — no whole-course scale, no hard floor.
         constexpr f32 kMatchDist = 260.0f;
-        vector<f32> areaAt(river.points.size(), 0.0f);
+        f32 runningHalf = 0.0f;
+        u32 runningTier = 0;
+        u32 maxTier = baseTier;
         for (size_t p = 0; p < river.points.size(); ++p) {
-            const RiverPoint& pt = river.points[p];
+            RiverPoint& pt = river.points[p];
             f32 best = kMatchDist * kMatchDist;
+            f32 q = 0.0f;
             for (const MasterRiver& mr : master) {
                 for (const MasterNode& node : mr.nodes) {
                     const f32 dx = node.x - pt.x;
@@ -652,42 +661,37 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
                     const f32 d = dx * dx + dz * dz;
                     if (d < best) {
                         best = d;
-                        areaAt[p] = node.area;
+                        q = node.qArea;
                     }
                 }
             }
-            matched += areaAt[p] > 0.0f ? 1 : 0;
-        }
-        if (matched * 2 >= river.points.size()) {
-            river.tier = 2;
-            // Width floor from the TRUE area at each point — WORLD-
-            // stable (the master's areas grow downstream wherever the
-            // tile window truncates the local ones, so neighbours
-            // agree) and MONOTONE via the running max: an obstacle
-            // never pinches back into a crossable brook. The fleuve
-            // scale then spreads the whole course: grand, not merely
-            // big (a first 18 m ceiling read as an ordinary river).
-            f32 runningHalf = 0.0f;
-            for (size_t p = 0; p < river.points.size(); ++p) {
-                if (areaAt[p] > 0.0f) {
-                    const f32 floorHalf = glm::clamp(
-                        params.widthCoef *
-                            std::pow(areaAt[p], params.widthExponent),
-                        12.0f, 45.0f);
-                    runningHalf = glm::max(runningHalf, floorHalf);
+            if (q > 0.0f) {
+                const u32 t = q >= params.fleuveArea      ? 2u
+                              : q >= params.riviereArea   ? 1u
+                                                          : 0u;
+                runningTier = glm::max(runningTier, t);
+                f32 floorHalf = riverLawHalfWidth(law, q);
+                if (runningTier >= 2u) {
+                    // The obstacle guarantee: a fleuve point never
+                    // reads narrower than the crossable maximum.
+                    floorHalf = glm::max(floorHalf,
+                                         params.tier2MinHalfWidth);
                 }
-                river.points[p].halfWidth =
-                    glm::max(river.points[p].halfWidth, runningHalf) *
-                    params.fleuveWidthScale;
+                runningHalf = glm::max(runningHalf, floorHalf);
             }
+            pt.tier = glm::max(baseTier, runningTier);
+            pt.halfWidth = glm::max(pt.halfWidth, runningHalf);
+            maxTier = glm::max(maxTier, pt.tier);
         }
-        // Fords on the rivières only: candidates on a jittered WORLD
-        // grid (tile-independent by construction — the guarantee is
-        // the grid's, like the landmark layers), adopted where the
-        // course passes within reach. Ruisseaux need none (wadeable),
-        // fleuves get none (the obstacle: crossings are bridge sites).
+        river.tier = static_cast<u8>(maxTier);
+        // Fords on the tier-1 REACHES only: candidates on a jittered
+        // WORLD grid (tile-independent by construction — the guarantee
+        // is the grid's, like the landmark layers), adopted where the
+        // course passes within reach. Ruisseau reaches need none
+        // (wadeable), fleuve reaches get none (the obstacle:
+        // crossings are bridge sites).
         river.fords.clear();
-        if (river.tier != 1) {
+        if (maxTier < 1) {
             continue;
         }
         f32 minX = 1.0e30f;
@@ -731,6 +735,9 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
                 Vec2 spot { 0.0f, 0.0f };
                 bool found = false;
                 for (const RiverPoint& pt : river.points) {
+                    if (pt.tier != 1u) {
+                        continue; // only the rivière reach fords
+                    }
                     const f32 dx = pt.x - cx;
                     const f32 dz = pt.z - cz;
                     const f32 d = dx * dx + dz * dz;

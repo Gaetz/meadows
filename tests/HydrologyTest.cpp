@@ -324,8 +324,8 @@ TEST_CASE("river tiers: area threshold, fleuve promotion, ford grid") {
     // downstream past the fleuve grade.
     MasterRiver masterRiver;
     for (f32 d = 0.0f; d <= 4000.0f; d += 128.0f) {
-        masterRiver.nodes.push_back(
-            { 20030.0f, d, 90.0f, 7.0e6f + d * 2000.0f });
+        const f32 area = 7.0e6f + d * 2000.0f;
+        masterRiver.nodes.push_back({ 20030.0f, d, 90.0f, area, area });
     }
     const vector<MasterRiver> master { masterRiver };
 

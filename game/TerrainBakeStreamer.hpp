@@ -39,7 +39,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::ProceduralControlParams& controls,
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
-    const render::terraingen::MapGridSpec& grid, f32 seaLevel,
+    const render::terraingen::MapGridSpec& grid,
+    const render::terraingen::RiverWidthLaw& law, f32 seaLevel,
     f32 cx, f32 cz, f32 halfSpan);
 
 // Point query on a far-water set: inside a coarse lake mask or within
@@ -47,6 +48,24 @@ render::WaterSystem::FarWaterSet collectFarWater(
 // any slice of the map is published (sea level is the caller's).
 bool farWaterWetAt(const render::WaterSystem::FarWaterSet& set, f32 x,
                    f32 z);
+
+// Bounded-map streaming (chantier CARTES M1.4, docs/PAYSAGE.md §1.1):
+// slices are READ from <cacheDir>/map_<mx>_<mz>/ — a request into an
+// unbaked map defers the tile and kicks ONE background map bake
+// (game::bakeMap on a worker; the deferred tiles occupy no worker,
+// so the bake's own slice jobs cannot starve). Requests outside the
+// active map rect are dropped (the M3.2 clamp — ringStatus counts
+// only in-rect tiles or the warmup gate never completes at a rim).
+// Namespace-scope (not nested): AppleClang rejects a nested struct's
+// default member initializers used by an in-class `= {}` default arg.
+struct MapStreamConfig {
+    i32 tilesPerSide { kMapTilesPerSide };
+    i32 mapX { 0 }; // the active map
+    i32 mapZ { 0 };
+    // Border transitions on (the grid spec derives from the
+    // world seed + lattice in the ctor).
+    bool borders { true };
+};
 
 // Bounded-map slice streamer (chantier CARTES; the windowed per-tile
 // bake path died in M1.5b): slices of the ACTIVE map are READ from the
@@ -65,21 +84,7 @@ public:
         i32 tz { 0 };
     };
 
-    // Bounded-map streaming (chantier CARTES M1.4, docs/PAYSAGE.md §1.1):
-    // slices are READ from <cacheDir>/map_<mx>_<mz>/ — a request into an
-    // unbaked map defers the tile and kicks ONE background map bake
-    // (game::bakeMap on a worker; the deferred tiles occupy no worker,
-    // so the bake's own slice jobs cannot starve). Requests outside the
-    // active map rect are dropped (the M3.2 clamp — ringStatus counts
-    // only in-rect tiles or the warmup gate never completes at a rim).
-    struct MapStreamConfig {
-        i32 tilesPerSide { kMapTilesPerSide };
-        i32 mapX { 0 }; // the active map
-        i32 mapZ { 0 };
-        // Border transitions on (the grid spec derives from the
-        // world seed + lattice in the ctor).
-        bool borders { true };
-    };
+    using MapStreamConfig = game::MapStreamConfig;
 
     TerrainBakeStreamer(const render::terraingen::TileBakeParams& params,
                         std::filesystem::path cacheDir,

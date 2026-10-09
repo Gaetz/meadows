@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 
 // Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
@@ -44,14 +45,15 @@ TEST_CASE("master network: deterministic, monotone, owned by core") {
         CHECK(river.nodes.front().x <= params.superRegionSize);
         CHECK(river.nodes.front().z >= coreMin);
         CHECK(river.nodes.front().z <= params.superRegionSize);
-        // Downstream: surface monotone (non-increasing), area at the
-        // fleuve threshold everywhere.
+        // Downstream: surface monotone (non-increasing), effective
+        // discharge at the EXTRACTION threshold everywhere (E4b: the
+        // course is traced from the rivière gabarit up).
         for (size_t k = 1; k < river.nodes.size(); ++k) {
             CHECK(river.nodes[k].surface <=
                   river.nodes[k - 1].surface + 1.0e-3f);
         }
         for (const MasterNode& node : river.nodes) {
-            CHECK(node.area >= params.fleuveArea);
+            CHECK(node.qArea >= params.riverExtractArea);
         }
     }
 }
@@ -196,7 +198,7 @@ TEST_CASE("master imprint: carves a channel, never dams, protects it") {
     const vector<f32> calmBefore = m.calm;
     vector<f32> keep(sim.cells(), 0.0f);
     imprintMasterChannels(sim, m, keep, controls, macro, net,
-                          MasterImprintParams {}, 0.008f, 0.5f, 1.6f);
+                          MasterImprintParams {}, RiverWidthLaw {});
     u32 carved = 0;
     f32 maxKeep = 0.0f;
     for (size_t i = 0; i < before.size(); ++i) {
@@ -212,7 +214,7 @@ TEST_CASE("master imprint: carves a channel, never dams, protects it") {
     MacroResult m2 = synthesizeMacro(controls, sim, macro, pc.seed);
     vector<f32> keep2(sim.cells(), 0.0f);
     imprintMasterChannels(sim, m2, keep2, controls, macro, net,
-                          MasterImprintParams {}, 0.008f, 0.5f, 1.6f);
+                          MasterImprintParams {}, RiverWidthLaw {});
     CHECK(m.height == m2.height);
     CHECK(keep == keep2);
 }

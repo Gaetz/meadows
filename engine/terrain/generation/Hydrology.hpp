@@ -32,6 +32,32 @@ inline f32 riverAreaFromHalfWidth(f32 halfWidth) {
     return r * r;
 }
 
+// The ONE width law of the master courses (passe EAU E4b), shared by
+// the imprint, the tier classification and the far-water fallback:
+// half = min(coef·q^exp, maxHalf), scaled toward fleuveScale on a
+// smooth discharge ramp. NO hard floor any more — a head is born at
+// its own gabarit (~5 m half at the extraction threshold) and grows at
+// every confluence; the old 12 m floor made every fleuve spring out of
+// the ground 38 m wide.
+struct RiverWidthLaw {
+    f32 coef { kRiverWidthCoef };
+    f32 exponent { 0.5f };
+    f32 maxHalf { 45.0f };
+    f32 fleuveScale { 1.6f };
+    f32 rampLow { 4.0e6f };  // m² of qArea where the GRAND read begins
+    f32 rampHigh { 1.0e7f }; // ... and where it is full
+};
+inline f32 riverLawHalfWidth(const RiverWidthLaw& law, f32 q) {
+    const f32 base = glm::clamp(
+        law.coef * std::pow(glm::max(q, 0.0f), law.exponent), 0.0f,
+        law.maxHalf);
+    f32 t = glm::clamp(
+        (q - law.rampLow) / glm::max(law.rampHigh - law.rampLow, 1.0f),
+        0.0f, 1.0f);
+    t = t * t * (3.0f - 2.0f * t);
+    return base * glm::mix(1.0f, law.fleuveScale, t);
+}
+
 struct Lake {
     f32 level { 0.0f }; // water surface (spill elevation)
     u32 cells { 0 };
@@ -62,6 +88,11 @@ struct RiverPoint {
     f32 z { 0.0f };
     f32 surface { 0.0f };   // water level (routing surface, monotone down)
     f32 halfWidth { 0.0f }; // meters, grows with drainage area
+    // Water tier OF THE POINT (E4b): one course is a wadeable rivière
+    // in its mountains and the obstacle fleuve in its plain; monotone
+    // downstream by construction (the discharge only grows). u32 so
+    // the serialized blob carries no padding (TWB4).
+    u32 tier { 0 };
 };
 
 // Tier character as the runtime current (m/s): the ruisseau ambles, the
@@ -85,12 +116,17 @@ struct River {
     // its depth there — a ford is TERRAIN, not a gameplay marker.
     vector<Vec2> fords;
     // Max drainage area seen along the trace (m²) — classification
-    // input, transient (not serialized; 0 on cache reload).
+    // input, serialized since TWB4 (a cache reload reclassifies the
+    // same way the bake did).
     f32 mouthArea { 0.0f };
     // Head sits at a lake outlet: the course RESUMES below a lake and
     // skips the spring taper (a hairline restart read as yet another
-    // interruption). Bake-time only, not serialized.
+    // interruption). Serialized since TWB4.
     u8 lakeFed { 0 };
+    // E5: index of the lake this course springs from (-1 = none).
+    i32 sourceLake { -1 };
+    // E6: source typology of the head (spring/névé/glacier/lake).
+    u32 headType { 0 };
 };
 
 struct HydrologyParams {
@@ -104,9 +140,10 @@ struct HydrologyParams {
     // ~one watercourse per km of walk (dev arbitration).
     f32 riverArea { 150000.0f };
     // Tier thresholds (classifyRivers): drainage area that makes a
-    // rivière; the fleuve tier comes from the master network instead
-    // (MasterNetworkParams::fleuveArea — true areas, not window ones).
+    // rivière; fleuveArea mirrors MasterNetworkParams::fleuveArea
+    // (same pupitre knob) — the tier-2 cut of a matched point's qArea.
     f32 riviereArea { 2.0e6f };
+    f32 fleuveArea { 6.0e6f };
     // The fleuve reads GRAND, not merely big: its widths (floor and
     // local alike) scale by this on top of the area law — a fleuve
     // spreads in its flat valley where a rivière of the same discharge
@@ -131,12 +168,24 @@ struct HydrologyParams {
     // (kRiverWidthCoef above).
     f32 widthCoef { kRiverWidthCoef };
     f32 widthExponent { 0.5f };
+    // The fleuve GRAND ramp and the obstacle guarantee (E4b): the
+    // fleuveWidthScale blends in between these qAreas instead of
+    // multiplying a whole course, and a tier-2 point never reads
+    // narrower than tier2MinHalfWidth.
+    f32 fleuveRampLow { 4.0e6f };
+    f32 fleuveRampHigh { 1.0e7f };
+    f32 tier2MinHalfWidth { 12.0f };
     u32 minRiverPoints { 6 };
     // Ponds smooth over the two spots ribbon geometry handles badly:
     // confluences (overlapping ribbons at slightly different levels) and
     // hairpin turns (the strip folds over itself). A small dug basin
     // with a flat surface absorbs both (dig depth: see FinalizeParams).
     f32 hairpinTurn { 1.9f }; // radians of turn within the window
+
+    RiverWidthLaw widthLaw() const {
+        return { widthCoef, widthExponent, 45.0f, fleuveWidthScale,
+                 fleuveRampLow, fleuveRampHigh };
+    }
 };
 
 struct HydrologyResult {
