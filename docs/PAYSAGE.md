@@ -2321,6 +2321,23 @@ l'hydrologie définitive).
   synthétique « bol percé / tarn retenu » ; garde `MapBakerTest` ≤ 24
   lacs naturels. Bump **v83**. Jugement dev EN ATTENTE (le nombre et
   la place des lacs-destinations au `landscape-report`).
+- **2026-10-10 — E6 livrée : la typologie des sources.**
+  `RiverHeadType` (Spring / Neve / Glacier / LakeOutlet) décidé à la
+  TÊTE de chaque cours maître — née dans un bassin rempli (>
+  `networkLakeDepth`) = exutoire de lac, sinon la température du monde
+  à la tête tranche (`hydroGlacierTemp` 0,12, `hydroNeveTemp` 0,22) —
+  et écrit sur tous les nœuds du cours (le match par point le lit
+  n'importe où) ; `River::headType` local copié du premier point
+  apparié, un `sourceLake` nommé prime. Deux décisions
+  d'implémentation : pas de bonus de débit par type (le `snowBonus`
+  d'E4a EST déjà le débit de fonte — pas de double compte) et le taper
+  de source inchangé (il court AVANT la classification ; `lakeFed`
+  couvre déjà le cas exutoire). L'habillage visuel (langue glaciaire,
+  névé, résurgence, cascade d'exutoire) reste le différé annoncé de la
+  passe. Bump **v84** (le .twb embarque les types). Mesuré (seed 1337,
+  super (0,0)) : 63 têtes — 30 sources, 1 névé, 0 glacier (le
+  continent du départ est tempéré), 32 exutoires de bassins. Jugement
+  dev EN ATTENTE.
 
 ---
 

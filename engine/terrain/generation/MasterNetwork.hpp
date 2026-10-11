@@ -31,6 +31,18 @@ namespace render::terraingen {
 // Node flags (the lake bit lands with E5).
 constexpr u32 kMasterNodeLake = 1u << 0;
 
+// Source typology of a course's head (E6): what the water IS where it
+// is born — a resurgence, a snowfield, a glacier tongue, a lake's
+// outlet. Written on every node of the course (the per-point match
+// reads it anywhere); the visual dressing is a later brick. The melt
+// DISCHARGE is already the runoff snow bonus (E4a) — no double count.
+enum class RiverHeadType : u32 {
+    Spring = 0,
+    Neve = 1,
+    Glacier = 2,
+    LakeOutlet = 3,
+};
+
 struct MasterNode {
     f32 x { 0.0f };
     f32 z { 0.0f };
@@ -78,6 +90,12 @@ struct MasterNetworkParams {
     // filled basin is flagged kMasterNodeLake (E5): the course ENTERS
     // a lake there — far water and the head typology read it.
     f32 lakeDepth { 2.0f };
+    // Head typology temperature cuts (E6), on the world sample at the
+    // head: below glacierTemp the head country is iced, below neveTemp
+    // it is a snowfield; else a spring. A head born in a flooded basin
+    // is a lake outlet whatever the climate.
+    f32 glacierTemp { 0.12f };
+    f32 neveTemp { 0.22f };
     // qArea that EXTRACTS a master course (E4b): low enough that the
     // courses are traced from the mountains (a ~5 m half-width head
     // through the width law — the readable minimum at the 128 m

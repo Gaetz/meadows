@@ -254,3 +254,27 @@ TEST_CASE("master network: qArea — neutral weights are bit-exact, the "
             " nodes");
     CHECK(bent * 2 > nodes); // the climate is not a no-op
 }
+
+TEST_CASE("master network: every course knows what its head is") {
+    ProceduralControlParams controlParams;
+    controlParams.seed = 1337;
+    const ProceduralControls controls { controlParams };
+    const MacroParams macro;
+    const MasterNetworkParams params;
+    const MasterNetwork net =
+        computeMasterNetwork(controls, macro, params, 0, 0);
+    u32 byType[4] = {};
+    for (const MasterRiver& river : net.rivers) {
+        REQUIRE(!river.nodes.empty());
+        const u32 t = river.nodes.front().headType;
+        REQUIRE(t < 4);
+        ++byType[t];
+        for (const MasterNode& node : river.nodes) {
+            CHECK(node.headType == t); // one typology per course
+        }
+    }
+    MESSAGE("heads: spring ", byType[0], ", neve ", byType[1],
+            ", glacier ", byType[2], ", lake outlet ", byType[3]);
+    CHECK(byType[0] + byType[1] + byType[2] + byType[3] ==
+          net.rivers.size());
+}

@@ -804,10 +804,17 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
         f32 runningHalf = 0.0f;
         u32 runningTier = 0;
         u32 maxTier = baseTier;
+        bool headTyped = river.sourceLake >= 0;
+        if (headTyped) {
+            // A named outlet IS its typology, whatever the climate.
+            river.headType =
+                static_cast<u32>(RiverHeadType::LakeOutlet);
+        }
         for (size_t p = 0; p < river.points.size(); ++p) {
             RiverPoint& pt = river.points[p];
             f32 best = kMatchDist * kMatchDist;
             f32 q = 0.0f;
+            u32 nearType = 0;
             for (const MasterRiver& mr : master) {
                 for (const MasterNode& node : mr.nodes) {
                     const f32 dx = node.x - pt.x;
@@ -816,10 +823,17 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
                     if (d < best) {
                         best = d;
                         q = node.qArea;
+                        nearType = node.headType;
                     }
                 }
             }
             if (q > 0.0f) {
+                if (!headTyped) {
+                    // The course's source reads the matched master
+                    // course's typology (E6) — upstream-most match.
+                    river.headType = nearType;
+                    headTyped = true;
+                }
                 const u32 t = q >= params.fleuveArea      ? 2u
                               : q >= params.riviereArea   ? 1u
                                                           : 0u;

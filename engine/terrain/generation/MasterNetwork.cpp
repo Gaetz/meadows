@@ -95,6 +95,8 @@ u64 networkFileKey(const ProceduralControls& controls,
         mixF(params.mapGrid.seaLevel);
     }
     mixF(params.lakeDepth);
+    mixF(params.glacierTemp);
+    mixF(params.neveTemp);
     const u32 weighted = params.runoffWeights ? 1u : 0u;
     mix(&weighted, sizeof(weighted));
     if (weighted != 0u) {
@@ -362,6 +364,21 @@ MasterNetwork computeMasterNetworkUncached(
             continue; // apron head: the neighbour cell owns it
         }
         MasterRiver river;
+        // The head's typology (E6): born in a flooded basin = a lake
+        // outlet; else the head country's climate decides (one world
+        // sample per head — a handful per super cell).
+        u32 headType = static_cast<u32>(RiverHeadType::Spring);
+        if (filled[head] - height[head] > params.lakeDepth) {
+            headType = static_cast<u32>(RiverHeadType::LakeOutlet);
+        } else {
+            const WorldSample w =
+                worldSampleAt(controls.params().world, hx, hz);
+            if (w.temperature < params.glacierTemp) {
+                headType = static_cast<u32>(RiverHeadType::Glacier);
+            } else if (w.temperature < params.neveTemp) {
+                headType = static_cast<u32>(RiverHeadType::Neve);
+            }
+        }
         size_t i = head;
         while (true) {
             const u32 col = static_cast<u32>(i % n);
@@ -371,7 +388,7 @@ MasterNetwork computeMasterNetworkUncached(
                                   : 0u;
             river.nodes.push_back({ out.grid.x(col), out.grid.z(row),
                                     filled[i], flow.area[i],
-                                    qAreaOf[i], flags, 0u });
+                                    qAreaOf[i], flags, headType });
             if (claimed[i]) {
                 break; // joined an earlier course (confluence)
             }
