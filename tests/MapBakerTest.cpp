@@ -173,6 +173,37 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     CHECK(hash == 7395177285592674686ull); // MSVC (Debug == Release), kTileBakeVersion 78
 #endif
 
+    // The lake budget (passe EAU E5): natural lakes per map, counted
+    // off the written .twb sidecars — the enquête eau's 3-6 target
+    // (placed ponds are a render rule, counted apart).
+    {
+        u32 natural = 0, ponds = 0, outlets = 0;
+        for (i32 dz = 0; dz < kTps; ++dz) {
+            for (i32 dx = 0; dx < kTps; ++dx) {
+                char stem[64];
+                std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u.twb",
+                              dx, dz,
+                              render::terraingen::kTileBakeVersion);
+                vector<render::terraingen::Lake> lakes;
+                vector<render::terraingen::River> rivers;
+                if (!game::readWaterFile(
+                        game::mapCacheDir(root, 0, 0) / stem, lakes,
+                        rivers)) {
+                    continue;
+                }
+                for (const auto& lake : lakes) {
+                    (lake.dug ? ponds : natural) += 1;
+                }
+                for (const auto& river : rivers) {
+                    outlets += river.sourceLake >= 0 ? 1 : 0;
+                }
+            }
+        }
+        MESSAGE("map (0,0) water: ", natural, " natural lakes, ", ponds,
+                " placed ponds, ", outlets, " lake outlets");
+        CHECK(natural <= 24); // the piercing holds the line
+    }
+
     // Without its manifest the map is not a map (bake cancelled or
     // interrupted): a partial dir must re-bake, never half-load.
     std::error_code ec;

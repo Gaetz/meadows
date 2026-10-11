@@ -180,6 +180,10 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.hydrology.fleuveWidthScale = form.hydroFleuveWidthScale;
     params.hydrology.minLakeDepth = form.hydroMinLakeDepth;
     params.hydrology.minLakeCells = form.hydroMinLakeCells;
+    params.hydrology.lakePiercing = form.hydroLakePiercing;
+    params.hydrology.lakeKeepCells = form.hydroLakeKeepCells;
+    params.hydrology.lakeKeepDepth = form.hydroLakeKeepDepth;
+    params.network.lakeDepth = form.networkLakeDepth;
     params.imprint.bedDepth = form.imprintBedDepth;
     params.imprint.plainFactor = form.imprintPlainFactor;
     params.imprint.minGradient = form.imprintMinGradient;
@@ -340,6 +344,10 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.hydroFleuveWidthScale = params.hydrology.fleuveWidthScale;
     form.hydroMinLakeDepth = params.hydrology.minLakeDepth;
     form.hydroMinLakeCells = params.hydrology.minLakeCells;
+    form.hydroLakePiercing = params.hydrology.lakePiercing;
+    form.hydroLakeKeepCells = params.hydrology.lakeKeepCells;
+    form.hydroLakeKeepDepth = params.hydrology.lakeKeepDepth;
+    form.networkLakeDepth = params.network.lakeDepth;
     form.imprintBedDepth = params.imprint.bedDepth;
     form.imprintPlainFactor = params.imprint.plainFactor;
     form.imprintMinGradient = params.imprint.minGradient;

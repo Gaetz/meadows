@@ -365,3 +365,60 @@ TEST_CASE("river tiers: area threshold, fleuve promotion, ford grid") {
     classifyRivers(alone, params, 1337, {});
     CHECK(alone[2].tier == 1);
 }
+
+TEST_CASE("lake piercing: the shallow bowl drains, the big tarn stays") {
+    // A tilted plain draining to the south rim, with two bowls: a
+    // small pothole (pierced — a valley again) and a big tarn (kept
+    // by size: a destination). docs/PAYSAGE.md §7.8 E5.
+    const GridSpec spec { 0.0f, 0.0f, 16.0f, 129 };
+    HydrologyParams params;
+    params.seaLevel = -1000.0f; // all land: the rim is base level
+    // The test owns its retention bar (the defaults are map-scale).
+    params.lakeKeepCells = 200;
+    const auto bowl = [&](vector<f32>& g, f32 cx, f32 cz, f32 radius,
+                          f32 depth) {
+        for (u32 row = 0; row < spec.n; ++row) {
+            for (u32 col = 0; col < spec.n; ++col) {
+                const f32 d = std::hypot(spec.x(col) - cx,
+                                         spec.z(row) - cz);
+                if (d < radius) {
+                    const f32 t = 1.0f - d / radius;
+                    g[static_cast<size_t>(row) * spec.n + col] -=
+                        depth * t * t * (3.0f - 2.0f * t);
+                }
+            }
+        }
+    };
+    vector<f32> ground(spec.cells());
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            ground[static_cast<size_t>(row) * spec.n + col] =
+                100.0f + spec.z(row) * 0.01f;
+        }
+    }
+    bowl(ground, 700.0f, 700.0f, 100.0f, 2.0f);    // pothole
+    bowl(ground, 1400.0f, 1400.0f, 260.0f, 9.0f);  // tarn
+    pierceLakeOutlets(spec, ground, params);
+    const HydrologyResult hydro =
+        extractHydrology(spec, ground, params);
+    u32 deep = 0, shallow = 0;
+    for (const Lake& lake : hydro.lakes) {
+        if (lake.dug) {
+            continue; // placed ponds: no basin, no catchment
+        }
+        const bool nearTarn = std::abs((lake.minX + lake.maxX) * 0.5f -
+                                       1400.0f) < 300.0f;
+        (nearTarn ? deep : shallow) += 1;
+        CHECK(lake.catchment > 0.0f);
+    }
+    CHECK(deep == 1);     // the tarn survives
+    CHECK(shallow == 0);  // the pothole drained through its notch
+    // And its outlet course knows its source.
+    bool outletNamed = false;
+    for (const River& river : hydro.rivers) {
+        if (river.lakeFed && river.sourceLake >= 0) {
+            outletNamed = true;
+        }
+    }
+    CHECK(outletNamed);
+}

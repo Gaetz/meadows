@@ -504,6 +504,10 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
     }
     HydrologyParams hydrology = params.hydrology;
     hydrology.seaLevel = params.macro.seaLevel;
+    // The outlet piercing (E5): the depressions that earn no lake are
+    // drained BEFORE extraction — valleys again, and their accumulation
+    // flows on to the real lakes and courses downstream.
+    pierceLakeOutlets(out.window, out.ground, hydrology);
     out.hydro = extractHydrology(out.window, out.ground, hydrology);
     // Tier classification (S4 tail): the master network's TRUE drainage
     // areas, once for the whole map.
@@ -716,8 +720,18 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
             }
             out.rivers.push_back(std::move(run));
         };
-        River run;
-        run.tier = river.tier;
+        // A clipped run keeps the course's identity fields — the .twb
+        // readers reclassify and name sources off them (TWB5).
+        const auto freshRun = [&] {
+            River run;
+            run.tier = river.tier;
+            run.mouthArea = river.mouthArea;
+            run.lakeFed = river.lakeFed;
+            run.sourceLake = river.sourceLake;
+            run.headType = river.headType;
+            return run;
+        };
+        River run = freshRun();
         for (const RiverPoint& pt : river.points) {
             if (inKeep(pt)) {
                 run.points.push_back(pt);
@@ -725,10 +739,8 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
             }
             if (run.points.size() >= 2) {
                 emit(std::move(run));
-                run = River {};
             }
-            run.points.clear();
-            run.tier = river.tier;
+            run = freshRun();
         }
         if (run.points.size() >= 2) {
             emit(std::move(run));

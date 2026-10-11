@@ -81,6 +81,10 @@ struct Lake {
     // dish; 0 = natural basin — the shore-distance carve owns it. Each
     // finalize path explicitly skips the other's kind.
     u8 dug { 0 };
+    // m² of effective drainage feeding the lake (max accumulation over
+    // its basin — the spill carries it all): the outlet river's width
+    // justification, and the E7 report's size measure. TWB5.
+    f32 catchment { 0.0f };
 };
 
 struct RiverPoint {
@@ -136,6 +140,18 @@ struct HydrologyParams {
     // below that it is just a puddle the carve pass flattens away.
     f32 minLakeDepth { 0.6f };
     u32 minLakeCells { 12 };
+    // The outlet piercing (passe EAU E5, l'« enquête eau ») : before
+    // extraction, every depression that does NOT earn its lake (big
+    // enough OR deep enough) is DRAINED through a notch carved at its
+    // spill — a valley again, not a filling. The keepers are the 3-6
+    // destination lakes a map should hold, not the 150+ potholes the
+    // erosion leaves.
+    bool lakePiercing { true };
+    u32 lakeKeepCells { 400 };  // ~10 ha at the 16 m texel
+    // Depth alone earns NOTHING by default (1000 = off): the zone
+    // storeys are 60 m, every wall-foot trench reads 10-40 m deep —
+    // a destination lake is BIG, an artifact pit is merely deep.
+    f32 lakeKeepDepth { 1000.0f };
     // m² of drainage that starts a channel. Paces the STREAM rhythm:
     // ~one watercourse per km of walk (dev arbitration).
     f32 riverArea { 150000.0f };
@@ -199,6 +215,14 @@ struct HydrologyResult {
 HydrologyResult extractHydrology(const GridSpec& spec,
                                  const vector<f32>& height,
                                  const HydrologyParams& params);
+
+// The outlet piercing (E5, l'« enquête eau ») : flood, find the
+// depressions, DRAIN every one that earns no lake (lakeKeepCells /
+// lakeKeepDepth) through a descending notch carved at its spill, and
+// iterate (a drained bowl can reveal the next). Mutates `ground`
+// BEFORE extractHydrology; bounded; no-op when lakePiercing is off.
+void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
+                       const HydrologyParams& params);
 
 // Lakes only: connected flooded components of `height` under its
 // priority-flood surface `filled`. The canonical-basin path re-floods a

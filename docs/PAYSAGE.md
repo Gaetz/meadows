@@ -2293,6 +2293,34 @@ l'hydrologie définitive).
   1720697667797144396. Jugement dev EN ATTENTE (remonter le fleuve de
   la carte (0,0) : continuum lisible, gués en amont, obstacle en
   aval).
+- **2026-10-10 — E5 livrée : les lacs — la percée des exutoires
+  (l'enquête eau) et le réseau lake-aware.** `pierceLakeOutlets`
+  (Hydrology) tourne AVANT l'extraction, sur la fenêtre hydrologique de
+  la carte : flood, composantes inondées, et toute dépression qui ne
+  MÉRITE pas son lac se vide par une **encoche descendante taillée à
+  son déversoir** (gate au plancher + 0,3 m, rampe `riverMinGradient`
+  le long de la descente du filled, 96 pas max), itéré **8 passes**
+  (une cuvette vidée révèle la suivante — mesuré : 92 lacs à 4 passes,
+  14 à 8, saturé à 12). Le mérite : `hydroLakeKeepCells` **400**
+  (~10 ha — un lac-destination est GRAND) ; la rétention par
+  profondeur est OFF par défaut (`hydroLakeKeepDepth` 1000 : avec des
+  paliers de zone à 60 m, chaque fosse de pied de mur lit 10-40 m de
+  profond — profond ≠ destination). **Liaison lac↔rivière** :
+  `Lake::catchment` (le max d'accumulation du bassin — l'exutoire
+  porte tout), `River::sourceLake` nommé à la tête (le clip par
+  tranche recopie désormais mouthArea/lakeFed/sourceLake/headType —
+  ils se perdaient, 0 exutoire nommé avant la correction) ; la largeur
+  d'exutoire suit déjà la loi (l'accumulation traverse la surface
+  remplie). Côté maître : `kMasterNodeLake` sur les nœuds traversant
+  un bassin rempli de plus de `networkLakeDepth` 2 m (far-water et
+  typologie E6 le liront). **TWB5** (catchment). Mesuré (seed 1337,
+  carte (0,0)) : **14 lacs naturels** (vs 165 au journal Z3 ; les 14
+  sont les vrais ≥ 10 ha — la cible 3-6 est un cran de
+  `hydroLakeKeepCells` à arbitrer au pupitre), 56 étangs posés (règle
+  de rendu, hors passe), 3 exutoires nommés sur la carte ; test
+  synthétique « bol percé / tarn retenu » ; garde `MapBakerTest` ≤ 24
+  lacs naturels. Bump **v83**. Jugement dev EN ATTENTE (le nombre et
+  la place des lacs-destinations au `landscape-report`).
 
 ---
 

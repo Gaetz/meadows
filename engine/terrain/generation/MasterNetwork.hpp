@@ -74,6 +74,10 @@ struct MasterNetworkParams {
     // Temperature below which the head country reads snow-fed (the
     // coldness smoothstep spans +0.15 above it).
     f32 snowlineTemp { 0.25f };
+    // Flood depth (m, at the 128 m texel) past which a node crossing a
+    // filled basin is flagged kMasterNodeLake (E5): the course ENTERS
+    // a lake there — far water and the head typology read it.
+    f32 lakeDepth { 2.0f };
     // qArea that EXTRACTS a master course (E4b): low enough that the
     // courses are traced from the mountains (a ~5 m half-width head
     // through the width law — the readable minimum at the 128 m

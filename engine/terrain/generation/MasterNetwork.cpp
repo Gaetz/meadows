@@ -94,6 +94,7 @@ u64 networkFileKey(const ProceduralControls& controls,
         mixF(params.mapGrid.mapSize);
         mixF(params.mapGrid.seaLevel);
     }
+    mixF(params.lakeDepth);
     const u32 weighted = params.runoffWeights ? 1u : 0u;
     mix(&weighted, sizeof(weighted));
     if (weighted != 0u) {
@@ -365,9 +366,12 @@ MasterNetwork computeMasterNetworkUncached(
         while (true) {
             const u32 col = static_cast<u32>(i % n);
             const u32 row = static_cast<u32>(i / n);
+            const u32 flags = filled[i] - height[i] > params.lakeDepth
+                                  ? kMasterNodeLake
+                                  : 0u;
             river.nodes.push_back({ out.grid.x(col), out.grid.z(row),
                                     filled[i], flow.area[i],
-                                    qAreaOf[i], 0u, 0u });
+                                    qAreaOf[i], flags, 0u });
             if (claimed[i]) {
                 break; // joined an earlier course (confluence)
             }

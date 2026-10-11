@@ -351,6 +351,146 @@ vector<Lake> extractLakes(const GridSpec& spec, const vector<f32>& height,
     return lakes;
 }
 
+void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
+                       const HydrologyParams& params) {
+    if (!params.lakePiercing) {
+        return;
+    }
+    const size_t cells = spec.cells();
+    const i32 n = static_cast<i32>(spec.n);
+    // A drained bowl can reveal the next basin downstream: iterate,
+    // bounded (each pass re-floods, ~2 s at the map window — the whole
+    // loop ends early the first quiet pass).
+    for (u32 pass = 0; pass < 8; ++pass) {
+        const vector<f32> filled = priorityFloodFill(
+            spec, ground, params.seaLevel, params.minSlope);
+        vector<u32> label(cells, 0);
+        u32 nextLabel = 0;
+        u32 pierced = 0;
+        vector<u32> stack;
+        vector<u32> component;
+        for (size_t seed = 0; seed < cells; ++seed) {
+            if (label[seed] != 0 ||
+                filled[seed] - ground[seed] <= params.minLakeDepth ||
+                ground[seed] <= params.seaLevel) {
+                continue;
+            }
+            ++nextLabel;
+            stack.assign(1, static_cast<u32>(seed));
+            label[seed] = nextLabel;
+            component.clear();
+            f32 level = filled[seed];
+            f32 floor = ground[seed];
+            while (!stack.empty()) {
+                const u32 i = stack.back();
+                stack.pop_back();
+                component.push_back(i);
+                level = glm::min(level, filled[i]);
+                floor = glm::min(floor, ground[i]);
+                const i32 cx = static_cast<i32>(i % spec.n);
+                const i32 cz = static_cast<i32>(i / spec.n);
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 px = cx + dx;
+                        const i32 pz = cz + dz;
+                        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                            continue;
+                        }
+                        const size_t p =
+                            static_cast<size_t>(pz) * spec.n +
+                            static_cast<size_t>(px);
+                        if (label[p] == 0 &&
+                            filled[p] - ground[p] >
+                                params.minLakeDepth &&
+                            ground[p] > params.seaLevel) {
+                            label[p] = nextLabel;
+                            stack.push_back(static_cast<u32>(p));
+                        }
+                    }
+                }
+            }
+            if (component.size() >= params.lakeKeepCells ||
+                level - floor >= params.lakeKeepDepth) {
+                continue; // earns its lake
+            }
+            // The SPILL: the outside neighbour the flood pours into
+            // (the lowest filled beside the rim). Notch the gate down
+            // to just above the basin floor, then ramp the notch
+            // downstream along the steepest filled descent until the
+            // ground takes over.
+            size_t gate = cells;
+            size_t pour = cells;
+            f32 best = 1.0e30f;
+            for (const u32 i : component) {
+                const i32 cx = static_cast<i32>(i % spec.n);
+                const i32 cz = static_cast<i32>(i / spec.n);
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 px = cx + dx;
+                        const i32 pz = cz + dz;
+                        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                            continue;
+                        }
+                        const size_t p =
+                            static_cast<size_t>(pz) * spec.n +
+                            static_cast<size_t>(px);
+                        if (label[p] == nextLabel) {
+                            continue;
+                        }
+                        if (filled[p] < best) {
+                            best = filled[p];
+                            gate = i;
+                            pour = p;
+                        }
+                    }
+                }
+            }
+            if (pour >= cells) {
+                continue;
+            }
+            f32 ramp = floor + 0.3f;
+            ground[gate] = glm::min(ground[gate], ramp);
+            size_t cur = pour;
+            for (u32 step = 0; step < 96; ++step) {
+                ramp -= glm::max(params.riverMinGradient, 1.0e-3f) *
+                        spec.texelSize;
+                if (ground[cur] <= ramp) {
+                    break; // daylight: the land already falls away
+                }
+                ground[cur] = ramp;
+                const i32 cx = static_cast<i32>(cur % spec.n);
+                const i32 cz = static_cast<i32>(cur / spec.n);
+                size_t next = cur;
+                f32 lowest = filled[cur];
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 px = cx + dx;
+                        const i32 pz = cz + dz;
+                        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                            continue;
+                        }
+                        const size_t p =
+                            static_cast<size_t>(pz) * spec.n +
+                            static_cast<size_t>(px);
+                        if (filled[p] < lowest) {
+                            lowest = filled[p];
+                            next = p;
+                        }
+                    }
+                }
+                if (next == cur) {
+                    break; // a pit on the way: the next pass sees it
+                }
+                cur = next;
+            }
+            ++pierced;
+        }
+        if (pierced == 0) {
+            break;
+        }
+    }
+}
+
 HydrologyResult extractHydrology(const GridSpec& spec,
                                  const vector<f32>& height,
                                  const HydrologyParams& params) {
@@ -377,7 +517,13 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     // S5c carve keeps the bed below it — the water is continuous in
     // its own carving, the dip becomes a natural pool.
     vector<u8> acceptedLake(cells, 0);
-    for (const Lake& lake : out.lakes) {
+    // Index of the accepted lake under each cell (-1 = none): the head
+    // of an outlet course names its source lake (E5), and the lake's
+    // catchment is the biggest accumulation its basin carries (the
+    // spill routes it all through).
+    vector<i32> lakeLabel(cells, -1);
+    for (size_t lakeIdx = 0; lakeIdx < out.lakes.size(); ++lakeIdx) {
+        Lake& lake = out.lakes[lakeIdx];
         for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
             for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
                 if (!lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
@@ -393,8 +539,13 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                      spec.originZ) /
                     spec.texelSize));
                 if (col >= 0 && row >= 0 && col < n && row < n) {
-                    acceptedLake[static_cast<size_t>(row) * spec.n +
-                                 static_cast<size_t>(col)] = 1;
+                    const size_t idx =
+                        static_cast<size_t>(row) * spec.n +
+                        static_cast<size_t>(col);
+                    acceptedLake[idx] = 1;
+                    lakeLabel[idx] = static_cast<i32>(lakeIdx);
+                    lake.catchment =
+                        glm::max(lake.catchment, out.area[idx]);
                 }
             }
         }
@@ -476,6 +627,9 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                         acceptedLake[static_cast<size_t>(pz) * spec.n +
                                      static_cast<size_t>(px)]) {
                         river.lakeFed = 1;
+                        river.sourceLake =
+                            lakeLabel[static_cast<size_t>(pz) * spec.n +
+                                      static_cast<size_t>(px)];
                     }
                 }
             }

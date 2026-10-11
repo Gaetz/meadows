@@ -639,6 +639,10 @@ struct TerrainGenTuningForm : Form {
     f32 hydroFleuveWidthScale { 1.6f };
     f32 hydroMinLakeDepth { 0.6f };
     u32 hydroMinLakeCells { 12 };
+    bool hydroLakePiercing { true }; // drain the undeserving basins
+    u32 hydroLakeKeepCells { 400 };
+    f32 hydroLakeKeepDepth { 1000.0f };
+    f32 networkLakeDepth { 2.0f };
     f32 imprintBedDepth { 5.0f };
     f32 imprintPlainFactor { 3.0f };
     f32 imprintMinGradient { 0.0015f };
@@ -791,6 +795,10 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(hydroFleuveWidthScale)
         REFLECT_FIELD(hydroMinLakeDepth)
         REFLECT_FIELD(hydroMinLakeCells)
+        REFLECT_FIELD(hydroLakePiercing)
+        REFLECT_FIELD(hydroLakeKeepCells)
+        REFLECT_FIELD(hydroLakeKeepDepth)
+        REFLECT_FIELD(networkLakeDepth)
         REFLECT_FIELD(imprintBedDepth)
         REFLECT_FIELD(imprintPlainFactor)
         REFLECT_FIELD(imprintMinGradient)

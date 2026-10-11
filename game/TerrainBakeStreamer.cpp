@@ -20,7 +20,7 @@ using render::terraingen::Lake;
 using render::terraingen::River;
 using render::terraingen::RiverPoint;
 
-constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '4' };
+constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '5' };
 
 } // namespace
 
@@ -50,6 +50,7 @@ bool writeWaterFile(const std::filesystem::path& path,
         write(lake.maskHeight);
         write(lake.maskTexel);
         write(lake.dug);
+        write(lake.catchment);
         file.write(reinterpret_cast<const char*>(lake.mask.data()),
                    static_cast<std::streamsize>(lake.mask.size()));
     }
@@ -102,6 +103,7 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
         read(lake.maskHeight);
         read(lake.maskTexel);
         read(lake.dug);
+        read(lake.catchment);
         if (!file || lake.maskWidth > 100000 || lake.maskHeight > 100000) {
             return false;
         }
