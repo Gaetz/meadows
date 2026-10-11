@@ -62,7 +62,13 @@ struct MasterRiver {
 };
 
 struct MasterNetworkParams {
-    f32 superRegionSize { 24576.0f };
+    // Doubled for the big continents (E1c): one continent per
+    // super-cell, ~38 km across in a 49 km core. The lattice is
+    // OFFSET so the start (4096, 4096) sits deep inside core (0, 0)
+    // instead of at its corner — superOrigin MUST equal
+    // WorldLayerParams::continentLatticeOrigin.
+    f32 superRegionSize { 49152.0f };
+    f32 superOrigin { -16384.0f };
     f32 apron { 8192.0f };
     f32 texel { 128.0f };
     // Routing ground (passe EAU E3): with a valid spec the network

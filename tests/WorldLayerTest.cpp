@@ -19,33 +19,42 @@ constexpr u32 kSeeds[] = { 1337u, 7u, 42u, 2026u, 99991u };
 } // namespace
 
 TEST_CASE("world layer: archipelago land stays inside the host core") {
+    // The cores tile the plane (one per super-cell): the ownership
+    // invariant is the GUARD — no land within reach of a lattice
+    // line, so no continent ever leaks into a neighbour's core and
+    // every river head belongs to its window.
     WorldLayerParams p;
-    const f32 superSize = p.continentSuperSize;
+    const f32 pitch =
+        p.continentSuperSize * static_cast<f32>(p.continentCellSupers);
+    const f32 origin = p.continentLatticeOrigin;
     REQUIRE(p.continentCellSupers > 0);
     for (const u32 seed : kSeeds) {
         p.seed = seed;
-        u32 landSamples = 0;
-        // Continent (0,0)'s host core is [0, superSize]^2; the next
-        // host is a full pitch away, outside this sweep.
-        for (f32 z = -4096.0f; z <= 28672.0f; z += 256.0f) {
-            for (f32 x = -4096.0f; x <= 28672.0f; x += 256.0f) {
-                const WorldSample w = worldSampleAt(p, x, z);
-                if (w.sea && w.base <= 0.0f) {
-                    continue;
-                }
-                ++landSamples;
-                const bool inCore = x >= 0.0f && x < superSize &&
-                                    z >= 0.0f && z < superSize;
-                if (!inCore) {
+        for (i32 line = -1; line <= 1; ++line) {
+            const f32 at = origin + static_cast<f32>(line) * pitch;
+            for (f32 t = origin - pitch; t <= origin + 2.0f * pitch;
+                 t += 192.0f) {
+                for (const f32 off : { -256.0f, 0.0f, 256.0f }) {
+                    const WorldSample a =
+                        worldSampleAt(p, at + off, t);
+                    const WorldSample b =
+                        worldSampleAt(p, t, at + off);
                     CAPTURE(seed);
-                    CAPTURE(x);
-                    CAPTURE(z);
-                    REQUIRE(inCore);
+                    CAPTURE(line);
+                    CAPTURE(t);
+                    CHECK(a.sea);
+                    CHECK(b.sea);
                 }
             }
         }
-        // A continent actually exists (the sweep is not all ocean).
-        CHECK(landSamples > 1000);
+        // And the start continent actually exists.
+        u32 landSamples = 0;
+        for (f32 z = -8192.0f; z <= 24576.0f; z += 512.0f) {
+            for (f32 x = -8192.0f; x <= 24576.0f; x += 512.0f) {
+                landSamples += worldSampleAt(p, x, z).sea ? 0 : 1;
+            }
+        }
+        CHECK(landSamples > 500);
     }
 }
 
@@ -62,8 +71,9 @@ TEST_CASE("world layer: the start is on land for every seed") {
 
 TEST_CASE("world layer: the lattice carrier is continuous") {
     // Across the host-core edge, the deep-ocean midline between two
-    // continents and the pitch lines: no seam bigger than a steep
-    // natural gradient over one 16 m step.
+    // continents and the pitch lines: no SEAM — the fractal coast warp
+    // makes real gradients of ~1:1, a true seam would jump the guard
+    // depth (~70 m) in one 16 m step.
     WorldLayerParams p;
     const f32 pitch =
         p.continentSuperSize * static_cast<f32>(p.continentCellSupers);
@@ -78,7 +88,7 @@ TEST_CASE("world layer: the lattice carrier is continuous") {
             if (!first) {
                 CAPTURE(horizontal);
                 CAPTURE(t);
-                CHECK(std::abs(w.base - prevBase) < 12.0f);
+                CHECK(std::abs(w.base - prevBase) < 25.0f);
                 CHECK(std::abs(w.continent - prevContinent) < 0.02f);
             }
             prevBase = w.base;
@@ -94,7 +104,7 @@ TEST_CASE("world layer: the lattice carrier is continuous") {
     for (f32 t = 20000.0f; t <= 56000.0f; t += 16.0f) {
         const WorldSample w = worldSampleAt(p, t, t);
         if (!first) {
-            CHECK(std::abs(w.base - prevBase) < 12.0f);
+            CHECK(std::abs(w.base - prevBase) < 25.0f);
         }
         prevBase = w.base;
         first = false;

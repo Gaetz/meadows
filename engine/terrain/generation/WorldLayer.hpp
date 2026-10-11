@@ -27,7 +27,7 @@ namespace render::terraingen {
 // mountains. The coast slope: one v unit per this fraction of the
 // continent radius (the shore-distance proxy's exact inverse).
 inline constexpr f32 kContinentGain = 0.5f;
-inline constexpr f32 kContinentCoastSlope = 0.30f;
+inline constexpr f32 kContinentCoastSlope = 0.22f;
 
 struct WorldLayerParams {
     u32 seed { 1337 };
@@ -42,12 +42,16 @@ struct WorldLayerParams {
     // is kept inside that cell's half-open CORE by a hard edge guard:
     // every river head then belongs to the host cell and no course
     // needs cross-super stitching (MasterNetwork.hpp ownership).
-    u32 continentCellSupers { 2 };
-    f32 continentSuperSize { 24576.0f };
-    f32 continentRadius { 9500.0f };
+    u32 continentCellSupers { 1 };
+    f32 continentSuperSize { 49152.0f };
+    // MUST equal MasterNetworkParams::superOrigin: the lattice is
+    // offset so the start sits deep inside core (0, 0), not at its
+    // corner (where every start continent clipped on the guard).
+    f32 continentLatticeOrigin { -16384.0f };
+    f32 continentRadius { 19000.0f };
     f32 continentJitter { 2200.0f };
     f32 continentShapeWavelength { 15000.0f };
-    f32 continentShapeAmp { 0.4f };
+    f32 continentShapeAmp { 0.45f };
     // Chance a lattice cell holds a continent at all (E1b): empty
     // cells of open ocean break the grid rhythm. The start cell (0,0)
     // always holds its continent.

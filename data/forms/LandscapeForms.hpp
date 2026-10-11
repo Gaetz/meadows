@@ -486,11 +486,11 @@ struct LandscapeTuningForm : Form {
 struct TerrainGenTuningForm : Form {
     // --- World layer (engine/terrain/generation/WorldLayer.hpp)
     f32 worldContinentWavelength { 45000.0f };
-    u32 worldContinentCellSupers { 2 }; // 0 = legacy infinite carrier
-    f32 worldContinentRadius { 9500.0f };
+    u32 worldContinentCellSupers { 1 }; // 0 = legacy infinite carrier
+    f32 worldContinentRadius { 19000.0f };
     f32 worldContinentJitter { 2200.0f };
     f32 worldContinentShapeWavelength { 15000.0f };
-    f32 worldContinentShapeAmp { 0.4f };
+    f32 worldContinentShapeAmp { 0.45f };
     f32 worldContinentChance { 0.8f };
     bool worldBorderFromWorld { true }; // false = hashed legacy styles
     f32 worldBorderMassifMin { 0.45f };
@@ -641,7 +641,7 @@ struct TerrainGenTuningForm : Form {
     f32 hydroMinLakeDepth { 0.6f };
     u32 hydroMinLakeCells { 12 };
     bool hydroLakePiercing { true }; // drain the undeserving basins
-    u32 hydroLakeKeepCells { 400 };
+    u32 hydroLakeKeepCells { 2000 };
     f32 hydroLakeKeepDepth { 1000.0f };
     f32 networkLakeDepth { 2.0f };
     f32 hydroGlacierTemp { 0.12f };

@@ -2403,6 +2403,41 @@ l'hydrologie définitive).
   verticality ≥ 1,3 (1,38 mesuré — part à arbitrer en N5). Bump
   **v85** ; suite complète Release **811/811**. Jugement dev EN
   ATTENTE sur les nouvelles images.
+- **2026-10-11 — « Doublons la taille des continents et rendons les
+  côtes plus déchiquetées » (retour dev) — E1c livrée.** (1) **La
+  super-région double** : `superRegionSize` 49 152 (fenêtre de routage
+  513², échantillonnage 0,34 s/super, cache Z1 inchangé), un continent
+  par super-cellule (`continentCellSupers` 1), **R 19 000** → ~38 km
+  nominal. (2) **Le treillis est DÉSAXÉ** de −16 384 m
+  (`superOrigin` = `continentLatticeOrigin`, hachés partout) : le
+  départ (4096, 4096) tombe près du CENTRE du cœur (0,0) au lieu de
+  son coin — le continent de départ ne clippe plus jamais sur la
+  garde, plus d'offset forcé. L'invariant têtes change de forme : les
+  cœurs pavent le plan, la propriété devient « aucune terre à portée
+  d'une ligne de treillis » (la garde), testée sur 5 seeds le long des
+  lignes. (3) **Côtes fractales** : rive 4 octaves à ±45 %
+  (`worldContinentShapeAmp` 0,45), warp de domaine 4 octaves ±4 200 m,
+  pente littorale `kContinentCoastSlope` 0,22 — l'effet demandé
+  « surface réelle ×1,5-2 pour deux fois le diamètre » vient de la
+  découpe, vérifié sur images (90 et 300 km, dans
+  `terrain-cache/1337/archipel-v6-*.png` : golfes, îlots satellites,
+  aucun continent semblable). (4) Le ring de départ gagne un **plafond
+  d'étage** (`min(e, 0,42)` fondu sur le ring) : au cœur d'un grand
+  continent la rampe littorale sature et le spawn devenait du haut
+  pays subalpin — le décret « doux, sec, tempéré » est restauré ; il
+  se lit comme un plateau vert de ~8 km au centre du continent
+  (adoucissable via `worldStartLowFade`), au jugement dev. (5)
+  **Percée** : rampes 192 pas et 16 passes (hydrologie de carte
+  0,4 → 2,2 s) ; une carte de CŒUR alpin chaîne les bassins de marches
+  d'étages — ~32 lacs ≥ 51 ha à convergence (`hydroLakeKeepCells`
+  2 000 ; rétention par taille seule) : la **percée des exutoires de
+  paliers côté ZONES est le prochain levier**, différé chiffré ; garde
+  du test à ≤ 48. Jauges re-mesurées : appartenance des têtes sur
+  l'origine désaxée, paire de moyens ≥ 900 m, gradient littoral macro
+  ≤ 0,45 (le warp raidit le PLANCHER ; coastProfile et l'érosion
+  possèdent la pente finale — N5). Bump **v86**. Jugement dev EN
+  ATTENTE (les deux images, le plateau du départ, le nombre de lacs
+  de cœur).
 
 ---
 

@@ -80,6 +80,7 @@ u64 networkFileKey(const ProceduralControls& controls,
     mix64(hashParams(macro));
     mix64(hashParams(cp.zones));
     mixF(params.superRegionSize);
+    mixF(params.superOrigin);
     mixF(params.apron);
     mixF(params.texel);
     mixF(params.riverExtractArea);
@@ -264,10 +265,12 @@ MasterNetwork computeMasterNetworkUncached(
     const ProceduralControls& controls, const MacroParams& macro,
     const MasterNetworkParams& params, i32 superX, i32 superZ) {
     MasterNetwork out;
-    const f32 originX =
-        static_cast<f32>(superX) * params.superRegionSize - params.apron;
-    const f32 originZ =
-        static_cast<f32>(superZ) * params.superRegionSize - params.apron;
+    const f32 originX = params.superOrigin +
+                        static_cast<f32>(superX) * params.superRegionSize -
+                        params.apron;
+    const f32 originZ = params.superOrigin +
+                        static_cast<f32>(superZ) * params.superRegionSize -
+                        params.apron;
     const f32 span = params.superRegionSize + 2.0f * params.apron;
     const u32 n = static_cast<u32>(std::lround(span / params.texel)) + 1;
     out.grid = GridSpec { originX, originZ, params.texel, n };
@@ -424,14 +427,14 @@ vector<MasterRiver> masterRiversNear(const ProceduralControls& controls,
     // misses the tail its neighbour imprints (a fleuve on one side of a
     // line, nothing on the other).
     const f32 reach = params.apron;
-    const i32 sx0 = static_cast<i32>(
-        std::floor((minX - reach) / params.superRegionSize));
-    const i32 sx1 = static_cast<i32>(
-        std::floor((maxX + reach) / params.superRegionSize));
-    const i32 sz0 = static_cast<i32>(
-        std::floor((minZ - reach) / params.superRegionSize));
-    const i32 sz1 = static_cast<i32>(
-        std::floor((maxZ + reach) / params.superRegionSize));
+    const i32 sx0 = static_cast<i32>(std::floor(
+        (minX - reach - params.superOrigin) / params.superRegionSize));
+    const i32 sx1 = static_cast<i32>(std::floor(
+        (maxX + reach - params.superOrigin) / params.superRegionSize));
+    const i32 sz0 = static_cast<i32>(std::floor(
+        (minZ - reach - params.superOrigin) / params.superRegionSize));
+    const i32 sz1 = static_cast<i32>(std::floor(
+        (maxZ + reach - params.superOrigin) / params.superRegionSize));
     // The super cells not memoized yet compute IN PARALLEL (each is a
     // pure function: ~100 k analytic samples, 0.2-3 s): a cold bake
     // or load pays one cell's time, not the sum. Duplicates in the

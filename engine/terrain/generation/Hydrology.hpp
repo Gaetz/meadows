@@ -147,7 +147,7 @@ struct HydrologyParams {
     // destination lakes a map should hold, not the 150+ potholes the
     // erosion leaves.
     bool lakePiercing { true };
-    u32 lakeKeepCells { 400 };  // ~10 ha at the 16 m texel
+    u32 lakeKeepCells { 2000 }; // ~51 ha at the 16 m texel
     // Depth alone earns NOTHING by default (1000 = off): the zone
     // storeys are 60 m, every wall-foot trench reads 10-40 m deep —
     // a destination lake is BIG, an artifact pit is merely deep.

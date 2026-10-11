@@ -37,14 +37,16 @@ TEST_CASE("master network: deterministic, monotone, owned by core") {
         }
     }
 
-    const f32 coreMin = -params.apron + params.apron; // 0
+    const f32 coreMin = params.superOrigin;
+    const f32 coreMax = params.superOrigin + params.superRegionSize;
     for (const MasterRiver& river : a.rivers) {
         REQUIRE(river.nodes.size() >= 4);
-        // The head belongs to this super cell's core.
+        // The head belongs to this super cell's core (the offset
+        // lattice: core (0,0) is centered on the start country).
         CHECK(river.nodes.front().x >= coreMin);
-        CHECK(river.nodes.front().x <= params.superRegionSize);
+        CHECK(river.nodes.front().x <= coreMax);
         CHECK(river.nodes.front().z >= coreMin);
-        CHECK(river.nodes.front().z <= params.superRegionSize);
+        CHECK(river.nodes.front().z <= coreMax);
         // Downstream: surface monotone (non-increasing), effective
         // discharge at the EXTRACTION threshold everywhere (E4b: the
         // course is traced from the rivière gabarit up).

@@ -361,7 +361,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
     // A drained bowl can reveal the next basin downstream: iterate,
     // bounded (each pass re-floods, ~2 s at the map window — the whole
     // loop ends early the first quiet pass).
-    for (u32 pass = 0; pass < 8; ++pass) {
+    for (u32 pass = 0; pass < 16; ++pass) {
         const vector<f32> filled = priorityFloodFill(
             spec, ground, params.seaLevel, params.minSlope);
         vector<u32> label(cells, 0);
@@ -451,7 +451,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             f32 ramp = floor + 0.3f;
             ground[gate] = glm::min(ground[gate], ramp);
             size_t cur = pour;
-            for (u32 step = 0; step < 96; ++step) {
+            for (u32 step = 0; step < 192; ++step) {
                 ramp -= glm::max(params.riverMinGradient, 1.0e-3f) *
                         spec.texelSize;
                 if (ground[cur] <= ramp) {

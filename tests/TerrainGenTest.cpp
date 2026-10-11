@@ -732,7 +732,10 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
     // warp's local compression — measured 4.7 m of second difference
     // over 4 m samples on a one-storey wall of the map-line rampart.
     CHECK(worstJump < 6.0f);
-    CHECK(worstGrad <= 0.3f); // the province table + the plateau ramp
+    // The fractal coast warp (E1c) steepens the macro FLOOR's
+    // littoral ramp; the walkable slope belongs to coastProfile and
+    // the erosion downstream — N5 arbitrates the final gauge.
+    CHECK(worstGrad <= 0.45f); // the province table + the plateau ramp
     CHECK(worstScarp <= 3.0f); // a four-storey wall (240 m) over the 90 m riser
 }
 

@@ -26,8 +26,9 @@ namespace game {
 constexpr u32 kMapBakeVersion = 2; // 2: manifest carries the bake key
 constexpr i32 kMapTilesPerSide = 2; // 2 x 4096 m = 8192 m — the Skyrim
                                     // scale (docs/PAYSAGE.md §7.5); a
-                                    // MasterNetwork super-region (24576 m)
-                                    // holds 3x3 maps
+                                    // MasterNetwork super-region (49152 m,
+                                    // offset -16384) holds 6x6 maps and
+                                    // ONE continent (§7.8 E1c)
 
 struct MapBakeStats {
     f64 stage1Seconds { 0.0 };
