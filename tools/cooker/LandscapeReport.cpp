@@ -427,9 +427,103 @@ int landscapeReport(char** argv, int argc) {
              c.meanSlopeSpawn, c.steep30, c.steep45, c.wallsPerKm,
              c.wallMedian, c.wallTallest, c.relief250Spawn, c.rise100p95,
              c.highGroundSpawn);
-    LOG_INFO("  map: relief {:.0f} m / 250 m, ground > 100 m {:.0f} %, "
-             "lakes {}, rivers {}",
-             c.relief250Map, c.highGroundMap, c.lakes, c.rivers);
+    {
+        u32 natural = 0, ponds = 0;
+        for (const auto& lake : view->lakes) {
+            (lake.dug ? ponds : natural) += 1;
+        }
+        LOG_INFO("  map: relief {:.0f} m / 250 m, ground > 100 m {:.0f} %, "
+                 "lakes {} ({} natural + {} placed ponds), rivers {}",
+                 c.relief250Map, c.highGroundMap, c.lakes, natural,
+                 ponds, c.rivers);
+    }
+    {
+        // The CONTINENT summary (passe EAU E7): the host super-region's
+        // master courses — does the water of this country reach its
+        // sea? A course counts transitively: it reaches the sea itself
+        // or joins one that does (confluences end a trace by design).
+        render::terraingen::ProceduralControlParams cp = params.controls;
+        cp.seed = params.worldSeed;
+        render::terraingen::MasterNetworkParams net = params.network;
+        net.seaLevel = params.macro.seaLevel;
+        net.mapGrid = params.mapGrid;
+        const f32 superSize = net.superRegionSize;
+        const i32 sx = static_cast<i32>(
+            std::floor((view->minX + 1.0f) / superSize));
+        const i32 sz = static_cast<i32>(
+            std::floor((view->minZ + 1.0f) / superSize));
+        const auto courses = render::terraingen::masterRiversNear(
+            render::terraingen::ProceduralControls { cp }, params.macro,
+            net, static_cast<f32>(sx) * superSize,
+            static_cast<f32>(sz) * superSize,
+            static_cast<f32>(sx + 1) * superSize,
+            static_cast<f32>(sz + 1) * superSize);
+        vector<u8> toSea(courses.size(), 0);
+        for (size_t i = 0; i < courses.size(); ++i) {
+            toSea[i] = courses[i].reachesSea ? 1 : 0;
+        }
+        const f32 join2 = net.texel * net.texel * 2.25f;
+        for (bool grew = true; grew;) {
+            grew = false;
+            for (size_t i = 0; i < courses.size(); ++i) {
+                if (toSea[i] || courses[i].nodes.empty()) {
+                    continue;
+                }
+                const auto& tail = courses[i].nodes.back();
+                for (size_t j = 0; j < courses.size() && !toSea[i];
+                     ++j) {
+                    if (j == i || !toSea[j]) {
+                        continue;
+                    }
+                    for (const auto& node : courses[j].nodes) {
+                        const f32 dx = node.x - tail.x;
+                        const f32 dz = node.z - tail.z;
+                        if (dx * dx + dz * dz <= join2) {
+                            toSea[i] = 1;
+                            grew = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        u32 sea = 0, heads[4] = {}, ruisseau = 0, riviere = 0,
+            fleuve = 0;
+        f32 longest = 0.0f;
+        for (size_t i = 0; i < courses.size(); ++i) {
+            sea += toSea[i];
+            f32 length = 0.0f;
+            for (size_t k = 1; k < courses[i].nodes.size(); ++k) {
+                length += std::hypot(courses[i].nodes[k].x -
+                                         courses[i].nodes[k - 1].x,
+                                     courses[i].nodes[k].z -
+                                         courses[i].nodes[k - 1].z);
+            }
+            longest = glm::max(longest, length);
+            if (!courses[i].nodes.empty()) {
+                ++heads[glm::min(courses[i].nodes.front().headType, 3u)];
+            }
+            for (const auto& node : courses[i].nodes) {
+                if (node.qArea >= params.hydrology.fleuveArea) {
+                    ++fleuve;
+                } else if (node.qArea >= params.hydrology.riviereArea) {
+                    ++riviere;
+                } else {
+                    ++ruisseau;
+                }
+            }
+        }
+        LOG_INFO("  continent (super {}, {}): {} master courses, {} to "
+                 "the sea ({:.0f} %), longest {:.1f} km; nodes by tier "
+                 "r/R/F {}/{}/{}; heads spring/neve/glacier/lake "
+                 "{}/{}/{}/{}",
+                 sx, sz, courses.size(), sea,
+                 courses.empty() ? 0.0f
+                                 : 100.0f * static_cast<f32>(sea) /
+                                       static_cast<f32>(courses.size()),
+                 longest / 1000.0f, ruisseau, riviere, fleuve, heads[0],
+                 heads[1], heads[2], heads[3]);
+    }
     {
         // Where the lakes sit against the zones: on a wall's foot or
         // rim (a hollow the storey step traps), on a piece pond, or

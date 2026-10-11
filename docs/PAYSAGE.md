@@ -2338,6 +2338,30 @@ l'hydrologie définitive).
   super (0,0)) : 63 têtes — 30 sources, 1 névé, 0 glacier (le
   continent du départ est tempéré), 32 exutoires de bassins. Jugement
   dev EN ATTENTE.
+- **2026-10-11 — E7 livrée : le bilan par continent — la passe tient sa
+  jauge.** `landscape-report` gagne la ligne « continent (super i, j) » :
+  cours maîtres de la super-région hôte, part atteignant la mer
+  (TRANSITIVE : atteint ou rejoint un cours qui atteint — une
+  confluence termine un tracé par construction), plus long cours,
+  histogramme des nœuds par tier (qArea vs riviere/fleuveArea) et des
+  têtes par type ; la ligne « map » sépare lacs naturels et étangs
+  posés. La vérif far-view annoncée au plan est devenue TAUTOLOGIQUE :
+  depuis E4b le far-water appelle la même `riverLawHalfWidth` que
+  l'empreinte — une seule fonction, rien à comparer. Le volet
+  « surfaces d'eau au corridor » vit déjà dans `bake-map --pair` (E2).
+  **Mesuré (seed 1337, continent (0,0), v84)** : **64 cours maîtres,
+  64 à la mer (100 % — jauge ≥ 95 % tenue : la garde de cœur E1 + le
+  routage façonné E3 ont tué les troncatures de fenêtre)**, plus long
+  cours 15,9 km de la source à la mer ; nœuds 210 ruisseau / 657
+  rivière / 550 fleuve (le continuum existe en volume) ; têtes
+  31 sources / 1 névé / 0 glacier / 32 exutoires ; 14 lacs naturels +
+  56 étangs sur la carte (0,0) (jauge 3-6 : un cran de
+  `hydroLakeKeepCells`, arbitrage dev) ; « 0 orphelin > 10 m aux
+  lignes » : à mesurer au `bake-map --pair` sur une paire Ouvert et une
+  paire Ridges (machine dev, deux bakes). Fin de la passe EAU côté
+  code : restent le jugement dev (archipel au cran 100 km, départ
+  côtier, remonter le fleuve, lacs) et les différés listés en tête de
+  section.
 
 ---
 
