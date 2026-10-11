@@ -185,6 +185,7 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.hydrology.lakeKeepCells = form.hydroLakeKeepCells;
     params.hydrology.lakeKeepDepth = form.hydroLakeKeepDepth;
     params.network.lakeDepth = form.networkLakeDepth;
+    params.network.routeDither = form.networkRouteDither;
     params.network.glacierTemp = form.hydroGlacierTemp;
     params.network.neveTemp = form.hydroNeveTemp;
     params.imprint.bedDepth = form.imprintBedDepth;
@@ -352,6 +353,7 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.hydroLakeKeepCells = params.hydrology.lakeKeepCells;
     form.hydroLakeKeepDepth = params.hydrology.lakeKeepDepth;
     form.networkLakeDepth = params.network.lakeDepth;
+    form.networkRouteDither = params.network.routeDither;
     form.hydroGlacierTemp = params.network.glacierTemp;
     form.hydroNeveTemp = params.network.neveTemp;
     form.imprintBedDepth = params.imprint.bedDepth;

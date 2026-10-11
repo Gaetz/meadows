@@ -110,9 +110,15 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
 // returns the water-routing surface >= height where every node drains to
 // a base-level node (grid rim or height <= seaLevel). Shared by S2
 // (receiver routing) and S4 (lakes = filled - height).
+// `epsScale` (optional, spec.cells()): per-cell multiplier of the
+// epsilon ramp. On a filled basin the ramp IS the routing surface:
+// uniform, it hands the water the queue's scan order — dead-straight
+// grid channels (the N2 "fleuves rectilignes"). A jittered scale
+// keeps the fill monotone (the queue orders it) and the paths wander.
 vector<f32> priorityFloodFill(const GridSpec& spec,
                               const vector<f32>& height, f32 seaLevel,
-                              f32 minSlope);
+                              f32 minSlope,
+                              const vector<f32>* epsScale = nullptr);
 
 // Steepest-descent flow routing over an already-drained surface (the
 // priority-flood fill): receiver graph, ascending process order and

@@ -102,6 +102,16 @@ struct MasterNetworkParams {
     // is a lake outlet whatever the climate.
     f32 glacierTemp { 0.12f };
     f32 neveTemp { 0.22f };
+    // Routing dither (E8): the ROUTING alone sees the terrain plus a
+    // deterministic ±routeDither micro-relief (1.6 km, 3 octaves) — on
+    // uniform gentle slopes the 8-neighbour steepest descent marches
+    // every column down the SAME axis (the classic D8 artifact: the
+    // striped terrain the dev reported, the old N2 "fleuves
+    // rectilignes"); the dither has to beat the per-wavelength drop of
+    // those slopes, hence meters, not centimeters. The real terrain,
+    // the sea tests and the imprint depths never read it; the
+    // imprint's reprofile swallows the surface wobble.
+    f32 routeDither { 1.2f };
     // qArea that EXTRACTS a master course (E4b): low enough that the
     // courses are traced from the mountains (a ~5 m half-width head
     // through the width law — the readable minimum at the 128 m

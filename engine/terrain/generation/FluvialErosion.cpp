@@ -23,7 +23,8 @@ bool isBaseLevel(const GridSpec& spec, const vector<f32>& height, u32 col,
 
 vector<f32> priorityFloodFill(const GridSpec& spec,
                               const vector<f32>& height, f32 seaLevel,
-                              f32 minSlope) {
+                              f32 minSlope,
+                              const vector<f32>* epsScale) {
     const i32 n = static_cast<i32>(spec.n);
     const f32 eps = minSlope * spec.texelSize;
     vector<f32> filled(height.size());
@@ -57,7 +58,9 @@ vector<f32> priorityFloodFill(const GridSpec& spec,
                 continue;
             }
             visited[p] = 1;
-            filled[p] = glm::max(height[p], level + eps);
+            const f32 cellEps =
+                epsScale ? eps * (*epsScale)[p] : eps;
+            filled[p] = glm::max(height[p], level + cellEps);
             open.emplace(filled[p], static_cast<u32>(p));
         }
     }

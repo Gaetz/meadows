@@ -16,6 +16,35 @@ namespace render::terraingen {
 
 namespace {
 
+// White per-cell epsilon jitter on WORLD coordinates (two windows
+// agree on their overlap): see MasterNetwork's twin — channels across
+// filled basins stop reading the fill queue's scan order (E8).
+f32 hydroEpsJitterAt(f32 x, f32 z) {
+    u32 h = static_cast<u32>(static_cast<i32>(x)) * 0x9e3779b9u ^
+            static_cast<u32>(static_cast<i32>(z)) * 0x85ebca6bu ^
+            0x5eedbeefu;
+    h ^= h >> 16;
+    h *= 0x7feb352du;
+    h ^= h >> 15;
+    return 0.3f + 1.4f * static_cast<f32>(h & 0xffffu) *
+                      (1.0f / 65535.0f);
+}
+
+vector<f32> hydroEpsScale(const GridSpec& spec) {
+    vector<f32> out(spec.cells());
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            out[static_cast<size_t>(row) * spec.n + col] =
+                hydroEpsJitterAt(spec.x(col), spec.z(row));
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+namespace {
+
 // Grid-traced courses are runs of 8 m steps in the 8 grid directions —
 // straight lines with hard 45° corners. Simplify (drop the stair-steps),
 // smooth through the remaining corners (core::smoothPolyline — the
@@ -358,12 +387,14 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
     }
     const size_t cells = spec.cells();
     const i32 n = static_cast<i32>(spec.n);
+    const vector<f32> epsScalePierce = hydroEpsScale(spec);
     // A drained bowl can reveal the next basin downstream: iterate,
     // bounded (each pass re-floods, ~2 s at the map window — the whole
     // loop ends early the first quiet pass).
     for (u32 pass = 0; pass < 16; ++pass) {
-        const vector<f32> filled = priorityFloodFill(
-            spec, ground, params.seaLevel, params.minSlope);
+        const vector<f32> filled =
+            priorityFloodFill(spec, ground, params.seaLevel,
+                              params.minSlope, &epsScalePierce);
         vector<u32> label(cells, 0);
         u32 nextLabel = 0;
         u32 pierced = 0;
@@ -496,8 +527,9 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                                  const HydrologyParams& params) {
     const size_t cells = spec.cells();
     HydrologyResult out;
+    const vector<f32> epsScale = hydroEpsScale(spec);
     out.filled = priorityFloodFill(spec, height, params.seaLevel,
-                                   params.minSlope);
+                                   params.minSlope, &epsScale);
     const FlowRouting flow =
         routeFlow(spec, out.filled, height, params.seaLevel);
     out.area = flow.area;

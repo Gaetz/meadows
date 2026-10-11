@@ -644,6 +644,7 @@ struct TerrainGenTuningForm : Form {
     u32 hydroLakeKeepCells { 2000 };
     f32 hydroLakeKeepDepth { 1000.0f };
     f32 networkLakeDepth { 2.0f };
+    f32 networkRouteDither { 1.2f }; // slopes meander, no D8 grid
     f32 hydroGlacierTemp { 0.12f };
     f32 hydroNeveTemp { 0.22f };
     f32 imprintBedDepth { 5.0f };
@@ -803,6 +804,7 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(hydroLakeKeepCells)
         REFLECT_FIELD(hydroLakeKeepDepth)
         REFLECT_FIELD(networkLakeDepth)
+        REFLECT_FIELD(networkRouteDither)
         REFLECT_FIELD(hydroGlacierTemp)
         REFLECT_FIELD(hydroNeveTemp)
         REFLECT_FIELD(imprintBedDepth)

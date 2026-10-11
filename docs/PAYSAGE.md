@@ -2438,6 +2438,33 @@ l'hydrologie définitive).
   possèdent la pente finale — N5). Bump **v86**. Jugement dev EN
   ATTENTE (les deux images, le plateau du départ, le nombre de lacs
   de cœur).
+- **2026-10-11 — « Il y a un effet strié de la carte » (retour dev,
+  screenshot) — E8 livrée : l'eau cesse de suivre la grille.** Le
+  diagnostic a demandé trois zooms d'images (22 → 3,3 m/px, A/B
+  `noplan`) : les stries n'étaient ni le plan POI ni le terrain, mais
+  les **cours traversant les bassins remplis** — sur une surface de
+  remplissage plate, la rampe epsilon du priority-flood est l'ordre de
+  balayage de la file : chenaux rectilignes alignés grille, en
+  faisceaux (le différé N2 « fleuves rectilignes » mot pour mot,
+  amplifié par l'extraction abaissée d'E4b et le plateau du ring
+  d'E1c) ; par ricochet les LACS de la carte M se lisaient en peigne
+  (le raster coupe la nappe sur chaque crête de sillon imprinté).
+  Trois remèdes empilés, chacun vérifié sur image : (1) **jitter de
+  l'epsilon du remplissage** (`priorityFloodFill` gagne un `epsScale`
+  par cellule, hash blanc sur coordonnées MONDE — deux fenêtres
+  d'accord sur leur recouvrement ; la monotonie du fill tient par
+  construction de la file) branché au réseau maître, à
+  `extractHydrology` et à la percée E5 — c'est LUI qui tue les
+  faisceaux ; (2) **dither de routage** `networkRouteDither` 1,2 m à
+  1,6 km 3 octaves, vu du routage seul (le D8 en colonnes sur pentes
+  douces exige des mètres, pas des centimètres) ; (3) **Chaikin une
+  passe** sur les polylignes maîtresses (nœuds ×2, escaliers 128 m
+  arrondis, extrémités exactes, surfaces re-monotonisées). L'érosion,
+  le dimple et le water-solve passent nullptr : bit-exacts. Vérifié :
+  le 20 km avant/après (`terrain-cache/1337/stries-avant/apres-20km
+  .png`) passe de faisceaux H/V à un réseau dendritique en arête de
+  poisson. Bump **v87**. Jugement dev EN ATTENTE (re-regarder l'écran
+  M au cran 5 km).
 
 ---
 

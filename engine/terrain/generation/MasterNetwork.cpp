@@ -98,6 +98,7 @@ u64 networkFileKey(const ProceduralControls& controls,
     mixF(params.lakeDepth);
     mixF(params.glacierTemp);
     mixF(params.neveTemp);
+    mixF(params.routeDither);
     const u32 weighted = params.runoffWeights ? 1u : 0u;
     mix(&weighted, sizeof(weighted));
     if (weighted != 0u) {
@@ -261,6 +262,60 @@ void setMasterNetworkCacheDir(const std::filesystem::path& dir) {
 
 namespace {
 
+constexpr u32 kSaltRouteDither = 0xd17e4000u;
+
+// White per-cell epsilon jitter on WORLD coordinates (two windows
+// agree on their overlap): the fill ramp wanders, the channels across
+// filled basins stop reading the queue's scan order.
+inline f32 epsJitterAt(u32 seed, f32 x, f32 z) {
+    u32 h = static_cast<u32>(static_cast<i32>(x)) * 0x9e3779b9u ^
+            static_cast<u32>(static_cast<i32>(z)) * 0x85ebca6bu ^ seed;
+    h ^= h >> 16;
+    h *= 0x7feb352du;
+    h ^= h >> 15;
+    return 0.3f + 1.4f * static_cast<f32>(h & 0xffffu) *
+                      (1.0f / 65535.0f);
+}
+
+// One Chaikin pass over a course (E8): the 128 m grid staircase
+// becomes a curve; endpoints stay EXACT (the head's core ownership,
+// the confluence junction). Surfaces re-monotonized after — the
+// imprint's reprofile expects them non-increasing.
+void chaikinSmooth(MasterRiver& river) {
+    if (river.nodes.size() < 3) {
+        return;
+    }
+    vector<MasterNode> out;
+    out.reserve(river.nodes.size() * 2);
+    out.push_back(river.nodes.front());
+    for (size_t k = 0; k + 1 < river.nodes.size(); ++k) {
+        const MasterNode& a = river.nodes[k];
+        const MasterNode& b = river.nodes[k + 1];
+        const auto mixNode = [&](f32 t) {
+            MasterNode m;
+            m.x = glm::mix(a.x, b.x, t);
+            m.z = glm::mix(a.z, b.z, t);
+            m.surface = glm::mix(a.surface, b.surface, t);
+            m.area = glm::mix(a.area, b.area, t);
+            m.qArea = glm::mix(a.qArea, b.qArea, t);
+            m.flags = t < 0.5f ? a.flags : b.flags;
+            m.headType = a.headType;
+            return m;
+        };
+        if (k > 0) {
+            out.push_back(mixNode(0.25f));
+        }
+        if (k + 2 < river.nodes.size()) {
+            out.push_back(mixNode(0.75f));
+        }
+    }
+    out.push_back(river.nodes.back());
+    for (size_t k = 1; k < out.size(); ++k) {
+        out[k].surface = glm::min(out[k].surface, out[k - 1].surface);
+    }
+    river.nodes = std::move(out);
+}
+
 MasterNetwork computeMasterNetworkUncached(
     const ProceduralControls& controls, const MacroParams& macro,
     const MasterNetworkParams& params, i32 superX, i32 superZ) {
@@ -306,8 +361,32 @@ MasterNetwork computeMasterNetworkUncached(
         }
     }
     const auto clock1 = std::chrono::steady_clock::now();
-    const vector<f32> filled = priorityFloodFill(
-        out.grid, height, params.seaLevel, params.minSlope);
+    // The ROUTING terrain (E8): the real heights plus the dither
+    // micro-relief — receivers meander across the flats; base level
+    // (`height` below) and every consumer stay on the real ground.
+    vector<f32> routing(out.grid.cells());
+    for (u32 row = 0; row < n; ++row) {
+        for (u32 col = 0; col < n; ++col) {
+            const size_t i = static_cast<size_t>(row) * n + col;
+            routing[i] =
+                height[i] +
+                (noise::fbm(controls.params().seed ^ kSaltRouteDither,
+                            out.grid.x(col), out.grid.z(row),
+                            1.0f / 1600.0f, 3, 2.0f, 0.5f) -
+                 0.5f) *
+                    2.0f * params.routeDither;
+        }
+    }
+    vector<f32> epsScale(out.grid.cells());
+    for (u32 row = 0; row < n; ++row) {
+        for (u32 col = 0; col < n; ++col) {
+            epsScale[static_cast<size_t>(row) * n + col] = epsJitterAt(
+                controls.params().seed, out.grid.x(col), out.grid.z(row));
+        }
+    }
+    const vector<f32> filled =
+        priorityFloodFill(out.grid, routing, params.seaLevel,
+                          params.minSlope, &epsScale);
     const FlowRouting flow =
         routeFlow(out.grid, filled, height, params.seaLevel);
     // The effective-discharge accumulation (qArea) rides a second
@@ -408,6 +487,7 @@ MasterNetwork computeMasterNetworkUncached(
             i = r;
         }
         if (river.nodes.size() >= 4) {
+            chaikinSmooth(river);
             out.rivers.push_back(std::move(river));
         }
     }
