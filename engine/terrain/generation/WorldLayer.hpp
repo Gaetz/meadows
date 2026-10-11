@@ -24,8 +24,10 @@ namespace render::terraingen {
 // read the same carrier scale as the legacy fbm. 0.5 saturates the
 // inland ramp at a continent's heart even for the high provinces
 // (coastBand * 5.5 = 0.44 < gain) — lower, the hearts lose their
-// mountains.
+// mountains. The coast slope: one v unit per this fraction of the
+// continent radius (the shore-distance proxy's exact inverse).
 inline constexpr f32 kContinentGain = 0.5f;
+inline constexpr f32 kContinentCoastSlope = 0.30f;
 
 struct WorldLayerParams {
     u32 seed { 1337 };
@@ -42,10 +44,14 @@ struct WorldLayerParams {
     // needs cross-super stitching (MasterNetwork.hpp ownership).
     u32 continentCellSupers { 2 };
     f32 continentSuperSize { 24576.0f };
-    f32 continentRadius { 11000.0f };
-    f32 continentJitter { 788.0f };
+    f32 continentRadius { 9500.0f };
+    f32 continentJitter { 2200.0f };
     f32 continentShapeWavelength { 15000.0f };
-    f32 continentShapeAmp { 0.18f };
+    f32 continentShapeAmp { 0.4f };
+    // Chance a lattice cell holds a continent at all (E1b): empty
+    // cells of open ocean break the grid rhythm. The start cell (0,0)
+    // always holds its continent.
+    f32 continentChance { 0.8f };
     // Map-border styles read off this layer (MapGrid.hpp, E2): ocean
     // majority = Sea, massif mean above the threshold = Ridges, else
     // Open. false = the legacy hashed 50/50 proposal + Sea veto.

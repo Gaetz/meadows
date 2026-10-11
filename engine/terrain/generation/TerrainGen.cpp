@@ -1209,7 +1209,8 @@ f32 macroHeightAnalytic(const ProceduralControls& controls,
     const WorldLayerParams& world = controls.params().world;
     const f32 d = (w.continent - world.seaThreshold) *
                   (world.continentCellSupers > 0
-                       ? world.continentRadius / kContinentGain
+                       ? world.continentRadius * kContinentCoastSlope /
+                             kContinentGain
                        : world.continentWavelength * kShoreProxy);
     return coastProfile(params, land, s.tier, d, s.hardness);
 }

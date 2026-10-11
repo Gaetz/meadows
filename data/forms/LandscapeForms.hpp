@@ -487,10 +487,11 @@ struct TerrainGenTuningForm : Form {
     // --- World layer (engine/terrain/generation/WorldLayer.hpp)
     f32 worldContinentWavelength { 45000.0f };
     u32 worldContinentCellSupers { 2 }; // 0 = legacy infinite carrier
-    f32 worldContinentRadius { 11000.0f };
-    f32 worldContinentJitter { 788.0f };
+    f32 worldContinentRadius { 9500.0f };
+    f32 worldContinentJitter { 2200.0f };
     f32 worldContinentShapeWavelength { 15000.0f };
-    f32 worldContinentShapeAmp { 0.18f };
+    f32 worldContinentShapeAmp { 0.4f };
+    f32 worldContinentChance { 0.8f };
     bool worldBorderFromWorld { true }; // false = hashed legacy styles
     f32 worldBorderMassifMin { 0.45f };
     f32 worldSeaThreshold { 0.47f };
@@ -657,6 +658,7 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(worldContinentJitter)
         REFLECT_FIELD(worldContinentShapeWavelength)
         REFLECT_FIELD(worldContinentShapeAmp)
+        REFLECT_FIELD(worldContinentChance)
         REFLECT_FIELD(worldBorderFromWorld)
         REFLECT_FIELD(worldBorderMassifMin)
         REFLECT_FIELD(worldSeaThreshold)

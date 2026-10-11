@@ -27,12 +27,17 @@ constexpr u32 kSaltCoverT = 0xc0ec0e01u;
 constexpr u32 kSaltCoverM = 0xc0ec0e02u;
 constexpr u32 kSaltContinentCell = 0xa2c41ce1u;
 constexpr u32 kSaltContinentShape = 0x5ba9e002u;
+constexpr u32 kSaltCoastWarpX = 0xc0a37a91u;
+constexpr u32 kSaltCoastWarpZ = 0xc0a37a92u;
 
 // The edge guard of the archipelago lattice: land dies this far inside
 // the host core (the coast detail may push it back up to ~350 m, the
-// guarantee keeps ~290 m of margin).
+// guarantee keeps ~290 m of margin). The corner radius keeps the
+// bound from ever printing a square corner into a coastline (dev
+// report: the start continent wore one).
 constexpr f32 kContinentEdgeMargin = 640.0f;
 constexpr f32 kContinentEdgeFalloff = 2048.0f;
+constexpr f32 kContinentCornerRadius = 3072.0f;
 
 u32 continentHash(const WorldLayerParams& p, i32 i, i32 j) {
     return (p.seed ^ kSaltContinentCell) ^
@@ -40,72 +45,180 @@ u32 continentHash(const WorldLayerParams& p, i32 i, i32 j) {
            (static_cast<u32>(j) * 0x85ebca6bu);
 }
 
-// Radial continent field of the nearest lattice continents, in v units
-// (1 at a heart, 0 at the nominal coast, negative at sea). Warp enters
-// through the shape fbm only: the geometry stays unwarped so the edge
-// guard's arithmetic holds.
-f32 latticeBlob(const WorldLayerParams& p, f32 x, f32 z, f32 wx, f32 wz) {
+struct ContinentCell {
+    bool present { false };
+    f32 coreX0 { 0.0f }; // host core rect
+    f32 coreZ0 { 0.0f };
+    f32 cx { 0.0f }; // jittered heart
+    f32 cz { 0.0f };
+    f32 radius { 0.0f };
+};
+
+// Lattice cell (i, j) of the archipelago: host super-cell staggered by
+// half a pitch on odd rows (the grid stops reading as a grid), a
+// presence roll (some cells are open ocean), a per-continent size.
+// Cell (0, 0) is the start's: always present, full size, its heart
+// forced toward the start.
+ContinentCell continentCellAt(const WorldLayerParams& p, i32 i, i32 j) {
+    ContinentCell cell;
     const f32 superSize = p.continentSuperSize;
     const f32 pitch =
         superSize * static_cast<f32>(p.continentCellSupers);
+    const u32 hash = continentHash(p, i, j);
+    const bool start = i == 0 && j == 0;
+    if (!start && static_cast<f32>((hash >> 8) & 0xffu) *
+                          (1.0f / 255.0f) >
+                      p.continentChance) {
+        return cell; // this cell is ocean
+    }
+    cell.present = true;
+    const f32 stagger =
+        (j & 1) != 0 ? superSize *
+                           static_cast<f32>(p.continentCellSupers / 2u)
+                     : 0.0f;
+    cell.coreX0 = static_cast<f32>(i) * pitch + stagger;
+    cell.coreZ0 = static_cast<f32>(j) * pitch;
+    const f32 sizeRoll =
+        static_cast<f32>((hash >> 16) & 0xffu) * (1.0f / 255.0f);
+    cell.radius =
+        start ? p.continentRadius
+              : p.continentRadius * glm::mix(0.55f, 1.0f, sizeRoll);
+    // Smaller continents wander further inside their core.
+    const f32 jit = p.continentJitter +
+                    0.8f * (p.continentRadius - cell.radius);
+    f32 jx = (static_cast<f32>(hash & 0xffu) * (1.0f / 255.0f) * 2.0f -
+              1.0f) *
+             jit;
+    f32 jz = (static_cast<f32>((hash >> 24) & 0xffu) *
+                  (1.0f / 255.0f) * 2.0f -
+              1.0f) *
+             jit;
+    if (start) {
+        // Start decree: the start sits 11.6 km from the host center —
+        // a frank south-west offset brings it deep inside the fbm
+        // coast for every seed (the low-country pull is the hard
+        // guarantee, this keeps it from printing a pulled islet).
+        jx = -2048.0f;
+        jz = -2048.0f;
+    }
+    cell.cx = cell.coreX0 + superSize * 0.5f + jx;
+    cell.cz = cell.coreZ0 + superSize * 0.5f + jz;
+    return cell;
+}
+
+// Inside distance (m, negative outside) to a host core shrunk by the
+// edge margin, with ROUNDED corners — the standard rounded-rect SDF.
+f32 roundedCoreInside(const WorldLayerParams& p, const ContinentCell& c,
+                      f32 x, f32 z) {
+    const f32 half = p.continentSuperSize * 0.5f;
+    const f32 qx = std::abs(x - (c.coreX0 + half)) -
+                   (half - kContinentEdgeMargin -
+                    kContinentCornerRadius);
+    const f32 qz = std::abs(z - (c.coreZ0 + half)) -
+                   (half - kContinentEdgeMargin -
+                    kContinentCornerRadius);
+    const f32 ox = glm::max(qx, 0.0f);
+    const f32 oz = glm::max(qz, 0.0f);
+    const f32 outside = std::sqrt(ox * ox + oz * oz) +
+                        glm::min(glm::max(qx, qz), 0.0f) -
+                        kContinentCornerRadius;
+    return -outside;
+}
+
+// Continent field in v units: a STRONGLY domain-warped disc — the
+// coastline is the isoline of a radius modulated by a per-continent
+// rim fbm, read through a ±coastWarp deformation of the whole plane
+// (the august continentLayout's recipe at the right scale: deep
+// gulfs, peninsulas, no readable circle). The 45 km carrier cannot
+// shape a 20 km continent (it is all-high or all-low across one
+// cell — measured: the coast fell back to the envelope and read as a
+// disc). Geometry warped, guard NOT: the rounded core SDF stays on
+// raw coordinates, so the river-head ownership invariant holds.
+constexpr f32 kContinentCoastWarp = 3200.0f;
+constexpr f32 kContinentCoastWarpWavelength = 9000.0f;
+
+f32 latticeBlob(const WorldLayerParams& p, f32 x, f32 z) {
+    const f32 pitch =
+        p.continentSuperSize * static_cast<f32>(p.continentCellSupers);
     const i32 i0 = static_cast<i32>(std::floor(x / pitch));
     const i32 j0 = static_cast<i32>(std::floor(z / pitch));
     f32 best = -8.0f;
+    f32 wx3 = 0.0f;
+    f32 wz3 = 0.0f;
+    bool warped = false;
     for (i32 j = j0 - 1; j <= j0 + 1; ++j) {
-        for (i32 i = i0 - 1; i <= i0 + 1; ++i) {
-            const u32 hash = continentHash(p, i, j);
-            f32 jx = (static_cast<f32>(hash & 0xffffu) *
-                          (1.0f / 65535.0f) * 2.0f -
-                      1.0f) *
-                     p.continentJitter;
-            f32 jz = (static_cast<f32>((hash >> 16) & 0xffffu) *
-                          (1.0f / 65535.0f) * 2.0f -
-                      1.0f) *
-                     p.continentJitter;
-            if (i == 0 && j == 0) {
-                // Start decree: the start sits 11.6 km from the host
-                // center — the forced south-west offset puts it inside
-                // the nominal coast for every seed.
-                jx = -p.continentJitter;
-                jz = -p.continentJitter;
+        for (i32 i = i0 - 2; i <= i0 + 1; ++i) { // stagger reaches west
+            const ContinentCell cell = continentCellAt(p, i, j);
+            if (!cell.present) {
+                continue;
             }
-            const f32 cx = static_cast<f32>(i) * pitch +
-                           superSize * 0.5f + jx;
-            const f32 cz = static_cast<f32>(j) * pitch +
-                           superSize * 0.5f + jz;
-            const f32 d = std::hypot(x - cx, z - cz);
-            if (d > pitch) {
+            if (std::hypot(x - cell.cx, z - cell.cz) > pitch) {
                 continue; // saturated sea either way, spare the fbm
             }
-            const f32 shape =
-                noise::fbm(hash ^ kSaltContinentShape, wx, wz,
-                           1.0f / p.continentShapeWavelength, 2, 2.0f,
-                           0.5f);
+            if (!warped) {
+                // One strong warp serves every candidate: global and
+                // continuous, each contribution stays seam-free.
+                wx3 = x + (noise::fbm(p.seed ^ kSaltCoastWarpX, x, z,
+                                      1.0f /
+                                          kContinentCoastWarpWavelength,
+                                      3, 2.0f, 0.5f) *
+                               2.0f -
+                           1.0f) *
+                              kContinentCoastWarp;
+                wz3 = z + (noise::fbm(p.seed ^ kSaltCoastWarpZ, x, z,
+                                      1.0f /
+                                          kContinentCoastWarpWavelength,
+                                      3, 2.0f, 0.5f) *
+                               2.0f -
+                           1.0f) *
+                              kContinentCoastWarp;
+                warped = true;
+            }
+            const u32 hash = continentHash(p, i, j);
+            const f32 d = std::hypot(wx3 - cell.cx, wz3 - cell.cz);
+            f32 rim = noise::fbm(hash ^ kSaltContinentShape, wx3, wz3,
+                                 1.0f / p.continentShapeWavelength, 2,
+                                 2.0f, 0.5f) *
+                          2.0f -
+                      1.0f;
+            if (i == 0 && j == 0) {
+                // The start continent never shrinks below its nominal
+                // radius: the start sits deep inside whatever the rim
+                // noise rolls (gulfs stay, bites toward the start go).
+                rim = glm::max(rim, 0.0f);
+            }
             const f32 rEff =
-                p.continentRadius *
-                (1.0f + p.continentShapeAmp * (shape * 2.0f - 1.0f));
-            best = glm::max(best, 1.0f - d / glm::max(rEff, 1.0f));
+                cell.radius * (1.0f + p.continentShapeAmp * rim);
+            const f32 v =
+                (rEff - d) /
+                glm::max(kContinentCoastSlope * cell.radius, 1.0f);
+            const f32 core =
+                roundedCoreInside(p, cell, x, z) / kContinentEdgeFalloff;
+            best = glm::max(best, glm::min(v, core));
         }
     }
     return best;
 }
 
-// Signed guard field, in v units: >= 0 only inside a host super-cell
-// core, margin deep. min/max of continuous axis distances — continuous
-// across every super and pitch line.
+// Signed guard field, in v units: >= 0 only inside a PRESENT host
+// core (rounded, margin deep) — what the start pull may not override.
 f32 latticeGuard(const WorldLayerParams& p, f32 x, f32 z) {
-    const f32 superSize = p.continentSuperSize;
     const f32 pitch =
-        superSize * static_cast<f32>(p.continentCellSupers);
-    const auto axis = [&](f32 v) {
-        const f32 h0 = std::floor(v / pitch) * pitch;
-        const f32 sd0 = glm::min(v - h0, h0 + superSize - v);
-        const f32 sd1 =
-            glm::min(v - (h0 + pitch), h0 + pitch + superSize - v);
-        return glm::max(sd0, sd1);
-    };
-    const f32 dEdge = glm::min(axis(x), axis(z));
-    return (dEdge - kContinentEdgeMargin) / kContinentEdgeFalloff;
+        p.continentSuperSize * static_cast<f32>(p.continentCellSupers);
+    const i32 i0 = static_cast<i32>(std::floor(x / pitch));
+    const i32 j0 = static_cast<i32>(std::floor(z / pitch));
+    f32 best = -8.0f;
+    for (i32 j = j0 - 1; j <= j0 + 1; ++j) {
+        for (i32 i = i0 - 2; i <= i0 + 1; ++i) {
+            const ContinentCell cell = continentCellAt(p, i, j);
+            if (!cell.present) {
+                continue;
+            }
+            best = glm::max(best, roundedCoreInside(p, cell, x, z) /
+                                      kContinentEdgeFalloff);
+        }
+    }
+    return best;
 }
 
 // Province altitude from the raw étage field: a monotone table, the
@@ -182,8 +295,7 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
     const bool lattice = p.continentCellSupers > 0;
     f32 c;
     if (lattice) {
-        c = p.seaThreshold +
-            kContinentGain * latticeBlob(p, x, z, wx, wz);
+        c = p.seaThreshold + kContinentGain * latticeBlob(p, x, z);
     } else {
         c = noise::fbm(p.seed ^ kSaltContinent, wx, wz,
                        1.0f / p.continentWavelength, 3, 2.0f, 0.5f);
@@ -350,6 +462,7 @@ u64 hashParams(const WorldLayerParams& p) {
     f(p.continentJitter);
     f(p.continentShapeWavelength);
     f(p.continentShapeAmp);
+    f(p.continentChance);
     u(p.borderFromWorld ? 1u : 0u);
     f(p.borderMassifMin);
     f(p.coastDetailWavelength);

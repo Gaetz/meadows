@@ -2362,6 +2362,47 @@ l'hydrologie définitive).
   code : restent le jugement dev (archipel au cran 100 km, départ
   côtier, remonter le fleuve, lacs) et les différés listés en tête de
   section.
+- **2026-10-11 — « Les îles sont étrangement régulières : rondes,
+  réparties uniformément — et celle de départ a un coin carré.
+  L'ancien algo d'août n'était pas exploitable ? »** Retour dev fondé
+  des deux côtés : les continents E1 étaient des champs radiaux
+  1 − d/R à peine bruités sur un treillis à jitter minuscule, et le
+  coin carré était la garde de cœur rectangulaire (le jitter forcé SO
+  du départ l'appuyait pile dans l'angle). **E1b livrée.** Deux
+  enseignements de la refonte, mesurés sur images (`terrain-map`,
+  comparées par Claude avant livraison — avant/après dans
+  `terrain-cache/1337/archipel-*.png`) : (1) le porteur 45 km d'août
+  ne peut PAS dessiner la côte d'un continent de ~20 km — il est
+  tout-haut ou tout-bas à l'échelle d'une cellule, la côte retombe sur
+  l'enveloppe (rond) ou le cœur (carré) ; (2) la bonne recette est
+  celle de l'ancien `continentLayout` à la bonne échelle : **un disque
+  fortement warpé** — rayon modulé par un fbm de rive par continent
+  (`worldContinentShapeAmp` monté à 0,4) lu à travers une déformation
+  du domaine de ±3,2 km à 9 km (golfes profonds, presqu'îles, aucun
+  cercle lisible), le cœur arrondi (rayon de coin 3 072 m) ne restant
+  qu'un filet de sécurité sur coordonnées NON warpées (l'invariant
+  têtes-de-cours tient). S'y ajoutent : **quinconce** (rangées impaires
+  décalées d'une super-cellule), **variance de taille** (R × 0,55-1),
+  **cellules vides** (`worldContinentChance` 0,8, la cellule du départ
+  toujours pleine), jitter 2 200 m (+ large pour les petits), R défaut
+  9 500 (11 000 laissait zéro place à la côte dans le cœur), départ
+  décalé SO de 2 048 m et rive du départ clampée ≥ 0 (le départ reste
+  dans la côte, les golfes restent). Proxy de côte recalé
+  (`kContinentCoastSlope` 0,30). Conséquence de composition : la rampe
+  côtière sature au cœur des îles → plus de haut pays qu'avant (terre
+  ≥ 800 m : 18 % — jauge du test élargie à ≤ 25 %, part finale à
+  arbitrer en N5) ; le test d'étages mesure la terre sans filtre (la
+  terre n'existe que dans les cœurs par invariant), la part de mer
+  par continent vit dans la ligne « continent » du report. Vérifié sur
+  3 cadrages (160 km seeds 1337 et 777, 260 km) : tailles d'îlot à
+  continent, formes toutes différentes, ~1 cellule sur 5 vide, aucun
+  coin. Quatre jauges ré-ancrées en mesures PAR CARTE DE TERRE
+  (l'archipel a réduit la terre du balayage, pas sa densité) :
+  sommets-amers 263 sur 4 cartes terrestres (≥ 25/carte), densités POI
+  dès 1 carte pleine, 2 moyens isolés de bout de côte tolérés, ratio
+  verticality ≥ 1,3 (1,38 mesuré — part à arbitrer en N5). Bump
+  **v85** ; suite complète Release **811/811**. Jugement dev EN
+  ATTENTE sur les nouvelles images.
 
 ---
 

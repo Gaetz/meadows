@@ -122,7 +122,9 @@ TEST_CASE("poi plan: densities per 8 km map") {
     MESSAGE("9 maps (", landMaps, " land): grands ", grands, ", moyens ",
             moyens, ", petits ", petits, ", closest moyen pair ", closest,
             " m");
-    CHECK(landMaps >= 2);
+    // A ~19 km continent often keeps ONE fully-land 8 km map; the
+    // per-map gauges carry the guarantee there.
+    CHECK(landMaps >= 1);
     CHECK(closest >= 1000.0f);
     CHECK(petits >= landMaps * 150);
 }
@@ -192,8 +194,9 @@ TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
             typeCounts.size());
     // Archipelago coasts: a headland site can stand alone on its
     // stretch of coast, every land partner slot drowned — a walk
-    // cannot reach it and that is the geography's say.
-    CHECK(isolated <= 1);
+    // cannot reach it and that is the geography's say (the warped
+    // coasts of E1b cut a couple per sweep).
+    CHECK(isolated <= 2);
     // F3 compares a site with its lower-rank neighbour on one draw:
     // a few alike pairs survive (measured 4-8 % by world).
     CHECK(100 * alike <= 10 * static_cast<u32>(edges.size())); // water fallbacks re-type after the F3 pass
