@@ -180,6 +180,8 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.hydrology.minLakeDepth = form.hydroMinLakeDepth;
     params.hydrology.minLakeCells = form.hydroMinLakeCells;
     params.hydrology.lakePiercing = form.hydroLakePiercing;
+    params.hydrology.mouthFlare = form.hydroMouthFlare;
+    params.hydrology.mouthFlareLength = form.hydroMouthFlareLength;
     params.hydrology.lakeKeepDepth = form.hydroLakeKeepDepth;
     params.hydrology.lakeDeepPierce = form.hydroLakeDeepPierce;
     params.hydrology.lakeKeepCellsMin = form.hydroLakeKeepCellsMin;
@@ -347,6 +349,8 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.hydroMinLakeDepth = params.hydrology.minLakeDepth;
     form.hydroMinLakeCells = params.hydrology.minLakeCells;
     form.hydroLakePiercing = params.hydrology.lakePiercing;
+    form.hydroMouthFlare = params.hydrology.mouthFlare;
+    form.hydroMouthFlareLength = params.hydrology.mouthFlareLength;
     form.hydroLakeKeepDepth = params.hydrology.lakeKeepDepth;
     form.hydroLakeDeepPierce = params.hydrology.lakeDeepPierce;
     form.hydroLakeKeepCellsMin = params.hydrology.lakeKeepCellsMin;

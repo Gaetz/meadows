@@ -168,6 +168,11 @@ struct HydrologyParams {
     // them on one map (measured). A destination lake is deep AND
     // broad; ~10 ha at the 16 m texel.
     u32 lakeKeepCellsMin { 400 };
+    // Mouth flare (estuaries): a course that reaches the sea opens
+    // over its last metres — half-width ramps to x mouthFlare. The
+    // ribbon and the bed carve both read hw, so the bed follows.
+    f32 mouthFlare { 1.8f };
+    f32 mouthFlareLength { 300.0f };
     // m² of drainage that starts a channel. Paces the STREAM rhythm:
     // ~one watercourse per km of walk (dev arbitration).
     f32 riverArea { 150000.0f };

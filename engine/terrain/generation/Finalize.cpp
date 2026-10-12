@@ -724,6 +724,32 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
         }
     }
 
+    // Estuary sand fans: the beach widens around every sea mouth.
+    vector<Vec2> mouths;
+    constexpr f32 kMouthSandReach = 250.0f; // hand-tuned
+    for (const River& river : hydro.rivers) {
+        if (river.tier < 1 || river.points.empty()) {
+            continue;
+        }
+        const RiverPoint& tail = river.points.back();
+        if (tail.surface <= params.seaLevel + 0.5f) {
+            mouths.push_back({ tail.x, tail.z });
+        }
+    }
+    const auto mouthFan = [&](f32 x, f32 z) -> f32 {
+        f32 best = 1.0e30f;
+        for (const Vec2& m : mouths) {
+            const f32 dx = x - m.x;
+            const f32 dz = z - m.y;
+            best = glm::min(best, dx * dx + dz * dz);
+        }
+        if (best > kMouthSandReach * kMouthSandReach) {
+            return 0.0f;
+        }
+        return 1.0f - noise::smoothstep01(0.0f, kMouthSandReach,
+                                          std::sqrt(best));
+    };
+
     // S6 — coarse mask channels.
     const f32 cellArea = coarse.texelSize * coarse.texelSize;
     out.flow.resize(coarse.cells());
@@ -752,11 +778,15 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                                      0.35f * incNorm);
             // Beach: the shore band, on land, minus underwater texels.
             const f32 d = macro.seaDist[i];
-            const f32 beach =
+            f32 beach =
                 d >= 0.0f
                     ? 1.0f - noise::smoothstep01(params.beachBand * 0.5f,
                                                  params.beachBand, d)
                     : 0.0f;
+            if (d >= -1.0f && !mouths.empty()) {
+                beach = glm::max(
+                    beach, mouthFan(coarse.x(col), coarse.z(row)));
+            }
             // Detail dies on beaches and under/near water, breathes on
             // dry land.
             const f32 detail =

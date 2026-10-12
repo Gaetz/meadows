@@ -615,6 +615,34 @@ MapHydrology extractMapHydrology(
         classifyRivers(out.hydro.rivers, hydrology, params.worldSeed,
                        master);
     }
+    // Mouth flare (estuaries): a course that reaches the sea opens
+    // over its last mouthFlareLength metres. Width-only — the ribbon
+    // and the S5c bed carve both read hw, so the estuary bed follows.
+    if (hydrology.mouthFlare > 1.0f &&
+        hydrology.mouthFlareLength > 1.0f) {
+        for (River& river : out.hydro.rivers) {
+            if (river.points.size() < 2 ||
+                river.points.back().surface >
+                    params.macro.seaLevel + 0.5f) {
+                continue;
+            }
+            f32 arc = 0.0f; // from the mouth, upstream
+            for (size_t k = river.points.size(); k-- > 0;) {
+                if (k + 1 < river.points.size()) {
+                    const RiverPoint& dn = river.points[k + 1];
+                    arc += std::hypot(river.points[k].x - dn.x,
+                                      river.points[k].z - dn.z);
+                }
+                if (arc >= hydrology.mouthFlareLength) {
+                    break;
+                }
+                const f32 t = 1.0f - arc / hydrology.mouthFlareLength;
+                river.points[k].halfWidth *= glm::mix(
+                    1.0f, hydrology.mouthFlare,
+                    t * t * (3.0f - 2.0f * t));
+            }
+        }
+    }
     return out;
 }
 

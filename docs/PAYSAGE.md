@@ -2948,6 +2948,23 @@ l'hydrologie définitive).
   inchangée) — le gain est sur les bassins PROFONDS de marge, pas sur
   le liseré. Suite rapide 706/706.
 
+- **2026-10-12 — F5 livrée : estuaires v1 (évasement + éventail de
+  sable).** Rien n'existait aux embouchures (état des lieux : dernier
+  point fenêtre = première cellule de mer, `reachesSea` maître jamais
+  lu, le far coupe à seaLevel+0,25). v1 data-driven : (1) un cours
+  dont la queue atteint la mer évase sa demi-largeur sur ses derniers
+  `hydroMouthFlareLength` (300 m) jusqu'à ×`hydroMouthFlare` (1,8,
+  knobs pupitre) — le ruban ET le lit S5c suivent (les deux lisent
+  hw) ; (2) le masque beach s'élargit en éventail autour de chaque
+  embouchure tier ≥ 1 (rayon 250 m hand-tuned, gated seaDist ≥ −1) —
+  sable + détail calmé suivent via les consommateurs existants.
+  Mesuré sur (−2,0) (carte côtière, banc) : 18 embouchures ; le
+  fleuve passe de hw 72 (cap loi) à 129,6 au tail (×1,8 exact,
+  estuaire ~260 m) ; éventail présent (36 cellules beach>128 à une
+  embouchure) — sa visibilité au droit des grandes baies dépend du
+  trait de côte macro, à juger à l'œil. Différés journalisés :
+  bras/tresses, bancs de sable émergés. Suite rapide 706/706.
+
 ---
 
 ## 8. Glossaire
