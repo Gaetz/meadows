@@ -2840,6 +2840,35 @@ l'hydrologie définitive).
   lignes. Suite complète Release au vert. Jugement dev EN ATTENTE
   (le tour d'eau qui compte : celui-ci).
 
+- **2026-10-12 — Vérification systématique post-restructuration
+  (demande dev : « d'autres problèmes fondamentaux dans le bake de
+  l'eau ? ») : un trouvé et corrigé, un identifié et différé.**
+  Nouvelles jauges sur les trois cartes v94 : nappes périmées par
+  lac, monotonie des surfaces (7-8 remontées/300 runs — marginal),
+  et points de ruban ENTERRÉS (> 2 m sous le sol au fil de l'eau) :
+  **44-49 % des points** — les rivières disparaissaient sous le
+  terrain par pointillés. Trois causes, trois corrections : (1) les
+  **entailles de percée larges d'une cellule** (16 m) — invisibles au
+  transfert bilinéaire et quittées par les polylignes lissées — la
+  percée creuse désormais une BANDE au gabarit du cours (loi de
+  largeur sur l'aire du bassin, min 2,5 cellules, flancs à 35°) ;
+  (2) les **floorCut des creusements ré-ancrés à la waterline**
+  (surface − profondeur − berge) au lieu du sol local — sûr depuis
+  que les surfaces vivent sur le sol final, et les bosses de détail
+  au-dessus de la waterline sont enfin rabotées (lits S5c, fonds de
+  lacs, étangs) ; (3) les **surfaces re-bornées après lissage** (le
+  lissage déplace les points sans ré-échantillonner leur eau :
+  virage coupé AU-DESSUS d'une gorge = nappe plate sur 100 m de
+  vide) — surface = min(surface, filled au point final + 0,3).
+  Mesuré (0,0) : enterrés **48,4 % → 0,4 %**. RÉSIDU identifié, pour
+  une brique dédiée : le lissage tire encore ~6 % des nœuds sur le
+  REBORD des gorges étroites (l'eau de flood est dans l'entaille, le
+  nœud sur la lèvre ; pire cas 291 m au bord de carte) — la solution
+  propre est un re-snap des polylignes au thalweg (minimum local de
+  filled) après lissage, à construire posément, pas un réglage.
+  Clip des étangs posés déjà dans la restructuration. Suite complète
+  au vert, trois caches v94 relivrés. Jugement dev EN ATTENTE.
+
 ---
 
 ## 8. Glossaire

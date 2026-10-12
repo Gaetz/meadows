@@ -553,9 +553,14 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);
                     const f32 n = dist / glm::max(half, 0.01f);
-                    // The deepest this carve may go below the untouched
-                    // ground: the bed plus a bank (bankMaxCut).
-                    const f32 floorCut = preCarve[i] - depth - params.bankMaxCut;
+                    // The deepest this carve may go: a bank below its
+                    // own WATERLINE. Anchoring the cut to the local
+                    // ground instead left every detail bump above the
+                    // surface un-shaved — dotted rivers (the surface
+                    // now lives on the final ground, so a
+                    // waterline-anchored cut is bounded by nature).
+                    const f32 floorCut =
+                        surface - depth - params.bankMaxCut;
                     if (n <= 1.0f) {
                         // Parabolic bed up to the waterline at the bank.
                         const f32 bed = surface - depth * (1.0f - n * n);
@@ -655,11 +660,12 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                     const size_t i =
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);
-                    // A shore cliff inside the 16 m mask keeps its face:
-                    // the bed plus a bank at most (bankMaxCut).
+                    // Bounded by the SHEET: a bank below the level
+                    // at most (a ground-anchored bound left detail
+                    // bumps poking through the sheet).
                     out.height[i] = glm::max(
                         glm::min(out.height[i], lake.level - depth),
-                        out.height[i] - depth - params.bankMaxCut);
+                        lake.level - depth - params.bankMaxCut);
                 }
             }
         }
@@ -707,11 +713,9 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                 const size_t i =
                     static_cast<size_t>(row) * out.fineSpec.n +
                     static_cast<size_t>(col);
-                // Dish plus a bank below the LOCAL ground, never
-                // more: a pond whose level sits far under the
-                // terrain (hydrology/terrain mismatch) must not
-                // drill a crater down to it.
-                const f32 floorCut = out.height[i] -
+                // Bounded by the pond's own sheet: dish plus a
+                // bank below the LEVEL at most.
+                const f32 floorCut = pond.level -
                                      params.riverDepthMax * 0.5f -
                                      params.bankMaxCut;
                 out.height[i] =

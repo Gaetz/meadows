@@ -1,5 +1,7 @@
 #include "engine/terrain/generation/Hydrology.hpp"
 
+#include "engine/terrain/generation/GridOps.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -7,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Bezier.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/core/Hash.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
@@ -468,7 +471,44 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 continue;
             }
             f32 ramp = floor + 0.3f;
-            ground[gate] = glm::min(ground[gate], ramp);
+            // The notch is a BAND at the gabarit of the course it
+            // will carry, with ~35-degree sides — a one-cell slot
+            // was invisible to the bilinear fine transfer and the
+            // smoothed polylines left it (half the fleuve points sat
+            // 16+ m under the published walls, measured).
+            const f32 bandHalf = glm::clamp(
+                riverLawHalfWidth(
+                    params.widthLaw(),
+                    static_cast<f32>(component.size()) *
+                        spec.texelSize * spec.texelSize),
+                2.5f * spec.texelSize, 6.0f * spec.texelSize);
+            const i32 bandR = static_cast<i32>(
+                std::ceil(bandHalf / spec.texelSize));
+            const auto lowerBand = [&](size_t center, f32 level0) {
+                const i32 cx = static_cast<i32>(center % spec.n);
+                const i32 cz = static_cast<i32>(center / spec.n);
+                for (i32 dz = -bandR; dz <= bandR; ++dz) {
+                    for (i32 dx = -bandR; dx <= bandR; ++dx) {
+                        const i32 px = cx + dx;
+                        const i32 pz = cz + dz;
+                        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                            continue;
+                        }
+                        const f32 dist =
+                            std::sqrt(static_cast<f32>(dx * dx +
+                                                       dz * dz)) *
+                            spec.texelSize;
+                        const f32 lateral =
+                            glm::max(dist - bandHalf, 0.0f);
+                        const f32 target = level0 + 0.7f * lateral;
+                        const size_t p =
+                            static_cast<size_t>(pz) * spec.n +
+                            static_cast<size_t>(px);
+                        ground[p] = glm::min(ground[p], target);
+                    }
+                }
+            };
+            lowerBand(gate, ramp);
             size_t cur = pour;
             for (u32 step = 0; step < 192; ++step) {
                 ramp -= glm::max(params.riverMinGradient, 1.0e-3f) *
@@ -476,7 +516,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 if (ground[cur] <= ramp) {
                     break; // daylight: the land already falls away
                 }
-                ground[cur] = ramp;
+                lowerBand(cur, ramp);
                 const i32 cx = static_cast<i32>(cur % spec.n);
                 const i32 cz = static_cast<i32>(cur / spec.n);
                 size_t next = cur;
@@ -855,6 +895,25 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             river.points.pop_back();
         }
     }
+    // Smoothing MOVED the points without resampling their water: a
+    // course hugging a gorge rim gets its bend cut THROUGH the gorge
+    // while keeping the rim's surface — a flat sheet over 100 m of
+    // air (measured). The surface is re-bounded by the FILL at the
+    // point's final position: only overhangs are cut, pools and flat
+    // reaches keep their level.
+    u32 reBound = 0;
+    for (River& river : out.rivers) {
+        for (RiverPoint& pt : river.points) {
+            const f32 cap =
+                bilinearWorld(spec, out.filled, pt.x, pt.z) + 0.3f;
+            if (pt.surface > cap + 5.0f) {
+                ++reBound;
+            }
+            pt.surface = glm::min(pt.surface, cap);
+        }
+    }
+    LOG_INFO("hydrology: {} smoothed course points re-bounded > 5 m",
+             reBound);
     out.lakes.insert(out.lakes.end(),
                      std::make_move_iterator(ponds.begin()),
                      std::make_move_iterator(ponds.end()));
