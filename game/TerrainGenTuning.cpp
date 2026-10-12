@@ -180,8 +180,9 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.hydrology.minLakeDepth = form.hydroMinLakeDepth;
     params.hydrology.minLakeCells = form.hydroMinLakeCells;
     params.hydrology.lakePiercing = form.hydroLakePiercing;
-    params.hydrology.lakeKeepCells = form.hydroLakeKeepCells;
     params.hydrology.lakeKeepDepth = form.hydroLakeKeepDepth;
+    params.hydrology.lakeDeepPierce = form.hydroLakeDeepPierce;
+    params.hydrology.lakeKeepCellsMin = form.hydroLakeKeepCellsMin;
     params.network.lakeDepth = form.networkLakeDepth;
     params.network.routeDither = form.networkRouteDither;
     params.network.glacierTemp = form.hydroGlacierTemp;
@@ -346,8 +347,9 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.hydroMinLakeDepth = params.hydrology.minLakeDepth;
     form.hydroMinLakeCells = params.hydrology.minLakeCells;
     form.hydroLakePiercing = params.hydrology.lakePiercing;
-    form.hydroLakeKeepCells = params.hydrology.lakeKeepCells;
     form.hydroLakeKeepDepth = params.hydrology.lakeKeepDepth;
+    form.hydroLakeDeepPierce = params.hydrology.lakeDeepPierce;
+    form.hydroLakeKeepCellsMin = params.hydrology.lakeKeepCellsMin;
     form.networkLakeDepth = params.network.lakeDepth;
     form.networkRouteDither = params.network.routeDither;
     form.hydroGlacierTemp = params.network.glacierTemp;

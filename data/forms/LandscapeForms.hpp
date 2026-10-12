@@ -639,8 +639,9 @@ struct TerrainGenTuningForm : Form {
     f32 hydroMinLakeDepth { 0.6f };
     u32 hydroMinLakeCells { 12 };
     bool hydroLakePiercing { true }; // drain the undeserving basins
-    u32 hydroLakeKeepCells { 2000 };
-    f32 hydroLakeKeepDepth { 1000.0f };
+    f32 hydroLakeKeepDepth { 12.0f };
+    f32 hydroLakeDeepPierce { 60.0f };
+    u32 hydroLakeKeepCellsMin { 400 };
     f32 networkLakeDepth { 2.0f };
     f32 networkRouteDither { 1.2f }; // slopes meander, no D8 grid
     f32 hydroGlacierTemp { 0.12f };
@@ -797,8 +798,9 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(hydroMinLakeDepth)
         REFLECT_FIELD(hydroMinLakeCells)
         REFLECT_FIELD(hydroLakePiercing)
-        REFLECT_FIELD(hydroLakeKeepCells)
         REFLECT_FIELD(hydroLakeKeepDepth)
+        REFLECT_FIELD(hydroLakeDeepPierce)
+        REFLECT_FIELD(hydroLakeKeepCellsMin)
         REFLECT_FIELD(networkLakeDepth)
         REFLECT_FIELD(networkRouteDither)
         REFLECT_FIELD(hydroGlacierTemp)

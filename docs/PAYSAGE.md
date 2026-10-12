@@ -2707,6 +2707,50 @@ l'hydrologie définitive).
   ATTENTE (retour sur le fleuve de (-1,0) : le lit plein dans le
   rect sim).
 
+- **2026-10-12 — Passe W (audit eau « tout en un coup », demande dev)
+  : W1 contrat ruban↔nappe, W2 rétention physique des lacs, W3 jauge
+  pérenne. Bump v91, caches (0,0)/(1,0)/(-1,0) livrés.** L'audit
+  préalable (script Python sur les .twb/.trg des trois cartes v90) a
+  chiffré LE problème dominant : 30-42 cas PAR CARTE du trou vu par
+  le dev à (-2574, 4220) — un cours finit dans un lac de la FENÊTRE,
+  la nappe RÉCONCILIÉE ne couvre plus l'intervalle, jusqu'à 1,1 km de
+  lit à sec ; plus 1-2 lacs-canyons par carte (150-264 m de fond) ;
+  lignes entre cartes bornées (≤ 160 m de discordance).
+  **W1 — le contrat ruban↔nappe réparé à la source** : la trace
+  d'extraction ne s'arrête plus aux lacs acceptés (elle chevauche la
+  surface de remplissage, comme pour les cuvettes rejetées ; les
+  spots d'étangs nés DANS une nappe sont filtrés), et c'est
+  l'ÉMISSION par tranche qui coupe les rubans contre les lacs
+  RÉCONCILIÉS — un point de recouvrement de chaque côté (le ruban
+  passe sous la nappe), reprise marquée lakeFed/LakeOutlet (pas de
+  taper). Le drop « tête lac-fed au lac disparu » devient une
+  rétrogradation en source (le cours est long maintenant — le
+  supprimer entier tuait une rivière pour son premier mètre). Mesuré
+  sur (-1,0) : le transect du trou dev 0/36 points secs (vs 32/36),
+  couverture d'eau +3,1 % (+28 ha de trous comblés, pas de double
+  réseau), cours continus sur le plan.
+  **W2 — la rétention devient un VERROU DE SEUIL borné + plancher
+  d'étendue** (`lakeKeepDepth` 12 ≤ verrou < `lakeDeepPierce` 60, ET
+  `lakeKeepCellsMin` 400) : en dessous de la bande, une vallée qu'un
+  ruisseau re-coupe (percée) ; au-dessus, aucun col naturel n'est si
+  haut ici — un mur d'étage a noyé un réseau de vallées (percé en
+  gorge, la rampe suit la plus grande pente jusqu'au jour) ; le
+  plancher d'étendue écarte les tranchées de pied de mur (mesure :
+  profondeur seule retenait 130 lacs dont 124 poches < 200 cellules
+  — la bande + le plancher en gardent 10, les knobs du pupitre
+  affineront vers la cible 3-6). `lakeKeepCells` (taille seule,
+  2000) supprimé. Le monstre 13 326 cellules / 264 m de (-1,0) :
+  percé, sa vallée rendue au réseau.
+  **W3 — la jauge pérenne dans `landscape-report`** : « water
+  audit » par carte — tails orphelins (ni mer, ni nappe, ni reprise,
+  ni bord ; les 4 pires loggés) et dead-ends en nappe. Baseline
+  v91 : (-1,0) 5 orphelins / 17 dead-ends (251 runs), (0,0) 2 / 31
+  (257 runs). Résiduel connu, non bloquant : l'affluent dont le
+  receveur s'est éloigné au lissage meurt dans son étang de jonction
+  (famille préexistante, la jauge la suit). Mesuré : suite complète
+  Release 811/811 (contrats HydrologyTest ré-exprimés sur la bande).
+  Jugement dev EN ATTENTE (tour d'eau sur les trois cartes).
+
 ---
 
 ## 8. Glossaire

@@ -426,9 +426,11 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                     }
                 }
             }
-            if (component.size() >= params.lakeKeepCells ||
-                level - floor >= params.lakeKeepDepth) {
-                continue; // earns its lake
+            const f32 lockDepth = level - floor;
+            if (lockDepth >= params.lakeKeepDepth &&
+                lockDepth < params.lakeDeepPierce &&
+                component.size() >= params.lakeKeepCellsMin) {
+                continue; // earns its lake (see the band in the hpp)
             }
             // The SPILL: the outside neighbour the flood pours into
             // (the lowest filled beside the rim). Notch the gate down
@@ -524,16 +526,16 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     const i32 n = static_cast<i32>(spec.n);
 
     // Rivers: channel cells (area over threshold, on land, not lake),
-    // traced downstream from channel heads. A trace ends at the sea, at
-    // an ACCEPTED lake, at base level, or when it merges into an
-    // already-traced channel (the junction point is appended so ribbons
-    // connect). Only real lakes break a course: a flooded pothole
-    // REJECTED by the size threshold used to break the channel too —
-    // every small basin cut the course into fragments with a dry gap
-    // over the dip (measured: the "rivers constantly interrupted"
-    // report). Tracing THROUGH them rides the spill surface and the
-    // S5c carve keeps the bed below it — the water is continuous in
-    // its own carving, the dip becomes a natural pool.
+    // traced downstream from channel heads. A trace ends at the sea,
+    // at base level, or when it merges into an already-traced channel
+    // (the junction point is appended so ribbons connect). NO lake
+    // breaks a course here: the trace rides the filled spill surface
+    // across every basin, accepted lakes included, and the S5c carve
+    // keeps the bed below it. Which points the published ribbon drops
+    // is decided at SLICE emission, against the RECONCILED lakes —
+    // cutting here against the window lakes left kilometre-long dry
+    // gaps wherever the final ground shrank a window lake (measured:
+    // ~40 gaps per map, audit 2026-10-12).
     vector<u8> acceptedLake(cells, 0);
     // Index of the accepted lake under each cell (-1 = none): the head
     // of an outlet course names its source lake (E5), and the lake's
@@ -699,8 +701,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                 break;
             }
             const u32 r = flow.receiver[i];
-            if (r == i || height[r] <= params.seaLevel ||
-                acceptedLake[r] != 0) {
+            if (r == i || height[r] <= params.seaLevel) {
                 if (r != i) {
                     river.points.push_back(pointAt(r)); // reach the shore
                 }
@@ -758,6 +759,18 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         }
         out.rivers.push_back(std::move(river));
     }
+    // Through-lake tracing puts junctions and hairpins INSIDE lake
+    // sheets: those spots never become ponds (a dug pond under a
+    // nappe is redundant water with its own level).
+    std::erase_if(spots, [&](const PondSpot& spot) {
+        const i32 col = static_cast<i32>(
+            std::lround((spot.x - spec.originX) / spec.texelSize));
+        const i32 row = static_cast<i32>(
+            std::lround((spot.z - spec.originZ) / spec.texelSize));
+        return col >= 0 && row >= 0 && col < n && row < n &&
+               acceptedLake[static_cast<size_t>(row) * spec.n +
+                            static_cast<size_t>(col)] != 0;
+    });
     // Ponds: dedup close spots, dig-flagged lakes; tributary TAILS inside
     // a pond are trimmed (their ribbon dies under the flat surface).
     vector<Lake> ponds;

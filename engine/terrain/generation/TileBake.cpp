@@ -702,11 +702,15 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
                pt.z <= keepMaxZ;
     };
     for (const River& river : hydro.rivers) {
-        if (river.lakeFed != 0 && !river.points.empty() &&
+        // A lake-fed head whose source lake vanished on the final
+        // ground is no longer dropped whole (through-lake tracing
+        // makes courses long — the old drop deleted a river for its
+        // first metre): the head is DEMOTED to a spring, whose taper
+        // hides the start.
+        const bool headLakeGone =
+            river.lakeFed != 0 && !river.points.empty() &&
             !lakeReachesPoint(allLakes, river.points.front().x,
-                              river.points.front().z)) {
-            continue;
-        }
+                              river.points.front().z);
         const auto emit = [&](River&& run) {
             for (const Vec2& ford : river.fords) {
                 for (const RiverPoint& pt : run.points) {
@@ -726,21 +730,82 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
             River run;
             run.tier = river.tier;
             run.mouthArea = river.mouthArea;
-            run.lakeFed = river.lakeFed;
-            run.sourceLake = river.sourceLake;
-            run.headType = river.headType;
+            run.lakeFed = headLakeGone ? u8 { 0 } : river.lakeFed;
+            run.sourceLake = headLakeGone ? -1 : river.sourceLake;
+            run.headType =
+                headLakeGone
+                    ? static_cast<u32>(RiverHeadType::Spring)
+                    : river.headType;
             return run;
         };
+        // Ribbon-vs-nappe contract (audit 2026-10-12): the trace runs
+        // THROUGH window lakes; which points the ribbon drops is
+        // decided HERE, against the RECONCILED lakes — the final
+        // nappes. One point of overlap survives on each side of a
+        // nappe so the ribbon reaches under its sheet (the historical
+        // shore point), and a run resuming past a nappe skips the
+        // spring taper like any outlet.
+        const auto inFinalLake = [&](const RiverPoint& pt) {
+            for (const Lake& lake : allLakes) {
+                if (lake.mask.empty() || lake.maskWidth == 0) {
+                    continue;
+                }
+                if (pt.x < lake.minX || pt.x > lake.maxX ||
+                    pt.z < lake.minZ || pt.z > lake.maxZ) {
+                    continue;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (pt.x - lake.minX) / lake.maskTexel, 0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (pt.z - lake.minZ) / lake.maskTexel, 0.0f)),
+                    lake.maskHeight - 1);
+                if (lake.mask[static_cast<size_t>(mz) *
+                                  lake.maskWidth +
+                              mx]) {
+                    return true;
+                }
+            }
+            return false;
+        };
         River run = freshRun();
+        bool lastInLake = false;
+        const RiverPoint* lastLakePt = nullptr;
         for (const RiverPoint& pt : river.points) {
-            if (inKeep(pt)) {
-                run.points.push_back(pt);
+            if (!inKeep(pt)) {
+                if (run.points.size() >= 2) {
+                    emit(std::move(run));
+                }
+                run = freshRun();
+                lastInLake = false;
+                lastLakePt = nullptr;
                 continue;
             }
-            if (run.points.size() >= 2) {
-                emit(std::move(run));
+            if (inFinalLake(pt)) {
+                if (!lastInLake) {
+                    run.points.push_back(pt); // reach under the sheet
+                    if (run.points.size() >= 2) {
+                        emit(std::move(run));
+                    }
+                    run = freshRun();
+                }
+                lastInLake = true;
+                lastLakePt = &pt;
+                continue;
             }
-            run = freshRun();
+            if (lastInLake) {
+                run = freshRun();
+                run.lakeFed = 1;
+                run.headType =
+                    static_cast<u32>(RiverHeadType::LakeOutlet);
+                if (lastLakePt) {
+                    run.points.push_back(*lastLakePt);
+                }
+                lastInLake = false;
+            }
+            run.points.push_back(pt);
         }
         if (run.points.size() >= 2) {
             emit(std::move(run));

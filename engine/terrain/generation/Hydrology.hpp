@@ -152,11 +152,22 @@ struct HydrologyParams {
     // destination lakes a map should hold, not the 150+ potholes the
     // erosion leaves.
     bool lakePiercing { true };
-    u32 lakeKeepCells { 2000 }; // ~51 ha at the 16 m texel
-    // Depth alone earns NOTHING by default (1000 = off): the zone
-    // storeys are 60 m, every wall-foot trench reads 10-40 m deep —
-    // a destination lake is BIG, an artifact pit is merely deep.
-    f32 lakeKeepDepth { 1000.0f };
+    // Retention is a BAND on the spill-lock depth (the notch a pierce
+    // would cut at the col ~ the basin's depth) — a LOCAL criterion,
+    // stable between neighbouring windows where the old cell-count
+    // test flipped (one map kept the basin its neighbour pierced).
+    // Below the band: a dip any stream re-cuts — a valley, pierced.
+    // Inside: a true kettle/cirque lake — kept. At or above
+    // lakeDeepPierce: no natural col is that high here — a storey
+    // wall drowned a valley network; pierced as a gorge through the
+    // wall (the ramp follows the steepest descent to daylight).
+    f32 lakeKeepDepth { 12.0f };
+    f32 lakeDeepPierce { 60.0f };
+    // Extent floor INSIDE the band: the storey-wall foot trenches are
+    // 10-60 m deep but a few cells wide — depth alone kept 124 of
+    // them on one map (measured). A destination lake is deep AND
+    // broad; ~10 ha at the 16 m texel.
+    u32 lakeKeepCellsMin { 400 };
     // m² of drainage that starts a channel. Paces the STREAM rhythm:
     // ~one watercourse per km of walk (dev arbitration).
     f32 riverArea { 150000.0f };
@@ -222,8 +233,8 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                                  const HydrologyParams& params);
 
 // The outlet piercing (E5, l'« enquête eau ») : flood, find the
-// depressions, DRAIN every one that earns no lake (lakeKeepCells /
-// lakeKeepDepth) through a descending notch carved at its spill, and
+// depressions, DRAIN every one that earns no lake (the lakeKeepDepth /
+// lakeDeepPierce band) through a descending notch carved at its spill, and
 // iterate (a drained bowl can reveal the next). Mutates `ground`
 // BEFORE extractHydrology; bounded; no-op when lakePiercing is off.
 void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,

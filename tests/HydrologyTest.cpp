@@ -368,13 +368,18 @@ TEST_CASE("river tiers: area threshold, fleuve promotion, ford grid") {
 
 TEST_CASE("lake piercing: the shallow bowl drains, the big tarn stays") {
     // A tilted plain draining to the south rim, with two bowls: a
-    // small pothole (pierced — a valley again) and a big tarn (kept
-    // by size: a destination). docs/PAYSAGE.md §7.8 E5.
+    // small pothole (pierced — a valley again) and a big tarn (kept:
+    // its spill lock sits inside the retention band).
+    // docs/PAYSAGE.md §7.8 E5/W2.
     const GridSpec spec { 0.0f, 0.0f, 16.0f, 129 };
     HydrologyParams params;
     params.seaLevel = -1000.0f; // all land: the rim is base level
-    // The test owns its retention bar (the defaults are map-scale).
-    params.lakeKeepCells = 200;
+    // The test owns its retention band (the defaults are map-scale):
+    // the 2 m pothole sits under it, the 9 m tarn inside it; the
+    // extent floor is scaled to the bench tarn (the tilted plain
+    // drowns only its downhill half).
+    params.lakeKeepDepth = 5.0f;
+    params.lakeKeepCellsMin = 100;
     const auto bowl = [&](vector<f32>& g, f32 cx, f32 cz, f32 radius,
                           f32 depth) {
         for (u32 row = 0; row < spec.n; ++row) {
