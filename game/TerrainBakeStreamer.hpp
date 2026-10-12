@@ -43,6 +43,17 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::RiverWidthLaw& law, f32 pinHalfWidth,
     f32 seaLevel, f32 cx, f32 cz, f32 halfSpan);
 
+// A map's hydrology window reaches past its rect, so its lakes' masks
+// overshoot the map line — where the NEIGHBOUR map has its OWN
+// hydrology (divergent window: its own basins, its own piercings).
+// One authority per point: wherever a .twb is read for runtime display
+// (near set, map-lake registry, far set, minimap), a lake's wet cells
+// are clipped to its map's rect. Cells outside turn dry (bbox and mask
+// frame kept — identity-stable for the runtime dedup); a lake left
+// with no wet cell is dropped. Authored maskless ponds pass through.
+void clipLakesToMapRect(vector<render::terraingen::Lake>& lakes,
+                        f32 rectMinX, f32 rectMinZ, f32 rectSize);
+
 // Point query on a far-water set: inside a coarse lake mask or within
 // a fleuve ribbon's half-width. The spawn probe's water oracle before
 // any slice of the map is published (sea level is the caller's).

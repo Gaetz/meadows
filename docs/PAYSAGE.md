@@ -2603,6 +2603,36 @@ l'hydrologie définitive).
   (retour aux coordonnées : l'eau sim doit apparaître sous la nappe
   distante).
 
+- **2026-10-12 — E9c livrée : les lacs clippés au rect de leur carte
+  (suite du tour de test dev : E9b validée sur (0,0), mais « lacs
+  interrompus » sur la carte (1,0), vu à (8428, 468, 2398)).** Le
+  mécanisme : la fenêtre d'hydrologie d'une carte déborde son rect, donc
+  ses masques de lacs aussi — mesuré sur (0,0) : le lac 380,8 va jusqu'à
+  x=9152, 960 m DANS la carte (1,0), le monstre 340,8 jusqu'à 8624 — là
+  où la carte voisine a sa PROPRE hydrologie, divergente (autre fenêtre,
+  autres percées : aucun lac de (1,0) ne couvre le point). Au crossing,
+  ces lacs restent résidents et leur nappe se dessine par-dessus le
+  terrain de la carte active qui ne les connaît pas : quads flottants à
+  flanc, discard sim sans eau sim dessous — et en far,
+  `collectFarWater` lit les 9 cartes voisines, donc la bande de
+  recouvrement montrait les DEUX versions d'un même bassin. La règle
+  posée : **une seule autorité hydrologique par point — l'eau d'une
+  carte s'arrête à sa ligne.** `clipLakesToMapRect` (runtime, à la
+  lecture .twb) assèche les cellules hors rect (bbox et cadre de masque
+  conservés, identité stable) et droppe un lac sans cellule restante ;
+  appliqué aux QUATRE lecteurs : tuile publiée, registre de lacs E9b,
+  far water (au rect de CHAQUE carte lue), minimap. Aucune donnée bakée
+  ne change : pas de bump, cache v89 intact. Mesuré (rejeu Python sur
+  tile_1_0 de (0,0)) : lac 380,8 → 7 088 cellules gardées / 2 216
+  clippées, dernière cellule à x=8184 pour une ligne à 8192 ; un
+  morceau 380,8 entièrement à l'est (114 cellules) droppé ; le point
+  du dev n'est plus couvert. Suite rapide 706/706. Reste la coupure
+  honnête À la ligne quand les deux cartes divergent sur un bassin —
+  la racine est la rétention par TAILLE de `pierceLakeOutlets`
+  (non-locale, donc instable entre fenêtres voisines) : même différé,
+  même cran de pupitre dev que E9b. Jugement dev EN ATTENTE (retour
+  sur la carte (1,0) : plus de nappes orphelines à l'est de la ligne).
+
 ---
 
 ## 8. Glossaire

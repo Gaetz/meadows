@@ -80,6 +80,8 @@ std::optional<MapView> loadMapView(const TileBakeParams& params, i32 mapX,
                                rivers)) {
                 continue;
             }
+            clipLakesToMapRect(lakes, view.minX, view.minZ,
+                               view.mapSize);
             region->detailAmplitude =
                 render::terraingen::kRegionDetailAmplitude;
             region->detailWavelength =

@@ -147,6 +147,50 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
     return static_cast<bool>(file);
 }
 
+void clipLakesToMapRect(vector<Lake>& lakes, f32 rectMinX, f32 rectMinZ,
+                        f32 rectSize) {
+    const f32 rectMaxX = rectMinX + rectSize;
+    const f32 rectMaxZ = rectMinZ + rectSize;
+    for (size_t li = 0; li < lakes.size();) {
+        Lake& lake = lakes[li];
+        if (lake.mask.empty() || lake.maskWidth == 0) {
+            ++li; // authored maskless pond: not map-owned hydrology
+            continue;
+        }
+        if (lake.minX >= rectMinX && lake.maxX <= rectMaxX &&
+            lake.minZ >= rectMinZ && lake.maxZ <= rectMaxZ) {
+            ++li;
+            continue;
+        }
+        u32 wet = 0;
+        for (u32 r = 0; r < lake.maskHeight; ++r) {
+            const f32 z = lake.minZ +
+                          (static_cast<f32>(r) + 0.5f) * lake.maskTexel;
+            for (u32 c = 0; c < lake.maskWidth; ++c) {
+                u8& m = lake.mask[static_cast<size_t>(r) *
+                                      lake.maskWidth +
+                                  c];
+                if (!m) {
+                    continue;
+                }
+                const f32 x = lake.minX + (static_cast<f32>(c) + 0.5f) *
+                                              lake.maskTexel;
+                if (x < rectMinX || x > rectMaxX || z < rectMinZ ||
+                    z > rectMaxZ) {
+                    m = 0;
+                    continue;
+                }
+                ++wet;
+            }
+        }
+        if (wet == 0) {
+            lakes.erase(lakes.begin() + static_cast<ptrdiff_t>(li));
+        } else {
+            ++li;
+        }
+    }
+}
+
 TerrainBakeStreamer::TerrainBakeStreamer(
     const render::terraingen::TileBakeParams& bakeParams,
     std::filesystem::path dir, core::JobSystem* jobSystem,
@@ -213,7 +257,8 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
             mapLakesRequested = true;
             const auto scan = [mapDir, tps, mx = map.mapX,
                                mz = map.mapZ, queue = mapLakesBuilt,
-                               jobsRef = jobs] {
+                               jobsRef = jobs,
+                               tileSize = params.tileSize] {
                 if (jobsRef && jobsRef->isStopping()) {
                     return;
                 }
@@ -237,6 +282,11 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
                         }
                     }
                 }
+                const f32 mapSize = tileSize * static_cast<f32>(tps);
+                clipLakesToMapRect(all,
+                                   static_cast<f32>(mx) * mapSize,
+                                   static_cast<f32>(mz) * mapSize,
+                                   mapSize);
                 queue->push(std::move(all));
             };
             if (jobs) {
@@ -246,8 +296,14 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
             }
         }
         pending.insert(keyOf(tx, tz));
+        const f32 mapSizeOf = params.tileSize * static_cast<f32>(tps);
         const auto work = [mapDir, tx, tz, queue = built,
                            jobsRef = jobs,
+                           mapMinX = static_cast<f32>(map.mapX) *
+                                     mapSizeOf,
+                           mapMinZ = static_cast<f32>(map.mapZ) *
+                                     mapSizeOf,
+                           mapSizeOf,
                            detailAmp =
                                render::terraingen::kRegionDetailAmplitude,
                            detailWave =
@@ -273,6 +329,7 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
                           tx, tz, mapDir.string());
                 return;
             }
+            clipLakesToMapRect(tile.lakes, mapMinX, mapMinZ, mapSizeOf);
             tile.region = std::move(*slice);
             tile.region.detailAmplitude = detailAmp;
             tile.region.detailWavelength = detailWave;
@@ -492,13 +549,24 @@ render::WaterSystem::FarWaterSet collectFarWater(
     vector<Rect> covered;
     // The active map's slice dir and its cached neighbours' (the
     // square reaches into them at 8 km maps); a missing dir is skipped.
-    vector<std::filesystem::path> dirs;
+    // Each dir carries its map rect: the lakes it holds are clipped to
+    // it (clipLakesToMapRect — one hydrology authority per point).
+    struct MapDir {
+        std::filesystem::path path;
+        f32 minX, minZ;
+    };
+    const f32 mapSize = tileSize * static_cast<f32>(kMapTilesPerSide);
+    vector<MapDir> dirs;
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
-            dirs.push_back(mapCacheDir(cacheRoot, mapX + dx, mapZ + dz));
+            dirs.push_back(
+                { mapCacheDir(cacheRoot, mapX + dx, mapZ + dz),
+                  static_cast<f32>(mapX + dx) * mapSize,
+                  static_cast<f32>(mapZ + dz) * mapSize });
         }
     }
-    for (const std::filesystem::path& cacheDir : dirs) {
+    for (const MapDir& mapDirEntry : dirs) {
+    const std::filesystem::path& cacheDir = mapDirEntry.path;
     std::error_code ec;
     for (std::filesystem::directory_iterator it { cacheDir, ec }, end;
          !ec && it != end; it.increment(ec)) {
@@ -527,6 +595,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
         if (!readWaterFile(path, lakes, rivers)) {
             continue;
         }
+        clipLakesToMapRect(lakes, mapDirEntry.minX, mapDirEntry.minZ,
+                           mapSize);
         // Baked tiles own their footprint even when read failed lakes
         // only after this point — the master fallback must never
         // duplicate a course a real bake already carved.
