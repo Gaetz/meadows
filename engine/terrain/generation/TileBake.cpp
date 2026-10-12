@@ -1321,6 +1321,7 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
             RiverPoint& pt = river.points[k];
             const f32 ground = finalGroundAt(region, pt.x, pt.z);
             f32 s;
+            bool inAnyLake = false;
             if (ground < 1.0e8f) {
                 const f32 bed = glm::clamp(
                     finalize.riverDepthCoef * 2.0f * pt.halfWidth,
@@ -1334,10 +1335,45 @@ void reconcileRiversWithTerrain(vector<River>& rivers,
                     // Crossing a reconciled lake: the surface there
                     // IS the lake's (possibly lowered) level.
                     s = lake.level;
+                    inAnyLake = true;
                     break;
                 }
             }
             s = glm::max(s, next); // backwater from downstream
+            // The backwater may not stand above BOTH banks: a pool
+            // wider than its ribbon is a reconciled lake, and those
+            // points were cut — a surviving ribbon point is contained
+            // by its valley. Without this cap, a perched remnant
+            // lake's level flooded kilometres of upstream reach
+            // 25-80 m above the banks (measured dev, (3708, 4673)).
+            // A capped (spilling) profile also STOPS propagating: the
+            // lip it rode was fictitious.
+            if (!inAnyLake && ground < 1.0e8f) {
+                const RiverPoint& pa = river.points[k > 0 ? k - 1 : k];
+                const RiverPoint& pb =
+                    river.points[k + 1 < river.points.size() ? k + 1
+                                                             : k];
+                const f32 dx = pb.x - pa.x;
+                const f32 dz = pb.z - pa.z;
+                const f32 len = std::hypot(dx, dz);
+                if (len > 1.0e-3f) {
+                    const f32 off =
+                        pt.halfWidth + 2.0f * region.texelSize;
+                    const f32 nx = -dz / len * off;
+                    const f32 nz = dx / len * off;
+                    const f32 bankA =
+                        finalGroundAt(region, pt.x + nx, pt.z + nz);
+                    const f32 bankB =
+                        finalGroundAt(region, pt.x - nx, pt.z - nz);
+                    const f32 contain = glm::min(bankA, bankB);
+                    if (contain < 1.0e8f) {
+                        s = glm::min(
+                            s, glm::max(contain + 0.3f,
+                                        ground +
+                                            finalize.riverDepthMin));
+                    }
+                }
+            }
             next = s;
             pt.surface = s;
         }

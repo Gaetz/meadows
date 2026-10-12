@@ -2774,6 +2774,33 @@ l'hydrologie définitive).
   naturels, plus aucun fond sous 340 dans l'emprise. Jugement dev EN
   ATTENTE (retour sur place : un vallon, plus un puits).
 
+- **2026-10-12 — W5 livrée : le backwater borné par les berges
+  (« rivières au-dessus du sol, non bordées par le terrain », vu dev à
+  (3708, 4673) « et à plein d'autres endroits »).** Mesuré au point :
+  un ruban tier 2 à surface PLATE 444 m sur 13+ nœuds, sol publié
+  360-426 dessous, berges du vallon à 418-426 — la surface d'un lac de
+  fenêtre fantôme. Le mécanisme : `reconcileRiversWithTerrain`
+  reconstruit le profil de l'aval vers l'amont avec un backwater
+  monotone, et fait confiance au `lake.level` d'un lac réconcilié
+  croisé en aval — une POCHE résiduelle perchée (le reliquat d'un
+  grand lac de fenêtre effondré) inondait des kilomètres de bief
+  amont à son niveau, 25-80 m au-dessus des berges. Le fix : un point
+  de ruban qui a survécu à la coupe W1 n'est couvert par aucune nappe,
+  donc son eau est CONTENUE par sa vallée — le profil est borné par le
+  sol des deux berges (±(hw + 2 texels), perpendiculaire au segment),
+  et un profil cappé (qui déborderait) cesse de se propager : la lèvre
+  qu'il chevauchait était fictive. Hors rect de tranche : pas de cap
+  (conservateur). Bump **v93**, trois caches relivrés. Mesuré
+  (jauge berges à 1,5·hw+8, intérieur de (0,0)) : points > 20 m
+  au-dessus des deux berges — v90 (AVANT la passe W) 1519/6285
+  (24 %, le symptôme préexistait), v92 2731/8329 (33 %, aggravé par
+  les cours à travers bassins), **v93 1126/8329 (13,5 %)** — mieux
+  que le monde pré-passe en proportion et en absolu. Résiduel : biefs
+  profonds en gorge étroite (berges réelles plus proches que la
+  jauge) et anneaux de bord de tranche/carte — à suivre à la jauge.
+  Suite complète Release 811/811. Jugement dev EN ATTENTE (les
+  rivières dans leur lit, bordées).
+
 ---
 
 ## 8. Glossaire
