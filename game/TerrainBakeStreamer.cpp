@@ -20,7 +20,7 @@ using render::terraingen::Lake;
 using render::terraingen::River;
 using render::terraingen::RiverPoint;
 
-constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '5' };
+constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '6' };
 
 } // namespace
 
@@ -440,8 +440,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
     const render::terraingen::MapGridSpec& grid,
-    const render::terraingen::RiverWidthLaw& law, f32 seaLevel,
-    f32 cx, f32 cz, f32 halfSpan) {
+    const render::terraingen::RiverWidthLaw& law, f32 pinHalfWidth,
+    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan) {
     render::WaterSystem::FarWaterSet set;
     const f32 minX = cx - halfSpan;
     const f32 maxX = cx + halfSpan;
@@ -542,9 +542,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
                 run = {};
             };
             for (const RiverPoint& pt : river.points) {
-                // Only courses wide enough to read at kilometres
-                // (the pinned tier); the sea sheet covers estuaries.
-                if (pt.halfWidth < 4.0f ||
+                // Only courses wide enough to read at kilometres —
+                // the SAME threshold the sim pins at, so what the far
+                // shows is exactly what the near will own; the sea
+                // sheet covers estuaries. The brooks below it render
+                // through the local mesh at their honest lift.
+                if (pt.halfWidth < pinHalfWidth ||
                     pt.surface <= seaLevel + 0.25f) {
                     flush();
                     continue;
@@ -597,12 +600,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
                 run = {};
                 continue;
             }
-            // The shared width law on the effective discharge, so the
-            // far ribbon and the baked one agree at the frontier; the
-            // 4 m floor is only the far-geometry visibility guard.
-            const f32 hw = glm::max(
-                render::terraingen::riverLawHalfWidth(law, node.qArea),
-                4.0f);
+            // The shared width law on the effective discharge, so
+            // the far ribbon and the baked one agree at the frontier
+            // — no floor: a course lies about nothing (the extraction
+            // threshold already keeps master courses ~10 m wide).
+            const f32 hw =
+                render::terraingen::riverLawHalfWidth(law, node.qArea);
             run.nodes.push_back({ node.x, node.z, node.surface, hw });
         }
         if (run.nodes.size() >= 2) {

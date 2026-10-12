@@ -2153,7 +2153,8 @@ Vec3 LandscapeScene::probeSandboxSpawn() const {
     // The map's cached water (nothing is published yet): the probe
     // must not pick a lake bed -- the flattest ground there is.
     const render::WaterSystem::FarWaterSet water = makeFarWaterProvider(
-        activeMapX, activeMapZ, makeMapBakeParams(), sandbox->grid)(
+        activeMapX, activeMapZ, makeMapBakeParams(), sandbox->grid,
+        renderer.waterSystem().simConfig().pinRiverHalfWidth)(
         (static_cast<f32>(activeMapX) + 0.5f) * size,
         (static_cast<f32>(activeMapZ) + 0.5f) * size, size * 0.5f);
     if (const auto spot = render::probeMapSpawn(
@@ -2216,20 +2217,22 @@ void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
 
 render::WaterSystem::FarWaterFn LandscapeScene::makeFarWaterProvider(
     i32 mapX, i32 mapZ, const render::terraingen::TileBakeParams& bake,
-    const render::terraingen::MapGridSpec& grid) const {
+    const render::terraingen::MapGridSpec& grid,
+    f32 pinHalfWidth) const {
     render::terraingen::ProceduralControlParams cp = bake.controls;
     cp.seed = bake.worldSeed;
     render::terraingen::MasterNetworkParams net = bake.network;
     net.seaLevel = bake.macro.seaLevel;
     net.mapGrid = grid;
     return [cp, macro = bake.macro, net, grid,
-            law = bake.hydrology.widthLaw(), sea = tuning.seaLevel,
-            tileSize = bake.tileSize,
+            law = bake.hydrology.widthLaw(), pinHalfWidth,
+            sea = tuning.seaLevel, tileSize = bake.tileSize,
             cacheRoot = platform::executableDir() / "terrain-cache" /
                         std::to_string(tuning.terrainSeed),
             mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
         return collectFarWater(cacheRoot, mapX, mapZ, tileSize, cp, macro,
-                               net, grid, law, sea, cx, cz, halfSpan);
+                               net, grid, law, pinHalfWidth, sea, cx, cz,
+                               halfSpan);
     };
 }
 
@@ -2322,8 +2325,9 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
             tuning.seaLevel;
         // Far water (E4a): distant lakes/rivers for the FarTerrain
         // — cached .twb + master fleuves, gathered on the worker.
-        renderer.waterSystem().setFarWater(
-            makeFarWaterProvider(mapX, mapZ, bakeParams, sandbox->grid));
+        renderer.waterSystem().setFarWater(makeFarWaterProvider(
+            mapX, mapZ, bakeParams, sandbox->grid,
+            renderer.waterSystem().simConfig().pinRiverHalfWidth));
     }
     // The base: the authored regions, plus -- on a crossing -- the
     // previous map's resident slices and water outside the new rect.
@@ -2535,6 +2539,7 @@ void LandscapeScene::publishWaterBodies() {
             node.z = pt.z;
             node.surface = pt.surface;
             node.halfWidth = pt.halfWidth;
+            node.area = pt.area;
             surface.nodes.push_back(node);
             surface.minX = glm::min(surface.minX, pt.x - pt.halfWidth);
             surface.maxX = glm::max(surface.maxX, pt.x + pt.halfWidth);

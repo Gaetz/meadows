@@ -88,6 +88,7 @@ struct RiverNode {
     f32 surface { 0.0f };   // water level at this node (monotone downhill
                             // along the polyline — the bake's contract)
     f32 halfWidth { 0.0f }; // meters
+    f32 area { 0.0f };      // m² of drainage at the node (E9)
 };
 
 struct RiverSurface {

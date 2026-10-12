@@ -83,10 +83,12 @@ vector<f32> bakePoolDepth(const TerrainParams& params,
 }
 
 // Boundary inflow from the BAKED ribbons: any river polyline entering
-// the window injects a discharge derived from its width (the inverse
-// of the classifyRivers width law (Hydrology.hpp, kRiverWidthCoef) —
-// the ribbon's width says how much catchment feeds it). Master-network
-// entries already inject the true areas; skip anything near one.
+// the window injects the discharge of its TRUE per-node drainage
+// (RiverNode::area, serialized since TWB6 — the old width->area
+// inverse undid only the bare sqrt law and lied on every narrowed,
+// floored or ramped reach; record-built worlds carry no area and keep
+// the inverse as a fallback). Master-network entries already inject
+// the true areas; skip anything near one.
 vector<render::terraingen::WaterSource> bakedEntrySources(
     const render::WaterBodies& bodies,
     const render::terraingen::GridSpec& spec,
@@ -103,34 +105,41 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         return x >= spec.originX && x <= maxX && z >= spec.originZ &&
                z <= maxZ;
     };
-    const auto lawQ = [&](f32 halfWidth) {
+    const auto nodeQ = [&](const render::RiverNode& node) {
         const f32 area =
-            render::terraingen::riverAreaFromHalfWidth(halfWidth);
+            node.area > 0.0f
+                ? node.area
+                : render::terraingen::riverAreaFromHalfWidth(
+                      node.halfWidth);
         return render::terraingen::runoffDischarge(area, runoff);
     };
     vector<WaterSource> out;
     for (const render::RiverSurface& river : bodies.rivers) {
-        // DISTRIBUTED runoff along in-window reaches: the baked
-        // half-width GROWS along a course as its local basin feeds it
-        // — inject that growth (the width-law discharge delta between
-        // consecutive nodes, accumulated to a threshold). Without it,
-        // a course whose HEAD lies inside the window had no supply at
-        // all (no boundary crossing, sub-threshold for pins): its
-        // pre-roll water drained and the channel stayed dry (measured
-        // dev, the tier-0 stream at (9534, 2819)). Pinned-wide
-        // reaches skip it (the reservoir supplies).
-        // hand-tuned (dev): x2 flooded the plains once the v67 carve
-        // gave every course a real bed; x1 read thin — 1.6 sits right.
-        constexpr f32 kRunoffBoost = 1.6f;
+        // A HEAD inside the window injects its own discharge (it
+        // crosses no boundary and sits under the pin threshold: with
+        // nothing here, its pre-roll water drained and the channel
+        // stayed dry — the enquête eau runtime).
+        if (!river.nodes.empty()) {
+            const render::RiverNode& head = river.nodes.front();
+            if (inside(head.x, head.z) &&
+                head.halfWidth < pinnedHalfWidth) {
+                out.push_back(
+                    { head.x, head.z, glm::min(nodeQ(head), 30.0f) });
+            }
+        }
+        // DISTRIBUTED runoff along in-window reaches: the drainage
+        // area GROWS along a course as its local basin feeds it —
+        // inject that growth (the discharge delta between consecutive
+        // nodes, accumulated to a threshold). The x1.6 boost died with
+        // the width inverse: the areas are the true ones now.
+        // Pinned-wide reaches skip it (the reservoir supplies).
         f32 accum = 0.0f;
         for (size_t k = 1; k < river.nodes.size(); ++k) {
             const render::RiverNode& na = river.nodes[k - 1];
             const render::RiverNode& nb = river.nodes[k];
             if (inside(na.x, na.z) && inside(nb.x, nb.z) &&
                 nb.halfWidth < pinnedHalfWidth) {
-                accum += kRunoffBoost *
-                         glm::max(0.0f, lawQ(nb.halfWidth) -
-                                            lawQ(na.halfWidth));
+                accum += glm::max(0.0f, nodeQ(nb) - nodeQ(na));
                 if (accum >= 0.05f) {
                     out.push_back(
                         { nb.x, nb.z, glm::min(accum, 30.0f) });
@@ -162,14 +171,8 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
             if (b.halfWidth >= pinnedHalfWidth) {
                 continue;
             }
-            const f32 hw = glm::max(b.halfWidth, 0.5f);
-            const f32 area =
-                render::terraingen::riverAreaFromHalfWidth(hw);
             out.push_back(
-                { b.x, b.z,
-                  glm::min(render::terraingen::runoffDischarge(area,
-                                                               runoff),
-                           120.0f) });
+                { b.x, b.z, glm::min(nodeQ(b), 120.0f) });
         }
     }
     return out;
@@ -742,8 +745,12 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                 // published runtime-side; the generic clamp only
                 // under-lifts fleuves, whose chord already carries
                 // the reconciled depth (max() keeps it).
+                // Floor 0.12 m, not 0.5: a brook reads as the film
+                // it is — the old half-meter lift sold every 1-2 m
+                // course as a river from afar, then the sim showed
+                // the truth up close (the enquête eau runtime).
                 const f32 bed = glm::clamp(
-                    0.18f * 2.0f * nd.halfWidth, 0.5f, 4.0f);
+                    0.18f * 2.0f * nd.halfWidth, 0.12f, 4.0f);
                 nd.surface = glm::max(
                     nd.surface,
                     terrain::height(params, nd.x, nd.z) + bed);

@@ -2536,6 +2536,38 @@ l'hydrologie définitive).
   de jeter le baké ; + trois correctifs sans arbitrage (débit des
   têtes, inverse refait sur les vraies lois ou qArea par point,
   unification des 4.0).
+- **2026-10-12 — E9 livrée : l'eau near/far honnête (option A du dev +
+  les trois correctifs).** L'archéologie d'abord, comme demandé : le
+  check per-texel a été retiré par `50e36ba` parce qu'il montrait LES
+  DEUX réseaux là où la sim et le baké divergent (rubans bakés à
+  flanc de colline à côté de l'eau sim de la vallée, nappes de lacs
+  en surplomb des lèvres de chute) — retrait sain, et l'option A ne
+  le rouvre pas : les ruisseaux sous le seuil d'épinglage n'ont PAS
+  de jumeau sim, les exempter ne peut pas ressusciter le double
+  réseau. (1) **Les brooks existent de près** : les rubans
+  `0 < demi-largeur < pinRiverHalfWidth` sont exempts des deux
+  discards du shader (rect vif et rects gelés ; le seuil voyage dans
+  `uWaterDebugInfo.y`) et leur lift de lisibilité tombe de 0,5 m à
+  **0,12 m** (`clamp(0.36·hw, 0.12, 4)`) : un filet d'eau se lit
+  comme un filet, de près comme de loin. (2) **L'aire de drainage
+  voyage jusqu'au runtime** : `RiverPoint::area` (l'accumulation de
+  fenêtre, remplacée par le qArea maître au point apparié) →
+  **TWB6** → `RiverNode::area` ; `bakedEntrySources` injecte
+  `runoffDischarge(area)` VRAI — l'inverse largeur→aire (qui défaisait
+  la seule racine carrée et mentait sur chaque tronçon resserré,
+  plafonné ou rampé) ne survit qu'en repli pour les mondes construits
+  par records ; le `kRunoffBoost` 1,6 (tuné v67 contre l'inverse
+  faux) meurt avec lui ; et **une tête de cours DANS la fenêtre
+  injecte son propre débit** (elle ne croisait aucun bord : lit à sec
+  mesuré). (3) **Un seul seuil** : le filtre far des rubans .twb et
+  le fallback maître lisent `pinRiverHalfWidth` (le plancher 4 m
+  menteur du fallback disparaît — l'extraction tient déjà les cours
+  maîtres à ~10 m). Bump **v89** (format .twb). Mesuré : suite
+  complète Release **811/811** ; hauteurs STABLES vérifiées
+  expérimentalement (hash cartes 6904514173236907014 identique avec et
+  sans E9, mesuré par stash — E9 ne touche que l eau). Jugement dev EN
+  ATTENTE (en jeu : les ruisseaux visibles de près, les lits plus à
+  sec en s approchant, le débit des cours).
 
 ---
 

@@ -214,7 +214,13 @@ void main() {
     // fade-to-ground painted a green rim band (measured).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
-        if (uWaterSimMapInfo.w > 0.5 && simMode != 1) {
+        // BROOKS (ribbons under the pin threshold) are exempt: the
+        // sim never owns them (no pin, film-only), so cutting them
+        // left dry beds beside far water that promised rivers. They
+        // have no sim twin, so the double-network artifact that
+        // killed the per-texel check cannot return through them.
+        bool brook = vInfo.x > 0.001 && vInfo.x < uWaterDebugInfo.y;
+        if (uWaterSimMapInfo.w > 0.5 && simMode != 1 && !brook) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;
             if (all(greaterThan(rel, vec2(0.0))) &&
@@ -240,7 +246,7 @@ void main() {
         // that survived them are the ring and the ribbons' half-band
         // — the frozen mesh covers both). Entries are zeroed by the
         // CPU in force-baked mode, so no gating needed here.
-        if (simMode != 1) {
+        if (simMode != 1 && !brook) {
             // 4-texel overlap: yield only clearly INSIDE a frozen
             // rect, so no parallax slit opens at its outer edge (the
             // frozen mesh and the baked bodies both draw in the band;

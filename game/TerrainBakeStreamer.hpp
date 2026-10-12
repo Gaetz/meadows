@@ -40,8 +40,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MacroParams& macro,
     const render::terraingen::MasterNetworkParams& net,
     const render::terraingen::MapGridSpec& grid,
-    const render::terraingen::RiverWidthLaw& law, f32 seaLevel,
-    f32 cx, f32 cz, f32 halfSpan);
+    const render::terraingen::RiverWidthLaw& law, f32 pinHalfWidth,
+    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan);
 
 // Point query on a far-water set: inside a coarse lake mask or within
 // a fleuve ribbon's half-width. The spawn probe's water oracle before

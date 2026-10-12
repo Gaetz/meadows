@@ -97,6 +97,11 @@ struct RiverPoint {
     // downstream by construction (the discharge only grows). u32 so
     // the serialized blob carries no padding (TWB4).
     u32 tier { 0 };
+    // m² of drainage AT the point (E9): the window accumulation, or
+    // the master qArea where a node matched — the runtime's discharge
+    // truth (the old width->area inverse undid only the bare sqrt law
+    // and lied on every narrowed, floored or ramped reach). TWB6.
+    f32 area { 0.0f };
 };
 
 // Tier character as the runtime current (m/s): the ruisseau ambles, the

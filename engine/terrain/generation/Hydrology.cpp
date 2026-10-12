@@ -615,6 +615,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             1.0f, 0.45f,
             glm::clamp((slope - 0.05f) / (0.28f - 0.05f), 0.0f, 1.0f));
         pt.halfWidth = glm::max(base * narrow, 1.2f);
+        pt.area = out.area[i];
         return pt;
     };
     vector<PondSpot> spots;
@@ -848,6 +849,7 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
                 }
             }
             if (q > 0.0f) {
+                pt.area = q; // the master's truth beats the window's
                 if (!headTyped) {
                     // The course's source reads the matched master
                     // course's typology (E6) — upstream-most match.

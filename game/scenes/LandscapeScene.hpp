@@ -586,7 +586,8 @@ private:
     render::WaterSystem::FarWaterFn
     makeFarWaterProvider(i32 mapX, i32 mapZ,
                          const render::terraingen::TileBakeParams& bake,
-                         const render::terraingen::MapGridSpec& grid) const;
+                         const render::terraingen::MapGridSpec& grid,
+                         f32 pinHalfWidth) const;
     u32 loadNeighbourOverviews(
         render::SandboxTerrain& sb,
         const render::terraingen::TileBakeParams& bakeParams) const;
