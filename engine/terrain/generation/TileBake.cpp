@@ -507,7 +507,12 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
     // The outlet piercing (E5): the depressions that earn no lake are
     // drained BEFORE extraction — valleys again, and their accumulation
     // flows on to the real lakes and courses downstream.
+    const vector<f32> preGround = out.ground;
     pierceLakeOutlets(out.window, out.ground, hydrology);
+    out.pierceDelta.resize(out.ground.size());
+    for (size_t i = 0; i < out.ground.size(); ++i) {
+        out.pierceDelta[i] = out.ground[i] - preGround[i];
+    }
     out.hydro = extractHydrology(out.window, out.ground, hydrology);
     // Tier classification (S4 tail): the master network's TRUE drainage
     // areas, once for the whole map.
@@ -531,6 +536,37 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
                        master);
     }
     return out;
+}
+
+void applyPierceDelta(TileStage1& mapS1, const MapHydrology& hydro) {
+    if (hydro.pierceDelta.empty()) {
+        return;
+    }
+    const GridSpec& window = hydro.window;
+    const f32 winMaxX =
+        window.originX +
+        static_cast<f32>(window.n - 1) * window.texelSize;
+    const f32 winMaxZ =
+        window.originZ +
+        static_cast<f32>(window.n - 1) * window.texelSize;
+    for (u32 row = 0; row < mapS1.sim.n; ++row) {
+        const f32 z = mapS1.sim.z(row);
+        if (z < window.originZ || z > winMaxZ) {
+            continue;
+        }
+        for (u32 col = 0; col < mapS1.sim.n; ++col) {
+            const f32 x = mapS1.sim.x(col);
+            if (x < window.originX || x > winMaxX) {
+                continue;
+            }
+            const f32 d =
+                bilinearWorld(window, hydro.pierceDelta, x, z);
+            if (d < -0.01f) {
+                mapS1.eroded[static_cast<size_t>(row) * mapS1.sim.n +
+                             col] += d;
+            }
+        }
+    }
 }
 
 TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
@@ -826,7 +862,7 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
     // accepts window-clipped rim basins instead of a 6 km sim.
     TileBakeParams solo = params;
     solo.apron = glm::max(params.apron, params.waterMargin);
-    const TileStage1 mapS1 = bakeTileStage1(solo, tx, tz, cancel);
+    TileStage1 mapS1 = bakeTileStage1(solo, tx, tz, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return {};
     }
@@ -835,6 +871,7 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return {};
     }
+    applyPierceDelta(mapS1, hydro);
     return bakeMapSlice(solo, tx, tz, mapS1, hydro, cancel);
 }
 

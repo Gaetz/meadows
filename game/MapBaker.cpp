@@ -174,8 +174,8 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         mapParams.mapGrid.seaLevel = params.macro.seaLevel;
     }
     const auto s1Start = std::chrono::steady_clock::now();
-    const TileStage1 mapS1 = bakeTileStage1(mapParams, mapX, mapZ,
-                                            cancel);
+    TileStage1 mapS1 = bakeTileStage1(mapParams, mapX, mapZ,
+                                      cancel);
     stats.stage1Seconds = secondsSince(s1Start);
     if (cancelled()) {
         stats.cancelled = true;
@@ -200,6 +200,9 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
              mapX, mapZ, mapHydro.window.n, mapHydro.window.n,
              secondsSince(hydroStart), mapHydro.hydro.lakes.size(),
              mapHydro.hydro.rivers.size());
+    // The piercing becomes map terrain BEFORE the slices bake (and
+    // before the overview is decimated from the same surface).
+    applyPierceDelta(mapS1, mapHydro);
 
     // Slices are independent given the const shared stage-1+hydrology:
     // workers write their own files, the caller only counts

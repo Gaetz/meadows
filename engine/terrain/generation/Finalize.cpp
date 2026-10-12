@@ -647,7 +647,15 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                 const size_t i =
                     static_cast<size_t>(row) * out.fineSpec.n +
                     static_cast<size_t>(col);
-                out.height[i] = glm::min(out.height[i], bed);
+                // Dish plus a bank below the LOCAL ground, never
+                // more: a pond whose level sits far under the
+                // terrain (hydrology/terrain mismatch) must not
+                // drill a crater down to it.
+                const f32 floorCut = out.height[i] -
+                                     params.riverDepthMax * 0.5f -
+                                     params.bankMaxCut;
+                out.height[i] =
+                    glm::max(glm::min(out.height[i], bed), floorCut);
             }
         }
     }

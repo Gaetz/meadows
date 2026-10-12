@@ -200,8 +200,20 @@ struct MapHydrology {
     GridSpec window;    // map rect + waterMargin, at macroTexel
     vector<f32> ground; // the map surface on `window` (reconcile
                         //   fallback outside a slice's rect)
+    // What pierceLakeOutlets CUT out of the hydrology ground (<= 0,
+    // on `window`). Must be applied back onto the shared stage-1
+    // (applyPierceDelta) before the slices bake: the courses, ponds
+    // and carves live at the PIERCED floor — without the delta they
+    // sat up to ~140 m under the published ground, and the pond dig
+    // drilled craters down to them (measured dev, (2900, 4771)).
+    vector<f32> pierceDelta;
     HydrologyResult hydro;
 };
+
+// Lowers the shared stage-1 by the piercing's delta (gorges and
+// drained basin floors become real map terrain). Call once, between
+// extractMapHydrology and the slice bakes.
+void applyPierceDelta(TileStage1& mapS1, const MapHydrology& hydro);
 
 // `mapS1.sim` must cover `window` (bake the map stage-1 with apron >=
 // waterMargin; production uses kMapApron). There is no cross-slice
@@ -271,7 +283,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 91;
+constexpr u32 kTileBakeVersion = 92;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

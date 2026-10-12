@@ -2751,6 +2751,29 @@ l'hydrologie définitive).
   Release 811/811 (contrats HydrologyTest ré-exprimés sur la bande).
   Jugement dev EN ATTENTE (tour d'eau sur les trois cartes).
 
+- **2026-10-12 — W4 livrée : la percée devient du terrain de carte
+  (« gros trou circulaire » vu dev à (2900, 4771)).** Le cratère :
+  W2 perce les bassins dans la FENÊTRE d'hydrologie, mais le sol des
+  TRANCHES ne voyait jamais la percée — les cours W1 et leurs étangs
+  de jonction vivaient au fond percé (~288 m) sous un sol publié à
+  428 m, et le dig parabolique des étangs posés, SANS borne basse,
+  forait des puits circulaires de 140 m jusqu'à eux (mesuré : fonds
+  plats à 282-285 m en taches de 100-200 m le long de l'axe du
+  bassin vidé). Deux correctifs : (1) `extractMapHydrology` exporte
+  `pierceDelta` (≤ 0, grille fenêtre) et `applyPierceDelta` l'applique
+  au stage-1 partagé AVANT les tranches ET l'overview — gorges
+  d'entaille et fonds drainés deviennent du vrai terrain 16 m lissé,
+  tout l'aval (carve, étangs, rubans, sim, far) redevient cohérent ;
+  (2) ceinture sur le dig des étangs (coupe bornée à cuvette + berge
+  sous le sol local — l'analogue du floorCut que le carve S5c avait
+  déjà). Connu/assumé : le biome du fond d'un grand bassin vidé reste
+  celui de l'altitude pré-percée (les champs stage-1 dérivés ne sont
+  pas recalculés). Bump **v92**, trois caches relivrés. Mesuré au
+  point : v91 412→282→426 (puits vertical), v92 412→342→412 (vallon
+  gradué) ; audit (0,0) : 2 orphelins / 14 dead-ends, 13 lacs
+  naturels, plus aucun fond sous 340 dans l'emprise. Jugement dev EN
+  ATTENTE (retour sur place : un vallon, plus un puits).
+
 ---
 
 ## 8. Glossaire
