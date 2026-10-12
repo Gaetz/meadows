@@ -784,7 +784,11 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                 dx = 1.0f;
                 dz = 0.0f;
             }
-            const f32 half = node.halfWidth * 1.15f;
+            // 1.4: the carve wets the inner bank shoulder past the
+            // law width — the quad must reach it, the depth test
+            // cuts the exact shoreline (dry-bed margins measured at
+            // ~1.5x the law width in pierced-band troughs).
+            const f32 half = node.halfWidth * 1.4f;
             const f32 flowX = dx * river.flowSpeed;
             const f32 flowZ = dz * river.flowSpeed;
             const u32 left =

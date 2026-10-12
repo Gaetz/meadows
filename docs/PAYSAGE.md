@@ -2869,6 +2869,33 @@ l'hydrologie définitive).
   Clip des étangs posés déjà dans la restructuration. Suite complète
   au vert, trois caches v94 relivrés. Jugement dev EN ATTENTE.
 
+- **2026-10-12 — Le lit sec (vu dev à (6800, 9886) sur (0,1) : « une
+  rivière qui n'allait pas jusqu'au bord de son lit » ; « pour le
+  reste c'est beaucoup mieux qu'avant »).** Mesuré : auge de ±30 m à
+  fond PLAT (−9,3 m constant — la bande de percée de la veille,
+  min 2,5 cellules) pour un ruban de hw 16 : ~15 m de lit à sec par
+  rive. Corrections, et deux essais ANNULÉS honnêtement : (1) la
+  bande de percée est dimensionnée par le DÉBIT AU COL
+  (`routeFlow` par passe, déjà payé par le flood ; la loi sur
+  l'accumulation du gate — l'aire de la composante taillait des lits
+  de 60 m pour des cours de 16) et son fond devient un **V doux**
+  (pente 15 % vers les bords, flancs 35 % au-delà) — une vallée, pas
+  un lit d'eau ; min re-serré à 1,25 cellule ; (2) le mesh du ruban
+  couvre **1,4×hw** (au lieu de 1,15) : le carve mouille l'épaule
+  interne au-delà de la loi, le quad doit l'atteindre, le depth-test
+  taille le rivage exact. ANNULÉS après mesure : le re-snap ITÉRÉ au
+  thalweg (4 pas — zigzags vers les cuvettes voisines, jauges
+  dégradées ; retour au pas unique) et l'adaptation wet-width au
+  bake (elle scannait le sol de FENÊTRE alors que la section mouillée
+  naît du carve de phase C — code retiré). Bump **v95** (dû aussi
+  pour les durcissements de la veille, sortis à clé égale), QUATRE
+  caches livrés ((0,1) compris — baké en jeu par le dev). Jauges
+  (0,0) : enterrés 0,9-1,1 %, débordement > 20 m 8,7-8,9 % (vs 24 %
+  v90 ; le reliquat vit aux rebords de gorges — la vraie brique
+  re-snap reste à concevoir au-delà du pas unique). Suite complète
+  Release au vert. Jugement dev EN ATTENTE (retour au point : berges
+  en pente douce mouillées par le ruban élargi).
+
 ---
 
 ## 8. Glossaire

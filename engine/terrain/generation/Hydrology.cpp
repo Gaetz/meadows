@@ -384,6 +384,12 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         const vector<f32> filled =
             priorityFloodFill(spec, ground, params.seaLevel,
                               params.minSlope, &epsScalePierce);
+        // Accumulation on this pass's surface: the notch band is cut
+        // at the LAW gabarit of the discharge crossing the gate — the
+        // course that will run there (sizing it on the basin's cell
+        // count cut 60 m beds for 16 m rivers, measured dev).
+        const vector<f32> passArea =
+            routeFlow(spec, filled, ground, params.seaLevel).area;
         vector<u32> label(cells, 0);
         u32 nextLabel = 0;
         u32 pierced = 0;
@@ -477,11 +483,8 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             // smoothed polylines left it (half the fleuve points sat
             // 16+ m under the published walls, measured).
             const f32 bandHalf = glm::clamp(
-                riverLawHalfWidth(
-                    params.widthLaw(),
-                    static_cast<f32>(component.size()) *
-                        spec.texelSize * spec.texelSize),
-                2.5f * spec.texelSize, 6.0f * spec.texelSize);
+                riverLawHalfWidth(params.widthLaw(), passArea[gate]),
+                1.25f * spec.texelSize, 6.0f * spec.texelSize);
             const i32 bandR = static_cast<i32>(
                 std::ceil(bandHalf / spec.texelSize));
             const auto lowerBand = [&](size_t center, f32 level0) {
@@ -498,9 +501,15 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                             std::sqrt(static_cast<f32>(dx * dx +
                                                        dz * dz)) *
                             spec.texelSize;
+                        // Gentle V inside the band (a FLAT floor
+                        // read as a dry riverbed beside the actual
+                        // ribbon — measured dev), steep sides past
+                        // it.
+                        const f32 inner = glm::min(dist, bandHalf);
                         const f32 lateral =
                             glm::max(dist - bandHalf, 0.0f);
-                        const f32 target = level0 + 0.7f * lateral;
+                        const f32 target = level0 + 0.15f * inner +
+                                           0.7f * lateral;
                         const size_t p =
                             static_cast<size_t>(pz) * spec.n +
                             static_cast<size_t>(px);
@@ -778,6 +787,54 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     // (complex junctions used to slip through here, ribbons stabbing
     // each other with no pond and no tail dissolve).
     mergeByProximity(smoothed, 1.1f, spots);
+    // Phase 4b — THALWEG re-snap: smoothing cuts bends, and in a
+    // narrow gorge the cut lands on the RIM while the water of the
+    // flood is at the bottom (ribbon hugging one bank, dry bed on
+    // the other — measured dev). Each point drifts toward the
+    // lowest FILL among its 3x3 neighbour cells, bounded to under a
+    // texel so the smoothed curve stays smooth. A pure function of
+    // the position: merged junction points shared by two courses
+    // snap identically.
+    for (River& river : smoothed) {
+        for (RiverPoint& pt : river.points) {
+            const i32 cc = static_cast<i32>(
+                std::lround((pt.x - spec.originX) / spec.texelSize));
+            const i32 cr = static_cast<i32>(
+                std::lround((pt.z - spec.originZ) / spec.texelSize));
+            f32 here = bilinearWorld(spec, out.filled, pt.x, pt.z);
+            f32 bestF = here;
+            f32 bx = pt.x;
+            f32 bz = pt.z;
+            for (i32 dz = -1; dz <= 1; ++dz) {
+                for (i32 dx = -1; dx <= 1; ++dx) {
+                    const i32 px = cc + dx;
+                    const i32 pz = cr + dz;
+                    if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                        continue;
+                    }
+                    const f32 f =
+                        out.filled[static_cast<size_t>(pz) * spec.n +
+                                   static_cast<size_t>(px)];
+                    if (f < bestF - 0.5f) {
+                        bestF = f;
+                        bx = spec.x(static_cast<u32>(px));
+                        bz = spec.z(static_cast<u32>(pz));
+                    }
+                }
+            }
+            if (bestF < here - 0.5f) {
+                const f32 dx = bx - pt.x;
+                const f32 dz = bz - pt.z;
+                const f32 len = std::hypot(dx, dz);
+                const f32 step =
+                    glm::min(len, 0.8f * spec.texelSize);
+                if (len > 1.0e-3f) {
+                    pt.x += dx / len * step;
+                    pt.z += dz / len * step;
+                }
+            }
+        }
+    }
     // Phase 5 — hairpin ponds on what remains.
     for (River& river : smoothed) {
         if (river.points.size() < params.minRiverPoints) {
