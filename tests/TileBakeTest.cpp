@@ -7,6 +7,7 @@
 #include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
+#include "game/TerrainBakeStreamer.hpp"
 
 // Seconds-to-minutes cases (bakes, sims): the "slow" suite, skipped by
 // the fast run (-tse=slow), kept by the full one (docs/AUDIT/U9-tests.md).
@@ -333,8 +334,15 @@ TEST_CASE("border basins publish once: no stacked duplicate sheets") {
     // published by both (truncated differently, different spill
     // levels). With the canonical resolution, overlapping masks from
     // the two bakes must not happen.
-    const TileBakeResult a = bakeSoloTile(params, 0, 0);
-    const TileBakeResult b = bakeSoloTile(params, 1, 0);
+    TileBakeResult a = bakeSoloTile(params, 0, 0);
+    TileBakeResult b = bakeSoloTile(params, 1, 0);
+    // A margin basin straddling the line is published by BOTH maps
+    // since the clamped ownership (each map is the authority inside
+    // its own rect); the runtime clips every lake to its map's rect,
+    // and THAT is the no-overlap contract to hold.
+    game::clipLakesToMapRect(a.lakes, 0.0f, 0.0f, params.tileSize);
+    game::clipLakesToMapRect(b.lakes, params.tileSize, 0.0f,
+                             params.tileSize);
 
     const auto covers = [](const Lake& lake, f32 x, f32 z) {
         if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
