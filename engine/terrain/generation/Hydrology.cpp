@@ -146,40 +146,6 @@ void smoothRiver(River& river, const GridSpec& spec,
         RiverPoint pt;
         pt.x = course[i].x;
         pt.z = course[i].z;
-        // Valley constraint: smoothing cuts bends, and in a narrow
-        // gorge the cut lands on the RIM while the water of the raw
-        // trace is at the bottom. The smoothed point may not stand on
-        // ground whose FILL is more than kClimb above the raw path's
-        // fill at the same arc — bisect back toward the raw position
-        // until it does. (A post-hoc per-point snap to the local fill
-        // minimum zigzagged into neighbouring pits — measured and
-        // reverted; constraining the smoothing itself keeps the curve
-        // smooth AND in its valley.)
-        {
-            constexpr f32 kClimb = 1.5f;
-            const f32 rawX = glm::mix(raw[seg].x, raw[next].x, t);
-            const f32 rawZ = glm::mix(raw[seg].z, raw[next].z, t);
-            const f32 fillRaw =
-                bilinearWorld(spec, filled, rawX, rawZ);
-            if (bilinearWorld(spec, filled, pt.x, pt.z) >
-                fillRaw + kClimb) {
-                f32 lo = 0.0f;
-                f32 hi = 1.0f;
-                for (u32 it = 0; it < 3; ++it) {
-                    const f32 mid = 0.5f * (lo + hi);
-                    const f32 mx = glm::mix(pt.x, rawX, mid);
-                    const f32 mz = glm::mix(pt.z, rawZ, mid);
-                    if (bilinearWorld(spec, filled, mx, mz) >
-                        fillRaw + kClimb) {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                pt.x = glm::mix(pt.x, rawX, hi);
-                pt.z = glm::mix(pt.z, rawZ, hi);
-            }
-        }
         pt.surface = level;
         const f32 alongMod =
             0.85f + 0.3f * noise::value(riverSeed ^ 0x9e3779b9u,
@@ -824,54 +790,6 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     // (complex junctions used to slip through here, ribbons stabbing
     // each other with no pond and no tail dissolve).
     mergeByProximity(smoothed, 1.1f, spots);
-    // Phase 4b — THALWEG re-snap: smoothing cuts bends, and in a
-    // narrow gorge the cut lands on the RIM while the water of the
-    // flood is at the bottom (ribbon hugging one bank, dry bed on
-    // the other — measured dev). Each point drifts toward the
-    // lowest FILL among its 3x3 neighbour cells, bounded to under a
-    // texel so the smoothed curve stays smooth. A pure function of
-    // the position: merged junction points shared by two courses
-    // snap identically.
-    for (River& river : smoothed) {
-        for (RiverPoint& pt : river.points) {
-            const i32 cc = static_cast<i32>(
-                std::lround((pt.x - spec.originX) / spec.texelSize));
-            const i32 cr = static_cast<i32>(
-                std::lround((pt.z - spec.originZ) / spec.texelSize));
-            f32 here = bilinearWorld(spec, out.filled, pt.x, pt.z);
-            f32 bestF = here;
-            f32 bx = pt.x;
-            f32 bz = pt.z;
-            for (i32 dz = -1; dz <= 1; ++dz) {
-                for (i32 dx = -1; dx <= 1; ++dx) {
-                    const i32 px = cc + dx;
-                    const i32 pz = cr + dz;
-                    if (px < 0 || pz < 0 || px >= n || pz >= n) {
-                        continue;
-                    }
-                    const f32 f =
-                        out.filled[static_cast<size_t>(pz) * spec.n +
-                                   static_cast<size_t>(px)];
-                    if (f < bestF - 0.5f) {
-                        bestF = f;
-                        bx = spec.x(static_cast<u32>(px));
-                        bz = spec.z(static_cast<u32>(pz));
-                    }
-                }
-            }
-            if (bestF < here - 0.5f) {
-                const f32 dx = bx - pt.x;
-                const f32 dz = bz - pt.z;
-                const f32 len = std::hypot(dx, dz);
-                const f32 step =
-                    glm::min(len, 0.8f * spec.texelSize);
-                if (len > 1.0e-3f) {
-                    pt.x += dx / len * step;
-                    pt.z += dz / len * step;
-                }
-            }
-        }
-    }
     // Phase 5 — hairpin ponds on what remains.
     for (River& river : smoothed) {
         if (river.points.size() < params.minRiverPoints) {

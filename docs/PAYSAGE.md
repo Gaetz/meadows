@@ -2991,6 +2991,25 @@ l'hydrologie définitive).
   dev EN ATTENTE (tour d'eau : sources embrumées en approche,
   estuaires évasés et sableux, rien de cassé ailleurs).
 
+- **2026-10-12 — RÉGRESSION (vu dev : « le nombre de rivières
+  au-dessus de leur lit a explosé, des petits ruisseaux deviennent
+  d'énormes chutes ») : F1 ANNULÉE, et le re-snap 1-pas de v95 avec
+  elle — bump v98.** La question du dev « ça peut venir d'une étape
+  précédente ? » a mené à LA jauge décisive (virages > 45° entre
+  segments de polyligne, (0,0)) : v90-v94 **0,0 %** ; **v95 : 22,2 %**
+  (le re-snap « 1 pas vers le min 3×3 » introduit dans le lot lit-sec
+  et jamais annulé quand sa version itérée l'a été) ; **v97 : 35,5 %**
+  (la bissection F1 EMPILÉE dessus). Les zigzags tordaient les quads
+  des rubans (élargis ×1,4 au même moment : très visibles), l'eau
+  flottait hors de son lit et les biefs hachés lisaient comme des
+  cascades. Retirés tous les deux : **v98 = 0,0 % de virages serrés,
+  enterrés 0,8 %, débordement 6,0 %** — le meilleur état mesuré (les
+  snaps DÉGRADAIENT aussi la jauge qu'ils visaient). Leçon durcie :
+  tout déplacement de points post-lissage recrée du crénelage — le
+  problème « rebord de gorge » se traitera dans le lissage amont
+  (différé, avec la jauge de virages comme garde-fou) ou pas du tout.
+  Quatre caches v98 relivrés, suites au vert.
+
 ---
 
 ## 8. Glossaire
