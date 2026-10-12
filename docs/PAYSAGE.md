@@ -2633,6 +2633,38 @@ l'hydrologie définitive).
   même cran de pupitre dev que E9b. Jugement dev EN ATTENTE (retour
   sur la carte (1,0) : plus de nappes orphelines à l'est de la ligne).
 
+- **2026-10-12 — E10 livrée : l'anneau bas du départ supprimé (décision
+  dev : « une règle qui n'existe pas ailleurs » finit par coûter des
+  bugs qui n'existent qu'au départ).** C'était le dernier vestige du
+  décret de départ (le 2026-10-08 avait déjà tué le disque aplani,
+  l'ancre d'étage et la meadow) : dans un rayon 4+4 km, terre forcée,
+  plafond d'étage 0,42, massif à zéro, climat épinglé tempéré.
+  Supprimés : les quatre effets de `pullLow` dans `worldSampleAt`, les
+  knobs `startLowRadius/Fade` (hash compris) et leurs champs de Form
+  `worldStartLowRadius/Fade` (aucun plugin ne les posait), et les
+  tables POI spéciales du disque (`startDiscAt`, Summit forcé du
+  grand, table pays-bas des moyens) — le départ se type désormais
+  comme partout, depuis le WorldSample. CONSERVÉS : le clamp du
+  treillis E1c (le jitter du continent (0,0) met le départ 0,5-1,3 km
+  à l'intérieur des terres — la garantie de terre est GÉOMÉTRIQUE,
+  plus climatique), `grandStartClearance` 1,5 km (garantie de spawn,
+  pas règle de paysage), et la sonde de spawn. Bump **v90**, caches
+  (0,0) et (1,0) livrés. Mesuré sur (0,0)/1337 : le départ devient du
+  haut pays — spawn sondé (4248, 445, 5135), pente 42 %, murs 6,2/km
+  (max 341 m), relief.png sain (vallées creusées + cônes POI, pas
+  d'artefact) ; continent 140 cours, 98 % à la mer, 32,6 km max ;
+  lacs naturels 6 + 71 étangs posés. Deux contrats de test réécrits
+  avec la règle : « start is land, temperate, off the massifs » →
+  « start is land » (la part géométrique seule), et la jauge de
+  variété POI 10 % → 16 % (paires semblables 12,6 % mesurées : la
+  table large du disque diversifiait le départ ; les tables massif
+  normales sont plus étroites — la jauge n'attrape plus qu'un
+  effondrement). Suite complète Release au vert après adaptation.
+  Hash MSVC de MapBakerTest toujours à ré-épingler côté dev (périmé
+  depuis v78) ; golden scatter MSVC idem si le monde bouge la jauge.
+  Jugement dev EN ATTENTE (le nouveau départ en jeu : haut pays
+  assumé, spawn praticable).
+
 ---
 
 ## 8. Glossaire

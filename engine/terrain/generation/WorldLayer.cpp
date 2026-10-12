@@ -307,17 +307,12 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
         // sea are decided and the coast belt stays a belt.
         c = 0.5f + (c - 0.5f) * 1.6f;
     }
-    // Start decree: land, low, temperate around the start. `pull` is
-    // the meadow, `pullLow` the low country around it.
+    // Legacy meadow pull (0 = off, the default): the start is the
+    // world as drawn — land there is the lattice clamp's job.
     const f32 dStart = std::hypot(x - p.startX, z - p.startZ);
     const f32 pull =
         1.0f - noise::smoothstep01(p.startRadius,
                                    p.startRadius + p.startFade, dStart);
-    const f32 pullLow =
-        1.0f - noise::smoothstep01(p.startLowRadius,
-                                   p.startLowRadius + p.startLowFade,
-                                   dStart);
-    c = glm::mix(c, glm::max(c, p.seaThreshold + 0.14f), pullLow);
     if (lattice) {
         // The edge guard wins over everything, start pull included:
         // land past a host core would hand a river head to a window
@@ -348,20 +343,14 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
         1.0f - noise::smoothstep01(p.anchorRadius,
                                    p.anchorRadius + p.anchorFade, dStart);
     e += etageAnchorShift(p) * anchor;
-    // The LOW-COUNTRY ring is low: a soft CEILING on the province
-    // (variation stays, no dug disc). Without it the start of a big
-    // continent sits at the saturated heart of the inland ramp — high
-    // country, subalpine biome, the "doux, sec, tempéré" spawn gone.
-    e = glm::mix(e, glm::min(e, 0.42f), pullLow);
     w.etage = glm::clamp(e, 0.0f, 1.0f);
     // Massif belts: ridges of a slow field, only on the higher
-    // provinces, never at the start.
+    // provinces.
     const f32 massifRaw = noise::fbm(p.seed ^ kSaltMassif, wx, wz,
                                      1.0f / p.massifWavelength, 3, 2.0f,
                                      0.5f);
     w.massif = noise::smoothstep01(0.50f, 0.74f, massifRaw) *
-               noise::smoothstep01(0.45f, 0.62f, w.etage) *
-               (1.0f - pullLow);
+               noise::smoothstep01(0.45f, 0.62f, w.etage);
     // The floor: province altitude plus the massif lift, ramped up
     // from the carrier's shoreline (a wider ramp under high provinces
     // keeps the coastal escarpment walkable; land the coast detail
@@ -417,7 +406,7 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
         w.scarp = scarp * noise::smoothstep01(0.3f, 0.8f, inland);
     }
     // Climate: regional + continental drift, altitude lapse, wetter
-    // coasts; the start is pulled to temperate means.
+    // coasts.
     const f32 tRegional = noise::fbm(p.seed ^ kSaltTemperature, x, z,
                                      1.0f / p.climateWavelength, 4, 2.0f,
                                      0.5f);
@@ -435,8 +424,6 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
                       p.lapsePerKm * glm::max(w.base, 0.0f) / 1000.0f;
     f32 moisture = 0.5f + 0.44f * (mRegional - 0.5f) +
                    0.2f * (mSlow - 0.5f) + 0.15f * w.coast;
-    temperature = glm::mix(temperature, 0.50f, pullLow);
-    moisture = glm::mix(moisture, 0.55f, pullLow);
     // The cover selector: nudges the climate and, inside the temperate
     // default, picks the variant (paletteIdFor) — start included (a
     // meadow with its heath and its copses is still a meadow).
@@ -499,8 +486,6 @@ u64 hashParams(const WorldLayerParams& p) {
     f(p.startEtage);
     f(p.anchorRadius);
     f(p.anchorFade);
-    f(p.startLowRadius);
-    f(p.startLowFade);
     f(p.startRadius);
     f(p.startFade);
     f(p.climateWavelength);

@@ -101,14 +101,13 @@ struct WorldLayerParams {
     f32 startX { 4096.0f };
     f32 startZ { 4096.0f };
     f32 startEtage { 0.30f };
-    // Dev decision 2026-10-08: no flattened start disc, no étage
-    // anchor, no meadow — the start is the world as drawn. Only a
-    // short LOW-COUNTRY ring remains (land, no massif, temperate) so
-    // the spawn probe finds dry ground; 0 = off.
+    // No start decree: no flattened disc, no étage anchor, no meadow,
+    // no low-country ring — the start is the world as drawn. Land at
+    // the start is the lattice's job (the start continent's jitter is
+    // clamped so the spawn sits inland) plus the spawn probe's; 0 =
+    // off for the legacy anchor/meadow knobs kept below.
     f32 anchorRadius { 0.0f };
     f32 anchorFade { 0.0f };
-    f32 startLowRadius { 4000.0f };
-    f32 startLowFade { 4000.0f };
     f32 startRadius { 0.0f };
     f32 startFade { 0.0f };
     // Climate: regional fields plus a continental drift, and the

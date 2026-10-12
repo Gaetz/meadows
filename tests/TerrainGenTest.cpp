@@ -739,42 +739,31 @@ TEST_CASE("world layer: continuous across a map line, bounded slopes") {
     CHECK(worstScarp <= 3.0f); // a four-storey wall (240 m) over the 90 m riser
 }
 
-TEST_CASE("world layer: the start is land, temperate, off the massifs for any seed") {
+TEST_CASE("world layer: the start is land for any seed") {
     for (const u32 seed :
          { 1u, 7u, 42u, 99u, 1337u, 2024u, 31337u, 65535u }) {
         ProceduralControlParams pc;
         pc.seed = seed;
         const ProceduralControls controls { pc };
         const WorldLayerParams& world = controls.params().world;
-        WorldSample w;
         const ControlSample centre =
-            controls.at(world.startX, world.startZ, w);
-        // Temperate family: the default (0) and its cover variants,
-        // heath (4) and dry meadow (5) — at the start's altitude and
-        // pulled climate nothing else produces those ids.
-        const auto temperateFamily = [](u8 id) {
-            return id == 0 || id == 4 || id == 5 || (id >= 6 && id <= 9);
-        };
-        // The short start ring: land, no massif, temperate at the
-        // centre — no flattened meadow, no étage anchor any more (dev
-        // decision 2026-10-08).
+            controls.at(world.startX, world.startZ);
+        // No start decree: the start is the world as drawn — climate,
+        // étage and massifs land wherever the world puts them. What
+        // stays guaranteed is GEOMETRY: the start continent's jitter
+        // is clamped so the spawn sits inland, for any seed.
         CHECK_FALSE(centre.sea);
-        CHECK(w.massif < 0.05f);
-        CHECK(temperateFamily(centre.biome));
-        // The start map's rect: land, temperate, almost everywhere.
-        u32 samples = 0, land = 0, temperate = 0;
+        // The start map's rect: mostly land.
+        u32 samples = 0, land = 0;
         for (f32 z = 200.0f; z < 8192.0f; z += 400.0f) {
             for (f32 x = 200.0f; x < 8192.0f; x += 400.0f) {
-                const ControlSample s = controls.at(x, z);
                 ++samples;
-                land += !s.sea;
-                temperate += !s.sea && temperateFamily(s.biome);
+                land += !controls.at(x, z).sea;
             }
         }
         CHECK(100 * land >= 50 * samples);
-        CHECK(100 * temperate >= 35 * samples);
-        // The 6 km disc around it (the low-country ring): land, a
-        // coast may show at its edge.
+        // The 6 km disc around the start: land, a coast may show at
+        // its edge.
         u32 discSamples = 0, discLand = 0;
         for (f32 dz = -6000.0f; dz <= 6000.0f; dz += 400.0f) {
             for (f32 dx = -6000.0f; dx <= 6000.0f; dx += 400.0f) {

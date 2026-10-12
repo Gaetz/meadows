@@ -54,8 +54,6 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.controls.world.startEtage = form.worldStartEtage;
     params.controls.world.startRadius = form.worldStartRadius;
     params.controls.world.startFade = form.worldStartFade;
-    params.controls.world.startLowRadius = form.worldStartLowRadius;
-    params.controls.world.startLowFade = form.worldStartLowFade;
     params.controls.world.anchorRadius = form.worldAnchorRadius;
     params.controls.world.anchorFade = form.worldAnchorFade;
     params.controls.world.climateWavelength = form.worldClimateWavelength;
@@ -224,8 +222,6 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.worldStartEtage = params.controls.world.startEtage;
     form.worldStartRadius = params.controls.world.startRadius;
     form.worldStartFade = params.controls.world.startFade;
-    form.worldStartLowRadius = params.controls.world.startLowRadius;
-    form.worldStartLowFade = params.controls.world.startLowFade;
     form.worldAnchorRadius = params.controls.world.anchorRadius;
     form.worldAnchorFade = params.controls.world.anchorFade;
     form.worldClimateWavelength = params.controls.world.climateWavelength;

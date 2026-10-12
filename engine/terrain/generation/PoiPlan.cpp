@@ -69,8 +69,8 @@ f32 roll01(u32 h, u32 k) {
 
 // The catalogue's tables (docs/POI-CATALOGUE.md §F1): the type of a
 // site from its tier and its world sample. `alt` re-rolls (rules F2/F3).
-PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
-                 u32 hash, u32 alt) {
+PoiType drawType(PoiTier tier, const WorldSample& w, u32 hash,
+                 u32 alt) {
     const f32 r = roll01(hash, 11 + alt);
     const f32 base = glm::max(w.base, 0.0f);
     const bool arid = w.moisture < 0.38f && w.temperature > 0.58f;
@@ -79,9 +79,6 @@ PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
         if (w.sea) {
             return w.coast > 0.4f && w.massif > 0.3f ? PoiType::Fjord
                                                       : PoiType::Islet;
-        }
-        if (startDisc) {
-            return PoiType::Summit;
         }
         if (w.coast > 0.5f) {
             return PoiType::Headland;
@@ -114,19 +111,6 @@ PoiType drawType(PoiTier tier, const WorldSample& w, bool startDisc,
     // Moyen.
     if (w.sea) {
         return PoiType::Islet;
-    }
-    if (startDisc) {
-        // Low country around the start: no massif types, but its
-        // water (a step, a confluence) and its lakes.
-        const Weighted t[] = { { PoiType::Butte, 26.0f },
-                               { PoiType::Ridge, 14.0f },
-                               { PoiType::Grove, 12.0f },
-                               { PoiType::LoneTree, 8.0f },
-                               { PoiType::PlainLake, 14.0f },
-                               { PoiType::Waterfall, 10.0f },
-                               { PoiType::Confluence, 6.0f },
-                               { PoiType::CityPad, 10.0f } };
-        return pick(t, 8, r);
     }
     if (w.coast > 0.5f) {
         const Weighted t[] = { { PoiType::Headland, 35.0f },
@@ -376,11 +360,6 @@ void sizeSite(const PoiPlanParams& plan, PoiSite& s) {
     }
 }
 
-bool startDiscAt(const WorldLayerParams& world, f32 x, f32 z) {
-    return std::hypot(x - world.startX, z - world.startZ) <
-           world.startLowRadius + world.startLowFade;
-}
-
 // Lexicographic rank of a cell: the lower-ranked neighbour keeps its
 // draw, the higher re-rolls (rules F2/F3, one level deep).
 bool lowerRank(i32 ax, i32 az, i32 bx, i32 bz) {
@@ -423,7 +402,7 @@ Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan) {
 PoiType baseDraw(const WorldLayerParams& world, PoiTier tier,
                  const PoiSite& s) {
     const WorldSample w = worldSampleAt(world, s.x, s.z);
-    return drawType(tier, w, startDiscAt(world, s.x, s.z), s.hash, 0);
+    return drawType(tier, w, s.hash, 0);
 }
 
 const CellSite& typedSite(const WorldLayerParams& world,
@@ -516,9 +495,8 @@ const CellSite& typedSite(const WorldLayerParams& world,
             cell.present = false;
             return memo.sites.emplace(key, cell).first->second;
         }
-        const bool startDisc = startDiscAt(world, s.x, s.z);
         u32 alt = 0;
-        s.type = drawType(tier, w, startDisc, s.hash, alt);
+        s.type = drawType(tier, w, s.hash, alt);
         if (tier == PoiTier::Grand) {
             // F2: never the same grand as a lower-ranked neighbour.
             for (u32 tries = 0; tries < 3; ++tries) {
@@ -541,7 +519,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 if (!clash) {
                     break;
                 }
-                s.type = drawType(tier, w, startDisc, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt);
             }
         } else if (tier == PoiTier::Moyen) {
             // F3: never the same type as a lower-ranked graph neighbour
@@ -574,7 +552,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 if (!clash) {
                     break;
                 }
-                s.type = drawType(tier, w, startDisc, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt);
             }
         }
         // Rule F5: a waterfall, a canyon or a confluence needs a
@@ -588,7 +566,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
             for (u32 tries = 0; tries < 3 && waterCourseType(s.type) &&
                                 !(hit.found && hit.dist <= plan.waterPoiReach);
                  ++tries) {
-                s.type = drawType(tier, w, startDisc, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt);
             }
             if (waterCourseType(s.type)) {
                 if (hit.found && hit.dist <= plan.waterPoiReach) {

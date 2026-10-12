@@ -209,8 +209,11 @@ TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
     // coasts of E1b cut a couple per sweep).
     CHECK(isolated <= 2);
     // F3 compares a site with its lower-rank neighbour on one draw:
-    // a few alike pairs survive (measured 4-8 % by world).
-    CHECK(100 * alike <= 10 * static_cast<u32>(edges.size())); // water fallbacks re-type after the F3 pass
+    // a share of alike pairs survives. Measured 4-8 % by world while
+    // the start disc drew from its own wide table; 12-13 % with the
+    // start typed from the normal (narrower) massif tables like
+    // everywhere else — the guard only catches a collapse of variety.
+    CHECK(100 * alike <= 16 * static_cast<u32>(edges.size())); // water fallbacks re-type after the F3 pass
     CHECK(typeCounts.size() >= 5);
 }
 

@@ -508,8 +508,6 @@ struct TerrainGenTuningForm : Form {
     f32 worldStartEtage { 0.30f };
     f32 worldStartRadius { 0.0f };
     f32 worldStartFade { 0.0f };
-    f32 worldStartLowRadius { 4000.0f };
-    f32 worldStartLowFade { 4000.0f };
     f32 worldAnchorRadius { 0.0f };
     f32 worldAnchorFade { 0.0f };
     f32 worldClimateWavelength { 9000.0f };
@@ -676,8 +674,6 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(worldStartEtage)
         REFLECT_FIELD(worldStartRadius)
         REFLECT_FIELD(worldStartFade)
-        REFLECT_FIELD(worldStartLowRadius)
-        REFLECT_FIELD(worldStartLowFade)
         REFLECT_FIELD(worldAnchorRadius)
         REFLECT_FIELD(worldAnchorFade)
         REFLECT_FIELD(worldClimateWavelength)
