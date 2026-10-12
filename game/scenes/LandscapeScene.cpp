@@ -2877,6 +2877,25 @@ void LandscapeScene::finalizeSandboxSpawn() {
         return;
     }
     const render::TerrainParams& params = renderer.terrainParams();
+    // The search must stay INSIDE the active map's rect: a crossing
+    // arrival sits meters from the line, the previous map's kept
+    // slices make the far side look dry and trustworthy, and a spawn
+    // relocated across the line is immediately bounced back by the
+    // crossing detector (travel ping-pong, measured on a west line).
+    // Inset past the detector's 8 m hysteresis.
+    const auto& sandboxParams = params.sandbox;
+    const bool bounded = sandboxParams && sandboxParams->grid.valid;
+    const f32 mapSize = bounded ? sandboxParams->grid.mapSize : 0.0f;
+    const f32 rectMinX = static_cast<f32>(activeMapX) * mapSize;
+    const f32 rectMinZ = static_cast<f32>(activeMapZ) * mapSize;
+    constexpr f32 kRectInset = 16.0f;
+    const auto inActiveMap = [&](f32 x, f32 z) {
+        return !bounded ||
+               (x >= rectMinX + kRectInset &&
+                x <= rectMinX + mapSize - kRectInset &&
+                z >= rectMinZ + kRectInset &&
+                z <= rectMinZ + mapSize - kRectInset);
+    };
     const auto wetAt = [&](f32 x, f32 z, f32& outH) {
         outH = render::terrain::height(params, x, z);
         if (!terrainBase || !terrainBase->regionAt(x, z)) {
@@ -2904,7 +2923,7 @@ void LandscapeScene::finalizeSandboxSpawn() {
                     static_cast<f32>(k) * (6.2831853f / 12.0f);
                 const f32 x = sandboxSpawn.x + std::cos(angle) * radius;
                 const f32 z = sandboxSpawn.z + std::sin(angle) * radius;
-                if (!wetAt(x, z, ground)) {
+                if (inActiveMap(x, z) && !wetAt(x, z, ground)) {
                     sandboxSpawn = { x, ground, z };
                     relocated = true;
                 }

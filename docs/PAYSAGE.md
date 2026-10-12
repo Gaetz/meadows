@@ -2665,6 +2665,26 @@ l'hydrologie définitive).
   Jugement dev EN ATTENTE (le nouveau départ en jeu : haut pays
   assumé, spawn praticable).
 
+- **2026-10-12 — E10b livrée : le ping-pong de traversée ouest (vu dev :
+  « je charge la nouvelle map puis je recharge juste après la première
+  map » vers la carte (-1,0)).** Le mécanisme : l'arrivée d'un crossing
+  est posée ~8 m derrière la ligne ; si elle est mouillée (ou non
+  fiable), la validation de spawn du warmup (`finalizeSandboxSpawn`)
+  cherche un point sec en anneaux de 60 m sur 12 angles — et l'angle
+  k=0 pointe plein EST : le premier candidat essayé retraverse la
+  ligne, tombe sur les tranches RÉSIDENTES de l'ancienne carte
+  (gardées au crossing : publiées, donc « fiables », et sèches), le
+  spawn y est relogé, et le détecteur de traversée (hystérésis 8 m)
+  renvoie vers la première carte dès la fin du warmup. Deux autorités
+  en désaccord sur « où suis-je » : la recherche ignorait le rect de
+  la carte active que le détecteur fait respecter. Fix : la recherche
+  de spawn est bornée au rect de la carte active (inset 16 m, au-delà
+  de l'hystérésis) — un candidat hors rect est rejeté ; si tout est
+  mouillé dans le rayon, l'ancien repli (garder le point sondé,
+  loggé) s'applique. Runtime seul, pas de bump. Mesuré : suite rapide
+  706/706. Jugement dev EN ATTENTE (retraverser la ligne ouest de
+  (0,0) : une seule transition, pas de retour).
+
 ---
 
 ## 8. Glossaire
