@@ -198,76 +198,66 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
 
 struct MapHydrology {
     GridSpec window;    // map rect + waterMargin, at macroTexel
-    vector<f32> ground; // the map surface on `window` (reconcile
-                        //   fallback outside a slice's rect)
+    vector<f32> ground; // the FINAL map surface on `window` (the
+                        //   phase-A grounds decimated, pierced)
     // What pierceLakeOutlets CUT out of the hydrology ground (<= 0,
-    // on `window`). Must be applied back onto the shared stage-1
-    // (applyPierceDelta) before the slices bake: the courses, ponds
-    // and carves live at the PIERCED floor — without the delta they
-    // sat up to ~140 m under the published ground, and the pond dig
-    // drilled craters down to them (measured dev, (2900, 4771)).
+    // on `window`). Applied onto each slice's FINE ground
+    // (applyPierceDelta) before the water carves: gorges and drained
+    // basin floors are terrain, not just hydrology bookkeeping.
     vector<f32> pierceDelta;
     HydrologyResult hydro;
 };
 
-// Lowers the shared stage-1 by the piercing's delta (gorges and
-// drained basin floors become real map terrain). Call once, between
-// extractMapHydrology and the slice bakes.
-void applyPierceDelta(TileStage1& mapS1, const MapHydrology& hydro);
+// The TWO-PHASE map bake (restructuration eau, PAYSAGE §7.8):
+//   A. bakeSliceGround — the final terrain, water-free (fine erosion
+//      steered by the stage-1 drainage field only);
+//   B. extractMapHydrology ON those grounds — flood, piercing, lakes
+//      and courses live on the terrain the player walks, so water
+//      meets its banks BY CONSTRUCTION (no reconcile pile);
+//   C. bakeSliceWater — pierce delta + water carves + masks + the
+//      published region and .twb content.
 
-// `mapS1.sim` must cover `window` (bake the map stage-1 with apron >=
-// waterMargin; production uses kMapApron). There is no cross-slice
-// truncation inside a map — basins clipped at the MAP window rim are
-// identical for every slice (the border transitions make the rim
-// sea/ridge).
-MapHydrology extractMapHydrology(const TileBakeParams& params,
-                                 const TileStage1& mapS1, i32 mapX,
-                                 i32 mapZ, i32 tilesPerSide,
-                                 const std::atomic<bool>* cancel =
-                                     nullptr);
+// The stage-1 drainage steering field (drainageArea on the hydrology
+// window): computed once per map, shared by every slice's ground pass.
+struct MapDrainage {
+    GridSpec window;
+    vector<f32> area;
+};
+MapDrainage computeMapDrainage(const TileBakeParams& params,
+                               const TileStage1& mapS1, i32 mapX,
+                               i32 mapZ, i32 tilesPerSide);
 
-// Finalizes ONE slice of the map against the shared surface and
-// hydrology. Lake ownership = bbox center in the slice rect (no anchor
-// machinery — one solve, one identity per basin).
-TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
-                            i32 tz, const TileStage1& mapS1,
-                            const MapHydrology& mapHydro,
-                            const std::atomic<bool>* cancel = nullptr);
-
-// The hydrology floods lakes on the COMPOSITE terrain, BEFORE the
-// finalize passes — and the discharge-driven fine erosion then carves
-// gorges the flood never saw. A lake mask can therefore claim water
-// over ground that no longer holds it (a floating slab pouring into a
-// carved canyon, measured in-game at (7918, 597)). Run AFTER the
-// region's final heights exist: per lake, a priority flood on the
-// PUBLISHED ground finds the true spill of its deepest cell — the
-// level is lowered to it (never raised), the mask re-cut to the cells
-// actually enclosed, and a lake left shallower than ~0.5 m is
-// dropped. Ground outside the region rect reads as the coarse
-// `fallbackGround` on `fallbackSpec` when given (the map surface — the
-// owner's mask survives past its slice rect), else as a wall
-// (conservative: the old behavior cut every cross-border lake to its
-// rect).
-void reconcileLakesWithTerrain(vector<Lake>& lakes,
-                               const render::TerrainRegion& region,
-                               const GridSpec* fallbackSpec = nullptr,
-                               const vector<f32>* fallbackGround =
+// Phase A — one slice's final ground, no water.
+FinalizeResult bakeSliceGround(const TileBakeParams& params, i32 tx,
+                               i32 tz, const TileStage1& mapS1,
+                               const MapDrainage& drainage,
+                               const std::atomic<bool>* cancel =
                                    nullptr);
 
-// Same debt for the RIVERS: their node surfaces come from the
-// pre-finalize hydrology, and the carves (plus the lake reconcile
-// above) can leave ribbons hanging over deepened beds or lowered
-// lakes. The profile is REBUILT from the mouth upstream: surface =
-// final ground + the tier's carved bed depth (the S5d formula),
-// nodes inside a reconciled lake at its level, each raised by the
-// downstream water (backwater) — monotone downhill by construction
-// and always ABOVE the bed (a downstream running-min dived under
-// every local bed rise: torrents flowing inside their channel
-// walls). Ground outside the published rect keeps the baked surface.
-void reconcileRiversWithTerrain(vector<River>& rivers,
-                                const vector<Lake>& lakes,
-                                const render::TerrainRegion& region,
-                                const FinalizeParams& finalize);
+// Lowers a slice's FINE ground by the piercing's delta. Called by
+// bakeSliceWater before the carves.
+void applyPierceDelta(FinalizeResult& fine, const MapHydrology& hydro);
+
+// Phase B — `groundSlices` are the phase-A results (any order); the
+// window samples them where covered and falls back to the stage-1
+// (blended over ~192 m past the map rect). `mapS1.sim` must cover
+// `window` (production apron kMapApron >= waterMargin).
+MapHydrology extractMapHydrology(
+    const TileBakeParams& params, const TileStage1& mapS1, i32 mapX,
+    i32 mapZ, i32 tilesPerSide,
+    const vector<const FinalizeResult*>& groundSlices,
+    const std::atomic<bool>* cancel = nullptr);
+
+// Phase C — water carves + masks + region crop + water sidecar
+// content for ONE slice, consuming its phase-A ground. Lake ownership
+// = bbox center in the slice rect (one solve, one identity per
+// basin).
+TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
+                              i32 tz, const TileStage1& mapS1,
+                              const MapHydrology& mapHydro,
+                              FinalizeResult&& fine,
+                              const std::atomic<bool>* cancel =
+                                  nullptr);
 
 // Does any lake's footprint still cover the neighbourhood of (x, z)
 // (a dilated probe, ONE mask texel)? Used to drop lake-fed courses
@@ -283,7 +273,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 93;
+constexpr u32 kTileBakeVersion = 94;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

@@ -476,10 +476,11 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     return out;
 }
 
-MapHydrology extractMapHydrology(const TileBakeParams& params,
-                                 const TileStage1& mapS1, i32 mapX,
-                                 i32 mapZ, i32 tilesPerSide,
-                                 const std::atomic<bool>* cancel) {
+MapHydrology extractMapHydrology(
+    const TileBakeParams& params, const TileStage1& mapS1, i32 mapX,
+    i32 mapZ, i32 tilesPerSide,
+    const vector<const FinalizeResult*>& groundSlices,
+    const std::atomic<bool>* cancel) {
     MapHydrology out;
     const f32 mapSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
@@ -491,12 +492,60 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
     out.window.n =
         texels(mapSize + 2.0f * params.waterMargin, params.macroTexel) +
         1;
+    // The window samples the FINAL (phase-A) ground where the slices
+    // cover it — water placed on the terrain the player walks — and
+    // falls back to the stage-1 past the map rect (blended over
+    // ~192 m so the flood sees no step along the coverage edge).
+    const f32 mapMinX = static_cast<f32>(mapX) * mapSize;
+    const f32 mapMinZ = static_cast<f32>(mapZ) * mapSize;
+    const auto groundAt = [&](f32 x, f32 z) -> f32 {
+        const f32 s1 = bilinearWorld(mapS1.sim, mapS1.eroded, x, z);
+        // Among the covering slices, the one holding the point
+        // DEEPEST inside wins: a slice's outer kFineErosionHalo ring
+        // is edge-effect territory (sampling it flooded a buried
+        // lake 40 m under the owner slice's real ground, measured on
+        // a slice line).
+        const FinalizeResult* best = nullptr;
+        f32 bestMargin = -1.0e9f;
+        for (const FinalizeResult* g : groundSlices) {
+            if (!g || g->height.empty()) {
+                continue;
+            }
+            const GridSpec& fs = g->fineSpec;
+            const f32 maxX =
+                fs.originX + static_cast<f32>(fs.n - 1) * fs.texelSize;
+            const f32 maxZ =
+                fs.originZ + static_cast<f32>(fs.n - 1) * fs.texelSize;
+            const f32 margin = glm::min(
+                glm::min(x - fs.originX, maxX - x),
+                glm::min(z - fs.originZ, maxZ - z));
+            if (margin < 0.0f) {
+                continue;
+            }
+            if (margin > bestMargin) {
+                bestMargin = margin;
+                best = g;
+            }
+        }
+        if (!best) {
+            return s1;
+        }
+        const f32 fineH =
+            bilinearWorld(best->fineSpec, best->height, x, z);
+        const f32 dOut = glm::max(
+            glm::max(mapMinX - x, x - (mapMinX + mapSize)),
+            glm::max(mapMinZ - z, z - (mapMinZ + mapSize)));
+        if (dOut <= 0.0f) {
+            return fineH;
+        }
+        const f32 w = 1.0f - glm::smoothstep(0.0f, 192.0f, dOut);
+        return glm::mix(s1, fineH, w);
+    };
     out.ground.resize(out.window.cells());
     for (u32 row = 0; row < out.window.n; ++row) {
         for (u32 col = 0; col < out.window.n; ++col) {
             out.ground[static_cast<size_t>(row) * out.window.n + col] =
-                bilinearWorld(mapS1.sim, mapS1.eroded,
-                              out.window.x(col), out.window.z(row));
+                groundAt(out.window.x(col), out.window.z(row));
         }
     }
     if (cancel && cancel->load(std::memory_order_relaxed)) {
@@ -538,53 +587,76 @@ MapHydrology extractMapHydrology(const TileBakeParams& params,
     return out;
 }
 
-void applyPierceDelta(TileStage1& mapS1, const MapHydrology& hydro) {
-    if (hydro.pierceDelta.empty()) {
+void applyPierceDelta(FinalizeResult& fine, const MapHydrology& hydro) {
+    if (hydro.pierceDelta.empty() || fine.height.empty()) {
         return;
     }
     const GridSpec& window = hydro.window;
+    const GridSpec& fs = fine.fineSpec;
     const f32 winMaxX =
         window.originX +
         static_cast<f32>(window.n - 1) * window.texelSize;
     const f32 winMaxZ =
         window.originZ +
         static_cast<f32>(window.n - 1) * window.texelSize;
-    for (u32 row = 0; row < mapS1.sim.n; ++row) {
-        const f32 z = mapS1.sim.z(row);
+    for (u32 row = 0; row < fs.n; ++row) {
+        const f32 z = fs.z(row);
         if (z < window.originZ || z > winMaxZ) {
             continue;
         }
-        for (u32 col = 0; col < mapS1.sim.n; ++col) {
-            const f32 x = mapS1.sim.x(col);
+        for (u32 col = 0; col < fs.n; ++col) {
+            const f32 x = fs.x(col);
             if (x < window.originX || x > winMaxX) {
                 continue;
             }
             const f32 d =
                 bilinearWorld(window, hydro.pierceDelta, x, z);
             if (d < -0.01f) {
-                mapS1.eroded[static_cast<size_t>(row) * mapS1.sim.n +
-                             col] += d;
+                fine.height[static_cast<size_t>(row) * fs.n + col] +=
+                    d;
             }
         }
     }
 }
 
-TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
-                            i32 tz, const TileStage1& mapS1,
-                            const MapHydrology& mapHydro,
-                            const std::atomic<bool>* cancel) {
-    const auto cancelled = [cancel] {
-        return cancel && cancel->load(std::memory_order_relaxed);
-    };
+MapDrainage computeMapDrainage(const TileBakeParams& params,
+                               const TileStage1& mapS1, i32 mapX,
+                               i32 mapZ, i32 tilesPerSide) {
+    MapDrainage out;
+    const f32 mapSize =
+        params.tileSize * static_cast<f32>(tilesPerSide);
+    out.window.texelSize = params.macroTexel;
+    out.window.originX =
+        static_cast<f32>(mapX) * mapSize - params.waterMargin;
+    out.window.originZ =
+        static_cast<f32>(mapZ) * mapSize - params.waterMargin;
+    out.window.n =
+        texels(mapSize + 2.0f * params.waterMargin, params.macroTexel) +
+        1;
+    vector<f32> ground(out.window.cells());
+    for (u32 row = 0; row < out.window.n; ++row) {
+        for (u32 col = 0; col < out.window.n; ++col) {
+            ground[static_cast<size_t>(row) * out.window.n + col] =
+                bilinearWorld(mapS1.sim, mapS1.eroded,
+                              out.window.x(col), out.window.z(row));
+        }
+    }
+    HydrologyParams hydrology = params.hydrology;
+    hydrology.seaLevel = params.macro.seaLevel;
+    out.area = drainageArea(out.window, ground, hydrology);
+    return out;
+}
+
+FinalizeResult bakeSliceGround(const TileBakeParams& params, i32 tx,
+                               i32 tz, const TileStage1& mapS1,
+                               const MapDrainage& drainage,
+                               const std::atomic<bool>* cancel) {
     const f32 tileMinX = static_cast<f32>(tx) * params.tileSize;
     const f32 tileMinZ = static_cast<f32>(tz) * params.tileSize;
     const TileStage1& self = mapS1;
     const GridSpec& sim = self.sim;
-    const GridSpec& window = mapHydro.window;
-    const HydrologyResult& hydro = mapHydro.hydro;
 
-    // --- Finalize the slice against the SHARED map surface and
-    // hydrology (the slice finalize prologue, self = the map).
+    // --- The slice finalize prologue (self = the map).
     MacroResult macroFields;
     macroFields.spec = sim;
     macroFields.seaDist = self.seaDist;
@@ -648,14 +720,52 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
     finalize.fineMinX = keepMinX - kFineErosionHalo;
     finalize.fineMinZ = keepMinZ - kFineErosionHalo;
     finalize.fineSpan = keepSpan + 2.0f * kFineErosionHalo;
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        return {};
+    }
+    return finalizeGround(
+        sim, self.eroded, macroFields,
+        drainage.area.empty() ? nullptr : &drainage.area,
+        drainage.area.empty() ? nullptr : &drainage.window, finalize,
+        params.worldSeed,
+        character.fineScale.empty() ? nullptr : &character.fineScale,
+        cancel);
+}
+
+TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
+                              i32 tz, const TileStage1& mapS1,
+                              const MapHydrology& mapHydro,
+                              FinalizeResult&& fineIn,
+                              const std::atomic<bool>* cancel) {
+    const auto cancelled = [cancel] {
+        return cancel && cancel->load(std::memory_order_relaxed);
+    };
+    const f32 tileMinX = static_cast<f32>(tx) * params.tileSize;
+    const f32 tileMinZ = static_cast<f32>(tz) * params.tileSize;
+    const TileStage1& self = mapS1;
+    const GridSpec& sim = self.sim;
+    const GridSpec& window = mapHydro.window;
+    const HydrologyResult& hydro = mapHydro.hydro;
+    const f32 keepMinX = tileMinX - params.overlapMargin;
+    const f32 keepMinZ = tileMinZ - params.overlapMargin;
+    const f32 keepSpan = params.tileSize + 2.0f * params.overlapMargin;
+
+    FinalizeResult fine = std::move(fineIn);
+    // The piercing is terrain: gorges and drained basin floors land
+    // in the fine ground BEFORE the carves ride it.
+    applyPierceDelta(fine, mapHydro);
+    MacroResult macroFields;
+    macroFields.spec = sim;
+    macroFields.seaDist = self.seaDist;
+    macroFields.biome = self.biome;
+    FinalizeParams finalize = params.finalize;
+    finalize.seaLevel = params.macro.seaLevel;
     if (cancelled()) {
         return {};
     }
-    const FinalizeResult fine = finalizeTerrain(
-        sim, self.eroded, macroFields, hydro, window, finalize,
-        params.worldSeed,
-        character.fineScale.empty() ? nullptr : &character.fineScale,
-        self.deposit.empty() ? nullptr : &self.deposit, cancel);
+    finalizeWater(fine, sim, self.eroded, macroFields, hydro, window,
+                  finalize, params.worldSeed,
+                  self.deposit.empty() ? nullptr : &self.deposit);
 
     // Crop to slice + overlap margin (the same crop the windowed
     // path used —
@@ -723,14 +833,9 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
         }
         out.lakes.push_back(lake);
     }
-    // Re-validate against the FINAL ground; outside this slice's rect
-    // the coarse map surface stands in for the wall, so a cross-slice
-    // lake keeps its far half.
-    reconcileLakesWithTerrain(out.lakes, out.region, &mapHydro.window,
-                              &mapHydro.ground);
-    vector<Lake> allLakes = hydro.lakes;
-    reconcileLakesWithTerrain(allLakes, out.region, &mapHydro.window,
-                              &mapHydro.ground);
+    // No re-validation pass any more: the hydrology ran ON the final
+    // ground (two-phase bake) — its lakes ARE the published truth.
+    const vector<Lake>& allLakes = hydro.lakes;
     const f32 keepMaxX = keepMinX + keepSpan;
     const f32 keepMaxZ = keepMinZ + keepSpan;
     const auto inKeep = [&](const RiverPoint& pt) {
@@ -738,11 +843,10 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
                pt.z <= keepMaxZ;
     };
     for (const River& river : hydro.rivers) {
-        // A lake-fed head whose source lake vanished on the final
-        // ground is no longer dropped whole (through-lake tracing
-        // makes courses long — the old drop deleted a river for its
-        // first metre): the head is DEMOTED to a spring, whose taper
-        // hides the start.
+        // A lake-fed head whose source lake is not under it (rim
+        // basins clipped at the window edge): DEMOTED to a spring —
+        // dropping the whole course would delete a long river for
+        // its first metre.
         const bool headLakeGone =
             river.lakeFed != 0 && !river.points.empty() &&
             !lakeReachesPoint(allLakes, river.points.front().x,
@@ -774,12 +878,10 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
                     : river.headType;
             return run;
         };
-        // Ribbon-vs-nappe contract (audit 2026-10-12): the trace runs
-        // THROUGH window lakes; which points the ribbon drops is
-        // decided HERE, against the RECONCILED lakes — the final
-        // nappes. One point of overlap survives on each side of a
-        // nappe so the ribbon reaches under its sheet (the historical
-        // shore point), and a run resuming past a nappe skips the
+        // Ribbon-vs-nappe contract: the trace runs THROUGH lakes;
+        // the emission drops the points a nappe covers. One point of
+        // overlap survives on each side (the ribbon reaches under
+        // the sheet), and a run resuming past a nappe skips the
         // spring taper like any outlet.
         const auto inFinalLake = [&](const RiverPoint& pt) {
             for (const Lake& lake : allLakes) {
@@ -847,8 +949,6 @@ TileBakeResult bakeMapSlice(const TileBakeParams& params, i32 tx,
             emit(std::move(run));
         }
     }
-    reconcileRiversWithTerrain(out.rivers, out.lakes, out.region,
-                               params.finalize);
     return out;
 }
 
@@ -862,369 +962,25 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
     // accepts window-clipped rim basins instead of a 6 km sim.
     TileBakeParams solo = params;
     solo.apron = glm::max(params.apron, params.waterMargin);
-    TileStage1 mapS1 = bakeTileStage1(solo, tx, tz, cancel);
+    const TileStage1 mapS1 = bakeTileStage1(solo, tx, tz, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return {};
     }
+    const MapDrainage drainage =
+        computeMapDrainage(solo, mapS1, tx, tz, 1);
+    FinalizeResult ground =
+        bakeSliceGround(solo, tx, tz, mapS1, drainage, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        return {};
+    }
+    const vector<const FinalizeResult*> grounds { &ground };
     const MapHydrology hydro =
-        extractMapHydrology(solo, mapS1, tx, tz, 1, cancel);
+        extractMapHydrology(solo, mapS1, tx, tz, 1, grounds, cancel);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return {};
     }
-    applyPierceDelta(mapS1, hydro);
-    return bakeMapSlice(solo, tx, tz, mapS1, hydro, cancel);
-}
-
-namespace {
-
-// Bilinear FINAL ground from the published region; outside its rect
-// = +inf wall — both reconcile passes stay conservative there.
-f32 finalGroundAt(const render::TerrainRegion& region, f32 x, f32 z) {
-    const f32 fx = (x - region.originX) / region.texelSize;
-    const f32 fz = (z - region.originZ) / region.texelSize;
-    if (fx < 0.0f || fz < 0.0f ||
-        fx > static_cast<f32>(region.width) - 1.001f ||
-        fz > static_cast<f32>(region.height) - 1.001f) {
-        return 1.0e9f;
-    }
-    const u32 c = static_cast<u32>(fx);
-    const u32 r = static_cast<u32>(fz);
-    const f32 tx = fx - static_cast<f32>(c);
-    const f32 tz = fz - static_cast<f32>(r);
-    const auto at = [&](u32 cc, u32 rr) {
-        return region.heights[static_cast<size_t>(rr) * region.width +
-                              cc];
-    };
-    return glm::mix(glm::mix(at(c, r), at(c + 1, r), tx),
-                    glm::mix(at(c, r + 1), at(c + 1, r + 1), tx), tz);
-}
-
-} // namespace
-
-void reconcileLakesWithTerrain(vector<Lake>& lakes,
-                               const render::TerrainRegion& region,
-                               const GridSpec* fallbackSpec,
-                               const vector<f32>* fallbackGround) {
-    if (region.heights.empty() || region.width < 2 ||
-        region.height < 2 || region.texelSize <= 0.0f) {
-        return;
-    }
-    const auto groundAt = [&](f32 x, f32 z) {
-        const f32 g = finalGroundAt(region, x, z);
-        if (g < 0.9e9f || !fallbackSpec || !fallbackGround) {
-            return g;
-        }
-        // Outside the published rect: the coarse map surface keeps the
-        // flood honest there instead of walling it — a cross-slice
-        // lake keeps the half beyond its owner's rect.
-        const f32 maxX =
-            fallbackSpec->originX +
-            static_cast<f32>(fallbackSpec->n - 1) *
-                fallbackSpec->texelSize;
-        const f32 maxZ =
-            fallbackSpec->originZ +
-            static_cast<f32>(fallbackSpec->n - 1) *
-                fallbackSpec->texelSize;
-        if (x < fallbackSpec->originX || x > maxX ||
-            z < fallbackSpec->originZ || z > maxZ) {
-            return g; // beyond the map window too: the wall stands
-        }
-        return bilinearWorld(*fallbackSpec, *fallbackGround, x, z);
-    };
-    vector<Lake> split; // extra enclosure components, appended after
-    for (size_t li = 0; li < lakes.size();) {
-        Lake& lake = lakes[li];
-        const i32 mw = static_cast<i32>(lake.maskWidth);
-        const i32 mh = static_cast<i32>(lake.maskHeight);
-        if (lake.mask.empty() || mw <= 0 || mh <= 0) {
-            ++li;
-            continue; // maskless authored pond: not this pass's call
-        }
-        const f32 mt = lake.maskTexel;
-        // Flood window = the mask bbox PADDED well past it: the bbox
-        // bounds the WATERLINE, so the enclosing rim lies just
-        // outside it — an unpadded flood saw escapes all along the
-        // shoreline and drained the whole lake (bench: 1 of 8954
-        // cells kept). Beyond the published rect groundAt returns a
-        // wall (conservative).
-        const i32 pad = 16;
-        const i32 w = mw + 2 * pad;
-        const i32 h = mh + 2 * pad;
-        const f32 wx0 = lake.minX - static_cast<f32>(pad) * mt;
-        const f32 wz0 = lake.minZ - static_cast<f32>(pad) * mt;
-        const size_t cells = static_cast<size_t>(w) * h;
-        vector<f32> ground(cells);
-        for (i32 r = 0; r < h; ++r) {
-            for (i32 c = 0; c < w; ++c) {
-                ground[static_cast<size_t>(r) * w + c] =
-                    groundAt(wx0 + static_cast<f32>(c) * mt,
-                             wz0 + static_cast<f32>(r) * mt);
-            }
-        }
-        const auto pIdx = [&](i32 mc, i32 mr) {
-            return static_cast<size_t>(mr + pad) * w +
-                   static_cast<size_t>(mc + pad);
-        };
-        // Priority flood from the window border: fill[i] = the level
-        // water AT i must reach to escape — per-cell ENCLOSURE on the
-        // final ground.
-        vector<f32> fill(cells, 1.0e9f);
-        vector<u8> seen(cells, 0);
-        using Node = std::pair<f32, u32>;
-        std::priority_queue<Node, vector<Node>, std::greater<Node>>
-            heap;
-        const auto seed = [&](size_t i) {
-            if (!seen[i]) {
-                fill[i] = ground[i];
-                seen[i] = 1;
-                heap.push({ fill[i], static_cast<u32>(i) });
-            }
-        };
-        for (i32 c = 0; c < w; ++c) {
-            seed(static_cast<size_t>(c));
-            seed(static_cast<size_t>(h - 1) * w + c);
-        }
-        for (i32 r = 0; r < h; ++r) {
-            seed(static_cast<size_t>(r) * w);
-            seed(static_cast<size_t>(r) * w + (w - 1));
-        }
-        const i32 dirs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
-                                 { 0, -1 } };
-        while (!heap.empty()) {
-            const Node top = heap.top();
-            heap.pop();
-            const size_t i = top.second;
-            if (top.first > fill[i] + 1.0e-6f) {
-                continue; // stale heap entry
-            }
-            const i32 c = static_cast<i32>(i % static_cast<size_t>(w));
-            const i32 r = static_cast<i32>(i / static_cast<size_t>(w));
-            for (const auto& d : dirs) {
-                const i32 nc = c + d[0];
-                const i32 nr = r + d[1];
-                if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
-                    continue;
-                }
-                const size_t j = static_cast<size_t>(nr) * w +
-                                 static_cast<size_t>(nc);
-                const f32 nf = glm::max(ground[j], fill[i]);
-                if (!seen[j] || nf < fill[j] - 1.0e-6f) {
-                    fill[j] = nf;
-                    seen[j] = 1;
-                    heap.push({ nf, static_cast<u32>(j) });
-                }
-            }
-        }
-        // COMPONENT loop (brick 3): the hydrology mask can hold
-        // several real sub-basins the carves separated — the old
-        // single re-cut kept only the deepest one and silently lost
-        // the others' water. Each pass claims one enclosure component
-        // among the still-PENDING original cells (its own volume-max
-        // level, its own guards); the first refits the lake in place,
-        // the rest are emitted as their own lakes (tight bbox).
-        vector<u8> pending(lake.mask);
-        // Window-level claim: a later (lower) component must neither
-        // mark nor re-walk cells an earlier one already owns — two
-        // overlapping masks at different levels would make the
-        // runtime dedup drop one of them.
-        vector<u8> claimedWin(cells, 0);
-        vector<Lake> pieces;
-        constexpr u32 kMaxComponents = 4;
-        for (u32 comp = 0; comp < kMaxComponents; ++comp) {
-            // Level = the candidate (a pending cell's fill, floored
-            // to 0.25 m, capped at the old level) retaining the
-            // LARGEST WATER VOLUME over the pending cells. The
-            // max-fill cell kept a one-cell perched pocket and
-            // dropped the lake; the deepest claimed cell was a
-            // phantom-finger cell down the gorge and dragged the
-            // level to the canyon floor (both bench-measured on the
-            // real lake 5).
-            vector<f32> cands;
-            for (i32 r = 0; r < mh; ++r) {
-                for (i32 c = 0; c < mw; ++c) {
-                    if (pending[static_cast<size_t>(r) * mw + c] ==
-                        0) {
-                        continue;
-                    }
-                    // Clamped to the OLD level: a basin still fully
-                    // enclosed above it keeps its baked level (fills
-                    // above the claim are not an excuse to drop it).
-                    const f32 fv =
-                        glm::min(fill[pIdx(c, r)], lake.level);
-                    if (fv < 1.0e8f) {
-                        cands.push_back(std::floor(fv * 4.0f) * 0.25f);
-                    }
-                }
-            }
-            std::sort(cands.begin(), cands.end());
-            cands.erase(std::unique(cands.begin(), cands.end()),
-                        cands.end());
-            f32 level = -1.0e9f;
-            f64 bestVol = 0.0;
-            for (const f32 cand : cands) {
-                f64 vol = 0.0;
-                for (i32 r = 0; r < mh; ++r) {
-                    for (i32 c = 0; c < mw; ++c) {
-                        if (pending[static_cast<size_t>(r) * mw +
-                                    c] == 0) {
-                            continue;
-                        }
-                        const size_t i = pIdx(c, r);
-                        if (fill[i] >= cand - 0.01f &&
-                            ground[i] < cand) {
-                            vol += static_cast<f64>(cand - ground[i]);
-                        }
-                    }
-                }
-                if (vol > bestVol) {
-                    bestVol = vol;
-                    level = cand;
-                }
-            }
-            level = glm::min(level, lake.level);
-            // Deepest ENCLOSED pending cell = this component's BFS
-            // root; a basin breached below ~0.5 m of real depth ends
-            // the loop (the remaining pockets are shallower still).
-            size_t root = 0;
-            f32 rootGround = 1.0e9f;
-            for (i32 r = 0; r < mh; ++r) {
-                for (i32 c = 0; c < mw; ++c) {
-                    if (pending[static_cast<size_t>(r) * mw + c] ==
-                        0) {
-                        continue;
-                    }
-                    const size_t i = pIdx(c, r);
-                    if (fill[i] >= level - 0.01f &&
-                        ground[i] < rootGround) {
-                        rootGround = ground[i];
-                        root = i;
-                    }
-                }
-            }
-            if (bestVol <= 0.0 || rootGround > 1.0e8f ||
-                level - rootGround < 0.5f) {
-                break;
-            }
-            // Re-cut: a cell belongs to the component iff it is UNDER
-            // the level AND enclosed at it (fill >= level — mere
-            // "connected under the level" painted a flat sheet down
-            // the descending gorge: baked water on the hillside,
-            // measured dev), connected to the root, and inside the
-            // stored bbox.
-            vector<u8> mask(static_cast<size_t>(mw) * mh, 0);
-            vector<u32> stack;
-            stack.push_back(static_cast<u32>(root));
-            vector<u8> visited(cells, 0);
-            visited[root] = 1;
-            u32 kept = 0;
-            while (!stack.empty()) {
-                const size_t i = stack.back();
-                stack.pop_back();
-                const i32 c =
-                    static_cast<i32>(i % static_cast<size_t>(w));
-                const i32 r =
-                    static_cast<i32>(i / static_cast<size_t>(w));
-                const i32 mc = c - pad;
-                const i32 mr = r - pad;
-                if (mc >= 0 && mr >= 0 && mc < mw && mr < mh) {
-                    mask[static_cast<size_t>(mr) * mw + mc] = 1;
-                    ++kept;
-                }
-                for (const auto& d : dirs) {
-                    const i32 nc = c + d[0];
-                    const i32 nr = r + d[1];
-                    if (nc < 0 || nr < 0 || nc >= w || nr >= h) {
-                        continue;
-                    }
-                    const size_t j = static_cast<size_t>(nr) * w +
-                                     static_cast<size_t>(nc);
-                    if (visited[j] == 0 && claimedWin[j] == 0 &&
-                        ground[j] < level - 0.02f &&
-                        fill[j] >= level - 0.01f) {
-                        visited[j] = 1;
-                        stack.push_back(static_cast<u32>(j));
-                    }
-                }
-            }
-            if (kept == 0) {
-                break;
-            }
-            for (size_t i = 0; i < cells; ++i) {
-                if (visited[i] != 0) {
-                    claimedWin[i] = 1;
-                }
-            }
-            // Consume the claimed cells (and the root's own cell —
-            // guaranteed masked, so every pass shrinks pending).
-            u32 consumed = 0;
-            for (size_t m = 0; m < mask.size(); ++m) {
-                if (mask[m] != 0 && pending[m] != 0) {
-                    pending[m] = 0;
-                    ++consumed;
-                }
-            }
-            // Recovered SUB-basins under ~0.1 ha are specks (the B8
-            // ruling: no puddle-sized basins) — consumed but not
-            // emitted. The main component keeps v67 parity whatever
-            // its size.
-            if (pieces.empty() || kept >= 4) {
-                Lake piece = lake;
-                piece.level = level;
-                piece.mask = std::move(mask);
-                piece.cells = kept;
-                pieces.push_back(std::move(piece));
-            }
-            if (consumed == 0) {
-                break; // safety: never loop without progress
-            }
-        }
-        if (pieces.empty()) {
-            lakes.erase(lakes.begin() + static_cast<i32>(li));
-            continue;
-        }
-        // First (largest-volume) component refits the lake in place —
-        // bit-identical to the pre-split behavior when the mask holds
-        // a single basin. Extra components get a TIGHT bbox (their
-        // shared-dims mask is mostly empty) and join the list after
-        // the outer loop (never re-processed).
-        lake = std::move(pieces.front());
-        for (size_t p = 1; p < pieces.size(); ++p) {
-            Lake& piece = pieces[p];
-            i32 c0 = mw, c1 = -1, r0 = mh, r1 = -1;
-            for (i32 r = 0; r < mh; ++r) {
-                for (i32 c = 0; c < mw; ++c) {
-                    if (piece.mask[static_cast<size_t>(r) * mw + c] !=
-                        0) {
-                        c0 = glm::min(c0, c);
-                        c1 = glm::max(c1, c);
-                        r0 = glm::min(r0, r);
-                        r1 = glm::max(r1, r);
-                    }
-                }
-            }
-            const i32 nw = c1 - c0 + 1;
-            const i32 nh = r1 - r0 + 1;
-            vector<u8> cropped(static_cast<size_t>(nw) * nh, 0);
-            for (i32 r = 0; r < nh; ++r) {
-                for (i32 c = 0; c < nw; ++c) {
-                    cropped[static_cast<size_t>(r) * nw + c] =
-                        piece.mask[static_cast<size_t>(r + r0) * mw +
-                                   (c + c0)];
-                }
-            }
-            piece.minX += static_cast<f32>(c0) * mt;
-            piece.minZ += static_cast<f32>(r0) * mt;
-            piece.maxX = piece.minX + static_cast<f32>(nw - 1) * mt;
-            piece.maxZ = piece.minZ + static_cast<f32>(nh - 1) * mt;
-            piece.maskWidth = static_cast<u32>(nw);
-            piece.maskHeight = static_cast<u32>(nh);
-            piece.mask = std::move(cropped);
-            split.push_back(std::move(piece));
-        }
-        ++li;
-    }
-    lakes.insert(lakes.end(), std::make_move_iterator(split.begin()),
-                 std::make_move_iterator(split.end()));
+    return bakeSliceWater(solo, tx, tz, mapS1, hydro,
+                          std::move(ground), cancel);
 }
 
 bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
@@ -1271,113 +1027,6 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
         }
     }
     return false;
-}
-
-void reconcileRiversWithTerrain(vector<River>& rivers,
-                                const vector<Lake>& lakes,
-                                const render::TerrainRegion& region,
-                                const FinalizeParams& finalize) {
-    if (region.heights.empty() || region.width < 2 ||
-        region.height < 2 || region.texelSize <= 0.0f) {
-        return;
-    }
-    // Mirror of LakeSurface::covers on the bake-side Lake.
-    const auto inLake = [](const Lake& lake, f32 x, f32 z) {
-        if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
-            z > lake.maxZ) {
-            return false;
-        }
-        if (lake.mask.empty() || lake.maskWidth == 0) {
-            return true;
-        }
-        const u32 mx = glm::min(
-            static_cast<u32>(glm::max(
-                (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f)),
-            lake.maskWidth - 1);
-        const u32 mz = glm::min(
-            static_cast<u32>(glm::max(
-                (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f)),
-            lake.maskHeight - 1);
-        return lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
-                         mx] != 0;
-    };
-    for (River& river : rivers) {
-        const f32 tierCap =
-            river.tier == 0
-                ? finalize.streamDepthMax
-                : (river.tier == 1 ? finalize.riverDepthMax
-                                   : finalize.fleuveDepthMax);
-        // The profile is REBUILT from the mouth UPSTREAM: surface =
-        // final bed + the tier's carved depth, RAISED by the
-        // downstream water (backwater — a rising lip pools the water
-        // behind it). A downstream running-MIN did the opposite: one
-        // node clamped low over a local pothole dragged the whole
-        // reach UNDER every bed rise — a torrent flowing inside its
-        // channel walls, invisible from above, blue screen below
-        // (measured dev at (9622, 4131)). Monotone downhill holds by
-        // construction and the water always rides ABOVE its bed.
-        f32 next = -1.0e9f;
-        for (size_t k = river.points.size(); k-- > 0;) {
-            RiverPoint& pt = river.points[k];
-            const f32 ground = finalGroundAt(region, pt.x, pt.z);
-            f32 s;
-            bool inAnyLake = false;
-            if (ground < 1.0e8f) {
-                const f32 bed = glm::clamp(
-                    finalize.riverDepthCoef * 2.0f * pt.halfWidth,
-                    finalize.riverDepthMin, tierCap);
-                s = ground + bed;
-            } else {
-                s = pt.surface; // outside the rect: keep the bake
-            }
-            for (const Lake& lake : lakes) {
-                if (inLake(lake, pt.x, pt.z)) {
-                    // Crossing a reconciled lake: the surface there
-                    // IS the lake's (possibly lowered) level.
-                    s = lake.level;
-                    inAnyLake = true;
-                    break;
-                }
-            }
-            s = glm::max(s, next); // backwater from downstream
-            // The backwater may not stand above BOTH banks: a pool
-            // wider than its ribbon is a reconciled lake, and those
-            // points were cut — a surviving ribbon point is contained
-            // by its valley. Without this cap, a perched remnant
-            // lake's level flooded kilometres of upstream reach
-            // 25-80 m above the banks (measured dev, (3708, 4673)).
-            // A capped (spilling) profile also STOPS propagating: the
-            // lip it rode was fictitious.
-            if (!inAnyLake && ground < 1.0e8f) {
-                const RiverPoint& pa = river.points[k > 0 ? k - 1 : k];
-                const RiverPoint& pb =
-                    river.points[k + 1 < river.points.size() ? k + 1
-                                                             : k];
-                const f32 dx = pb.x - pa.x;
-                const f32 dz = pb.z - pa.z;
-                const f32 len = std::hypot(dx, dz);
-                if (len > 1.0e-3f) {
-                    const f32 off =
-                        pt.halfWidth + 2.0f * region.texelSize;
-                    const f32 nx = -dz / len * off;
-                    const f32 nz = dx / len * off;
-                    const f32 bankA =
-                        finalGroundAt(region, pt.x + nx, pt.z + nz);
-                    const f32 bankB =
-                        finalGroundAt(region, pt.x - nx, pt.z - nz);
-                    const f32 contain = glm::min(bankA, bankB);
-                    if (contain < 1.0e8f) {
-                        s = glm::min(
-                            s, glm::max(contain + 0.3f,
-                                        ground +
-                                            finalize.riverDepthMin));
-                    }
-                }
-            }
-            next = s;
-            pt.surface = s;
-        }
-    }
 }
 
 } // namespace render::terraingen

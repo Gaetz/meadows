@@ -85,16 +85,47 @@ struct FinalizeResult {
     vector<u8> beach;
     vector<u8> detailAmp;
     vector<u8> rockExposure;
+    // Bake-internal, never serialized: per-coarse-cell fine-incision
+    // norm [0,1] from the ground pass — the water pass's S6 masks read
+    // it (wetness up, detail down in fresh ravines).
+    vector<f32> incisionNorm;
 };
 
-// `macro` provides seaDist/biome (S1), `eroded` the S2+S3 heights on the
-// `coarse` grid. `hydro` lives on ITS OWN grid `hydroSpec` — since the
-// two-stage bake, the hydrology is extracted from the COMPOSED
-// neighbourhood window, not from this tile's provisional terrain; grid
-// accesses sample it by world coordinates. `fineScale`, if given, is a
-// coarse-grid per-texel multiplier on the fine-erosion k (biome
-// character); `deposit` the coarse sediment field (fluvial + thermal) —
-// scree stays soil-covered in the rockExposure mask.
+// THE two-phase finalize (restructuration eau 2026-10-12, PAYSAGE
+// §7.8): the GROUND pass makes the final terrain with no knowledge of
+// water (fine erosion, relief, strata — only the SEA damps relief
+// near shores); the map hydrology then runs on this final ground; the
+// WATER pass carves the beds/basins/ponds of that hydrology and fills
+// the water-aware masks. Water placed on the ground it lives on is
+// correct BY CONSTRUCTION — the old order (hydrology on stage-1,
+// ground reshaped after) needed a pile of reconcile/clamp correctors
+// downstream, each masking the next divergence.
+// `drainage`/`drainageSpec`: an accumulation field (drainageArea on
+// the stage-1 window) steering the fine ravines toward the macro
+// drainage — approximate ground-shaping info, NOT water placement.
+FinalizeResult finalizeGround(const GridSpec& coarse,
+                              const vector<f32>& eroded,
+                              const MacroResult& macro,
+                              const vector<f32>* drainage,
+                              const GridSpec* drainageSpec,
+                              const FinalizeParams& params, u32 seed,
+                              const vector<f32>* fineScale = nullptr,
+                              const std::atomic<bool>* cancel = nullptr);
+
+// `macro` provides seaDist (beach band); `hydro` lives on ITS OWN grid
+// `hydroSpec`, sampled by world coordinates; `deposit` the coarse
+// sediment field — scree stays soil-covered in the rockExposure mask.
+void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
+                   const vector<f32>& eroded, const MacroResult& macro,
+                   const HydrologyResult& hydro,
+                   const GridSpec& hydroSpec,
+                   const FinalizeParams& params, u32 seed,
+                   const vector<f32>* deposit = nullptr);
+
+// Legacy single-call wrapper (benches/tests): ground pass then water
+// pass. NOTE: the ground pass no longer protects lake/river corridors
+// from fine erosion or relief (only the sea does) — the carves own
+// the channels now.
 FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                const vector<f32>& eroded,
                                const MacroResult& macro,

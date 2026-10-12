@@ -37,210 +37,6 @@ TileBakeParams testParams() {
 
 } // namespace
 
-TEST_CASE("reconcileLakesWithTerrain re-cuts floods the carves broke") {
-    // The hydrology floods on the COMPOSITE terrain; the fine erosion
-    // then carves gorges the flood never saw. A lake claiming water
-    // over a carved breach must be lowered to the TRUE spill and its
-    // overhanging finger dropped; a basin breached below ~0.5 m of
-    // depth vanishes entirely.
-    render::TerrainRegion region;
-    region.width = 180;
-    region.height = 180;
-    region.originX = 0.0f;
-    region.originZ = 0.0f;
-    region.texelSize = 2.0f; // covers [0, 358]
-    region.heights.assign(static_cast<size_t>(region.width) *
-                              region.height,
-                          302.0f);
-    const auto paint = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 hgt) {
-        for (u32 r = 0; r < region.height; ++r) {
-            for (u32 c = 0; c < region.width; ++c) {
-                const f32 x = static_cast<f32>(c) * 2.0f;
-                const f32 z = static_cast<f32>(r) * 2.0f;
-                if (x >= x0 && x <= x1 && z >= z0 && z <= z1) {
-                    region.heights[static_cast<size_t>(r) *
-                                       region.width +
-                                   c] = hgt;
-                }
-            }
-        }
-    };
-    paint(40.0f, 40.0f, 120.0f, 120.0f, 290.0f);  // basin A
-    paint(120.0f, 76.0f, 140.0f, 84.0f, 293.5f);  // carved saddle A
-    paint(140.0f, 76.0f, 220.0f, 84.0f, 280.0f);  // descending gorge A
-    paint(220.0f, 40.0f, 358.0f, 140.0f, 275.0f); // open lowland: the
-                                                  // gorge truly ESCAPES
-    paint(160.0f, 160.0f, 200.0f, 200.0f, 290.0f); // basin B
-    paint(200.0f, 176.0f, 358.0f, 184.0f, 290.3f); // deep breach B, to
-                                                   // the open border
-
-    vector<Lake> lakes(2);
-    const auto maskFromGround = [&](Lake& lake, f32 below) {
-        lake.maskWidth = static_cast<u32>(
-            (lake.maxX - lake.minX) / lake.maskTexel);
-        lake.maskHeight = static_cast<u32>(
-            (lake.maxZ - lake.minZ) / lake.maskTexel);
-        lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
-                             lake.maskHeight,
-                         0);
-        u32 cells = 0;
-        for (u32 r = 0; r < lake.maskHeight; ++r) {
-            for (u32 c = 0; c < lake.maskWidth; ++c) {
-                const f32 x =
-                    lake.minX + static_cast<f32>(c) * lake.maskTexel;
-                const f32 z =
-                    lake.minZ + static_cast<f32>(r) * lake.maskTexel;
-                const u32 rc = static_cast<u32>(x / 2.0f);
-                const u32 rr = static_cast<u32>(z / 2.0f);
-                if (region.heights[static_cast<size_t>(rr) *
-                                       region.width +
-                                   rc] < below) {
-                    lake.mask[static_cast<size_t>(r) *
-                                  lake.maskWidth +
-                              c] = 1;
-                    ++cells;
-                }
-            }
-        }
-        lake.cells = cells;
-    };
-    lakes[0].level = 300.0f; // pre-carve flood: 10 m too high
-    lakes[0].minX = 32.0f;
-    lakes[0].minZ = 32.0f;
-    lakes[0].maxX = 160.0f; // the phantom finger reaches the gorge
-    lakes[0].maxZ = 136.0f;
-    lakes[0].maskTexel = 8.0f;
-    // basin + saddle finger + GORGE cells (the lake-5 scenario: the
-    // deepest MASKED cell is down the gorge, and a depth-picked
-    // reference dragged the level to the gorge floor while the naive
-    // re-cut painted a sheet along the descending canyon).
-    maskFromGround(lakes[0], 300.0f);
-    lakes[1].level = 295.0f;
-    lakes[1].minX = 152.0f;
-    lakes[1].minZ = 152.0f;
-    lakes[1].maxX = 208.0f;
-    lakes[1].maxZ = 208.0f;
-    lakes[1].maskTexel = 8.0f;
-    maskFromGround(lakes[1], 295.0f);
-    const u32 cellsBefore = lakes[0].cells;
-    REQUIRE(cellsBefore > 0);
-    REQUIRE(lakes[1].cells > 0);
-
-    reconcileLakesWithTerrain(lakes, region);
-    // Lake B: breached to 0.3 m of depth — gone.
-    REQUIRE(lakes.size() == 1);
-    // Lake A: lowered to the breach spill, finger cells (ground at
-    // the spill) dropped, basin cells kept.
-    CHECK(lakes[0].level == doctest::Approx(293.5f).epsilon(0.001));
-    CHECK(lakes[0].cells < cellsBefore);
-    CHECK(lakes[0].cells > 0);
-    const auto maskAt = [&](f32 x, f32 z) {
-        const u32 c = static_cast<u32>((x - lakes[0].minX) / 8.0f);
-        const u32 r = static_cast<u32>((z - lakes[0].minZ) / 8.0f);
-        return lakes[0].mask[static_cast<size_t>(r) *
-                                 lakes[0].maskWidth +
-                             c];
-    };
-    CHECK(maskAt(80.0f, 80.0f) == 1);  // mid-basin
-    CHECK(maskAt(128.0f, 80.0f) == 0); // the saddle finger
-    CHECK(maskAt(150.0f, 80.0f) == 0); // the descending gorge: NEVER
-                                       // a flat sheet on a hillside
-}
-
-TEST_CASE("reconcileLakesWithTerrain splits a two-basin mask") {
-    // Brick 3: the carves can cut one hydrology mask into several real
-    // sub-basins — the single re-cut kept only the deepest and lost
-    // the others' water. Fixture: basin C (deep, fully enclosed) and
-    // basin D (shallower, drained to the border through its own 296 m
-    // corridor) under ONE mask. Expected: two lakes at their own
-    // levels, disjoint, the corridor never a sheet.
-    render::TerrainRegion region;
-    region.width = 180;
-    region.height = 180;
-    region.originX = 0.0f;
-    region.originZ = 0.0f;
-    region.texelSize = 2.0f;
-    region.heights.assign(static_cast<size_t>(region.width) *
-                              region.height,
-                          302.0f);
-    const auto paint = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 hgt) {
-        for (u32 r = 0; r < region.height; ++r) {
-            for (u32 c = 0; c < region.width; ++c) {
-                const f32 x = static_cast<f32>(c) * 2.0f;
-                const f32 z = static_cast<f32>(r) * 2.0f;
-                if (x >= x0 && x <= x1 && z >= z0 && z <= z1) {
-                    region.heights[static_cast<size_t>(r) *
-                                       region.width +
-                                   c] = hgt;
-                }
-            }
-        }
-    };
-    // The 302 wall between C and D's world is 24 m wide: the flood
-    // samples at the 8 m mask texel and a sub-texel wall is invisible
-    // to it (block-mean lesson).
-    paint(40.0f, 40.0f, 120.0f, 120.0f, 288.0f);  // basin C
-    paint(144.0f, 32.0f, 232.0f, 128.0f, 296.0f); // D's rim plateau
-    paint(144.0f, 72.0f, 358.0f, 88.0f, 296.0f);  // escape corridor
-    paint(152.0f, 48.0f, 216.0f, 112.0f, 292.0f); // basin D
-
-    vector<Lake> lakes(1);
-    Lake& lake = lakes[0];
-    lake.level = 300.0f; // pre-carve flood over both basins
-    lake.minX = 32.0f;
-    lake.minZ = 32.0f;
-    lake.maxX = 232.0f;
-    lake.maxZ = 128.0f;
-    lake.maskTexel = 8.0f;
-    lake.maskWidth =
-        static_cast<u32>((lake.maxX - lake.minX) / lake.maskTexel);
-    lake.maskHeight =
-        static_cast<u32>((lake.maxZ - lake.minZ) / lake.maskTexel);
-    lake.mask.assign(static_cast<size_t>(lake.maskWidth) *
-                         lake.maskHeight,
-                     0);
-    for (u32 r = 0; r < lake.maskHeight; ++r) {
-        for (u32 c = 0; c < lake.maskWidth; ++c) {
-            const f32 x = lake.minX + static_cast<f32>(c) * 8.0f;
-            const f32 z = lake.minZ + static_cast<f32>(r) * 8.0f;
-            const u32 rc = static_cast<u32>(x / 2.0f);
-            const u32 rr = static_cast<u32>(z / 2.0f);
-            if (region.heights[static_cast<size_t>(rr) * region.width +
-                               rc] < 300.0f) {
-                lake.mask[static_cast<size_t>(r) * lake.maskWidth + c] =
-                    1;
-                ++lake.cells;
-            }
-        }
-    }
-    REQUIRE(lake.cells > 0);
-
-    reconcileLakesWithTerrain(lakes, region);
-    REQUIRE(lakes.size() == 2);
-    // Component 1 (largest volume) = basin C at the old level.
-    CHECK(lakes[0].level == doctest::Approx(300.0f).epsilon(0.001));
-    // Component 2 = basin D at ITS spill (the 296 corridor), tight
-    // bbox around D only.
-    CHECK(lakes[1].level == doctest::Approx(296.0f).epsilon(0.001));
-    CHECK(lakes[1].minX >= 144.0f);
-    CHECK(lakes[1].maxX <= 232.0f);
-    CHECK(lakes[1].cells > 0);
-    // The corridor never becomes a sheet: probe a corridor point
-    // against both masks.
-    for (const Lake& out : lakes) {
-        if (250.0f < out.minX || 250.0f > out.maxX || 80.0f < out.minZ ||
-            80.0f > out.maxZ) {
-            continue;
-        }
-        const u32 c =
-            static_cast<u32>((250.0f - out.minX) / out.maskTexel);
-        const u32 r =
-            static_cast<u32>((80.0f - out.minZ) / out.maskTexel);
-        CHECK(out.mask[static_cast<size_t>(r) * out.maskWidth + c] ==
-              0);
-    }
-}
-
 TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
     // Un lac dont le reconcile a retiré la moitié nord : une tête de
     // cours près de la moitié couverte est encore nourrie ; près de
@@ -273,67 +69,6 @@ TEST_CASE("lakeReachesPoint sonde l'empreinte POST-reconcile") {
     CHECK(!lakeReachesPoint(lakes, 200.0f, 200.0f)); // loin de tout
     lake.cells = 0; // lac vidé par le reconcile: ne nourrit plus rien
     CHECK(!lakeReachesPoint(lakes, 40.0f, 36.0f));
-}
-
-TEST_CASE("reconcileRiversWithTerrain recolle les surfaces au sol final") {
-    // A river baked BEFORE the carves: flat old surface 297 over a
-    // bed the fine erosion later dropped to 288 past x=100, plus a
-    // reconciled lake at 299 crossing the course upstream. The
-    // profile is rebuilt from the mouth: final bed + tier depth,
-    // lake level where crossed, backwater upstream — monotone and
-    // always above the bed.
-    render::TerrainRegion region;
-    region.width = 100;
-    region.height = 100;
-    region.originX = 0.0f;
-    region.originZ = 0.0f;
-    region.texelSize = 2.0f;
-    region.heights.assign(static_cast<size_t>(region.width) *
-                              region.height,
-                          300.0f);
-    for (u32 r = 0; r < region.height; ++r) {
-        for (u32 c = 0; c < region.width; ++c) {
-            const f32 x = static_cast<f32>(c) * 2.0f;
-            const f32 z = static_cast<f32>(r) * 2.0f;
-            if (z >= 38.0f && z <= 46.0f) {
-                region.heights[static_cast<size_t>(r) * region.width +
-                               c] = x < 100.0f ? 296.0f : 288.0f;
-            }
-        }
-    }
-    vector<Lake> lakes(1);
-    lakes[0].level = 299.0f;
-    lakes[0].minX = 20.0f;
-    lakes[0].minZ = 30.0f;
-    lakes[0].maxX = 40.0f;
-    lakes[0].maxZ = 50.0f; // maskless: the bbox is the footprint
-    vector<River> rivers(1);
-    rivers[0].tier = 1;
-    for (i32 i = 0; i < 10; ++i) {
-        RiverPoint pt;
-        pt.x = 10.0f + static_cast<f32>(i) * 20.0f;
-        pt.z = 42.0f;
-        pt.surface = 297.0f;  // pre-carve, flat — hangs over the drop
-        pt.halfWidth = 5.0f;  // bed = clamp(0.18 * 10, 0.6, 4) = 1.8
-        rivers[0].points.push_back(pt);
-    }
-    FinalizeParams fin;
-    reconcileRiversWithTerrain(rivers, lakes, region, fin);
-    const auto& pts = rivers[0].points;
-    CHECK(pts[0].surface ==
-          doctest::Approx(299.0f)); // x=10: backwater of the lake
-    CHECK(pts[1].surface == doctest::Approx(299.0f)); // x=30: the lake
-    CHECK(pts[2].surface ==
-          doctest::Approx(297.8f).epsilon(0.001)); // x=50: bed+1.8
-    CHECK(pts[5].surface ==
-          doctest::Approx(289.8f).epsilon(0.001)); // x=110: bed+1.8
-    for (size_t i = 1; i < pts.size(); ++i) {
-        CHECK(pts[i].surface <= pts[i - 1].surface + 1.0e-4f);
-        // Above its bed everywhere: the old running-min dived under.
-        const f32 ground =
-            (pts[i].x < 100.0f) ? 296.0f : 288.0f;
-        CHECK(pts[i].surface >= ground);
-    }
 }
 
 TEST_CASE("tile bakes are deterministic") {
@@ -771,12 +506,21 @@ TEST_CASE("map slices agree in their shared band") {
     mapParams.tileSize = params.tileSize * 2.0f; // 2x2 slices
     mapParams.apron = 1088.0f; // covers the map hydrology window
     const TileStage1 mapS1 = bakeTileStage1(mapParams, 0, 0);
+    const MapDrainage drainage =
+        computeMapDrainage(params, mapS1, 0, 0, 2);
+    FinalizeResult groundA =
+        bakeSliceGround(params, 0, 0, mapS1, drainage);
+    FinalizeResult groundB =
+        bakeSliceGround(params, 1, 0, mapS1, drainage);
+    const vector<const FinalizeResult*> grounds { &groundA, &groundB };
     const MapHydrology hydro =
-        extractMapHydrology(params, mapS1, 0, 0, 2);
+        extractMapHydrology(params, mapS1, 0, 0, 2, grounds);
     REQUIRE(hydro.window.n > 2);
 
-    const TileBakeResult a = bakeMapSlice(params, 0, 0, mapS1, hydro);
-    const TileBakeResult b = bakeMapSlice(params, 1, 0, mapS1, hydro);
+    const TileBakeResult a = bakeSliceWater(params, 0, 0, mapS1, hydro,
+                                            std::move(groundA));
+    const TileBakeResult b = bakeSliceWater(params, 1, 0, mapS1, hydro,
+                                            std::move(groundB));
     REQUIRE(a.region.width > 2);
     REQUIRE(b.region.width > 2);
 

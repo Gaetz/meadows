@@ -510,6 +510,15 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
     }
 }
 
+vector<f32> drainageArea(const GridSpec& spec,
+                         const vector<f32>& height,
+                         const HydrologyParams& params) {
+    const vector<f32> epsScale = hydroEpsScale(spec);
+    const vector<f32> filled = priorityFloodFill(
+        spec, height, params.seaLevel, params.minSlope, &epsScale);
+    return routeFlow(spec, filled, height, params.seaLevel).area;
+}
+
 HydrologyResult extractHydrology(const GridSpec& spec,
                                  const vector<f32>& height,
                                  const HydrologyParams& params) {
@@ -786,8 +795,45 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             }
         }
         if (!merged) {
-            ponds.push_back(makePond(spot.x, spot.z, spot.surface,
-                                     spot.radius, spec.texelSize));
+            Lake pond = makePond(spot.x, spot.z, spot.surface,
+                                 spot.radius, spec.texelSize);
+            // A pond only exists where the ground can HOLD its sheet:
+            // the disc is clipped to cells at or under the level (a
+            // junction pond born in a pierce trench overflowed its
+            // 30 m gorge onto the plateau — a 200 m sheet buried 40 m
+            // under the published ground, measured).
+            u32 wet = 0;
+            for (u32 mz = 0; mz < pond.maskHeight; ++mz) {
+                for (u32 mx = 0; mx < pond.maskWidth; ++mx) {
+                    u8& m = pond.mask[static_cast<size_t>(mz) *
+                                          pond.maskWidth +
+                                      mx];
+                    if (!m) {
+                        continue;
+                    }
+                    const f32 px = pond.minX +
+                                   (static_cast<f32>(mx) + 0.5f) *
+                                       pond.maskTexel;
+                    const f32 pz = pond.minZ +
+                                   (static_cast<f32>(mz) + 0.5f) *
+                                       pond.maskTexel;
+                    const i32 col = static_cast<i32>(std::lround(
+                        (px - spec.originX) / spec.texelSize));
+                    const i32 row = static_cast<i32>(std::lround(
+                        (pz - spec.originZ) / spec.texelSize));
+                    if (col < 0 || row < 0 || col >= n || row >= n ||
+                        height[static_cast<size_t>(row) * spec.n +
+                               col] > pond.level + 0.5f) {
+                        m = 0;
+                        continue;
+                    }
+                    ++wet;
+                }
+            }
+            pond.cells = wet;
+            if (wet >= 4) {
+                ponds.push_back(std::move(pond));
+            }
         }
     }
     for (River& river : out.rivers) {

@@ -2801,6 +2801,45 @@ l'hydrologie définitive).
   Suite complète Release 811/811. Jugement dev EN ATTENTE (les
   rivières dans leur lit, bordées).
 
+- **2026-10-12 — RESTRUCTURATION EAU livrée (directive dev : « arrête
+  les fixs locaux, regarde tout le système et place l'eau au moment
+  où elle est physiquement correcte »).** Le défaut de structure :
+  l'hydrologie (niveaux, masques, cours) était calculée sur le sol
+  16 m du stage-1 (étape 2), le sol FINAL naissait après (érosion
+  fine, étape 3), et une pile de correcteurs (reconcileLakes +
+  re-cut, reconcileRivers + backwater + cap W5, coupes W1, delta W4,
+  ceintures) recollait l'eau sur un sol qu'elle n'avait jamais vu —
+  chaque pansement exposait la divergence suivante (E9b→E9c→
+  trou→cratère→rubans flottants, l'historique du jour). **Le bake
+  devient trois phases** : A. `bakeSliceGround` — le sol final SANS
+  eau, par tranche en parallèle (érosion fine guidée par le seul
+  champ d'accumulation du stage-1, `drainageArea` — information de
+  façonnage, pas de placement d'eau) ; B. `extractMapHydrology` SUR
+  ces sols (la fenêtre 16 m échantillonne la tranche la plus
+  intérieure — le halo d'érosion fine est un territoire d'artefacts —
+  et fond vers le stage-1 sur ~192 m au-delà du rect) : percée,
+  flood, lacs et cours vivent sur le terrain que le joueur foule,
+  l'eau touche ses berges PAR CONSTRUCTION ; C. `bakeSliceWater` —
+  delta de percée appliqué au sol fin, creusements (lits S5c, fonds
+  de lacs, étangs), masques S6, découpe et .twb. **Supprimés** :
+  `reconcileLakesWithTerrain` (et son re-cut en composantes),
+  `reconcileRiversWithTerrain` (backwater + cap de berges W5),
+  l'application du delta au stage-1 (W4) — le finalize est scindé
+  (`finalizeGround`/`finalizeWater`, wrapper legacy pour les bancs).
+  Au passage : un étang posé est clippé aux cellules que le sol peut
+  contenir (un étang de jonction né dans une tranchée de percée
+  débordait sa gorge en nappe enterrée de 200 m). Bump **v94**,
+  trois caches livrés, bake +2 s/carte (10 s de tranches).
+  **Mesuré (jauge berges > 20 m au-dessus des deux berges, intérieur
+  de (0,0))** : v90 24,2 %, v93 (toute la pile de correcteurs)
+  13,5 %, **v94 (zéro correcteur) 3,1 %** — et 85 % des points à
+  ≤ 1 m des berges (47 % en v90). Water audit (0,0) : 5 orphelins /
+  4 dead-ends (28 avant), 8 lacs naturels, étangs posés 113→50
+  (les fantômes hors-sol éliminés). Résiduel 3 % : gorges étroites
+  (la jauge échantillonne au-delà de la paroi réelle) et abords des
+  lignes. Suite complète Release au vert. Jugement dev EN ATTENTE
+  (le tour d'eau qui compte : celui-ci).
+
 ---
 
 ## 8. Glossaire

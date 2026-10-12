@@ -53,20 +53,14 @@ u8 toU8(f32 v01) {
 
 } // namespace
 
-FinalizeResult finalizeTerrain(const GridSpec& coarse,
-                               const vector<f32>& eroded,
-                               const MacroResult& macro,
-                               const HydrologyResult& hydro,
-                               const GridSpec& hydroSpec,
-                               const FinalizeParams& params, u32 seed,
-                               const vector<f32>* fineScale,
-                               const vector<f32>* deposit,
-                               const std::atomic<bool>* cancel) {
-    // World-coordinate sampler into the hydrology window grids.
-    const auto hydroAt = [&](const vector<f32>& grid, f32 wx,
-                             f32 wz) -> f32 {
-        return bilinearWorld(hydroSpec, grid, wx, wz);
-    };
+FinalizeResult finalizeGround(const GridSpec& coarse,
+                              const vector<f32>& eroded,
+                              const MacroResult& macro,
+                              const vector<f32>* drainage,
+                              const GridSpec* drainageSpec,
+                              const FinalizeParams& params, u32 seed,
+                              const vector<f32>* fineScale,
+                              const std::atomic<bool>* cancel) {
     FinalizeResult out;
     const u32 f = glm::max(params.upsampleFactor, 1u);
     const f32 fineTexel = coarse.texelSize / static_cast<f32>(f);
@@ -97,30 +91,14 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
         return (w - origin) / coarse.texelSize;
     };
 
-    // Coarse water cells (sea, lakes, river courses) and the chamfer
-    // distance to them: the fine-erosion protection, the relief damp and
-    // the S6 masks all read this field.
+    // SEA cells and the chamfer distance to them: the ground pass
+    // knows no other water (two-phase finalize) — the relief damp
+    // keeps the COASTS quiet; channels and basins belong to the water
+    // pass's carves, on ground that is final by then.
     vector<u8> waterMask(coarse.cells(), 0);
-    for (u32 row = 0; row < coarse.n; ++row) {
-        for (u32 col = 0; col < coarse.n; ++col) {
-            const size_t i = static_cast<size_t>(row) * coarse.n + col;
-            if (eroded[i] <= params.seaLevel ||
-                hydroAt(hydro.lakeDepth, coarse.x(col), coarse.z(row)) >
-                    0.0f) {
-                waterMask[i] = 1;
-            }
-        }
-    }
-    for (const River& river : hydro.rivers) {
-        for (const RiverPoint& pt : river.points) {
-            const i32 cx = static_cast<i32>(
-                std::lround((pt.x - coarse.originX) / coarse.texelSize));
-            const i32 cz = static_cast<i32>(
-                std::lround((pt.z - coarse.originZ) / coarse.texelSize));
-            if (cx >= 0 && cz >= 0 && cx < static_cast<i32>(coarse.n) &&
-                cz < static_cast<i32>(coarse.n)) {
-                waterMask[static_cast<size_t>(cz) * coarse.n + cx] = 1;
-            }
+    for (size_t i = 0; i < coarse.cells(); ++i) {
+        if (eroded[i] <= params.seaLevel) {
+            waterMask[i] = 1;
         }
     }
     const vector<f32> waterDist = distanceToMask(coarse, waterMask);
@@ -171,7 +149,10 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
         if (fineScale) {
             scale.resize(midSpec.cells());
         }
-        const f32 hydroCellArea = hydroSpec.texelSize * hydroSpec.texelSize;
+        const f32 hydroCellArea =
+            drainageSpec
+                ? drainageSpec->texelSize * drainageSpec->texelSize
+                : coarse.texelSize * coarse.texelSize;
         for (u32 row = 0; row < midSpec.n; ++row) {
             for (u32 col = 0; col < midSpec.n; ++col) {
                 const size_t i = static_cast<size_t>(row) * midSpec.n +
@@ -194,10 +175,12 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                 // Coarse discharge, log-normalized like the S6 flow
                 // mask: the shared field that makes ravines converge
                 // toward the macro drainage on both sides of a border.
+                const f32 acc =
+                    drainage && drainageSpec
+                        ? bilinearWorld(*drainageSpec, *drainage, x, z)
+                        : 0.0f;
                 discharge[i] = glm::clamp(
-                    std::log10(glm::max(hydroAt(hydro.area, x, z) /
-                                            hydroCellArea,
-                                        1.0f)) /
+                    std::log10(glm::max(acc / hydroCellArea, 1.0f)) /
                         params.flowLogSpan,
                     0.0f, 1.0f);
                 if (fineScale) {
@@ -345,6 +328,83 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                 out.height[static_cast<size_t>(row) * out.fineSpec.n +
                            col] +=
                     params.strataAmplitude * gate * (band - 0.5f);
+            }
+        }
+    }
+
+    // Ground pass ends here: export the incision norm for the water
+    // pass's masks. The water carves live in finalizeWater.
+    out.incisionNorm.assign(coarse.cells(), 0.0f);
+    if (!incision.empty() && params.fine.maxDepth > 0.0f) {
+        for (u32 row = 0; row < coarse.n; ++row) {
+            for (u32 col = 0; col < coarse.n; ++col) {
+                out.incisionNorm[static_cast<size_t>(row) * coarse.n +
+                                 col] =
+                    glm::clamp(incisionAt(coarse.x(col),
+                                          coarse.z(row)) /
+                                   params.fine.maxDepth,
+                               0.0f, 1.0f);
+            }
+        }
+    }
+    return out;
+}
+
+void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
+                   const vector<f32>& eroded, const MacroResult& macro,
+                   const HydrologyResult& hydro,
+                   const GridSpec& hydroSpec,
+                   const FinalizeParams& params, u32 seed,
+                   const vector<f32>* deposit) {
+    // World-coordinate sampler into the hydrology window grids.
+    const auto hydroAt = [&](const vector<f32>& grid, f32 wx,
+                             f32 wz) -> f32 {
+        return bilinearWorld(hydroSpec, grid, wx, wz);
+    };
+    // Water cells (sea, lakes, river courses) and the chamfer distance
+    // to them — the S6 masks read it.
+    vector<u8> waterMask(coarse.cells(), 0);
+    for (u32 row = 0; row < coarse.n; ++row) {
+        for (u32 col = 0; col < coarse.n; ++col) {
+            const size_t i = static_cast<size_t>(row) * coarse.n + col;
+            if (eroded[i] <= params.seaLevel ||
+                hydroAt(hydro.lakeDepth, coarse.x(col), coarse.z(row)) >
+                    0.0f) {
+                waterMask[i] = 1;
+            }
+        }
+    }
+    for (const River& river : hydro.rivers) {
+        for (const RiverPoint& pt : river.points) {
+            const i32 cx = static_cast<i32>(
+                std::lround((pt.x - coarse.originX) / coarse.texelSize));
+            const i32 cz = static_cast<i32>(
+                std::lround((pt.z - coarse.originZ) / coarse.texelSize));
+            if (cx >= 0 && cz >= 0 && cx < static_cast<i32>(coarse.n) &&
+                cz < static_cast<i32>(coarse.n)) {
+                waterMask[static_cast<size_t>(cz) * coarse.n + cx] = 1;
+            }
+        }
+    }
+    const vector<f32> waterDist = distanceToMask(coarse, waterMask);
+    // Coarse slope (central differences) for the rock mask.
+    vector<f32> slopeCoarse(coarse.cells());
+    {
+        const i32 cn = static_cast<i32>(coarse.n);
+        for (i32 cz = 0; cz < cn; ++cz) {
+            for (i32 cx = 0; cx < cn; ++cx) {
+                const auto at = [&](i32 px, i32 pz) {
+                    px = glm::clamp(px, 0, cn - 1);
+                    pz = glm::clamp(pz, 0, cn - 1);
+                    return eroded[static_cast<size_t>(pz) * coarse.n +
+                                  static_cast<size_t>(px)];
+                };
+                const f32 gx = (at(cx + 1, cz) - at(cx - 1, cz)) /
+                               (2.0f * coarse.texelSize);
+                const f32 gz = (at(cx, cz + 1) - at(cx, cz - 1)) /
+                               (2.0f * coarse.texelSize);
+                slopeCoarse[static_cast<size_t>(cz) * coarse.n + cx] =
+                    std::sqrt(gx * gx + gz * gz);
             }
         }
     }
@@ -682,10 +742,8 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                            waterDist[i]);
             // Fresh ravines read damp and quiet: wetness up, detail
             // noise down where the fine erosion actually carved.
-            const f32 incNorm = glm::clamp(
-                incisionAt(coarse.x(col), coarse.z(row)) /
-                    params.fine.maxDepth,
-                0.0f, 1.0f);
+            const f32 incNorm =
+                out.incisionNorm.empty() ? 0.0f : out.incisionNorm[i];
             const f32 wet = glm::max(glm::max(flowNorm, nearWater),
                                      0.35f * incNorm);
             // Beach: the shore band, on land, minus underwater texels.
@@ -726,6 +784,25 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
             out.rockExposure[i] = toU8(rock);
         }
     }
+}
+
+FinalizeResult finalizeTerrain(const GridSpec& coarse,
+                               const vector<f32>& eroded,
+                               const MacroResult& macro,
+                               const HydrologyResult& hydro,
+                               const GridSpec& hydroSpec,
+                               const FinalizeParams& params, u32 seed,
+                               const vector<f32>* fineScale,
+                               const vector<f32>* deposit,
+                               const std::atomic<bool>* cancel) {
+    FinalizeResult out =
+        finalizeGround(coarse, eroded, macro, &hydro.area, &hydroSpec,
+                       params, seed, fineScale, cancel);
+    if (cancel && cancel->load(std::memory_order_relaxed)) {
+        return out;
+    }
+    finalizeWater(out, coarse, eroded, macro, hydro, hydroSpec, params,
+                  seed, deposit);
     return out;
 }
 

@@ -1,5 +1,7 @@
 #include "game/MapBaker.hpp"
 
+#include "engine/terrain/generation/GridOps.hpp"
+
 #include "game/TerrainGenTuning.hpp"
 
 #include <atomic>
@@ -184,13 +186,69 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     LOG_INFO("map bake ({}, {}): global stage-1 {}x{} in {:.1f} s",
              mapX, mapZ, mapS1.sim.n, mapS1.sim.n, stats.stage1Seconds);
 
-    // ONE hydrology for the whole map: every slice carves against the
-    // same routed water — this, with the shared surface, is what makes
-    // slice borders agree (per-slice windows carved toward different
-    // water surfaces: ~100 m of band divergence measured).
+    // TWO-PHASE slice bake (restructuration eau, PAYSAGE §7.8):
+    // A. every slice's final GROUND (parallel, held in memory);
+    // B. ONE map hydrology ON those grounds — water placed on the
+    //    terrain the player walks is correct by construction;
+    // C. every slice's water carves + files (parallel).
+    const i32 tx0 = mapX * tilesPerSide;
+    const i32 tz0 = mapZ * tilesPerSide;
+    const u32 total =
+        static_cast<u32>(tilesPerSide) * static_cast<u32>(tilesPerSide);
+    const auto s2Start = std::chrono::steady_clock::now();
+    const MapDrainage drainage =
+        computeMapDrainage(params, mapS1, mapX, mapZ, tilesPerSide);
+    vector<FinalizeResult> grounds(total);
+    {
+        core::ConcurrentQueue<i32> doneA;
+        u32 landedA = 0;
+        const auto bakeGround = [&](u32 slot, i32 tx, i32 tz) {
+            if (!cancelled()) {
+                grounds[slot] =
+                    bakeSliceGround(params, tx, tz, mapS1, drainage,
+                                    cancel);
+            }
+            doneA.push(1);
+        };
+        for (i32 dz = 0; dz < tilesPerSide; ++dz) {
+            for (i32 dx = 0; dx < tilesPerSide; ++dx) {
+                const u32 slot = static_cast<u32>(
+                    dz * tilesPerSide + dx);
+                const i32 tx = tx0 + dx;
+                const i32 tz = tz0 + dz;
+                if (jobs) {
+                    jobs->enqueue(
+                        [&, slot, tx, tz] { bakeGround(slot, tx, tz); });
+                } else {
+                    bakeGround(slot, tx, tz);
+                }
+            }
+        }
+        while (landedA < total) {
+            i32 ok = 0;
+            if (doneA.tryPop(ok)) {
+                ++landedA;
+                if (progress) {
+                    progress(landedA, total * 2);
+                }
+            } else {
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(20));
+            }
+        }
+    }
+    if (cancelled()) {
+        stats.cancelled = true;
+        return stats;
+    }
     const auto hydroStart = std::chrono::steady_clock::now();
+    vector<const FinalizeResult*> groundPtrs;
+    groundPtrs.reserve(grounds.size());
+    for (const FinalizeResult& g : grounds) {
+        groundPtrs.push_back(&g);
+    }
     const MapHydrology mapHydro = extractMapHydrology(
-        params, mapS1, mapX, mapZ, tilesPerSide, cancel);
+        params, mapS1, mapX, mapZ, tilesPerSide, groundPtrs, cancel);
     if (cancelled()) {
         stats.cancelled = true;
         return stats;
@@ -200,28 +258,18 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
              mapX, mapZ, mapHydro.window.n, mapHydro.window.n,
              secondsSince(hydroStart), mapHydro.hydro.lakes.size(),
              mapHydro.hydro.rivers.size());
-    // The piercing becomes map terrain BEFORE the slices bake (and
-    // before the overview is decimated from the same surface).
-    applyPierceDelta(mapS1, mapHydro);
 
-    // Slices are independent given the const shared stage-1+hydrology:
-    // workers write their own files, the caller only counts
-    // completions (Phase-5: no shared mutable state).
-    const i32 tx0 = mapX * tilesPerSide;
-    const i32 tz0 = mapZ * tilesPerSide;
-    const u32 total =
-        static_cast<u32>(tilesPerSide) * static_cast<u32>(tilesPerSide);
-    const auto s2Start = std::chrono::steady_clock::now();
     core::ConcurrentQueue<i32> done; // 1 = written, 0 = failed/cancelled
     u32 landed = 0;
     u32 written = 0;
-    const auto bakeSlice = [&](i32 tx, i32 tz) {
+    const auto bakeSlice = [&](u32 slot, i32 tx, i32 tz) {
         if (cancelled()) {
             done.push(0);
             return;
         }
         TileBakeResult slice =
-            bakeMapSlice(params, tx, tz, mapS1, mapHydro, cancel);
+            bakeSliceWater(params, tx, tz, mapS1, mapHydro,
+                           std::move(grounds[slot]), cancel);
         if (cancelled()) {
             done.push(0);
             return;
@@ -241,12 +289,14 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     };
     for (i32 dz = 0; dz < tilesPerSide; ++dz) {
         for (i32 dx = 0; dx < tilesPerSide; ++dx) {
+            const u32 slot = static_cast<u32>(dz * tilesPerSide + dx);
             const i32 tx = tx0 + dx;
             const i32 tz = tz0 + dz;
             if (jobs) {
-                jobs->enqueue([&, tx, tz] { bakeSlice(tx, tz); });
+                jobs->enqueue(
+                    [&, slot, tx, tz] { bakeSlice(slot, tx, tz); });
             } else {
-                bakeSlice(tx, tz);
+                bakeSlice(slot, tx, tz);
             }
         }
     }
@@ -256,7 +306,7 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
             ++landed;
             written += ok > 0 ? 1u : 0u;
             if (progress) {
-                progress(landed, total);
+                progress(total + landed, total * 2);
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -285,13 +335,36 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         overview.heights.resize(overview.grid.cells());
         for (u32 row = 0; row < overview.grid.n; ++row) {
             for (u32 col = 0; col < overview.grid.n; ++col) {
-                overview.heights[static_cast<size_t>(row) *
-                                     overview.grid.n +
-                                 col] =
+                const f32 x = overview.grid.originX +
+                              static_cast<f32>(col) *
+                                  overview.grid.texelSize;
+                const f32 z = overview.grid.originZ +
+                              static_cast<f32>(row) *
+                                  overview.grid.texelSize;
+                const f32 s1 =
                     mapS1.eroded[static_cast<size_t>(row) *
                                      kOverviewStep * mapS1.sim.n +
                                  static_cast<size_t>(col) *
                                      kOverviewStep];
+                // Inside the hydrology window, the FINAL pierced
+                // ground is the coarse truth; the apron keeps the
+                // stage-1.
+                const render::terraingen::GridSpec& win =
+                    mapHydro.window;
+                const f32 winMaxX =
+                    win.originX +
+                    static_cast<f32>(win.n - 1) * win.texelSize;
+                const f32 winMaxZ =
+                    win.originZ +
+                    static_cast<f32>(win.n - 1) * win.texelSize;
+                overview.heights[static_cast<size_t>(row) *
+                                     overview.grid.n +
+                                 col] =
+                    (x >= win.originX && x <= winMaxX &&
+                     z >= win.originZ && z <= winMaxZ)
+                        ? render::terraingen::bilinearWorld(
+                              win, mapHydro.ground, x, z)
+                        : s1;
             }
         }
         std::ofstream file { mapDir / "overview.bin",

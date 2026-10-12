@@ -228,6 +228,13 @@ struct HydrologyResult {
     vector<River> rivers;
 };
 
+// Accumulation ALONE (flood + route, no piercing, no lakes, no
+// courses): the ground pass's ravine-steering field — approximate
+// drainage may shape the ground, but no WATER (levels, masks,
+// courses) is ever placed from it.
+vector<f32> drainageArea(const GridSpec& spec, const vector<f32>& height,
+                         const HydrologyParams& params);
+
 HydrologyResult extractHydrology(const GridSpec& spec,
                                  const vector<f32>& height,
                                  const HydrologyParams& params);
