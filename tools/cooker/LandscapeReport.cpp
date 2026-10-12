@@ -540,6 +540,92 @@ int landscapeReport(char** argv, int argc) {
                  ponds, c.rivers);
     }
     {
+        // Ribbon-continuity gauge (passe W3): every run's TAIL must
+        // hand its water to something — the sea, a nappe, another
+        // ribbon (junction/resumption), or the map window's edge. A
+        // tail with none of those is an ORPHAN (water vanishing
+        // mid-valley); a tail in a nappe with no ribbon nearby is a
+        // dead-end to watch (the nappe may be terminal by design).
+        const auto& lakes = view->lakes;
+        const auto inNappe = [&](f32 x, f32 z) {
+            for (const auto& lake : lakes) {
+                if (lake.mask.empty() || x < lake.minX - 24.0f ||
+                    x > lake.maxX + 24.0f || z < lake.minZ - 24.0f ||
+                    z > lake.maxZ + 24.0f) {
+                    continue;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (x - lake.minX) / lake.maskTexel, 0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (z - lake.minZ) / lake.maskTexel, 0.0f)),
+                    lake.maskHeight - 1);
+                if (lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
+                              mx]) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const f32 mapMinX = view->minX;
+        const f32 mapMinZ = view->minZ;
+        const f32 mapMaxX = view->maxX;
+        const f32 mapMaxZ = view->maxZ;
+        u32 orphans = 0, deadEnds = 0, logged = 0;
+        for (size_t ri = 0; ri < view->rivers.size(); ++ri) {
+            const auto& river = view->rivers[ri];
+            if (river.points.size() < 2) {
+                continue;
+            }
+            const auto& tail = river.points.back();
+            if (tail.surface <= view->params.macro.seaLevel + 1.0f) {
+                continue; // reaches the sea
+            }
+            if (tail.x < mapMinX + 80.0f || tail.x > mapMaxX - 80.0f ||
+                tail.z < mapMinZ + 80.0f || tail.z > mapMaxZ - 80.0f) {
+                continue; // the window edge: the neighbour continues it
+            }
+            const bool nappe = inNappe(tail.x, tail.z);
+            bool continued = false;
+            for (size_t rj = 0;
+                 rj < view->rivers.size() && !continued; ++rj) {
+                if (rj == ri) {
+                    continue;
+                }
+                for (const auto& pt : view->rivers[rj].points) {
+                    const f32 dx = pt.x - tail.x;
+                    const f32 dz = pt.z - tail.z;
+                    if (dx * dx + dz * dz <
+                        (pt.halfWidth + 64.0f) *
+                            (pt.halfWidth + 64.0f)) {
+                        continued = true;
+                        break;
+                    }
+                }
+            }
+            if (continued) {
+                continue;
+            }
+            if (nappe) {
+                ++deadEnds;
+                continue;
+            }
+            ++orphans;
+            if (logged < 4) {
+                ++logged;
+                LOG_INFO("    orphan tail: run {} tier {} at "
+                         "({:.0f}, {:.0f}) surf {:.1f} hw {:.1f}",
+                         ri, river.tier, tail.x, tail.z, tail.surface,
+                         tail.halfWidth);
+            }
+        }
+        LOG_INFO("  water audit: {} orphan tails, {} nappe dead-ends "
+                 "({} runs)",
+                 orphans, deadEnds, view->rivers.size());
+    }
+    {
         // The CONTINENT summary (passe EAU E7): the host super-region's
         // master courses — does the water of this country reach its
         // sea? A course counts transitively: it reaches the sea itself
