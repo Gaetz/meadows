@@ -40,7 +40,10 @@ namespace {
 // carve pass then follows the same curve as the surface), re-derive the
 // widths by arc length, and clamp the surface monotone downstream (the
 // interpolating spline may overshoot on y).
-void smoothRiver(River& river, f32 texel, const HydrologyParams& params) {
+void smoothRiver(River& river, const GridSpec& spec,
+                 const vector<f32>& filled,
+                 const HydrologyParams& params) {
+    const f32 texel = spec.texelSize;
     if (river.points.size() < 3) {
         return;
     }
@@ -143,6 +146,40 @@ void smoothRiver(River& river, f32 texel, const HydrologyParams& params) {
         RiverPoint pt;
         pt.x = course[i].x;
         pt.z = course[i].z;
+        // Valley constraint: smoothing cuts bends, and in a narrow
+        // gorge the cut lands on the RIM while the water of the raw
+        // trace is at the bottom. The smoothed point may not stand on
+        // ground whose FILL is more than kClimb above the raw path's
+        // fill at the same arc — bisect back toward the raw position
+        // until it does. (A post-hoc per-point snap to the local fill
+        // minimum zigzagged into neighbouring pits — measured and
+        // reverted; constraining the smoothing itself keeps the curve
+        // smooth AND in its valley.)
+        {
+            constexpr f32 kClimb = 1.5f;
+            const f32 rawX = glm::mix(raw[seg].x, raw[next].x, t);
+            const f32 rawZ = glm::mix(raw[seg].z, raw[next].z, t);
+            const f32 fillRaw =
+                bilinearWorld(spec, filled, rawX, rawZ);
+            if (bilinearWorld(spec, filled, pt.x, pt.z) >
+                fillRaw + kClimb) {
+                f32 lo = 0.0f;
+                f32 hi = 1.0f;
+                for (u32 it = 0; it < 3; ++it) {
+                    const f32 mid = 0.5f * (lo + hi);
+                    const f32 mx = glm::mix(pt.x, rawX, mid);
+                    const f32 mz = glm::mix(pt.z, rawZ, mid);
+                    if (bilinearWorld(spec, filled, mx, mz) >
+                        fillRaw + kClimb) {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                pt.x = glm::mix(pt.x, rawX, hi);
+                pt.z = glm::mix(pt.z, rawZ, hi);
+            }
+        }
         pt.surface = level;
         const f32 alongMod =
             0.85f + 0.3f * noise::value(riverSeed ^ 0x9e3779b9u,
@@ -779,7 +816,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         if (river.points.size() < params.minRiverPoints) {
             continue;
         }
-        smoothRiver(river, spec.texelSize, params);
+        smoothRiver(river, spec, out.filled, params);
         smoothed.push_back(std::move(river));
     }
     // Phase 4 — GLOBAL merge on the final smoothed set: smoothing MOVES

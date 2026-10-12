@@ -2911,6 +2911,29 @@ l'hydrologie définitive).
   l'intervalle, l'eau est continue. Suite complète Release au vert.
   Jugement dev EN ATTENTE.
 
+- **2026-10-12 — Passe FINITIONS EAU, F2 puis F1 (plan approuvé dev ;
+  périmètre 1-5, détroits exclus).**
+  **F2 — rétention des lacs : sweep mesuré, statu quo choisi.** Banc
+  hors-cache (gameDirs jetables + patch pupitre `mods/terrain-gen.toml`,
+  le canal officiel — leçon : un record de pupitre absent de la base
+  exige `new = true`) : CellsMin 700 → 3,2 naturels/carte (1·4·4·4,
+  profondeurs ≤ 15 m) ; 1000 → 2,2 ; +KeepDepth 16 → idem 700. Le dev
+  GARDE 400 (8-13/carte) — aucun changement de code, les chiffres
+  restent ici pour un futur réglage au pupitre.
+  **F1 — lissage contraint par la vallée (livrée).** `smoothRiver`
+  prend (spec, filled) : chaque point reconstruit est ramené par
+  bissection vers la position du tracé BRUT au même arc si le
+  remplissage à sa position lissée dépasse celui du tracé de +1,5 m —
+  la courbe reste douce et ne grimpe plus hors de sa vallée (le snap
+  post-hoc vers le min local avait zigzagué — leçon conservée en
+  commentaire). Mesuré sur banc (0,0) : enterrés 0,8 % → 0,5 % ;
+  la jauge berges reste ~9 % MAIS son résidu est caractérisé : 466/586
+  points sont des BIEFS PROFONDS légitimes (centre 15+ m sous la
+  surface — l'eau de remplissage ponte les creux rejetés, « the dip
+  becomes a natural pool ») ; la jauge a atteint son plancher utile,
+  le juge au-delà est l'œil. Suite rapide 706/706. Bump reporté à la
+  fin de la passe (v97).
+
 ---
 
 ## 8. Glossaire
