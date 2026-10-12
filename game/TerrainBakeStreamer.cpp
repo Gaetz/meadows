@@ -206,6 +206,45 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
             }
             return;
         }
+        if (!mapLakesRequested) {
+            // First proof the map cache is whole: read the map-wide
+            // lake registry (headers + masks of every slice's .twb,
+            // rivers skipped) on a worker. See takeMapLakes().
+            mapLakesRequested = true;
+            const auto scan = [mapDir, tps, mx = map.mapX,
+                               mz = map.mapZ, queue = mapLakesBuilt,
+                               jobsRef = jobs] {
+                if (jobsRef && jobsRef->isStopping()) {
+                    return;
+                }
+                vector<render::terraingen::Lake> all;
+                for (i32 sz = mz * tps; sz < (mz + 1) * tps; ++sz) {
+                    for (i32 sx = mx * tps; sx < (mx + 1) * tps;
+                         ++sx) {
+                        const std::string stem =
+                            "tile_" + std::to_string(sx) + "_" +
+                            std::to_string(sz) + "_v" +
+                            std::to_string(
+                                render::terraingen::kTileBakeVersion);
+                        vector<render::terraingen::Lake> lakes;
+                        vector<render::terraingen::River> rivers;
+                        if (readWaterFile(mapDir / (stem + ".twb"),
+                                          lakes, rivers)) {
+                            all.insert(
+                                all.end(),
+                                std::make_move_iterator(lakes.begin()),
+                                std::make_move_iterator(lakes.end()));
+                        }
+                    }
+                }
+                queue->push(std::move(all));
+            };
+            if (jobs) {
+                jobs->enqueue(scan);
+            } else {
+                scan();
+            }
+        }
         pending.insert(keyOf(tx, tz));
         const auto work = [mapDir, tx, tz, queue = built,
                            jobsRef = jobs,

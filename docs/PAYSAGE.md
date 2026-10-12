@@ -2569,6 +2569,40 @@ l'hydrologie définitive).
   ATTENTE (en jeu : les ruisseaux visibles de près, les lits plus à
   sec en s approchant, le débit des cours).
 
+- **2026-10-12 — E9b livrée : le registre de lacs à l'échelle carte
+  (bug « eau distante sans eau simulée en dessous », vu dev à
+  (6872, 422, 4685)).** Le mécanisme, pas le lac : depuis CARTES M1.5
+  (« one hydrology per MAP »), un lac vit dans le `.twb` de LA tranche
+  qui tient le centre de sa bbox — le transport runtime était
+  par-tranche-publiée, donc un lac multi-tranches disparaissait du set
+  near dès que sa tranche propriétaire sortait du prefetch (1 408 m),
+  alors que le joueur se tenait encore sur un bras : au point du
+  screenshot, le joueur est sur la tranche (1,1) et le lac géant
+  (12 458 cellules, bbox (-864,96)-(8624,7440)) appartient à (0,0),
+  à 2 776 m — la far view (qui lit TOUS les .twb du cache) le
+  dessinait, la sim n'avait rien à épingler, le shader discard
+  l'effaçait dans le rect. L'éviction par CENTRE de bbox avait le même
+  trou. Le fix : (1) le streamer lit UNE fois (worker, à la première
+  preuve de cache valide) le **registre de lacs de la carte entière**
+  (`takeMapLakes`) ; (2) la scène sélectionne `sandboxLakes` depuis ce
+  registre par **distance Chebyshev à la BBOX** (seuil = éviction
+  2,5 tuiles, rafraîchi aux publications et tous les 512 m de
+  déplacement), les résidents d'une carte précédente gardés sous la
+  même règle ; l'insert par tranche et l'éviction par centre ne
+  servent plus qu'en repli pré-registre. Aucune donnée bakée ne
+  change : pas de bump, hash cartes intact. Instrument commité avec la
+  brique : `landscape-report` mesure les 4 plus gros lacs contre le
+  sol FINAL (niveau, profondeur max, % du masque 15 m+ sous le niveau)
+  — sur (0,0) : 12 458 cellules/225 m/86 %, 9 433/202 m/73 %,
+  9 304/181 m/81 %, 7 990/205 m/88 %. Mesuré : suite rapide 706/706.
+  DIFFÉRÉ (découverte de la même enquête, à arbitrer) : ces « lacs »
+  sont des réseaux de vallées noyés retenus par la taille seule
+  (`lakeKeepCells` 2000) — la politique de rétention de
+  `pierceLakeOutlets` (taille vs critère physique) reste un cran de
+  pupitre dev, distinct du bug réparé ici. Jugement dev EN ATTENTE
+  (retour aux coordonnées : l'eau sim doit apparaître sous la nappe
+  distante).
+
 ---
 
 ## 8. Glossaire

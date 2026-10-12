@@ -1453,8 +1453,31 @@ void LandscapeScene::update(f32 dt) {
             focus, [&batch](TerrainBakeStreamer::PublishedTile&& tile) {
                 batch.push_back(std::move(tile));
             });
+        // Map-wide lake registry: lands once per map, then membership
+        // follows the focus (bbox distance) even between tile events —
+        // a lake must be pinnable wherever the player stands on it,
+        // not only while its owner slice is published.
+        vector<render::terraingen::Lake> registry;
+        bool lakesChanged = false;
+        if (bakeStreamer->takeMapLakes(registry)) {
+            mapLakes = std::move(registry);
+            mapLakesValid = true;
+            LOG_INFO("Sandbox water: map lake registry loaded "
+                     "({} lakes)",
+                     mapLakes.size());
+            lakesChanged = refreshSandboxLakes(focus);
+        } else if (mapLakesValid &&
+                   (!lakeRefreshFocusValid ||
+                    glm::max(
+                        std::abs(focus.x - lastLakeRefreshFocus.x),
+                        std::abs(focus.z - lastLakeRefreshFocus.z)) >
+                        512.0f)) {
+            lakesChanged = refreshSandboxLakes(focus);
+        }
         if (!batch.empty()) {
             publishBakedTiles(std::move(batch), focus);
+        } else if (lakesChanged) {
+            publishWaterBodies();
         }
     }
     // Stream cells around the focus; on any ring change,
@@ -2293,6 +2316,10 @@ void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
         platform::executableDir() / "terrain-cache" /
             std::to_string(tuning.terrainSeed),
         &engine->getJobSystem(), mapCfg);
+    // The lake registry is per map: the new streamer re-scans.
+    mapLakes.clear();
+    mapLakesValid = false;
+    lakeRefreshFocusValid = false;
     LOG_INFO("Sandbox terrain: seed {}, map ({}, {}) = {:.0f} m "
              "island, {} m slices",
              tuning.terrainSeed, mapX, mapZ, sandbox->grid.mapSize,
@@ -2477,6 +2504,9 @@ void LandscapeScene::setSandboxMode(bool enable) {
         renderer.setStreamingHold(false);
         sandboxLakes.clear();
         sandboxRivers.clear();
+        mapLakes.clear();
+        mapLakesValid = false;
+        lakeRefreshFocusValid = false;
         // Back to the authored layers only.
         terrainBase = world::buildTerrainBase(forms, assetDb);
         params.base = terrainBase;
@@ -2562,6 +2592,65 @@ void LandscapeScene::publishWaterBodies() {
     }
 }
 
+bool LandscapeScene::refreshSandboxLakes(const Vec3& focus) {
+    if (!mapLakesValid || !bakeStreamer) {
+        return false;
+    }
+    const f32 evict = bakeStreamer->tileSize() * 2.5f;
+    // Chebyshev distance from the focus to the lake's BBOX, not its
+    // center: a lake spanning kilometres must stay resident while the
+    // player stands on an arm far from its middle.
+    const auto bboxDist = [&](const render::terraingen::Lake& lake) {
+        const f32 dx = glm::max(
+            glm::max(lake.minX - focus.x, focus.x - lake.maxX), 0.0f);
+        const f32 dz = glm::max(
+            glm::max(lake.minZ - focus.z, focus.z - lake.maxZ), 0.0f);
+        return glm::max(dx, dz);
+    };
+    // Identity = the exact header fields both copies read from the
+    // same .twb bytes (one hydrology per map: one level per basin).
+    const auto sameLake = [](const render::terraingen::Lake& a,
+                             const render::terraingen::Lake& b) {
+        return a.level == b.level && a.minX == b.minX &&
+               a.minZ == b.minZ && a.maxX == b.maxX && a.maxZ == b.maxZ;
+    };
+    vector<render::terraingen::Lake> next;
+    // Residents of a PREVIOUS map kept across a crossing are not in
+    // this map's registry: they stay, under the same bbox eviction.
+    for (const render::terraingen::Lake& lake : sandboxLakes) {
+        bool governed = false;
+        for (const render::terraingen::Lake& reg : mapLakes) {
+            if (sameLake(lake, reg)) {
+                governed = true;
+                break;
+            }
+        }
+        if (!governed && bboxDist(lake) <= evict) {
+            next.push_back(lake);
+        }
+    }
+    for (const render::terraingen::Lake& lake : mapLakes) {
+        if (bboxDist(lake) <= evict) {
+            next.push_back(lake);
+        }
+    }
+    bool changed = next.size() != sandboxLakes.size();
+    if (!changed) {
+        for (size_t i = 0; i < next.size(); ++i) {
+            if (!sameLake(next[i], sandboxLakes[i])) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) {
+        sandboxLakes = std::move(next);
+    }
+    lastLakeRefreshFocus = focus;
+    lakeRefreshFocusValid = true;
+    return changed;
+}
+
 void LandscapeScene::publishBakedTiles(
     vector<TerrainBakeStreamer::PublishedTile>&& tiles,
     const Vec3& focus) {
@@ -2611,14 +2700,27 @@ void LandscapeScene::publishBakedTiles(
         });
         // The water follows the regions out: the flat lake/river
         // arrays used to grow forever, and every swim query and
-        // reconcile scanned them all.
-        std::erase_if(sandboxLakes,
-                      [&](const render::terraingen::Lake& lake) {
-                          const f32 cx = (lake.minX + lake.maxX) * 0.5f;
-                          const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
-                          return std::abs(cx - focus.x) > evict ||
-                                 std::abs(cz - focus.z) > evict;
-                      });
+        // reconcile scanned them all. Lakes: registry-driven selection
+        // once the map scan landed (bbox distance — a big lake stays
+        // while the player is anywhere ON it); the bbox fallback below
+        // covers the frames before the scan.
+        if (mapLakesValid) {
+            refreshSandboxLakes(focus);
+        } else {
+            std::erase_if(
+                sandboxLakes,
+                [&](const render::terraingen::Lake& lake) {
+                    const f32 dx = glm::max(
+                        glm::max(lake.minX - focus.x,
+                                 focus.x - lake.maxX),
+                        0.0f);
+                    const f32 dz = glm::max(
+                        glm::max(lake.minZ - focus.z,
+                                 focus.z - lake.maxZ),
+                        0.0f);
+                    return glm::max(dx, dz) > evict;
+                });
+        }
         std::erase_if(
             sandboxRivers, [&](const render::terraingen::River& river) {
                 if (river.points.empty()) {
@@ -2644,8 +2746,14 @@ void LandscapeScene::publishBakedTiles(
         next->regions.emplace_back(
             std::make_shared<render::TerrainRegion>(
                 std::move(tile.region)));
-        sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
-                            tile.lakes.end());
+        if (!mapLakesValid) {
+            // Pre-registry fallback only: once the map scan landed,
+            // refreshSandboxLakes owns lake membership (a tile's lakes
+            // are a subset of the registry — inserting them here would
+            // duplicate the sheets).
+            sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
+                                tile.lakes.end());
+        }
         sandboxRivers.insert(sandboxRivers.end(),
                              std::make_move_iterator(tile.rivers.begin()),
                              std::make_move_iterator(tile.rivers.end()));

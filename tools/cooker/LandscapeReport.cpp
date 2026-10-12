@@ -480,6 +480,60 @@ int landscapeReport(char** argv, int argc) {
         for (const auto& lake : view->lakes) {
             (lake.dug ? ponds : natural) += 1;
         }
+        // The biggest lakes, measured against the FINAL ground:
+        // level vs the deepest floor under the mask, and how much of
+        // the mask the published terrain has since OUTGROWN (stale) or
+        // fallen far below (the sheet overhangs a gorge).
+        struct Big {
+            const render::terraingen::Lake* lake;
+            u32 cells;
+        };
+        vector<Big> big;
+        for (const auto& lake : view->lakes) {
+            u32 cells = 0;
+            for (const u8 m : lake.mask) {
+                cells += m;
+            }
+            big.push_back(Big { &lake, cells });
+        }
+        std::sort(big.begin(), big.end(),
+                  [](const Big& a, const Big& b) {
+                      return a.cells > b.cells;
+                  });
+        for (size_t i = 0; i < glm::min<size_t>(big.size(), 4); ++i) {
+            const auto& lake = *big[i].lake;
+            f32 floor = 1.0e9f;
+            u32 total = 0, above = 0, deepUnder = 0;
+            for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+                for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                    if (!lake.mask[static_cast<size_t>(mz) *
+                                       lake.maskWidth +
+                                   mx]) {
+                        continue;
+                    }
+                    const f32 x = lake.minX +
+                                  (static_cast<f32>(mx) + 0.5f) *
+                                      lake.maskTexel;
+                    const f32 z = lake.minZ +
+                                  (static_cast<f32>(mz) + 0.5f) *
+                                      lake.maskTexel;
+                    const f32 g = view->height(x, z);
+                    floor = glm::min(floor, g);
+                    ++total;
+                    above += g > lake.level + 0.5f ? 1 : 0;
+                    deepUnder += g < lake.level - 15.0f ? 1 : 0;
+                }
+            }
+            LOG_INFO("  lake #{}: level {:.1f}, cells {}, depth max "
+                     "{:.1f} m, mask {}x{} at ({:.0f}, {:.0f}); final "
+                     "ground ABOVE level {} % of mask, 15 m+ under "
+                     "{} %",
+                     i, lake.level, big[i].cells, lake.level - floor,
+                     lake.maskWidth, lake.maskHeight, lake.minX,
+                     lake.minZ,
+                     total ? 100 * above / total : 0,
+                     total ? 100 * deepUnder / total : 0);
+        }
         LOG_INFO("  map: relief {:.0f} m / 250 m, ground > 100 m {:.0f} %, "
                  "lakes {} ({} natural + {} placed ponds), rivers {}",
                  c.relief250Map, c.highGroundMap, c.lakes, natural,

@@ -117,6 +117,17 @@ public:
     };
     RingStatus ringStatus(const Vec3& focus) const;
     f32 tileSize() const { return params.tileSize; }
+
+    // The active map's WHOLE lake set, read once from the cache the
+    // first time the map proves baked. A lake lives in ONE slice's
+    // .twb (the one holding its bbox center), so per-tile transport
+    // loses every lake whose owner slice is beyond prefetch reach
+    // while the player stands over a far arm — the scene selects from
+    // this registry by distance to the lake's BBOX instead. Returns
+    // true once, when the worker's read lands.
+    bool takeMapLakes(vector<render::terraingen::Lake>& out) {
+        return mapLakesBuilt->tryPop(out);
+    }
     // The scene evicted this tile's region: re-request it on return.
     void forgetTile(i32 tx, i32 tz) { published.erase(keyOf(tx, tz)); }
 
@@ -149,6 +160,14 @@ private:
     // Workers push, the frame thread drains; shared_ptr so in-flight
     // bakes outlive a teardown harmlessly (TerrainCollision postmortem).
     std::shared_ptr<core::ConcurrentQueue<PublishedTile>> built;
+    // The map-wide lake registry read (one payload per streamer life).
+    std::shared_ptr<
+        core::ConcurrentQueue<vector<render::terraingen::Lake>>>
+        mapLakesBuilt {
+            std::make_shared<core::ConcurrentQueue<
+                vector<render::terraingen::Lake>>>()
+        };
+    bool mapLakesRequested { false };
     std::unordered_set<u64> published;
     std::unordered_set<u64> pending;
     void drain(const std::function<void(PublishedTile&&)>& publish);

@@ -504,6 +504,16 @@ private:
     f32 activeSnowLine { render::kSnowLine };
     vector<render::terraingen::Lake> sandboxLakes;
     vector<render::terraingen::River> sandboxRivers;
+    // Map-wide lake registry (every lake of the active map, from the
+    // streamer's one-time cache scan). A lake lives in ONE slice's
+    // .twb, so per-tile transport misses any lake whose owner slice is
+    // out of prefetch reach while the player stands over a far arm —
+    // sandboxLakes membership is selected from here by distance to the
+    // lake's BBOX instead (refreshSandboxLakes).
+    vector<render::terraingen::Lake> mapLakes;
+    bool mapLakesValid { false };
+    Vec3 lastLakeRefreshFocus { 0.0f };
+    bool lakeRefreshFocusValid { false };
     // Local water bodies (sea + lakes + rivers): Forms + sandbox bakes,
     // immutable-publish; swim queries and WaterSystem share it.
     sptr<const render::WaterBodies> waterBodies;
@@ -565,6 +575,10 @@ private:
     // Rebuilds waterBodies from Forms + sandbox results and hands it to
     // the swim queries and the WaterSystem.
     void publishWaterBodies();
+    // Reselects sandboxLakes from the mapLakes registry around `focus`
+    // (bbox distance, previous-map residents kept). Returns true when
+    // membership changed — the caller republishes the water bodies.
+    bool refreshSandboxLakes(const Vec3& focus);
     // Main-menu game mode: story (authored world, legacy terrain) or
     // sandbox (infinite generated world + streamer). Idempotent; sandbox
     // also moves the fly camera to a pleasant generated start so the
