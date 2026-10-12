@@ -2506,6 +2506,36 @@ l'hydrologie définitive).
   29 lacs naturels sur (0,0). Jugement dev EN ATTENTE (relancer le jeu
   — rebake v88 — et re-regarder la carte de départ, le grain de
   versants en jeu, le relief.png).
+- **2026-10-12 — « L'eau simulée n'apparaît pas partout où il y avait
+  l'eau prébakée » (retour dev) — enquête eau RUNTIME (état des lieux,
+  rien codé).** La chaîne bake → far → sim → shader cartographiée.
+  Aucun bug d'implémentation : trois décisions de design et quatre
+  hypothèses périmées par la passe fabriquent l'écart. (1) Dans le
+  rect de confiance de la sim (~384 m), le shader JETTE toute eau
+  bakée/far inconditionnellement (coupe 64-80 m du bord,
+  water_surface.glsl:215-233 ; l'ancien check par texel retiré à
+  dessein) : tout ce que la sim ne mouille pas devient un trou. (2)
+  Les cours < `pinRiverHalfWidth` 4 m n'ont AUCUN visuel near (ni
+  quad, ni pin — seulement le film sim ≥ 8 mm), mais le mesh baké les
+  LIFTE de ≥ 0,5 m et ×1,15 de loin (WaterSystem.cpp:745-780) ;
+  depuis E4b (largeurs honnêtes) le monde est plein de 1-4 m → « belle
+  rivière au loin, lit à sec de près » est devenu la règle. (3) Les
+  sources sous-alimentent : une tête DANS la fenêtre n'injecte rien
+  (seuls les accroissements de largeur comptent, WS:113-140) et
+  l'inverse largeur→débit défait la seule racine carrée (ignore le
+  resserrement de pente ×0,45, le plancher 1,2 m, la rampe fleuve, le
+  plancher tier 2) ; `kRunoffBoost` 1,6 tuné v67. (4) Un ruban ≥ 4 m
+  dont le sol 2 m n'est pas 0,3 m sous la surface .twb : ni pin, ni
+  seed, ni source. Recoins : bords de lacs rétrécis d'un texel +
+  crest-guard (film 8 cm), strips entrants à sec + drain de bord
+  0,4/s + settle 3 s (transitoires légitimes), trois littéraux 4.0
+  indépendants (filtre far TBS:547, plancher du fallback maître
+  TBS:603, knob WSh:146). Options en arbitrage dev : (A) visuel near
+  honnête pour les < 4 m (ruban mince non simulé) + fin du lift
+  mensonger de loin ; (B) re-vérifier « la sim a de l'eau ici » avant
+  de jeter le baké ; + trois correctifs sans arbitrage (débit des
+  têtes, inverse refait sur les vraies lois ou qArea par point,
+  unification des 4.0).
 
 ---
 
