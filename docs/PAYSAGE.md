@@ -2685,6 +2685,28 @@ l'hydrologie définitive).
   706/706. Jugement dev EN ATTENTE (retraverser la ligne ouest de
   (0,0) : une seule transition, pas de retour).
 
+- **2026-10-12 — E10c livrée : le centre des fleuves à sec (vu dev sur
+  (-1,0) à (-1694, 457, 3665) : « l'eau bakée ne remplit pas toute une
+  rivière mais juste ses bords »).** Les données sont saines — au
+  point passe un fleuve tier 2 (demi-largeur 72 m = cap loi 45 × rampe
+  1,6, aire 167 km², surface 439,3) et tout le lit publié est SOUS la
+  surface (430,6 au point, 420-428 au centre, mesuré au .trg). Le
+  coupable est le garde anti-données-pourries de `pinRivers`
+  (WaterSim.cpp) : `surf - ground > 9 m → skip` — écrit avant E9,
+  quand aucun cours légitime n'était si profond. Depuis les vrais
+  débits, un fleuve large creuse 11-19 m au centre : les BORDS
+  (< 9 m) étaient épinglés, le CENTRE silencieusement sauté — la sim
+  n'y met pas d'eau, et les discards du rect vif + des rects gelés
+  (E9) effacent le baked en comptant sur elle → lit sec au centre,
+  eau crénelée sur les bords, sur toute la bande que la trajectoire
+  du survol a balayée. Fix : le plafond de profondeur plausible suit
+  la demi-largeur locale — `max(9, 1.5·hw)` (hw 4 → 9 m inchangé
+  pour les rubans étroits où vivaient les vraies erreurs
+  résiduelles ; hw 72 → large, le lit de ~29 m max passe). Runtime
+  seul, pas de bump. Mesuré : suite rapide 706/706. Jugement dev EN
+  ATTENTE (retour sur le fleuve de (-1,0) : le lit plein dans le
+  rect sim).
+
 ---
 
 ## 8. Glossaire

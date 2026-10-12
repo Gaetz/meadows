@@ -887,9 +887,15 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                     // Banks never pin/seed (artesian lesson); and a
                     // surface hanging absurdly high over the ground
                     // (residual data error past the reconciled bed
-                    // caps) is skipped rather than materialized.
+                    // caps) is skipped rather than materialized. The
+                    // plausible-depth ceiling scales with the local
+                    // half-width: a wide fleuve legitimately carves
+                    // a deep bed (a flat 9 m cap silently skipped the
+                    // CENTER of wide courses — dry mid-river between
+                    // pinned banks, measured dev), while a narrow
+                    // residual ribbon keeps the tight cap.
                     if (ground > surf - 0.3f ||
-                        surf - ground > 9.0f) {
+                        surf - ground > glm::max(9.0f, 1.5f * hw)) {
                         continue;
                     }
                     if (state.depth[i] < 0.01f) {
