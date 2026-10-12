@@ -2896,6 +2896,21 @@ l'hydrologie définitive).
   Release au vert. Jugement dev EN ATTENTE (retour au point : berges
   en pente douce mouillées par le ruban élargi).
 
+- **2026-10-12 — Cours interrompus (vu dev à (7846, 9844) sur (0,1)) :
+  le lac de marge invisible.** Mesuré : une pluie de micro-runs
+  lakeFed de 3-6 points avec 326 m de trou — les restes d'un cours
+  coupé contre un lac de FENÊTRE (niveau 466,5, à cheval sur la ligne
+  est x=8192) dont le CENTRE de bbox tombait hors du rect de la
+  carte : la coupe aux nappes l'utilisait, mais l'ownership par
+  centre ne l'attribuait à AUCUNE tranche — jamais publié. Fix : le
+  centre est CLAMPÉ au rect de la carte avant le choix de la tranche
+  propriétaire (la tranche de bord publie le lac de marge ; le clip
+  runtime E9c borne déjà son affichage au rect — l'autorité aux
+  lignes reste propre). Bump **v96**, quatre caches relivrés.
+  Vérifié au point : la nappe (467,2 ; 918 cellules) couvre
+  l'intervalle, l'eau est continue. Suite complète Release au vert.
+  Jugement dev EN ATTENTE.
+
 ---
 
 ## 8. Glossaire

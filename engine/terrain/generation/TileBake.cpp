@@ -819,14 +819,26 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
     region.detailOctaves = kRegionDetailOctaves;
 
     // Water ownership: ONE hydrology per map — a lake belongs to the
-    // slice holding its bbox center, full stop (no anchor machinery:
-    // every slice sees the same basin at the same level). Rivers are
-    // clipped to this slice's kept rect as in the windowed path.
+    // slice holding its bbox center, CLAMPED to the map rect: a
+    // margin basin straddling a map line kept cutting the ribbons
+    // (its mask covers them) while NO slice ever published its sheet
+    // — courses shredded into stubs around an invisible lake
+    // (measured dev at (7846, 9844)). The edge slice publishes it;
+    // the runtime clip to the map rect keeps line authority clean.
     const f32 tileMaxX = tileMinX + params.tileSize;
     const f32 tileMaxZ = tileMinZ + params.tileSize;
+    const f32 mapMinX = window.originX + params.waterMargin;
+    const f32 mapMinZ = window.originZ + params.waterMargin;
+    const f32 mapSpanW =
+        static_cast<f32>(window.n - 1) * window.texelSize -
+        2.0f * params.waterMargin;
     for (const Lake& lake : hydro.lakes) {
-        const f32 cx = (lake.minX + lake.maxX) * 0.5f;
-        const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
+        const f32 cx =
+            glm::clamp((lake.minX + lake.maxX) * 0.5f, mapMinX,
+                       mapMinX + mapSpanW - 0.01f);
+        const f32 cz =
+            glm::clamp((lake.minZ + lake.maxZ) * 0.5f, mapMinZ,
+                       mapMinZ + mapSpanW - 0.01f);
         if (cx < tileMinX || cx >= tileMaxX || cz < tileMinZ ||
             cz >= tileMaxZ) {
             continue;
