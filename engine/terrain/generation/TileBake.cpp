@@ -480,6 +480,7 @@ MapHydrology extractMapHydrology(
     const TileBakeParams& params, const TileStage1& mapS1, i32 mapX,
     i32 mapZ, i32 tilesPerSide,
     const vector<const FinalizeResult*>& groundSlices,
+    const vector<render::TerrainRegion>& neighbourRegions,
     const std::atomic<bool>* cancel) {
     MapHydrology out;
     const f32 mapSize =
@@ -527,19 +528,49 @@ MapHydrology extractMapHydrology(
                 best = g;
             }
         }
-        if (!best) {
-            return s1;
-        }
-        const f32 fineH =
-            bilinearWorld(best->fineSpec, best->height, x, z);
+        const f32 inner = best
+                              ? bilinearWorld(best->fineSpec,
+                                              best->height, x, z)
+                              : s1;
         const f32 dOut = glm::max(
             glm::max(mapMinX - x, x - (mapMinX + mapSize)),
             glm::max(mapMinZ - z, z - (mapMinZ + mapSize)));
         if (dOut <= 0.0f) {
-            return fineH;
+            return inner;
+        }
+        // Past the rect: a cached NEIGHBOUR map's published final
+        // ground is truer than our own halo or the stage-1 — the
+        // shared margin's basins then resolve on the terrain both
+        // maps actually publish (the remaining water seam at lines).
+        // Documented impurity: the margin water refines with the bake
+        // order; a map baked alone stays bit-exact.
+        for (const render::TerrainRegion& nr : neighbourRegions) {
+            const f32 fx = (x - nr.originX) / nr.texelSize;
+            const f32 fz = (z - nr.originZ) / nr.texelSize;
+            if (fx < 0.0f || fz < 0.0f ||
+                fx > static_cast<f32>(nr.width) - 1.001f ||
+                fz > static_cast<f32>(nr.height) - 1.001f) {
+                continue;
+            }
+            const u32 c = static_cast<u32>(fx);
+            const u32 r = static_cast<u32>(fz);
+            const f32 tx = fx - static_cast<f32>(c);
+            const f32 tz = fz - static_cast<f32>(r);
+            const auto at = [&](u32 cc, u32 rr) {
+                return nr.heights[static_cast<size_t>(rr) * nr.width +
+                                  cc];
+            };
+            const f32 nH = glm::mix(
+                glm::mix(at(c, r), at(c + 1, r), tx),
+                glm::mix(at(c, r + 1), at(c + 1, r + 1), tx), tz);
+            return glm::mix(inner, nH,
+                            glm::smoothstep(0.0f, 96.0f, dOut));
+        }
+        if (!best) {
+            return s1;
         }
         const f32 w = 1.0f - glm::smoothstep(0.0f, 192.0f, dOut);
-        return glm::mix(s1, fineH, w);
+        return glm::mix(s1, inner, w);
     };
     out.ground.resize(out.window.cells());
     for (u32 row = 0; row < out.window.n; ++row) {
@@ -987,7 +1018,8 @@ TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
     }
     const vector<const FinalizeResult*> grounds { &ground };
     const MapHydrology hydro =
-        extractMapHydrology(solo, mapS1, tx, tz, 1, grounds, cancel);
+        extractMapHydrology(solo, mapS1, tx, tz, 1, grounds, {},
+                            cancel);
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return {};
     }

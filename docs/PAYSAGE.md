@@ -2934,6 +2934,20 @@ l'hydrologie définitive).
   le juge au-delà est l'œil. Suite rapide 706/706. Bump reporté à la
   fin de la passe (v97).
 
+- **2026-10-12 — F3 livrée : la fenêtre d'hydrologie lit le sol final
+  du voisin en cache.** `game::bakeMap` charge la rangée de tranches
+  frontalières de chaque carte voisine au manifest valide, et
+  `extractMapHydrology::groundAt` les échantillonne au-delà du rect
+  (fondu 96 m à la ligne) avant le repli stage-1 — les bassins de la
+  marge partagée (le lac de marge du bug (7846, 9844)) se résolvent
+  sur le terrain que les deux cartes publient. ENTORSE DOCUMENTÉE à la
+  pureté seed : l'eau de la bande frontalière se raffine avec l'ordre
+  de bake des cartes ; une carte bakée seule reste bit-exacte
+  (MapBakerTest inchangé). Mesuré : la jauge à ±24 m de la ligne
+  était déjà basse depuis la restructuration (9-10/256 discordants,
+  inchangée) — le gain est sur les bassins PROFONDS de marge, pas sur
+  le liseré. Suite rapide 706/706.
+
 ---
 
 ## 8. Glossaire

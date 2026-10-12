@@ -247,8 +247,55 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     for (const FinalizeResult& g : grounds) {
         groundPtrs.push_back(&g);
     }
+    // Border slices of CACHED neighbour maps: the hydrology window
+    // reads their published final ground past our rect, so the shared
+    // margin's water resolves on the terrain both maps show. A map
+    // baked alone (no neighbour cache) stays bit-exact.
+    vector<render::TerrainRegion> neighbourRegions;
+    {
+        const i32 offs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
+                                 { 0, -1 } };
+        for (const auto& off : offs) {
+            const i32 nx = mapX + off[0];
+            const i32 nz = mapZ + off[1];
+            if (!mapBakedAndValid(cacheDir, nx, nz, tilesPerSide,
+                                  &params)) {
+                continue;
+            }
+            const auto nDir = mapCacheDir(cacheDir, nx, nz);
+            for (i32 k = 0; k < tilesPerSide; ++k) {
+                // The neighbour's slice ROW/COLUMN along our shared
+                // line (the waterMargin band lies inside it).
+                const i32 tx =
+                    off[0] != 0
+                        ? (off[0] > 0 ? nx * tilesPerSide
+                                      : nx * tilesPerSide +
+                                            tilesPerSide - 1)
+                        : nx * tilesPerSide + k;
+                const i32 tz =
+                    off[1] != 0
+                        ? (off[1] > 0 ? nz * tilesPerSide
+                                      : nz * tilesPerSide +
+                                            tilesPerSide - 1)
+                        : nz * tilesPerSide + k;
+                char stem[64];
+                std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u",
+                              tx, tz, kTileBakeVersion);
+                if (auto region = world::readTrgFile(
+                        nDir / (str { stem } + ".trg"))) {
+                    neighbourRegions.push_back(std::move(*region));
+                }
+            }
+        }
+        if (!neighbourRegions.empty()) {
+            LOG_INFO("map bake ({}, {}): {} neighbour border slice(s) "
+                     "feed the hydrology margin",
+                     mapX, mapZ, neighbourRegions.size());
+        }
+    }
     const MapHydrology mapHydro = extractMapHydrology(
-        params, mapS1, mapX, mapZ, tilesPerSide, groundPtrs, cancel);
+        params, mapS1, mapX, mapZ, tilesPerSide, groundPtrs,
+        neighbourRegions, cancel);
     if (cancelled()) {
         stats.cancelled = true;
         return stats;

@@ -239,13 +239,18 @@ FinalizeResult bakeSliceGround(const TileBakeParams& params, i32 tx,
 void applyPierceDelta(FinalizeResult& fine, const MapHydrology& hydro);
 
 // Phase B — `groundSlices` are the phase-A results (any order); the
-// window samples them where covered and falls back to the stage-1
-// (blended over ~192 m past the map rect). `mapS1.sim` must cover
-// `window` (production apron kMapApron >= waterMargin).
+// window samples them where covered. Past the map rect it prefers a
+// NEIGHBOUR map's published final ground when `neighbourRegions`
+// carries it (game::bakeMap loads the border slices of cached
+// neighbours — documented impurity: the margin water refines with the
+// bake order; a map baked alone stays bit-exact), else falls back to
+// the stage-1 (blended over ~192 m). `mapS1.sim` must cover `window`
+// (production apron kMapApron >= waterMargin).
 MapHydrology extractMapHydrology(
     const TileBakeParams& params, const TileStage1& mapS1, i32 mapX,
     i32 mapZ, i32 tilesPerSide,
     const vector<const FinalizeResult*>& groundSlices,
+    const vector<render::TerrainRegion>& neighbourRegions = {},
     const std::atomic<bool>* cancel = nullptr);
 
 // Phase C — water carves + masks + region crop + water sidecar
