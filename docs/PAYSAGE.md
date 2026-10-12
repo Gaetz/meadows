@@ -2465,6 +2465,47 @@ l'hydrologie définitive).
   .png`) passe de faisceaux H/V à un réseau dendritique en arête de
   poisson. Bump **v87**. Jugement dev EN ATTENTE (re-regarder l'écran
   M au cran 5 km).
+- **2026-10-12 — « Toute l'érosion et les rivières sont strictement
+  alignées X/Z sur la carte de départ » (retour dev) — E8b livrée, et
+  l'instrument qui manquait.** Deux découvertes. (1) E8 n'avait
+  jittéré que l'HYDROLOGIE : le fill de l'ÉROSION fastscape restait
+  uniforme — sur le grand plat du ring, l'incision elle-même gravait
+  des vallons D8 en grille que l'eau (même jitterée) suivait ensuite.
+  Le jitter d'epsilon est centralisé (`fillEpsJitterAt`,
+  FluvialErosion.hpp — hash blanc seed-free sur coordonnées monde, UNE
+  maison au lieu de trois copies) et branché au fill de
+  `erodeFluvial` ; dimple et water-solve restent nullptr. (2) Aucun
+  instrument ne MONTRAIT le terrain publié : le `plan.png` dessine
+  l'analytique, où l'érosion n'existe pas — d'où deux allers-retours
+  dev sur des stries que mes images ne pouvaient pas voir. Le
+  `landscape-report` écrit désormais **`relief.png`** (hillshade 1024²
+  du sol publié, mer teintée). Ce relief a aussitôt montré le défaut
+  suivant : les CANAUX D'EMPREINTE en marches H/V/45° à coudes nets et
+  stamps en perles sur les zigzags serrés — le Chaikin seul (rayon
+  ~50 m) est invisible contre un canal de 100 m de large. Les cours
+  maîtres prennent une **moyenne glissante 5 nœuds ×2** (640 m) avant
+  le Chaikin : le relief.png passe de circuits imprimés à un éventail
+  dendritique de courbes fluides (vérifié avant livraison).
+  Résiduel noté : quelques pastilles circulaires isolées (étangs
+  posés probables), au jugement dev. Trois raffinements arrachés aux
+  images et aux jauges pendant la livraison : le jitter est un **value
+  noise bilinéaire sur grille monde 64 m** (le hash par texel faisait
+  diverger l'overview 64 m du stage-1 16 m — 11 % d'échantillons à
+  plus de 60 m ; les blocs constants imprimaient des chevrons — le
+  champ interpolé ne fait ni l'un ni l'autre, dérive 5-6 %) ; la
+  détection `lakeFed`/`sourceLake` passe au rayon 2 (le jitter décale
+  la tête d'exutoire d'une cellule du masque) ; la ligne « continent »
+  du report ne compte que les cours NÉS dans le cœur hôte (les queues
+  des voisins tronquées par le rect étaient comptées perdues) avec un
+  rayon de jonction transitive de 320 m (le box-smooth déplace le
+  parent). Bump **v88**. Mesuré (seed 1337, continent (0,0)) : **150
+  cours, 142 à la mer (95 % — jauge tenue)**, plus long cours **37,6
+  km de la source à la mer** sur un continent de 38 km ; nœuds
+  718/2544/3484 r/R/F ; relief.png : éventail dendritique, zéro
+  alignement X/Z ; dérive overview 16/256 > 60 m (jauge ≤ 8 % : 6 %) ;
+  29 lacs naturels sur (0,0). Jugement dev EN ATTENTE (relancer le jeu
+  — rebake v88 — et re-regarder la carte de départ, le grain de
+  versants en jeu, le relief.png).
 
 ---
 

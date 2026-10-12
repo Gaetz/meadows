@@ -331,6 +331,54 @@ int landscapeReport(char** argv, int argc) {
         LOG_INFO("landscape-report: plan -> {}", png.string());
     }
 
+    // The relief render (E8b): a hillshade of the PUBLISHED ground —
+    // the plan above draws the analytic, which never shows what the
+    // erosion actually carved (the grid-aligned valleys the dev
+    // reported were invisible on every plan).
+    {
+        constexpr u32 kN = 1024;
+        const f32 step = view->mapSize / static_cast<f32>(kN);
+        vector<u8> pixels(static_cast<size_t>(kN) * kN * 3);
+        for (u32 row = 0; row < kN; ++row) {
+            for (u32 col = 0; col < kN; ++col) {
+                const f32 x = view->minX + (static_cast<f32>(col) + 0.5f) * step;
+                const f32 z = view->minZ + (static_cast<f32>(row) + 0.5f) * step;
+                const f32 h = view->height(x, z);
+                const f32 hx = view->height(x + step, z) -
+                               view->height(x - step, z);
+                const f32 hz = view->height(x, z + step) -
+                               view->height(x, z - step);
+                // Lambert on a fixed NW light, gamma-ish lift.
+                const f32 nx = -hx / (2.0f * step);
+                const f32 nz = -hz / (2.0f * step);
+                const f32 len = std::sqrt(nx * nx + nz * nz + 1.0f);
+                const f32 lambert = glm::clamp(
+                    (nx * -0.55f + nz * -0.55f + 0.63f) / len, 0.0f,
+                    1.0f);
+                u8 r, g, b;
+                if (h < view->seaLevel()) {
+                    r = 30;
+                    g = 60;
+                    b = static_cast<u8>(140 + 60 * lambert);
+                } else {
+                    const u8 v = static_cast<u8>(40 + 215 * lambert);
+                    r = v;
+                    g = v;
+                    b = v;
+                }
+                u8* px = &pixels[(static_cast<size_t>(row) * kN + col) * 3];
+                px[0] = r;
+                px[1] = g;
+                px[2] = b;
+            }
+        }
+        const auto png = view->mapDir / "relief.png";
+        stbi_write_png(png.string().c_str(), static_cast<int>(kN),
+                       static_cast<int>(kN), 3, pixels.data(),
+                       static_cast<int>(kN) * 3);
+        LOG_INFO("landscape-report: relief -> {}", png.string());
+    }
+
     // The analytic's cost per call (the far terrain, the far water, the
     // spawn probe and the control lattice all pay it).
     {
@@ -458,11 +506,33 @@ int landscapeReport(char** argv, int argc) {
             static_cast<f32>(sz) * superSize,
             static_cast<f32>(sx + 1) * superSize,
             static_cast<f32>(sz + 1) * superSize);
+        // Only the courses BORN in this continent's core: the rect
+        // also catches the neighbours' tails, truncated by the
+        // selection — counting them as "lost" is the instrument's
+        // bias, not the world's.
+        const f32 coreMinX = static_cast<f32>(sx) * superSize +
+                             net.superOrigin;
+        const f32 coreMinZ = static_cast<f32>(sz) * superSize +
+                             net.superOrigin;
+        vector<u8> mine(courses.size(), 0);
+        for (size_t i = 0; i < courses.size(); ++i) {
+            if (courses[i].nodes.empty()) {
+                continue;
+            }
+            const auto& head = courses[i].nodes.front();
+            mine[i] = head.x >= coreMinX &&
+                      head.x < coreMinX + superSize &&
+                      head.z >= coreMinZ &&
+                      head.z < coreMinZ + superSize;
+        }
         vector<u8> toSea(courses.size(), 0);
         for (size_t i = 0; i < courses.size(); ++i) {
             toSea[i] = courses[i].reachesSea ? 1 : 0;
         }
-        const f32 join2 = net.texel * net.texel * 2.25f;
+        // The box-smooth moves a parent course's nodes by up to
+        // ~130 m: the tributary's EXACT junction node needs the wider
+        // radius to find it again.
+        const f32 join2 = 320.0f * 320.0f;
         for (bool grew = true; grew;) {
             grew = false;
             for (size_t i = 0; i < courses.size(); ++i) {
@@ -487,10 +557,14 @@ int landscapeReport(char** argv, int argc) {
                 }
             }
         }
-        u32 sea = 0, heads[4] = {}, ruisseau = 0, riviere = 0,
-            fleuve = 0;
+        u32 sea = 0, counted = 0, heads[4] = {}, ruisseau = 0,
+            riviere = 0, fleuve = 0;
         f32 longest = 0.0f;
         for (size_t i = 0; i < courses.size(); ++i) {
+            if (!mine[i]) {
+                continue;
+            }
+            ++counted;
             sea += toSea[i];
             f32 length = 0.0f;
             for (size_t k = 1; k < courses[i].nodes.size(); ++k) {
@@ -517,10 +591,10 @@ int landscapeReport(char** argv, int argc) {
                  "the sea ({:.0f} %), longest {:.1f} km; nodes by tier "
                  "r/R/F {}/{}/{}; heads spring/neve/glacier/lake "
                  "{}/{}/{}/{}",
-                 sx, sz, courses.size(), sea,
-                 courses.empty() ? 0.0f
-                                 : 100.0f * static_cast<f32>(sea) /
-                                       static_cast<f32>(courses.size()),
+                 sx, sz, counted, sea,
+                 counted == 0 ? 0.0f
+                              : 100.0f * static_cast<f32>(sea) /
+                                    static_cast<f32>(counted),
                  longest / 1000.0f, ruisseau, riviere, fleuve, heads[0],
                  heads[1], heads[2], heads[3]);
     }

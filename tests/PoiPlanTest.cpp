@@ -156,7 +156,15 @@ TEST_CASE("poi plan: symmetric at a map line") {
         CHECK(it->second.b.type == e.b.type);
         ++shared;
     }
-    MESSAGE("walks crossing x = 8192: ", shared);
+    // One row of maps may genuinely hold no east-west walk across its
+    // line: the seam guarantee is that SOME walk crosses SOME map
+    // line here — count the horizontal line too.
+    const auto north = poiEdgesNear(pc.world, pc.poi, 0.0f, 8192.0f,
+                                    8192.0f, 16384.0f);
+    for (const PoiEdge& e : north) {
+        shared += (e.a.z < 8192.0f) != (e.b.z < 8192.0f) ? 1u : 0u;
+    }
+    MESSAGE("walks crossing the lines at 8192: ", shared);
     CHECK(shared >= 1);
     // Each unordered pair appears once per query.
     std::map<u64, u32> counts;

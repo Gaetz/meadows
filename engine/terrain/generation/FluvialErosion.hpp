@@ -110,6 +110,36 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
 // returns the water-routing surface >= height where every node drains to
 // a base-level node (grid rim or height <= seaLevel). Shared by S2
 // (receiver routing) and S4 (lakes = filled - height).
+// The ONE home of the fill-epsilon jitter (E8): a seed-free white
+// hash on WORLD coordinates — windows agree on their overlap, and a
+// filled basin's ramp stops handing the water the queue's scan order.
+// A bilinear VALUE noise on a fixed 64 m world grid: every
+// resolution reads the same smooth field. Per-texel white hash made
+// the 64 m overview and the 16 m stage-1 erode apart (11 % of
+// samples drifting over 60 m); constant 64 m blocks printed chevron
+// grain into every slope (seen on relief.png) — the interpolated
+// field does neither.
+inline f32 fillEpsJitterAt(f32 x, f32 z, u32 salt = 0x5eedbeefu) {
+    const auto corner = [salt](i32 gx, i32 gz) {
+        u32 h = static_cast<u32>(gx) * 0x9e3779b9u ^
+                static_cast<u32>(gz) * 0x85ebca6bu ^ salt;
+        h ^= h >> 16;
+        h *= 0x7feb352du;
+        h ^= h >> 15;
+        return static_cast<f32>(h & 0xffffu) * (1.0f / 65535.0f);
+    };
+    const f32 u = x * (1.0f / 64.0f);
+    const f32 v = z * (1.0f / 64.0f);
+    const i32 gx = static_cast<i32>(std::floor(u));
+    const i32 gz = static_cast<i32>(std::floor(v));
+    const f32 fx = u - static_cast<f32>(gx);
+    const f32 fz = v - static_cast<f32>(gz);
+    const f32 top = glm::mix(corner(gx, gz), corner(gx + 1, gz), fx);
+    const f32 bot =
+        glm::mix(corner(gx, gz + 1), corner(gx + 1, gz + 1), fx);
+    return 0.3f + 1.4f * glm::mix(top, bot, fz);
+}
+
 // `epsScale` (optional, spec.cells()): per-cell multiplier of the
 // epsilon ramp. On a filled basin the ramp IS the routing surface:
 // uniform, it hands the water the queue's scan order — dead-straight

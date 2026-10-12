@@ -16,26 +16,12 @@ namespace render::terraingen {
 
 namespace {
 
-// White per-cell epsilon jitter on WORLD coordinates (two windows
-// agree on their overlap): see MasterNetwork's twin — channels across
-// filled basins stop reading the fill queue's scan order (E8).
-f32 hydroEpsJitterAt(f32 x, f32 z) {
-    u32 h = static_cast<u32>(static_cast<i32>(x)) * 0x9e3779b9u ^
-            static_cast<u32>(static_cast<i32>(z)) * 0x85ebca6bu ^
-            0x5eedbeefu;
-    h ^= h >> 16;
-    h *= 0x7feb352du;
-    h ^= h >> 15;
-    return 0.3f + 1.4f * static_cast<f32>(h & 0xffffu) *
-                      (1.0f / 65535.0f);
-}
-
 vector<f32> hydroEpsScale(const GridSpec& spec) {
     vector<f32> out(spec.cells());
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             out[static_cast<size_t>(row) * spec.n + col] =
-                hydroEpsJitterAt(spec.x(col), spec.z(row));
+                fillEpsJitterAt(spec.x(col), spec.z(row));
         }
     }
     return out;
@@ -651,8 +637,10 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         {
             const i32 hx = static_cast<i32>(head % spec.n);
             const i32 hz = static_cast<i32>(head / spec.n);
-            for (i32 dz = -1; dz <= 1 && !river.lakeFed; ++dz) {
-                for (i32 dx = -1; dx <= 1 && !river.lakeFed; ++dx) {
+            // Radius 2: the fill jitter (E8) can start the outlet one
+            // cell off the shore mask — still that lake's river.
+            for (i32 dz = -2; dz <= 2 && !river.lakeFed; ++dz) {
+                for (i32 dx = -2; dx <= 2 && !river.lakeFed; ++dx) {
                     const i32 px = hx + dx;
                     const i32 pz = hz + dz;
                     if (px >= 0 && pz >= 0 && px < n && pz < n &&

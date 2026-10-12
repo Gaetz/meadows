@@ -156,6 +156,19 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
 
     FlowRouting flow;
     vector<f32> routed;
+    // World-coordinate epsilon jitter (E8b): on the flats the uniform
+    // fill ramp handed the INCISION the queue's scan order — the
+    // fastscape carved axis-aligned valleys the water then followed
+    // whatever the hydrology's own jitter did (dev report: the start
+    // map's erosion and rivers all grid-aligned). Seed-free world
+    // hash: windows agree on their overlap.
+    vector<f32> epsScale(cells);
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            epsScale[static_cast<size_t>(row) * spec.n + col] =
+                fillEpsJitterAt(spec.x(col), spec.z(row));
+        }
+    }
     const i32 interval = glm::max(params.routingInterval, 1);
     for (i32 iter = 0; iter < params.iterations; ++iter) {
         if (cancel && cancel->load(std::memory_order_relaxed)) {
@@ -165,7 +178,7 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
             // Depression-routed surface: every node can reach base
             // level. Reused for `interval` iterations (see the param).
             routed = priorityFloodFill(spec, out.height, params.seaLevel,
-                                       params.minSlope);
+                                       params.minSlope, &epsScale);
             flow = routeFlow(spec, routed, out.height, params.seaLevel);
         }
         // Implicit update, ascending: the receiver's NEW height is
