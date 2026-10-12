@@ -1084,6 +1084,27 @@ struct RcTuningForm : Form {
 // One weather state: a full parameter set the scene
 // crossfades to. Ordinary records — a mod adds a weather type or retunes
 // one in pure TOML (§5).
+// River-source dressing (F4): which ParticleForm/SoundForm dress each
+// head typology at runtime (updateRiverSourceFx). Pure data — a mod
+// swaps the mist or wires a sound per type; a null guid means none.
+struct RiverSourceFxForm : Form {
+    core::Guid mistSpring;
+    core::Guid mistNeve;
+    core::Guid mistGlacier;
+    core::Guid soundSpring;
+    core::Guid soundNeve;
+    core::Guid soundGlacier;
+
+    REFLECT_BEGIN(RiverSourceFxForm, Form)
+        REFLECT_FIELD(mistSpring)
+        REFLECT_FIELD(mistNeve)
+        REFLECT_FIELD(mistGlacier)
+        REFLECT_FIELD(soundSpring)
+        REFLECT_FIELD(soundNeve)
+        REFLECT_FIELD(soundGlacier)
+    REFLECT_END()
+};
+
 struct WeatherForm : Form {
     i32 sortOrder { 0 };  // dropdown position
     // Clouds.

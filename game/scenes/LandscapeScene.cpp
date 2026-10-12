@@ -1777,6 +1777,7 @@ void LandscapeScene::update(f32 dt) {
     // each frame, so paused sims and fly cameras never accumulate it).
     fxDirector.update(dt, flyCamera);
     updateFxSources(); // the torches and campfires within reach
+    updateRiverSourceFx(); // mist and murmur at the springs in reach
     applyFxIgniters(dt);
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
@@ -2559,6 +2560,8 @@ void LandscapeScene::publishWaterBodies() {
     }
     for (const render::terraingen::River& river : sandboxRivers) {
         render::RiverSurface surface;
+        surface.headType = river.headType;
+        surface.headIsSource = river.headIsSource;
         surface.flowSpeed =
             render::terraingen::riverFlowSpeedForTier(river.tier);
         surface.minX = surface.minZ = 1.0e30f;
@@ -6908,6 +6911,102 @@ void LandscapeScene::snuffFxSource(ecs::Entity entity, world::FxSource& source,
     if (entity.has<world::LightSource>()) {
         entity.get_mut<world::LightSource>().litScale = 0.0f;
     }
+}
+
+void LandscapeScene::updateRiverSourceFx() {
+    // Mist (and an optional loop) at the TRUE head of each published
+    // course, by its source typology — same reach/diff pattern as the
+    // fire FxSources. Skipped indoors (the heads are outdoor data).
+    const auto sweep = [&](const std::unordered_set<u64>& seen) {
+        for (auto it = riverSourceEmitters.begin();
+             it != riverSourceEmitters.end();) {
+            if (seen.contains(it->first)) {
+                ++it;
+                continue;
+            }
+            if (it->second.haze != 0) {
+                fxSim.stopEmitter(it->second.haze);
+            }
+            if (it->second.sound != 0) {
+                audioSystem.stop(it->second.sound, 0.5f);
+            }
+            it = riverSourceEmitters.erase(it);
+        }
+    };
+    std::unordered_set<u64> seen;
+    if (!waterBodies || interiorMode) {
+        sweep(seen);
+        return;
+    }
+    const data::RiverSourceFxForm* dress = nullptr;
+    data::forEach<data::RiverSourceFxForm>(
+        forms, [&](const data::RiverSourceFxForm& f) {
+            if (!dress) {
+                dress = &f;
+            }
+        });
+    if (!dress) {
+        sweep(seen);
+        return;
+    }
+    const Vec3 cam = flyCamera.camera.position;
+    using render::terraingen::RiverHeadType;
+    for (const render::RiverSurface& river : waterBodies->rivers) {
+        if (!river.headIsSource || river.nodes.empty() ||
+            river.headType ==
+                static_cast<u32>(RiverHeadType::LakeOutlet)) {
+            continue;
+        }
+        const render::RiverNode& head = river.nodes.front();
+        const Vec3 at { head.x, head.surface + 0.2f, head.z };
+        if (glm::distance(at, cam) > kFxSourceReach) {
+            continue;
+        }
+        const u64 key =
+            (static_cast<u64>(static_cast<u32>(
+                 static_cast<i32>(head.x * 4.0f)))
+             << 32) |
+            static_cast<u64>(
+                static_cast<u32>(static_cast<i32>(head.z * 4.0f)));
+        seen.insert(key);
+        if (riverSourceEmitters.contains(key)) {
+            continue;
+        }
+        core::Guid mist;
+        core::Guid sound;
+        switch (static_cast<RiverHeadType>(river.headType)) {
+        case RiverHeadType::Neve:
+            mist = dress->mistNeve;
+            sound = dress->soundNeve;
+            break;
+        case RiverHeadType::Glacier:
+            mist = dress->mistGlacier;
+            sound = dress->soundGlacier;
+            break;
+        default:
+            mist = dress->mistSpring;
+            sound = dress->soundSpring;
+            break;
+        }
+        FxSourceEmitters emitters;
+        const u32 seed = static_cast<u32>(key & 0xffffffffu) ^
+                         0x5ee0f1a3u;
+        if (const auto* form = forms.find<data::ParticleForm>(mist)) {
+            fx::EmitterParams params = gameplay::toEmitterParams(*form);
+            params.duration = 1.0e9f; // for the source's life
+            emitters.haze = fxSim.spawn(params, at, seed);
+        }
+        if (sound.isValid()) {
+            if (const auto params =
+                    soundResolver.resolve(sound, at, seed)) {
+                emitters.sound = audioSystem.play(*params);
+            }
+        }
+        if (emitters.haze != 0 || emitters.sound != 0) {
+            riverSourceEmitters.emplace(key, emitters);
+        }
+    }
+    sweep(seen);
 }
 
 void LandscapeScene::updateFxSources() {

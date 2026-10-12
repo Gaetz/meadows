@@ -93,6 +93,11 @@ struct RiverNode {
 
 struct RiverSurface {
     vector<RiverNode> nodes; // downstream order
+    // Source dressing (F4): the head's typology (RiverHeadType) and
+    // whether nodes.front() IS the course's true head (not a slice
+    // cut or a lake resume).
+    u32 headType { 0 };
+    u8 headIsSource { 0 };
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 flowSpeed { 1.0f };
     u32 materialIndex { 0 }; // into WaterBodies::materials (0 = water)

@@ -981,8 +981,11 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
         };
         River run = freshRun();
         bool lastInLake = false;
+        bool atHead = true; // next accepted point IS the course head
         const RiverPoint* lastLakePt = nullptr;
         for (const RiverPoint& pt : river.points) {
+            const bool head = atHead;
+            atHead = false;
             if (!inKeep(pt)) {
                 if (run.points.size() >= 2) {
                     emit(std::move(run));
@@ -1013,6 +1016,9 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
                     run.points.push_back(*lastLakePt);
                 }
                 lastInLake = false;
+            }
+            if (head) {
+                run.headIsSource = 1;
             }
             run.points.push_back(pt);
         }

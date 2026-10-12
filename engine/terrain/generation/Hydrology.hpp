@@ -136,6 +136,9 @@ struct River {
     i32 sourceLake { -1 };
     // E6: source typology of the head (spring/névé/glacier/lake).
     u32 headType { 0 };
+    // This RUN starts at the course's TRUE head (not a slice cut or a
+    // lake resume): the runtime dresses sources off it. TWB7.
+    u8 headIsSource { 0 };
 };
 
 struct HydrologyParams {

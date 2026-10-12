@@ -736,6 +736,32 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             mouths.push_back({ tail.x, tail.z });
         }
     }
+    // Course heads (true sources, not lake resumes): the ground
+    // around a spring reads damp — wetness stamped in a small fan.
+    vector<Vec2> heads;
+    constexpr f32 kHeadWetReach = 24.0f; // hand-tuned
+    for (const River& river : hydro.rivers) {
+        if (river.lakeFed || river.points.empty()) {
+            continue;
+        }
+        const RiverPoint& head = river.points.front();
+        if (head.surface > params.seaLevel + 0.5f) {
+            heads.push_back({ head.x, head.z });
+        }
+    }
+    const auto headWet = [&](f32 x, f32 z) -> f32 {
+        f32 best = 1.0e30f;
+        for (const Vec2& h : heads) {
+            const f32 dx = x - h.x;
+            const f32 dz = z - h.y;
+            best = glm::min(best, dx * dx + dz * dz);
+        }
+        if (best > kHeadWetReach * kHeadWetReach) {
+            return 0.0f;
+        }
+        return 1.0f - noise::smoothstep01(0.0f, kHeadWetReach,
+                                          std::sqrt(best));
+    };
     const auto mouthFan = [&](f32 x, f32 z) -> f32 {
         f32 best = 1.0e30f;
         for (const Vec2& m : mouths) {
@@ -774,8 +800,12 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             // noise down where the fine erosion actually carved.
             const f32 incNorm =
                 out.incisionNorm.empty() ? 0.0f : out.incisionNorm[i];
-            const f32 wet = glm::max(glm::max(flowNorm, nearWater),
-                                     0.35f * incNorm);
+            f32 wet = glm::max(glm::max(flowNorm, nearWater),
+                               0.35f * incNorm);
+            if (!heads.empty()) {
+                wet = glm::max(
+                    wet, headWet(coarse.x(col), coarse.z(row)));
+            }
             // Beach: the shore band, on land, minus underwater texels.
             const f32 d = macro.seaDist[i];
             f32 beach =

@@ -38,6 +38,7 @@ void registerLandscapeFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<TerrainGenTuningForm>();
     registry.registerFormType<ZoneArchetypeForm>();
     registry.registerFormType<WeatherForm>();
+    registry.registerFormType<RiverSourceFxForm>();
 }
 
 LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms) {

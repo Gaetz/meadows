@@ -2965,6 +2965,32 @@ l'hydrologie définitive).
   trait de côte macro, à juger à l'œil. Différés journalisés :
   bras/tresses, bancs de sable émergés. Suite rapide 706/706.
 
+- **2026-10-12 — F4 livrée : habillage des sources v1 (brume +
+  humidité + son optionnel) — et CLÔTURE de la passe FINITIONS EAU
+  (bump v97, TWB7, quatre caches livrés).** Trois pièces, réutilisation
+  stricte : (1) **transport** — `River`/`RiverSurface` +=
+  `headIsSource` (posé à l'émission sur le run qui contient le premier
+  point du cours ; un début de run peut être une coupe de tranche) et
+  `headType` recopié à la publication (il était sérialisé mais jamais
+  consommé) → **TWB7** ; (2) **passe scène `updateRiverSourceFx`**
+  calquée sur les FxSources feu (diff par portée kFxSourceReach,
+  spawn/stop, skip en intérieur) : brume `ParticleForm` par typologie
+  (Spring/Névé/Glacier — LakeOutlet : rien, la nappe suffit) + boucle
+  `SoundForm` optionnelle (guids vides en base : le dev branche ses
+  wavs comme pour les footsteps) ; le tout piloté par un
+  `RiverSourceFxForm` moddable (`base/landscape.toml` : brume
+  « WaterSourceMist » haze partagée par les trois types en v1) ;
+  (3) **humidité au rocher** — stamp wetness (rayon 24 m hand-tuned)
+  autour des vraies têtes dans la boucle S6 de `finalizeWater`.
+  Différé : patch de neige local des névés (aucun mécanisme de stamp
+  matière runtime — candidat FireScorchMap-like). BILAN DE PASSE :
+  F1 lissage contraint par la vallée ✓, F2 sweep rétention mesuré
+  (statu quo 400 choisi dev) ✓, F3 sol du voisin aux lignes ✓
+  (entorse pureté documentée), F5 estuaires v1 ✓, F4 sources v1 ✓ ;
+  bump unique v97 + TWB7, suite complète Release au vert. Jugement
+  dev EN ATTENTE (tour d'eau : sources embrumées en approche,
+  estuaires évasés et sableux, rien de cassé ailleurs).
+
 ---
 
 ## 8. Glossaire

@@ -1114,3 +1114,38 @@ piece = 1
 pieceHeight = 12.0
 pieceRadius = 80.0
 erosionCut = 0.0
+
+# --- River-source dressing (F4, docs/PAYSAGE.md §7.8) -----------------
+# A soft water mist at every true course head; the dressing form maps a
+# ParticleForm (and an optional SoundForm loop — none wired yet) to each
+# head typology. Pure data: retune or swap per type in a mod.
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000e1"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "WaterSourceMist"
+shape = "disc"
+shapeRadius = 1.6
+rate = 7.0
+lifetime = 2.6
+lifetimeJitter = 0.8
+velocity = [0.0, 0.45, 0.0]
+velocityJitter = 0.25
+gravity = [0.0, 0.05, 0.0]
+sizeStart = 0.9
+sizeEnd = 2.4
+colorStart = [0.85, 0.92, 1.0, 0.10]
+colorEnd = [0.9, 0.95, 1.0, 0.0]
+blend = "haze"
+windDrag = 0.6
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000e2"
+type = "RiverSourceFxForm"
+new = true
+[records.fields]
+mistSpring = "1a4d5c00-0000-4000-8000-0000000000e1"
+mistNeve = "1a4d5c00-0000-4000-8000-0000000000e1"
+mistGlacier = "1a4d5c00-0000-4000-8000-0000000000e1"

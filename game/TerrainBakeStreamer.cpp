@@ -20,7 +20,7 @@ using render::terraingen::Lake;
 using render::terraingen::River;
 using render::terraingen::RiverPoint;
 
-constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '6' };
+constexpr char kWaterMagic[4] = { 'T', 'W', 'B', '7' };
 
 } // namespace
 
@@ -61,6 +61,7 @@ bool writeWaterFile(const std::filesystem::path& path,
         write(river.lakeFed);
         write(river.sourceLake);
         write(river.headType);
+        write(river.headIsSource);
         write(static_cast<u32>(river.fords.size()));
         for (const Vec2& ford : river.fords) {
             write(ford.x);
@@ -124,6 +125,7 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
         read(river.lakeFed);
         read(river.sourceLake);
         read(river.headType);
+        read(river.headIsSource);
         u32 fords = 0;
         file.read(reinterpret_cast<char*>(&fords), sizeof(fords));
         if (!file || fords > 100000) {
