@@ -511,11 +511,12 @@ int landscapeReport(char** argv, int argc) {
                                    mx]) {
                         continue;
                     }
+                    // Masks are point lattices (min + m*texel).
                     const f32 x = lake.minX +
-                                  (static_cast<f32>(mx) + 0.5f) *
+                                  static_cast<f32>(mx) *
                                       lake.maskTexel;
                     const f32 z = lake.minZ +
-                                  (static_cast<f32>(mz) + 0.5f) *
+                                  static_cast<f32>(mz) *
                                       lake.maskTexel;
                     const f32 g = view->height(x, z);
                     floor = glm::min(floor, g);

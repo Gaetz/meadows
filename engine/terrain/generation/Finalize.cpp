@@ -386,6 +386,43 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             }
         }
     }
+    // Masked lakes too: hydro.lakeDepth is the WINDOW flood, frozen
+    // before the dug ponds and the discovered pools existed — their
+    // shores got no wetness, no beach and full detail noise in the
+    // bed (dry-looking ponds).
+    for (const Lake& lake : hydro.lakes) {
+        if (lake.mask.empty() || lake.maskWidth == 0) {
+            continue;
+        }
+        for (u32 row = 0; row < coarse.n; ++row) {
+            const f32 z = coarse.z(row);
+            if (z < lake.minZ || z > lake.maxZ) {
+                continue;
+            }
+            for (u32 col = 0; col < coarse.n; ++col) {
+                const f32 x = coarse.x(col);
+                if (x < lake.minX || x > lake.maxX) {
+                    continue;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (x - lake.minX) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (z - lake.minZ) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskHeight - 1);
+                if (lake.mask[static_cast<size_t>(mz) *
+                                  lake.maskWidth +
+                              mx]) {
+                    waterMask[static_cast<size_t>(row) * coarse.n +
+                              col] = 1;
+                }
+            }
+        }
+    }
     const vector<f32> waterDist = distanceToMask(coarse, waterMask);
     // Coarse slope (central differences) for the rock mask.
     vector<f32> slopeCoarse(coarse.cells());

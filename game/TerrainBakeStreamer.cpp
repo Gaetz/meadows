@@ -167,8 +167,11 @@ void clipLakesToMapRect(vector<Lake>& lakes, f32 rectMinX, f32 rectMinZ,
         }
         u32 wet = 0;
         for (u32 r = 0; r < lake.maskHeight; ++r) {
-            const f32 z = lake.minZ +
-                          (static_cast<f32>(r) + 0.5f) * lake.maskTexel;
+            // Masks are POINT lattices: texel m sits at min + m*texel
+            // (the producers' convention) — the old +0.5 corner read
+            // clipped them half a texel off the map-rect line.
+            const f32 z =
+                lake.minZ + static_cast<f32>(r) * lake.maskTexel;
             for (u32 c = 0; c < lake.maskWidth; ++c) {
                 u8& m = lake.mask[static_cast<size_t>(r) *
                                       lake.maskWidth +
@@ -176,8 +179,8 @@ void clipLakesToMapRect(vector<Lake>& lakes, f32 rectMinX, f32 rectMinZ,
                 if (!m) {
                     continue;
                 }
-                const f32 x = lake.minX + (static_cast<f32>(c) + 0.5f) *
-                                              lake.maskTexel;
+                const f32 x =
+                    lake.minX + static_cast<f32>(c) * lake.maskTexel;
                 if (x < rectMinX || x > rectMaxX || z < rectMinZ ||
                     z > rectMaxZ) {
                     m = 0;

@@ -3374,6 +3374,30 @@ l'hydrologie définitive).
   les étangs d'épingle et les jonctions orphelines flottaient).
   Mesuré : étangs flottants (>rivière+0,5) **7/19 et 9/22 → 0**.
 
+- **2026-10-13 — AUDIT, brique C : ordre & coutures (bump v107).**
+  (1) **Re-clampe des affluents** après les passes qui modifient le
+  receveur (re-seat d'échappée, fusion des cascades) : abaissement
+  SEUL, receveurs d'abord, pour que les queues retombent sur le
+  nouveau niveau du tronc. Mesuré : queues suspendues >1 m
+  10→8 (0_0), 13→13 (1_0) — le reliquat est GÉOMÉTRIQUE (l'affluent
+  se termine sur la berge, à 10-20 m du chenal, son plancher y est
+  au-dessus du receveur) : périmètre de la brique recentrage, pas
+  d'une clampe de surface. (2) **Adoucissement de couture** : hors du
+  rect de carte, fineAt lit le sol DÉJÀ CARVÉ du voisin (double
+  creusement, marche d'eau aux lignes de carte) — la surface
+  recalculée est fondue vers la surface de routage sur l'approche du
+  recouvrement (96 m, smoothstep) ; le bake du voisin fait foi dans
+  SON rect. (3) **S6 voit tous les lacs** : le waterMask n'était
+  nourri que par le flood fenêtre (lakeDepth), figé avant étangs et
+  bassins — leurs rives n'avaient ni wetness ni plage et leurs lits
+  gardaient le bruit de détail ±0,35 m ; les masques de lacs sont
+  maintenant rasterisés dans le waterMask. (4) **Harmonisation
+  demi-texel** : les tests de masque côté bake (lakeCovers,
+  underLake, inFinalLake) passent du floor au centre (+0,5, la
+  convention runtime de LakeSurface::covers) ; clipLakesToMapRect et
+  le recensement du rapport échantillonnent le treillis de POINTS
+  (min + m·texel) au lieu des coins.
+
 ---
 
 ## 8. Glossaire

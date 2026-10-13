@@ -849,6 +849,7 @@ MapHydrology extractMapHydrology(
         // outlet and letting S5c slot a trench through the shore (the
         // "glass dam"). Inside a sheet, the water is the sheet.
         vector<vector<f32>> lakeLvls(riverCount);
+        vector<vector<f32>> oldSurfaces(riverCount);
         const auto coveringLakeLevel = [&](f32 x, f32 z) -> f32 {
             for (const Lake& lake : out.hydro.lakes) {
                 if (lake.dug || lake.mask.empty() ||
@@ -934,6 +935,11 @@ MapHydrology extractMapHydrology(
             for (size_t i = 0; i < count; ++i) {
                 lv[i] = coveringLakeLevel(river.points[i].x,
                                           river.points[i].z);
+            }
+            vector<f32>& olds = oldSurfaces[r];
+            olds.resize(count);
+            for (size_t i = 0; i < count; ++i) {
+                olds[i] = river.points[i].surface;
             }
         }
         // Junction links (the data has none): a course's mouth within
@@ -1113,11 +1119,11 @@ MapHydrology extractMapHydrology(
                 }
                 const u32 mx = glm::min(
                     static_cast<u32>(glm::max(
-                        (x - lake.minX) / lake.maskTexel, 0.0f)),
+                        (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f)),
                     lake.maskWidth - 1);
                 const u32 mz = glm::min(
                     static_cast<u32>(glm::max(
-                        (z - lake.minZ) / lake.maskTexel, 0.0f)),
+                        (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f)),
                     lake.maskHeight - 1);
                 return lake.mask[static_cast<size_t>(mz) *
                                      lake.maskWidth +
@@ -1437,6 +1443,68 @@ MapHydrology extractMapHydrology(
                         }
                     }
                     k = bottom;
+                }
+            }
+        }
+        // Tributaries were filled against their receiver's surface
+        // BEFORE the pool re-seat and the cascade coalescing moved it:
+        // a lowered stem left hanging lips at confluences. Re-clamp
+        // each linked course, receivers first — lowering ONLY, so the
+        // ramps and the re-seats the later passes produced survive.
+        for (const size_t r : order) {
+            if (links[r].receiver < 0 || rivers[r].points.empty()) {
+                continue;
+            }
+            River& river = rivers[r];
+            const size_t count = river.points.size();
+            const vector<f32>& f3 = floors[r];
+            const vector<f32>& bound = bounds[r];
+            const vector<f32>& lv = lakeLvls[r];
+            f32 down =
+                rivers[static_cast<size_t>(links[r].receiver)]
+                    .points[links[r].recvIdx]
+                    .surface;
+            for (size_t k = count; k-- > 0;) {
+                const f32 own =
+                    glm::max(glm::min(f3[k], bound[k]), lv[k]) -
+                    kEdgeTuck;
+                const f32 cand = glm::max(
+                    glm::max(own, down), hydrology.seaLevel);
+                if (river.points[k].surface <= cand + 0.001f) {
+                    break; // already at or under: upstream unchanged
+                }
+                river.points[k].surface = cand;
+                down = cand;
+            }
+        }
+        // Seam softening: past the map rect, fineAt reads the
+        // NEIGHBOUR'S published ground — already carved — so the
+        // re-seat there dug under beds a second time and stepped the
+        // water at map lines. Blend the recomputed surface back to
+        // the routing surface over the overlap approach; the
+        // neighbour's own bake owns those points in ITS rect.
+        {
+            const f32 rectMinX =
+                out.window.originX + params.waterMargin;
+            const f32 rectMinZ =
+                out.window.originZ + params.waterMargin;
+            const f32 rectMaxX = winMaxX - params.waterMargin;
+            const f32 rectMaxZ = winMaxZ - params.waterMargin;
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const vector<f32>& olds = oldSurfaces[r];
+                for (size_t i = 0; i < river.points.size(); ++i) {
+                    RiverPoint& pt = river.points[i];
+                    const f32 dOut = glm::max(
+                        glm::max(rectMinX - pt.x, pt.x - rectMaxX),
+                        glm::max(rectMinZ - pt.z, pt.z - rectMaxZ));
+                    if (dOut <= 0.0f) {
+                        continue;
+                    }
+                    f32 w = glm::clamp(dOut / 96.0f, 0.0f, 1.0f);
+                    w = w * w * (3.0f - 2.0f * w);
+                    pt.surface =
+                        glm::mix(pt.surface, olds[i], w);
                 }
             }
         }
@@ -1822,11 +1890,11 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
                 }
                 const u32 mx = glm::min(
                     static_cast<u32>(glm::max(
-                        (pt.x - lake.minX) / lake.maskTexel, 0.0f)),
+                        (pt.x - lake.minX) / lake.maskTexel + 0.5f, 0.0f)),
                     lake.maskWidth - 1);
                 const u32 mz = glm::min(
                     static_cast<u32>(glm::max(
-                        (pt.z - lake.minZ) / lake.maskTexel, 0.0f)),
+                        (pt.z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f)),
                     lake.maskHeight - 1);
                 if (lake.mask[static_cast<size_t>(mz) *
                                   lake.maskWidth +
