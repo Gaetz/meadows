@@ -703,8 +703,177 @@ MapHydrology extractMapHydrology(
         constexpr f32 kBoundRecover = 0.01f;  // m per m of course
         auto& rivers = out.hydro.rivers;
         const size_t riverCount = rivers.size();
+        // Window-lake re-seat: an accepted lake's spill level is a
+        // 16 m estimate — containment the window guarantees can leak
+        // at 2 m through a sub-cell notch, and the rivers now seated
+        // on the fine floor expose every such overstatement (sheets
+        // hanging over their own shores). Each natural lake is
+        // priority-flooded on the 8 m lattice from its own wet cells:
+        // an escape below level - 0.1 is the TRUE spill — the level
+        // drops to it and the mask sheds the cells the lower sheet no
+        // longer holds. A lake touching the window edge is left alone
+        // (its basin is not fully visible here).
+        {
+            constexpr f32 kLakeTexel = 8.0f;
+            constexpr f32 kLakeReach = 320.0f;
+            for (Lake& lake : out.hydro.lakes) {
+                if (lake.dug || lake.mask.empty() ||
+                    lake.maskWidth < 2) {
+                    continue;
+                }
+                const i32 gx0 = static_cast<i32>(std::floor(
+                    (lake.minX - kLakeReach) / kLakeTexel));
+                const i32 gx1 = static_cast<i32>(std::ceil(
+                    (lake.maxX + kLakeReach) / kLakeTexel));
+                const i32 gz0 = static_cast<i32>(std::floor(
+                    (lake.minZ - kLakeReach) / kLakeTexel));
+                const i32 gz1 = static_cast<i32>(std::ceil(
+                    (lake.maxZ + kLakeReach) / kLakeTexel));
+                if (static_cast<f32>(gx0) * kLakeTexel <
+                        out.window.originX ||
+                    static_cast<f32>(gx1) * kLakeTexel > winMaxX ||
+                    static_cast<f32>(gz0) * kLakeTexel <
+                        out.window.originZ ||
+                    static_cast<f32>(gz1) * kLakeTexel > winMaxZ) {
+                    continue;
+                }
+                const i32 gw = gx1 - gx0 + 1;
+                const i32 gh = gz1 - gz0 + 1;
+                vector<u8> seen(static_cast<size_t>(gw) * gh, 0);
+                struct LakeCell {
+                    f32 ground;
+                    i32 cx;
+                    i32 cz;
+                    bool operator>(const LakeCell& o) const {
+                        return ground > o.ground;
+                    }
+                };
+                std::priority_queue<LakeCell, vector<LakeCell>,
+                                    std::greater<LakeCell>>
+                    heap;
+                const f32 level = lake.level;
+                const auto push = [&](i32 cx, i32 cz) {
+                    if (cx < gx0 || cx > gx1 || cz < gz0 ||
+                        cz > gz1) {
+                        return;
+                    }
+                    const size_t idx =
+                        static_cast<size_t>(cz - gz0) * gw +
+                        static_cast<size_t>(cx - gx0);
+                    if (seen[idx]) {
+                        return;
+                    }
+                    seen[idx] = 1;
+                    const f32 g =
+                        fineAt(static_cast<f32>(cx) * kLakeTexel,
+                               static_cast<f32>(cz) * kLakeTexel);
+                    if (g >= level - 0.1f) {
+                        return;
+                    }
+                    heap.push({ g, cx, cz });
+                };
+                for (u32 mr = 0; mr < lake.maskHeight; ++mr) {
+                    for (u32 mc = 0; mc < lake.maskWidth; ++mc) {
+                        if (!lake.mask[static_cast<size_t>(mr) *
+                                           lake.maskWidth +
+                                       mc]) {
+                            continue;
+                        }
+                        const f32 px =
+                            lake.minX +
+                            static_cast<f32>(mc) * lake.maskTexel;
+                        const f32 pz =
+                            lake.minZ +
+                            static_cast<f32>(mr) * lake.maskTexel;
+                        push(static_cast<i32>(
+                                 std::floor(px / kLakeTexel)),
+                             static_cast<i32>(
+                                 std::floor(pz / kLakeTexel)));
+                    }
+                }
+                f32 spill = level;
+                bool escaped = false;
+                while (!heap.empty()) {
+                    const LakeCell c = heap.top();
+                    heap.pop();
+                    if (c.cx == gx0 || c.cx == gx1 || c.cz == gz0 ||
+                        c.cz == gz1) {
+                        spill = c.ground;
+                        escaped = true;
+                        break;
+                    }
+                    push(c.cx - 1, c.cz);
+                    push(c.cx + 1, c.cz);
+                    push(c.cx, c.cz - 1);
+                    push(c.cx, c.cz + 1);
+                }
+                if (!escaped || spill >= level - 0.5f) {
+                    continue; // contained (or within the window's due)
+                }
+                lake.level =
+                    glm::max(spill - 0.1f, hydrology.seaLevel);
+                // Shed the mask cells the lower sheet no longer
+                // holds (the dig gate's own rule), keep the count
+                // honest.
+                lake.cells = 0;
+                for (u32 mr = 0; mr < lake.maskHeight; ++mr) {
+                    for (u32 mc = 0; mc < lake.maskWidth; ++mc) {
+                        u8& wet =
+                            lake.mask[static_cast<size_t>(mr) *
+                                          lake.maskWidth +
+                                      mc];
+                        if (!wet) {
+                            continue;
+                        }
+                        const f32 px =
+                            lake.minX +
+                            static_cast<f32>(mc) * lake.maskTexel;
+                        const f32 pz =
+                            lake.minZ +
+                            static_cast<f32>(mr) * lake.maskTexel;
+                        if (fineAt(px, pz) > lake.level + 0.5f) {
+                            wet = 0;
+                        } else {
+                            ++lake.cells;
+                        }
+                    }
+                }
+            }
+        }
         vector<vector<f32>> floors(riverCount);
         vector<vector<f32>> bounds(riverCount);
+        // Per point, the level of the accepted lake covering it (or
+        // far below): a course traced THROUGH a lake must never be
+        // seated under the lake's own sill — the fill's ceiling came
+        // from the lake BED, tunnelling the course metres under the
+        // outlet and letting S5c slot a trench through the shore (the
+        // "glass dam"). Inside a sheet, the water is the sheet.
+        vector<vector<f32>> lakeLvls(riverCount);
+        const auto coveringLakeLevel = [&](f32 x, f32 z) -> f32 {
+            for (const Lake& lake : out.hydro.lakes) {
+                if (lake.dug || lake.mask.empty() ||
+                    lake.maskWidth == 0 || x < lake.minX ||
+                    x > lake.maxX || z < lake.minZ || z > lake.maxZ) {
+                    continue;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (x - lake.minX) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (z - lake.minZ) / lake.maskTexel + 0.5f,
+                        0.0f)),
+                    lake.maskHeight - 1);
+                if (lake.mask[static_cast<size_t>(mz) *
+                                  lake.maskWidth +
+                              mx]) {
+                    return lake.level;
+                }
+            }
+            return -1.0e18f;
+        };
         vector<f32> raw;
         for (size_t r = 0; r < riverCount; ++r) {
             const River& river = rivers[r];
@@ -759,6 +928,12 @@ MapHydrology extractMapHydrology(
                         glm::min(f3[i] + kPoolMax,
                                  bound[i - 1] + kBoundRecover * ds);
                 }
+            }
+            vector<f32>& lv = lakeLvls[r];
+            lv.resize(count);
+            for (size_t i = 0; i < count; ++i) {
+                lv[i] = coveringLakeLevel(river.points[i].x,
+                                          river.points[i].z);
             }
         }
         // Junction links (the data has none): a course's mouth within
@@ -893,15 +1068,19 @@ MapHydrology extractMapHydrology(
                             river.points[k].z - river.points[k - 1].z);
                 }
             }
+            const vector<f32>& lv = lakeLvls[r];
             f32 level = glm::max(
-                glm::max(glm::min(f3[count - 1], bound[count - 1]) -
+                glm::max(glm::max(glm::min(f3[count - 1],
+                                           bound[count - 1]),
+                                  lv[count - 1]) -
                              kEdgeTuck,
                          bndry),
                 hydrology.seaLevel);
             river.points[count - 1].surface = level;
             for (size_t i = count - 1; i-- > 0;) {
                 const f32 own =
-                    glm::min(f3[i], bound[i]) - kEdgeTuck;
+                    glm::max(glm::min(f3[i], bound[i]), lv[i]) -
+                    kEdgeTuck;
                 f32 next = glm::max(own, level);
                 if (hasLake && headArc[i] < 30.0f) {
                     next = glm::min(next, glm::max(lakeLevel, level));
@@ -1083,9 +1262,11 @@ MapHydrology extractMapHydrology(
                         if (j + 1 >= count) {
                             lvl = -1.0e18f;
                         }
+                        const vector<f32>& lvv = lakeLvls[r];
                         for (size_t k = j + 1; k-- > i;) {
                             const f32 own =
-                                glm::min(f3[k], bound[k]) -
+                                glm::max(glm::min(f3[k], bound[k]),
+                                         lvv[k]) -
                                 kEdgeTuck;
                             lvl = glm::max(
                                 glm::max(own, glm::min(lvl,
@@ -1259,30 +1440,30 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
-        // Junction ponds were leveled from the pre-recompute surfaces
-        // (makePond: surface - 0.1): re-seat each dug pond on the
-        // recomputed stem so its sheet never floats above the water
-        // it joins.
-        for (size_t r = 0; r < riverCount; ++r) {
-            if (links[r].receiver < 0 || rivers[r].points.empty()) {
+        // Every dug pond was leveled from the pre-recompute surfaces
+        // (makePond: surface - 0.1) — hairpin ponds and orphaned
+        // junctions included, not just the re-linked tails: sweep ALL
+        // of them onto the lowest recomputed surface that actually
+        // runs through their footprint, so no pond disc floats above
+        // its own river.
+        for (Lake& lake : out.hydro.lakes) {
+            if (!lake.dug) {
                 continue;
             }
-            const RiverPoint& tail = rivers[r].points.back();
-            const f32 sj =
-                rivers[static_cast<size_t>(links[r].receiver)]
-                    .points[links[r].recvIdx]
-                    .surface;
-            for (Lake& lake : out.hydro.lakes) {
-                if (!lake.dug) {
-                    continue;
+            const f32 m = lake.maskTexel + 8.0f;
+            f32 lo = 1.0e18f;
+            for (const River& river : rivers) {
+                for (const RiverPoint& pt : river.points) {
+                    if (pt.x < lake.minX - m || pt.x > lake.maxX + m ||
+                        pt.z < lake.minZ - m ||
+                        pt.z > lake.maxZ + m) {
+                        continue;
+                    }
+                    lo = glm::min(lo, pt.surface);
                 }
-                if (tail.x < lake.minX - lake.maskTexel ||
-                    tail.x > lake.maxX + lake.maskTexel ||
-                    tail.z < lake.minZ - lake.maskTexel ||
-                    tail.z > lake.maxZ + lake.maskTexel) {
-                    continue;
-                }
-                lake.level = glm::min(lake.level, sj - 0.1f);
+            }
+            if (lo < 1.0e17f) {
+                lake.level = glm::min(lake.level, lo - 0.1f);
             }
         }
         // A ford on a rapids reach would cap the carve to a wading

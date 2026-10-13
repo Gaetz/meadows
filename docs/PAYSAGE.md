@@ -3349,6 +3349,31 @@ l'hydrologie définitive).
   le probe de spawn lointain (farWaterWetAt) voit à nouveau les
   bassins.
 
+- **2026-10-13 — AUDIT, brique B : lacs fins (bump v106).** Les lacs
+  avaient encore le biais fenêtre que v103 a ôté aux rivières, et le
+  remplissage les traversait par le lit. Trois correctifs en fin de
+  phase B : (1) **ré-assise des lacs fenêtre** — chaque lac naturel
+  est inondé en flood prioritaire 8 m depuis ses propres cellules ;
+  une échappée sous niveau−0,1 est le VRAI seuil : le niveau descend
+  à la selle (plancher mer) et le masque perd les cellules que la
+  nappe plus basse ne tient plus (règle level+0,5 du dig) ; un lac
+  touchant le bord de fenêtre est laissé tel quel. Mesuré : les 3
+  lacs fenêtre de la tuile 0_0 descendent de 30-38 m (seuils fins
+  réels, souvent via une gorge percée voisine) — à valider à l'œil,
+  ce sont des lacs de montagne qui rapetissent ; celui de 1_0 est
+  contenu (inchangé). (2) **Anti-tunnel (« barrage de verre »)** :
+  les points de cours sous un masque de lac accepté sont planchérés
+  au niveau du lac dans le remplissage (own et re-seat d'échappée) —
+  un cours tracé à travers un lac était tunnelé sous son propre
+  seuil par le plafond prefix-min (pris sur le LIT), et S5c sciait
+  une tranchée à travers la rive : nappe suspendue au-dessus d'une
+  fente. Mesuré : points tunnelés (<niveau−1 m sous masque)
+  **77→0 (0_0) et 25→0 (1_0)**. (3) **Balayage global des étangs** :
+  tout étang creusé s'aligne sur la plus basse surface recalculée
+  traversant son empreinte (plus seulement les jonctions re-liées —
+  les étangs d'épingle et les jonctions orphelines flottaient).
+  Mesuré : étangs flottants (>rivière+0,5) **7/19 et 9/22 → 0**.
+
 ---
 
 ## 8. Glossaire
