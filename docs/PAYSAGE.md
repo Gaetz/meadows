@@ -3010,6 +3010,70 @@ l'hydrologie définitive).
   (différé, avec la jauge de virages comme garde-fou) ou pas du tout.
   Quatre caches v98 relivrés, suites au vert.
 
+- **2026-10-13 — RÉASSISE : les surfaces publiées se posent sur le sol
+  fin pré-carve — bump v99.** Enquête sur le fleuve de (5800, 4000),
+  carte (0,0) (vu dev : « l'eau de loin remplit bien le canyon, l'eau
+  simulée ne va pas jusqu'au bord ») : surface publiée 612,75, mais le
+  fond fin (2 m) est une banquette de ~120 m à 602-611 — le bord du
+  ruban flottait 4 m au-dessus du sol. **Cause structurelle, pas un
+  commit** : l'hydrologie tourne sur la fenêtre 16 m, qui dans une
+  vallée encaissée moyenne murs+fond et SURESTIME le plancher (mesuré
+  via `overview.bin` : fenêtre 616-623 à l'axe contre 602-608 en fin) ;
+  la surface de routage hérite du biais. Nouvelle jauge **stick-out**
+  (surf − min(berges fines à ±(hw+4))), carte (0,0) : v90 **62,6 %**
+  ≥2 m, v94 45,5 %, v98 41,2 % — la classe date de la restructuration
+  (le `reconcileRiversWithTerrain` supprimé faisait, au milieu de ses
+  bugs, ce re-calage fin ; le re-bound `min(surface, filled+0.3)` est
+  borné FENÊTRE). Le carve S5c borne déjà sa ligne d'eau au sol fin
+  (`centerGround + 0.3`) et creuse le lit juste — seule la PUBLICATION
+  gardait la surface fenêtre. La passe finale (fin
+  d'`extractMapHydrology`, map-level, via le sampler owner-pick +
+  pierceDelta), calibrée en six bakes jaugés sur (0,0) — dont le
+  retour dev immédiat « (5900, 3660), toujours une nappe au-dessus du
+  sol » qui a montré que le clamp à l'AXE seul ne suffit pas (l'axe
+  fenêtre y chevauche une crête fine à 631,7, le vrai fond à 623 est à
+  30-50 m, SOUS l'empreinte du ruban) :
+  1. plancher par point = min du sol fin sous l'EMPREINTE eau +
+     épaulement (axe, ±0,5/±1,0/±1,4 × hw) — le carve creuse la crête
+     mais ne REMONTE jamais le sol bas d'à côté, donc la ligne d'eau
+     descend à lui ;
+  2. cible = max(plancher sur 3 points le long) + 0,3 (anti-fosse),
+     plafond de descente 12 m (`kReseatMaxDrop` — sans lui, l'empreinte
+     large plonge dans les encoches de perçage et gorges voisines :
+     enterrés 3,0 % mesurés), garde mer ;
+  3. monotone aval à plancher borné : `s[i] = min(s[i], max(s[i−1],
+     plancher[i] + 0,3 − 6))` (`kThroughCut` — le monotone nu traînait
+     un clamp bas sur des kilomètres sous chaque remontée et faisait
+     creuser des canyons-fentes au carve).
+  Variantes REJETÉES sur mesure : clamp axe seul (les crêtes perchées
+  restent, le cas (5900, 3660)), monotone nu, garde « niveau de lac »
+  (elle épinglait des biefs au niveau de LACS FANTÔMES : des lacs de
+  `hydro.lakes` que l'émission ne publie pas — retirée, l'émission
+  coupe de toute façon le ruban dans les vrais lacs), garde
+  « point déjà enterré » (−0,3 pt d'enterrés mais +2 m au témoin 2 via
+  la chaîne monotone). **Aucun déplacement de points** (leçon v98 :
+  virages 0 % par construction). Découvertes au passage : les « murs »
+  qui enterrent des biefs près des lignes (sol plat à 883,9, ligne
+  nord) = la RETOUCHE DE BORDURE, appliquée après les carves — famille
+  préexistante, hors de portée ; et le fond plat des canyons est la
+  SUPERPOSITION des carves S5c des méandres successifs, chaque bief
+  sous-capant de ~2 m le bord du voisin (le reliquat de stick-out aux
+  témoins vient de là, pas de la passe). L'affichage expliqué : l'eau
+  de loin est une nappe coupée en profondeur contre le terrain ~70 m
+  (elle peignait tout le fond sous la surface biaisée), le sim ne
+  mouille que `dist ≤ hw` et `ground < surf − 0.3` — les deux lisaient
+  la même donnée fausse, seul le lointain la masquait. Mesuré v99
+  (0,0) : stick-out ≥2 m **41,2 % → 35,8 %**, ≥8 m 20,9 % → 17,2 %,
+  virages 0,0 % ; témoins (5800, 4000) : +4,55 → **+2,30** (le
+  sous-capage de méandres), (5900, 3660) : +10,4 → **+0,30**.
+  Compromis assumé : enterrés 0,8 % → 2,7 %, concentrés sur les
+  familles murs-de-bordure et traversées fenêtre-contre-paroi (eau déjà
+  invisible avant, surfaces plus basses donc comptées). Le gros du
+  reliquat ≥2 m reste la POSITION latérale de l'axe (crêtes au-delà de
+  ±1,4 hw, sous-capage de méandres) — différé « rebord de gorge »,
+  jauges virages + stick-out en garde-fous. Quatre caches v99 livrés,
+  suites au vert.
+
 ---
 
 ## 8. Glossaire

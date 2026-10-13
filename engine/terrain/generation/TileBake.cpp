@@ -643,6 +643,109 @@ MapHydrology extractMapHydrology(
             }
         }
     }
+    // Surface re-seat on the fine ground: the 16 m window overstates
+    // an incised valley's floor (the walls average in), and the
+    // routing surface inherits the bias — published ribbons ride
+    // metres above the 2 m bed. The S5c carve already bounds its own
+    // waterline to the local pre-carve fine ground; this pass applies
+    // the SAME bound to the published points so ribbon, sim pin, far
+    // water and masks agree with the bed. A three-point max keeps a
+    // one-texel pit on the axis from dragging the surface down, the
+    // monotone pass keeps the water from climbing downstream, and
+    // positions stay untouched (any post-smoothing displacement
+    // re-creates crenellation — measured, docs/PAYSAGE.md).
+    {
+        const f32 winMaxX =
+            out.window.originX +
+            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+        const f32 winMaxZ =
+            out.window.originZ +
+            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+        // The pierce notches exist only as a window delta until phase
+        // C transfers them (applyPierceDelta): sample the same
+        // carve-only transfer so the bound sees the ground S5c will.
+        const auto fineAt = [&](f32 x, f32 z) -> f32 {
+            f32 g = groundAt(x, z);
+            if (!out.pierceDelta.empty() && x >= out.window.originX &&
+                x <= winMaxX && z >= out.window.originZ &&
+                z <= winMaxZ) {
+                const f32 d =
+                    bilinearWorld(out.window, out.pierceDelta, x, z);
+                if (d < -0.01f) {
+                    g += d;
+                }
+            }
+            return g;
+        };
+        // How far a clamp may pull one point down. The bias class it
+        // fixes is 2-10 m (window floor vs fine floor); the pierce
+        // notches and neighbour gorges a wide footprint can graze sit
+        // 18 m+ below — the cap keeps those out without a special
+        // case.
+        constexpr f32 kReseatMaxDrop = 12.0f;
+        vector<f32> fine;
+        for (River& river : out.hydro.rivers) {
+            const size_t count = river.points.size();
+            fine.resize(count);
+            for (size_t i = 0; i < count; ++i) {
+                const RiverPoint& pt = river.points[i];
+                // Floor = the LOWEST pre-carve ground under the
+                // water's whole footprint (ribbon + carve shoulder):
+                // the window axis often rides a fine-scale levee with
+                // the real channel beside it, still under the ribbon —
+                // the carve digs the levee but can never RAISE the low
+                // ground next to it, so the waterline must come down
+                // to it.
+                f32 floor = fineAt(pt.x, pt.z);
+                const RiverPoint& fw =
+                    river.points[i + 1 < count ? i + 1 : i];
+                const RiverPoint& bw = river.points[i > 0 ? i - 1 : i];
+                const f32 dx = fw.x - bw.x;
+                const f32 dz = fw.z - bw.z;
+                const f32 len = std::sqrt(dx * dx + dz * dz);
+                if (len > 0.5f) {
+                    const f32 px = -dz / len;
+                    const f32 pz = dx / len;
+                    for (const f32 off :
+                         { -1.4f, -1.0f, -0.5f, 0.5f, 1.0f, 1.4f }) {
+                        const f32 d = off * pt.halfWidth;
+                        floor = glm::min(
+                            floor, fineAt(pt.x + px * d, pt.z + pz * d));
+                    }
+                }
+                fine[i] = floor;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                f32 target = fine[i];
+                if (i > 0) {
+                    target = glm::max(target, fine[i - 1]);
+                }
+                if (i + 1 < count) {
+                    target = glm::max(target, fine[i + 1]);
+                }
+                target += 0.3f;
+                target = glm::max(target, river.points[i].surface -
+                                              kReseatMaxDrop);
+                target = glm::max(target, hydrology.seaLevel);
+                river.points[i].surface =
+                    glm::min(river.points[i].surface, target);
+            }
+            // Monotone, FLOORED a bounded depth under each point's own
+            // fine ground: the bare min dragged one low clamp
+            // kilometres downstream, burying the ribbon under every
+            // rise the window course crosses (border walls reshape the
+            // ground AFTER the carves — that family predates this
+            // pass). The allowance lets the water ride UNDER the small
+            // levees the S5c carve digs through, no further.
+            constexpr f32 kThroughCut = 6.0f;
+            for (size_t i = 1; i < count; ++i) {
+                river.points[i].surface = glm::min(
+                    river.points[i].surface,
+                    glm::max(river.points[i - 1].surface,
+                             fine[i] + 0.3f - kThroughCut));
+            }
+        }
+    }
     return out;
 }
 
