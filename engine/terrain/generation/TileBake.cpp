@@ -1160,6 +1160,105 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        // Cascade coalescing: a real benched descent (lake-outlet
+        // pierce ramps, terraced gorges) re-emerges from the fine
+        // floor as stacked 5-10 m lips with 8-25 m treads — a
+        // staircase of slabs. Successive falls separated by SHORT
+        // treads are merged into ONE steep ramp from the cluster's
+        // top to its bottom: the carve digs a continuous chute
+        // through the benches, and the shader already dresses steep
+        // ribbons as whitewater. Endpoints keep their levels, so
+        // monotonicity is untouched. Runs AFTER pool discovery (the
+        // spill-lowering must see the un-ramped flats) and never
+        // ramps through a point a nappe covers: a lake pour-over
+        // stays a single frank lip from the sheet.
+        {
+            constexpr f32 kFallStep = 1.5f;  // a lip worth merging (m)
+            constexpr f32 kTreadMax = 30.0f; // tread that still chains
+            const auto underLake = [&](const RiverPoint& pt) {
+                for (const Lake& lake : out.hydro.lakes) {
+                    if (lake.mask.empty() || lake.maskWidth == 0 ||
+                        pt.x < lake.minX || pt.x > lake.maxX ||
+                        pt.z < lake.minZ || pt.z > lake.maxZ) {
+                        continue;
+                    }
+                    const u32 mx = glm::min(
+                        static_cast<u32>(glm::max(
+                            (pt.x - lake.minX) / lake.maskTexel,
+                            0.0f)),
+                        lake.maskWidth - 1);
+                    const u32 mz = glm::min(
+                        static_cast<u32>(glm::max(
+                            (pt.z - lake.minZ) / lake.maskTexel,
+                            0.0f)),
+                        lake.maskHeight - 1);
+                    if (lake.mask[static_cast<size_t>(mz) *
+                                      lake.maskWidth +
+                                  mx]) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            for (River& river : rivers) {
+                const size_t count = river.points.size();
+                if (count < 3) {
+                    continue;
+                }
+                vector<u8> wet(count, 0);
+                for (size_t k = 0; k < count; ++k) {
+                    wet[k] = underLake(river.points[k]) ? 1 : 0;
+                }
+                vector<f32> arc(count, 0.0f);
+                for (size_t k = 1; k < count; ++k) {
+                    arc[k] = arc[k - 1] +
+                             std::hypot(river.points[k].x -
+                                            river.points[k - 1].x,
+                                        river.points[k].z -
+                                            river.points[k - 1].z);
+                }
+                size_t k = 0;
+                while (k + 1 < count) {
+                    if (wet[k] || wet[k + 1] ||
+                        river.points[k].surface -
+                                river.points[k + 1].surface <
+                            kFallStep) {
+                        ++k;
+                        continue;
+                    }
+                    // Cluster start: chain further lips while treads
+                    // stay short.
+                    const size_t top = k;
+                    size_t bottom = k + 1;
+                    size_t lastLipEnd = k + 1;
+                    size_t lips = 1;
+                    size_t m = k + 1;
+                    while (m + 1 < count && !wet[m + 1] &&
+                           arc[m + 1] - arc[lastLipEnd] <= kTreadMax) {
+                        if (river.points[m].surface -
+                                river.points[m + 1].surface >=
+                            kFallStep) {
+                            bottom = m + 1;
+                            lastLipEnd = m + 1;
+                            ++lips;
+                        }
+                        ++m;
+                    }
+                    if (lips >= 2) {
+                        const f32 sTop = river.points[top].surface;
+                        const f32 sBot = river.points[bottom].surface;
+                        const f32 span =
+                            glm::max(arc[bottom] - arc[top], 0.001f);
+                        for (size_t q = top + 1; q < bottom; ++q) {
+                            river.points[q].surface =
+                                sTop + (sBot - sTop) *
+                                           (arc[q] - arc[top]) / span;
+                        }
+                    }
+                    k = bottom;
+                }
+            }
+        }
         // Junction ponds were leveled from the pre-recompute surfaces
         // (makePond: surface - 0.1): re-seat each dug pond on the
         // recomputed stem so its sheet never floats above the water

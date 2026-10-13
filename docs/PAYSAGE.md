@@ -3272,6 +3272,31 @@ l'hydrologie définitive).
   Juge final : tour dev. Briques restantes du chantier : recentrage
   latéral (v104), chutes explicites + habillage (TWB8), clôture.
 
+- **2026-10-13 — HYDROLOGIE FINE, brique 3a : fusion des cascades en
+  escalier (bump v104).** Retour dev après v103 (« il reste des
+  cascades en escalier » en remontant depuis le témoin) : à la tête de
+  la rivière du canyon, la rampe de déversoir du lac percé descendait
+  645→622 en trois gradins de 5-11 m à paliers de 7-22 m — des
+  banquettes RÉELLES du sol pré-carve (v102 avait le même escalier au
+  point près : famille « gradins réels », pas un artefact du
+  remplissage). Correctif (avancé depuis la brique 3, le recentrage
+  passe après) : **fusion des grappes** — les chutes ≥1,5 m séparées
+  de paliers <30 m sont re-profilées en UNE rampe raide du haut au bas
+  de la grappe ; le carve recreuse une goulotte continue à travers les
+  banquettes et le shader habille la pente en torrent. Deux règles
+  d'intégration apprises en mesurant : la fusion passe APRÈS la
+  découverte des bassins (la rampe brise les paliers constants que le
+  rabaissement-à-la-selle doit voir — inversée, la tête remontait à
+  +47 m sol) et ne traverse jamais un point couvert par une nappe (le
+  déversoir d'un lac reste UNE lèvre franche depuis la nappe).
+  **Mesuré** (tuile 1_0) : motifs lèvre→palier-plat→lèvre (<30 m)
+  **27 (v102) → 24 (v103) → 9 (v104)** ; la tête témoin : nappe
+  645,8 → lèvre unique 10,8 m → rampe continue 635→622. Leçon de
+  jauge : compter les segments raides flagge les rampes voulues — le
+  critère escalier est la présence du palier PLAT entre deux lèvres.
+  Reste pour la brique 3b (habillage) : vasque de plongée au pied,
+  écume de lèvre, embruns d'impact (réf. l'habillage des sources F4).
+
 ---
 
 ## 8. Glossaire
