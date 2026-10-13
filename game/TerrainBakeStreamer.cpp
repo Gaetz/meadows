@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 #include "game/MapBaker.hpp"
 #include "world/terrain/TerrainRegions.hpp"
 
@@ -569,6 +570,33 @@ render::WaterSystem::FarWaterSet collectFarWater(
     }
     for (const MapDir& mapDirEntry : dirs) {
     const std::filesystem::path& cacheDir = mapDirEntry.path;
+    // The far ribbons are depth-tested against the FarTerrain built
+    // from this dir's overview: a published surface seated on the 2 m
+    // carved floor dips under the 64 m picks about half the time
+    // (lattice aliasing across a gorge), shredding the ribbon into
+    // patches from afar. Clamp each FAR node to the overview ground —
+    // a display-resolution reconciliation, invisible at kilometres,
+    // NOT the per-texel near lift (removed; the near mesh and sim own
+    // the close field).
+    const auto farOverview = loadMapOverview(cacheDir);
+    const auto farGroundLift = [&](f32 x, f32 z, f32 surface) {
+        if (!farOverview) {
+            return surface;
+        }
+        const render::terraingen::GridSpec& g = farOverview->grid;
+        const f32 gMaxX =
+            g.originX + static_cast<f32>(g.n - 1) * g.texelSize;
+        const f32 gMaxZ =
+            g.originZ + static_cast<f32>(g.n - 1) * g.texelSize;
+        if (x < g.originX || x > gMaxX || z < g.originZ ||
+            z > gMaxZ) {
+            return surface;
+        }
+        return glm::max(surface,
+                        render::terraingen::bilinearWorld(
+                            g, farOverview->heights, x, z) +
+                            0.4f);
+    };
     std::error_code ec;
     for (std::filesystem::directory_iterator it { cacheDir, ec }, end;
          !ec && it != end; it.increment(ec)) {
@@ -672,7 +700,9 @@ render::WaterSystem::FarWaterSet collectFarWater(
                     }
                 }
                 run.nodes.push_back(
-                    { pt.x, pt.z, pt.surface, pt.halfWidth });
+                    { pt.x, pt.z,
+                      farGroundLift(pt.x, pt.z, pt.surface),
+                      pt.halfWidth });
             }
             flush();
         }

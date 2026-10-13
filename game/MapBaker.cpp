@@ -309,6 +309,22 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     core::ConcurrentQueue<i32> done; // 1 = written, 0 = failed/cancelled
     u32 landed = 0;
     u32 written = 0;
+    // Overview lattice, filled by the slices as they land: the far
+    // ground must be the FINAL carved fine ground, not the pre-carve
+    // window — the published water now seats on the fine floor, and a
+    // far terrain without the carved canyons buried every ribbon
+    // metres under its own décor (measured dev). Tile rects partition
+    // the map, so each worker writes disjoint texels (no lock); the
+    // completion queue orders the main thread's read. Texels no slice
+    // owns (apron, window ring) keep the window/stage-1 fallback.
+    render::terraingen::GridSpec ovGrid;
+    ovGrid.originX = mapS1.sim.originX;
+    ovGrid.originZ = mapS1.sim.originZ;
+    ovGrid.texelSize =
+        mapS1.sim.texelSize * static_cast<f32>(kOverviewStep);
+    ovGrid.n = (mapS1.sim.n - 1) / kOverviewStep + 1;
+    constexpr f32 kOvUnset = -1.0e30f;
+    vector<f32> ovFine(ovGrid.cells(), kOvUnset);
     const auto bakeSlice = [&](u32 slot, i32 tx, i32 tz) {
         if (cancelled()) {
             done.push(0);
@@ -320,6 +336,41 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         if (cancelled()) {
             done.push(0);
             return;
+        }
+        {
+            const f32 tileMinX =
+                static_cast<f32>(tx) * params.tileSize;
+            const f32 tileMinZ =
+                static_cast<f32>(tz) * params.tileSize;
+            const auto& region = slice.region;
+            for (u32 row = 0; row < ovGrid.n; ++row) {
+                const f32 z = ovGrid.z(row);
+                if (z < tileMinZ || z >= tileMinZ + params.tileSize) {
+                    continue;
+                }
+                for (u32 col = 0; col < ovGrid.n; ++col) {
+                    const f32 x = ovGrid.x(col);
+                    if (x < tileMinX ||
+                        x >= tileMinX + params.tileSize) {
+                        continue;
+                    }
+                    const i32 ix = glm::clamp(
+                        static_cast<i32>(std::lround(
+                            (x - region.originX) /
+                            region.texelSize)),
+                        0, static_cast<i32>(region.width) - 1);
+                    const i32 iz = glm::clamp(
+                        static_cast<i32>(std::lround(
+                            (z - region.originZ) /
+                            region.texelSize)),
+                        0, static_cast<i32>(region.height) - 1);
+                    ovFine[static_cast<size_t>(row) * ovGrid.n +
+                           col] =
+                        region.heights[static_cast<size_t>(iz) *
+                                           region.width +
+                                       static_cast<size_t>(ix)];
+                }
+            }
         }
         char stem[64];
         std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u", tx, tz,
@@ -374,28 +425,27 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     // inside the map.
     {
         MapOverview overview;
-        overview.grid.originX = mapS1.sim.originX;
-        overview.grid.originZ = mapS1.sim.originZ;
-        overview.grid.texelSize =
-            mapS1.sim.texelSize * static_cast<f32>(kOverviewStep);
-        overview.grid.n = (mapS1.sim.n - 1) / kOverviewStep + 1;
+        overview.grid = ovGrid;
         overview.heights.resize(overview.grid.cells());
         for (u32 row = 0; row < overview.grid.n; ++row) {
             for (u32 col = 0; col < overview.grid.n; ++col) {
-                const f32 x = overview.grid.originX +
-                              static_cast<f32>(col) *
-                                  overview.grid.texelSize;
-                const f32 z = overview.grid.originZ +
-                              static_cast<f32>(row) *
-                                  overview.grid.texelSize;
+                const size_t idx =
+                    static_cast<size_t>(row) * overview.grid.n + col;
+                // A slice-owned texel carries the FINAL carved fine
+                // ground (splatted in bakeSlice); outside the tiles,
+                // the pierced window inside the hydrology window and
+                // the stage-1 on the apron.
+                if (ovFine[idx] > kOvUnset * 0.5f) {
+                    overview.heights[idx] = ovFine[idx];
+                    continue;
+                }
+                const f32 x = overview.grid.x(col);
+                const f32 z = overview.grid.z(row);
                 const f32 s1 =
                     mapS1.eroded[static_cast<size_t>(row) *
                                      kOverviewStep * mapS1.sim.n +
                                  static_cast<size_t>(col) *
                                      kOverviewStep];
-                // Inside the hydrology window, the FINAL pierced
-                // ground is the coarse truth; the apron keeps the
-                // stage-1.
                 const render::terraingen::GridSpec& win =
                     mapHydro.window;
                 const f32 winMaxX =
@@ -404,9 +454,7 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
                 const f32 winMaxZ =
                     win.originZ +
                     static_cast<f32>(win.n - 1) * win.texelSize;
-                overview.heights[static_cast<size_t>(row) *
-                                     overview.grid.n +
-                                 col] =
+                overview.heights[idx] =
                     (x >= win.originX && x <= winMaxX &&
                      z >= win.originZ && z <= winMaxZ)
                         ? render::terraingen::bilinearWorld(

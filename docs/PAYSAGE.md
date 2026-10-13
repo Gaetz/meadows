@@ -3297,6 +3297,33 @@ l'hydrologie définitive).
   Reste pour la brique 3b (habillage) : vasque de plongée au pied,
   écume de lèvre, embruns d'impact (réf. l'habillage des sources F4).
 
+- **2026-10-13 — HYDROLOGIE FINE : l'eau de loin se bat contre le bon
+  décor (bump v105).** Retour dev après v104 : « les bandes qui
+  montrent de loin les rivières semblent calculées sur le décor low
+  poly, pas sur le décor final ». Exact — et structurel :
+  l'**overview** (MOV1 64 m, le sol du FarTerrain contre lequel l'eau
+  lointaine est testée en profondeur) était décimé depuis la fenêtre
+  16 m percée d'AVANT les carves (MapBaker), jamais depuis les sols
+  fins finaux. Tant que les surfaces étaient des valeurs fenêtre
+  (≤v102), ça collait ; assises sur le plancher fin creusé (v103+),
+  elles passaient PLUSIEURS MÈTRES SOUS un décor lointain sans canyon
+  → rubans lointains enterrés. Deux étages de correctif : (1) chaque
+  tranche **splatte son sol fin final dans l'overview** pendant le
+  bake (rects de tuile = partition, écritures disjointes sans verrou,
+  la queue de complétion ordonne la lecture ; apron/anneau fenêtre
+  gardent le repli fenêtre/stage-1) — le décor lointain montre enfin
+  les gorges ; (2) l'aliasing 64 m fait encore straddler les picks
+  lit/crête (mesuré : 51 % des points fleuve/rivière sous le sol
+  overview bilinéaire, v104 comme v105 — la résolution, pas l'ordre),
+  donc les **nœuds du ruban LOINTAIN sont clampés au sol overview
+  + 0,4** à la construction du far set (TerrainBakeStreamer) — une
+  réconciliation d'affichage à l'échelle 64 m, invisible à des
+  kilomètres, à ne pas confondre avec le lift fin par-texel supprimé
+  en v103 (le champ proche appartient au mesh local et au sim).
+  Leçon : chaque consommateur doit être réconcilié avec le sol À SA
+  RÉSOLUTION — le proche contre le 2 m (v103), le lointain contre son
+  64 m (v105).
+
 ---
 
 ## 8. Glossaire
