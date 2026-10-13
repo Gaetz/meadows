@@ -706,84 +706,12 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
         // raster samples the same conditioned curve.
         vector<RiverNode> nodes =
             terrain::subdivideRiverNodes(river.nodes);
-        // Steep reaches: the curvature subdivision alone leaves long
-        // straight CHORDS between baked nodes, and the convex bed
-        // between them pokes through — the lower half of a torrent
-        // ran inside its channel walls (measured dev, (9622, 4131)).
-        // Resample every ~4 m and GROUND each node on the RENDER
-        // terrain; max() only lifts, so pools and backwaters keep
-        // their chord while chutes hug their bed.
-        {
-            vector<RiverNode> dense;
-            // Per dense node, the grounding CEILING: the max published
-            // surface of its segment's end nodes (for an original node,
-            // of its two neighbors). A chute may legitimately fill up
-            // to its upstream node's surface; a reach whose axis ground
-            // sits ABOVE its published surface (window-vs-wall courses
-            // the fine terrain contradicts) must never be redrawn
-            // higher — the uncapped max() repainted those as sheets
-            // floating over the banks, undoing the phase-B re-seat
-            // (measured dev).
-            vector<f32> caps;
-            dense.reserve(nodes.size() * 2);
-            caps.reserve(nodes.size() * 2);
-            for (size_t i = 0; i < nodes.size(); ++i) {
-                if (i > 0) {
-                    const RiverNode& a = nodes[i - 1];
-                    const RiverNode& b = nodes[i];
-                    const f32 segCap =
-                        glm::max(a.surface, b.surface);
-                    const f32 segLen =
-                        std::hypot(b.x - a.x, b.z - a.z);
-                    const i32 cuts = static_cast<i32>(segLen / 4.0f);
-                    for (i32 k = 1; k <= cuts; ++k) {
-                        const f32 t = static_cast<f32>(k) /
-                                      static_cast<f32>(cuts + 1);
-                        RiverNode m;
-                        m.x = glm::mix(a.x, b.x, t);
-                        m.z = glm::mix(a.z, b.z, t);
-                        m.surface = glm::mix(a.surface, b.surface, t);
-                        m.halfWidth =
-                            glm::mix(a.halfWidth, b.halfWidth, t);
-                        dense.push_back(m);
-                        caps.push_back(segCap);
-                    }
-                }
-                f32 nodeCap = nodes[i].surface;
-                if (i > 0) {
-                    nodeCap =
-                        glm::max(nodeCap, nodes[i - 1].surface);
-                }
-                if (i + 1 < nodes.size()) {
-                    nodeCap =
-                        glm::max(nodeCap, nodes[i + 1].surface);
-                }
-                dense.push_back(nodes[i]);
-                caps.push_back(nodeCap);
-            }
-            for (size_t k = 0; k < dense.size(); ++k) {
-                RiverNode& nd = dense[k];
-                // The S5d pass CARVED the bed by ~0.18 x width — the
-                // water fills that channel (a 15 cm film left every
-                // chute looking nearly dry between the fully-deep
-                // baked nodes, dev feedback). The tier caps are not
-                // published runtime-side; the generic clamp only
-                // under-lifts fleuves, whose chord already carries
-                // the reconciled depth (max() keeps it).
-                // Floor 0.12 m, not 0.5: a brook reads as the film
-                // it is — the old half-meter lift sold every 1-2 m
-                // course as a river from afar, then the sim showed
-                // the truth up close (the enquête eau runtime).
-                const f32 bed = glm::clamp(
-                    0.18f * 2.0f * nd.halfWidth, 0.12f, 4.0f);
-                nd.surface = glm::min(
-                    glm::max(nd.surface,
-                             terrain::height(params, nd.x, nd.z) +
-                                 bed),
-                    caps[k]);
-            }
-            nodes = std::move(dense);
-        }
+        // No runtime grounding of the chord: the published surfaces
+        // are seated on the fine pre-carve ground at bake (the fine
+        // re-leveling pass in extractMapHydrology) and the carve digs
+        // the bed FROM them, so the bed can never poke above the
+        // chord. The old resample-and-lift re-raised buried courses
+        // into sheets floating over the banks (measured dev).
         u32 prevL = 0;
         u32 prevR = 0;
         f32 totalArc = 0.0f;

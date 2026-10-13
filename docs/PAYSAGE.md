@@ -3222,6 +3222,56 @@ l'hydrologie définitive).
   si encore visible après cette brique. Runtime pur : aucun bump,
   caches v102 inchangés.
 
+- **2026-10-13 — HYDROLOGIE FINE, brique 1 : le profil d'eau est
+  RECONSTRUIT depuis le sol fin, les bassins découverts deviennent des
+  lacs (bump v103).** Ouverture du chantier (plan approuvé) : les
+  surfaces naissaient du priority-flood 16 m (paliers plats aux
+  niveaux de déversement) et tous les correctifs v99-v102 ne savaient
+  que rabaisser — d'où l'escalier (paliers 60-100 m, chutes 4-13 m,
+  flancs qui se vidangent, témoin (5978,3577)). La passe de siège est
+  REMPLACÉE par une reconstruction en fin de phase B : (1) plancher =
+  min de l'empreinte (axe + 10 offsets ±0,5..±1,4 hw) puis min
+  longitudinal 5 points ; (2) liens de jonction reconstruits (plus
+  proche point d'une autre rivière à portée max((hwA+hwB)·2,2, 15) du
+  dernier point, tri topologique, cycle → coupe du lien le plus
+  haut) ; (3) remplissage amont par mise en commun : s = max(plancher
+  − 0,2, s_aval), bornes d'embouchure (mer / surface du receveur /
+  bord de fenêtre / médiane anti-fosse), tête lakeFed plafonnée à son
+  lac ; (4) l'eau ne monte jamais au-delà du plus bas plancher amont
+  + 2,5 m (enveloppe prefix-min à récupération 0,01 m/m — SANS elle,
+  un bief longeant une crête fine que la fenêtre n'a pas vue poolait
+  38 m au-dessus de sa vallée amont, mesuré r38 ; le kWallCut par pas
+  du plan était FAUX sur les murs soutenus, écart au plan assumé) ;
+  (5) **bassins découverts** : tout bief poolé >1 m sur ≥3 points est
+  inondé en flood PRIORITAIRE sur treillis 8 m aligné monde — si le
+  flood atteint la borne (320 m), le terrain fin offre une fuite que
+  le routage 16 m n'a pas vue : le niveau est RABAISSÉ à la selle de
+  fuite (l'eau réelle s'écoulerait là) et le bief re-assis ; le bassin
+  contenu (≥12 cellules) est émis comme LAC naturel masqué (dug=0,
+  anneau sec de rivage) — S5d-bis creuse son lit, la nappe le rend
+  loin et près, pinLakes le réservoire, l'émission coupe le ruban
+  dessous : toute la machinerie existante, zéro format nouveau (TWB
+  reste 7). Étangs de jonction re-nivelés sur le s recalculé ; gués
+  épurés des segments >0,08 de pente (le cap gué taillait un gradin
+  de pataugeoire en pleine goulotte). SUPPRimés : le siège v102
+  (min-5 + clamp + kThroughCut) et le grounding lift du ruban runtime
+  (WaterSystem — le lit carvé ne peut plus percer la corde, algèbre
+  vérifiée ; les biefs enterrés restent enterrés). Variantes mesurées
+  et rejetées en route : poolage pur sans bassins émis (bande hors-pin
+  45,7 %), poolage borné local 0,5-1 m (reconverge vers v102 + marches
+  arrière +4 m). **Mesuré** (cartes 0,0, tuiles 0_0/1_0, bande = sol
+  sous la ligne au-delà du pin 1,4 hw ET hors nappe) : bande sèche
+  >1 m 30,5/24,4 % (v102) → 34,5/32,0 % (+2-8 pts assumés : rives de
+  bassins et descentes, population visée par la brique 2), >2 m
+  25,2/20,3 → 26,9/24,1 % ; lèvres >2 m/segment 16,2/13,6 →
+  15,0/12,1 % ; non-monotone 148/202 → 67/95 ; lacs émis 22/23 →
+  57/55 (les bassins réels, désormais représentés loin ET près) ;
+  virages 0 %. Témoins : (5978,3577) une seule cascade franche
+  (620,5→612,0) puis bassin calme continu à 612,0, berges au-dessus
+  de la ligne ; (5900,3660) bassin 612,0 ; (5800,4000) 607,1 constant.
+  Juge final : tour dev. Briques restantes du chantier : recentrage
+  latéral (v104), chutes explicites + habillage (TWB8), clôture.
+
 ---
 
 ## 8. Glossaire

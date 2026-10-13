@@ -202,10 +202,12 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
         MESSAGE("map (0,0) water: ", natural, " natural lakes, ", ponds,
                 " placed ponds, ", outlets, " lake outlets");
         // A heartland map chains storey-step basins (zone walls close
-        // them faster than the piercing drains: ~32 at convergence) —
-        // the storey-outlet pass of the zones is the NEXT lever; the
-        // guard only catches a runaway.
-        CHECK(natural <= 48);
+        // them faster than the piercing drains: ~32 at convergence),
+        // and the fine re-leveling pass emits every DISCOVERED POOL
+        // of the river profiles as a masked natural lake on top
+        // (~160 at convergence on this map) — the guard only catches
+        // a runaway.
+        CHECK(natural <= 220);
     }
 
     // Without its manifest the map is not a map (bake cancelled or

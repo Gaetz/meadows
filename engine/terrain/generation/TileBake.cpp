@@ -643,27 +643,29 @@ MapHydrology extractMapHydrology(
             }
         }
     }
-    // Surface re-seat on the fine ground: the 16 m window overstates
-    // an incised valley's floor (the walls average in), and the
-    // routing surface inherits the bias — published ribbons ride
-    // metres above the 2 m bed. The S5c carve already bounds its own
-    // waterline to the local pre-carve fine ground; this pass applies
-    // the SAME bound to the published points so ribbon, sim pin, far
-    // water and masks agree with the bed. A three-point max keeps a
-    // one-texel pit on the axis from dragging the surface down, the
-    // monotone pass keeps the water from climbing downstream, and
-    // positions stay untouched (any post-smoothing displacement
+    // Fine re-leveling: the 16 m window overstates an incised valley's
+    // floor (the walls average in) and the priority-flood routing
+    // surface is a chain of FLAT pools at spill levels — published
+    // ribbons rode metres above the 2 m bed, and a clamp-only seat
+    // turned every descent into 60-100 m stairs with 4-13 m lips whose
+    // free side-water drains away. The profile is therefore REBUILT
+    // from the fine pre-carve ground: per point, the lower envelope of
+    // the carve footprint, then an upstream pooling fill — the surface
+    // follows the floor on descents (rapids, not stairs) and pools
+    // only where the floor genuinely dips under the downstream level.
+    // Positions stay untouched (any post-smoothing displacement
     // re-creates crenellation — measured, docs/PAYSAGE.md).
     {
+        const f32 winTexel = out.window.texelSize;
         const f32 winMaxX =
             out.window.originX +
-            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+            static_cast<f32>(out.window.n - 1) * winTexel;
         const f32 winMaxZ =
             out.window.originZ +
-            static_cast<f32>(out.window.n - 1) * out.window.texelSize;
+            static_cast<f32>(out.window.n - 1) * winTexel;
         // The pierce notches exist only as a window delta until phase
         // C transfers them (applyPierceDelta): sample the same
-        // carve-only transfer so the bound sees the ground S5c will.
+        // carve-only transfer so the profile sees the ground S5c will.
         const auto fineAt = [&](f32 x, f32 z) -> f32 {
             f32 g = groundAt(x, z);
             if (!out.pierceDelta.empty() && x >= out.window.originX &&
@@ -677,29 +679,37 @@ MapHydrology extractMapHydrology(
             }
             return g;
         };
-        // The water seats JUST UNDER the lowest fine ground of its
-        // footprint (ribbon + carve shoulder), with no cap — the
-        // dev's rule: sink the river into the floor it measures, the
-        // carve digs the gabarit from the seated surface, and nothing
-        // beyond the ribbon edge may stay below the waterline (the
-        // visible defect was that strip, 1-4 m under the water). The
-        // seat is the 5-point running MIN of the floor ALONG the
-        // course — the LOWER ENVELOPE: it includes the point itself,
-        // so no sampled offset ever stays below the waterline (a
-        // 3-point max and a running median both lifted the surface
-        // above the local floor and re-created the strip, measured).
-        // An isolated pit costs a ~35 m local dip of the surface,
-        // bounded by the monotone floor below.
-        // Seating on the pre-carve ground at the ribbon edge
-        // was measured and rejected: the player's banks are carve
-        // products, the pre-carve edge is the un-dug hillside —
-        // seating there barely descends at all.
+        // The water sits JUST UNDER the lowest fine ground of its
+        // footprint (ribbon + carve shoulder): nothing beyond the
+        // ribbon edge may stay below the waterline. A 5-point
+        // longitudinal min covers the texel rows between points (~8 m
+        // spacing) and absorbs sampling jitter; the pits it would
+        // have dragged along in a clamp-only pass are bridged by the
+        // pooling fill instead.
         constexpr f32 kEdgeTuck = 0.2f;
-        vector<f32> fine;
-        vector<f32> seat;
-        for (River& river : out.hydro.rivers) {
+        // Ceiling of the fill: no point's water may stand more than a
+        // pond's depth above the LOWEST fine floor upstream of it —
+        // the no-floating invariant. A course routed along a fine
+        // ridge the window never saw (its fine floor RISES downstream
+        // by tens of metres) is tunneled at the upstream valley level,
+        // buried and invisible under the ridge (the accepted trade;
+        // the re-route brick owns those courses), instead of pooling
+        // the whole upstream valley into a floating sheet — a plain
+        // routing-level ceiling was measured 38 m above the valley
+        // floor on such a reach. The slow recovery keeps one deep
+        // mis-sampled pit from dragging its penalty kilometres
+        // downstream (the lesson of the old through-cut).
+        constexpr f32 kPoolMax = 2.5f;        // wall-tunnel slack (m)
+        constexpr f32 kBoundRecover = 0.01f;  // m per m of course
+        auto& rivers = out.hydro.rivers;
+        const size_t riverCount = rivers.size();
+        vector<vector<f32>> floors(riverCount);
+        vector<vector<f32>> bounds(riverCount);
+        vector<f32> raw;
+        for (size_t r = 0; r < riverCount; ++r) {
+            const River& river = rivers[r];
             const size_t count = river.points.size();
-            fine.resize(count);
+            raw.resize(count);
             for (size_t i = 0; i < count; ++i) {
                 const RiverPoint& pt = river.points[i];
                 f32 floor = fineAt(pt.x, pt.z);
@@ -720,37 +730,494 @@ MapHydrology extractMapHydrology(
                             floor, fineAt(pt.x + px * d, pt.z + pz * d));
                     }
                 }
-                fine[i] = floor;
+                raw[i] = floor;
             }
-            seat.resize(count);
+            vector<f32>& f3 = floors[r];
+            f3.resize(count);
             for (size_t i = 0; i < count; ++i) {
-                f32 lo = fine[i];
+                f32 lo = raw[i];
                 for (size_t k = (i >= 2 ? i - 2 : 0);
                      k <= glm::min(i + 2, count - 1); ++k) {
-                    lo = glm::min(lo, fine[k]);
+                    lo = glm::min(lo, raw[k]);
                 }
-                seat[i] = lo;
+                f3[i] = lo;
             }
-            for (size_t i = 0; i < count; ++i) {
-                f32 target = seat[i] - kEdgeTuck;
-                target = glm::max(target, hydrology.seaLevel);
-                river.points[i].surface =
-                    glm::min(river.points[i].surface, target);
+            // Forward slope-limited envelope of floor + pond depth:
+            // the fill's ceiling. min() keeps it at the local floor's
+            // pond level; the recovery term lets it climb back only
+            // gently after a low stretch, so the tunnel under a rising
+            // ridge holds for the ridge's whole length.
+            vector<f32>& bound = bounds[r];
+            bound.resize(count);
+            if (count > 0) {
+                bound[0] = f3[0] + kPoolMax;
+                for (size_t i = 1; i < count; ++i) {
+                    const f32 ds = std::hypot(
+                        river.points[i].x - river.points[i - 1].x,
+                        river.points[i].z - river.points[i - 1].z);
+                    bound[i] =
+                        glm::min(f3[i] + kPoolMax,
+                                 bound[i - 1] + kBoundRecover * ds);
+                }
             }
-            // Monotone, FLOORED a bounded depth under each point's own
-            // fine ground: the bare min dragged one low clamp
-            // kilometres downstream, burying the ribbon under every
-            // rise the window course crosses (border walls reshape the
-            // ground AFTER the carves — that family predates this
-            // pass). The allowance lets the water ride UNDER the small
-            // levees the S5c carve digs through, no further.
-            constexpr f32 kThroughCut = 6.0f;
-            for (size_t i = 1; i < count; ++i) {
-                river.points[i].surface = glm::min(
-                    river.points[i].surface,
-                    glm::max(river.points[i - 1].surface,
-                             seat[i] - kThroughCut));
+        }
+        // Junction links (the data has none): a course's mouth within
+        // confluence reach of another course drains INTO it — its
+        // boundary level is the receiver's recomputed surface there,
+        // so tributaries land ON their stem instead of pooling from
+        // their own floor.
+        struct Link {
+            i32 receiver { -1 };
+            size_t recvIdx { 0 };
+        };
+        vector<Link> links(riverCount);
+        for (size_t r = 0; r < riverCount; ++r) {
+            if (rivers[r].points.empty()) {
+                continue;
             }
+            const RiverPoint& tail = rivers[r].points.back();
+            f32 bestD2 = 1.0e18f;
+            for (size_t o = 0; o < riverCount; ++o) {
+                if (o == r || rivers[o].points.empty()) {
+                    continue;
+                }
+                const vector<RiverPoint>& opts = rivers[o].points;
+                for (size_t j = 0; j < opts.size(); ++j) {
+                    const f32 reach = glm::max(
+                        (tail.halfWidth + opts[j].halfWidth) * 2.2f,
+                        15.0f);
+                    const f32 dx = opts[j].x - tail.x;
+                    const f32 dz = opts[j].z - tail.z;
+                    const f32 d2 = dx * dx + dz * dz;
+                    if (d2 < bestD2 && d2 <= reach * reach) {
+                        bestD2 = d2;
+                        links[r].receiver = static_cast<i32>(o);
+                        links[r].recvIdx = j;
+                    }
+                }
+            }
+        }
+        // Receivers fill before their tributaries; a coincidental
+        // proximity cycle drops the link whose mouth floor sits
+        // highest (that course falls back to its own floor).
+        vector<u8> filled(riverCount, 0);
+        vector<size_t> order;
+        order.reserve(riverCount);
+        while (order.size() < riverCount) {
+            bool progressed = false;
+            for (size_t r = 0; r < riverCount; ++r) {
+                if (filled[r]) {
+                    continue;
+                }
+                const i32 recv = links[r].receiver;
+                if (recv < 0 || filled[static_cast<size_t>(recv)]) {
+                    filled[r] = 1;
+                    order.push_back(r);
+                    progressed = true;
+                }
+            }
+            if (!progressed) {
+                size_t cut = riverCount;
+                f32 hi = -1.0e18f;
+                for (size_t r = 0; r < riverCount; ++r) {
+                    if (filled[r] || links[r].receiver < 0) {
+                        continue;
+                    }
+                    const f32 h = floors[r].empty() ? -1.0e18f
+                                                    : floors[r].back();
+                    if (cut == riverCount || h > hi) {
+                        hi = h;
+                        cut = r;
+                    }
+                }
+                if (cut == riverCount) {
+                    break;
+                }
+                links[cut].receiver = -1;
+            }
+        }
+        for (const size_t r : order) {
+            River& river = rivers[r];
+            const size_t count = river.points.size();
+            if (count == 0) {
+                continue;
+            }
+            const vector<f32>& f3 = floors[r];
+            const vector<f32>& bound = bounds[r];
+            // Mouth boundary: the sea for estuaries (the routed trace
+            // ended at a sea cell), the receiver's surface at a
+            // junction, nothing at a window-border outlet, and a
+            // 3-point median at a plain interior stop (one pit at the
+            // very mouth must not sink the whole tail).
+            const RiverPoint& tail = river.points.back();
+            f32 bndry = -1.0e18f;
+            const bool seaMouth =
+                tail.surface <= hydrology.seaLevel + 0.5f;
+            const bool borderMouth =
+                tail.x <= out.window.originX + winTexel ||
+                tail.x >= winMaxX - winTexel ||
+                tail.z <= out.window.originZ + winTexel ||
+                tail.z >= winMaxZ - winTexel;
+            if (links[r].receiver >= 0) {
+                bndry = rivers[static_cast<size_t>(links[r].receiver)]
+                            .points[links[r].recvIdx]
+                            .surface;
+            } else if (!seaMouth && !borderMouth && count >= 3) {
+                const f32 a = f3[count - 1];
+                const f32 b = f3[count - 2];
+                const f32 c = f3[count - 3];
+                bndry = glm::max(glm::min(a, b),
+                                 glm::min(glm::max(a, b), c)) -
+                        kEdgeTuck;
+            }
+            // The head of a lake outlet never rises above its lake:
+            // pooling past the sill would put the river ABOVE the
+            // sheet it springs from.
+            const bool hasLake =
+                river.lakeFed != 0 && river.sourceLake >= 0 &&
+                static_cast<size_t>(river.sourceLake) <
+                    out.hydro.lakes.size();
+            const f32 lakeLevel =
+                hasLake ? out.hydro.lakes[static_cast<size_t>(
+                                              river.sourceLake)]
+                              .level
+                        : 0.0f;
+            vector<f32> headArc;
+            if (hasLake) {
+                headArc.resize(count, 0.0f);
+                for (size_t k = 1; k < count; ++k) {
+                    headArc[k] =
+                        headArc[k - 1] +
+                        std::hypot(
+                            river.points[k].x - river.points[k - 1].x,
+                            river.points[k].z - river.points[k - 1].z);
+                }
+            }
+            f32 level = glm::max(
+                glm::max(glm::min(f3[count - 1], bound[count - 1]) -
+                             kEdgeTuck,
+                         bndry),
+                hydrology.seaLevel);
+            river.points[count - 1].surface = level;
+            for (size_t i = count - 1; i-- > 0;) {
+                const f32 own =
+                    glm::min(f3[i], bound[i]) - kEdgeTuck;
+                f32 next = glm::max(own, level);
+                if (hasLake && headArc[i] < 30.0f) {
+                    next = glm::min(next, glm::max(lakeLevel, level));
+                }
+                level = next;
+                river.points[i].surface = level;
+            }
+        }
+        // Discovered pools: where the fill pooled the surface above
+        // the local floor, the real water body is WIDER than the
+        // ribbon — the far water paints it while the sim pin stops at
+        // the ribbon footprint (the dry-band defect, measured on
+        // ~half the network when pools stayed ribbon-only). A pooled
+        // reach IS a lake: it is emitted as a masked natural lake and
+        // the existing machinery owns it from there — S5d-bis digs
+        // the bed, the nappe renders it far and near, pinLakes
+        // reservoirs it, the ribbon is cut under it at emission.
+        {
+            constexpr f32 kPoolMinRise = 1.0f;
+            constexpr size_t kPoolMinRun = 3;
+            constexpr f32 kPoolMaskTexel = 8.0f;
+            constexpr f32 kPoolMaxReach = 320.0f;
+            constexpr u32 kPoolMinCells = 12;
+            const auto lakeCovers = [](const Lake& lake, f32 x,
+                                       f32 z) {
+                if (lake.mask.empty() || lake.maskWidth == 0 ||
+                    x < lake.minX || x > lake.maxX || z < lake.minZ ||
+                    z > lake.maxZ) {
+                    return false;
+                }
+                const u32 mx = glm::min(
+                    static_cast<u32>(glm::max(
+                        (x - lake.minX) / lake.maskTexel, 0.0f)),
+                    lake.maskWidth - 1);
+                const u32 mz = glm::min(
+                    static_cast<u32>(glm::max(
+                        (z - lake.minZ) / lake.maskTexel, 0.0f)),
+                    lake.maskHeight - 1);
+                return lake.mask[static_cast<size_t>(mz) *
+                                     lake.maskWidth +
+                                 mx] != 0;
+            };
+            const size_t preExistingLakes = out.hydro.lakes.size();
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                const vector<f32>& f3 = floors[r];
+                const vector<f32>& bound = bounds[r];
+                size_t i = 0;
+                while (i < count) {
+                    if (river.points[i].surface - f3[i] <=
+                        kPoolMinRise) {
+                        ++i;
+                        continue;
+                    }
+                    const f32 level = river.points[i].surface;
+                    size_t j = i;
+                    while (j + 1 < count &&
+                           river.points[j + 1].surface - f3[j + 1] >
+                               kPoolMinRise &&
+                           std::abs(river.points[j + 1].surface -
+                                    level) < 0.01f) {
+                        ++j;
+                    }
+                    const size_t runLen = j - i + 1;
+                    const f32 midX =
+                        river.points[(i + j) / 2].x;
+                    const f32 midZ =
+                        river.points[(i + j) / 2].z;
+                    bool inExisting = false;
+                    for (size_t l = 0; l < preExistingLakes; ++l) {
+                        if (lakeCovers(out.hydro.lakes[l], midX,
+                                       midZ)) {
+                            inExisting = true;
+                            break;
+                        }
+                    }
+                    if (runLen < kPoolMinRun || inExisting) {
+                        i = j + 1;
+                        continue;
+                    }
+                    // Priority-flood the pool's footprint on an 8 m
+                    // world-aligned lattice (deterministic and
+                    // seam-stable), bounded to the run's bbox + reach.
+                    // Cells flood in ascending ground order; reaching
+                    // the bound means the fine terrain offers a drain
+                    // the 16 m routing never saw — the pool is FALSE
+                    // above that saddle, so the water level is LOWERED
+                    // to it (real water would run out there) and only
+                    // the contained basin is kept.
+                    f32 rMinX = river.points[i].x;
+                    f32 rMaxX = rMinX;
+                    f32 rMinZ = river.points[i].z;
+                    f32 rMaxZ = rMinZ;
+                    for (size_t k = i; k <= j; ++k) {
+                        rMinX = glm::min(rMinX, river.points[k].x);
+                        rMaxX = glm::max(rMaxX, river.points[k].x);
+                        rMinZ = glm::min(rMinZ, river.points[k].z);
+                        rMaxZ = glm::max(rMaxZ, river.points[k].z);
+                    }
+                    const i32 gx0 = static_cast<i32>(std::floor(
+                        (rMinX - kPoolMaxReach) / kPoolMaskTexel));
+                    const i32 gx1 = static_cast<i32>(std::ceil(
+                        (rMaxX + kPoolMaxReach) / kPoolMaskTexel));
+                    const i32 gz0 = static_cast<i32>(std::floor(
+                        (rMinZ - kPoolMaxReach) / kPoolMaskTexel));
+                    const i32 gz1 = static_cast<i32>(std::ceil(
+                        (rMaxZ + kPoolMaxReach) / kPoolMaskTexel));
+                    const i32 gw = gx1 - gx0 + 1;
+                    const i32 gh = gz1 - gz0 + 1;
+                    vector<u8> seen(static_cast<size_t>(gw) * gh, 0);
+                    struct PoolCell {
+                        f32 ground;
+                        i32 cx;
+                        i32 cz;
+                        bool operator>(const PoolCell& o) const {
+                            return ground > o.ground;
+                        }
+                    };
+                    std::priority_queue<PoolCell, vector<PoolCell>,
+                                        std::greater<PoolCell>>
+                        heap;
+                    const auto push = [&](i32 cx, i32 cz) {
+                        if (cx < gx0 || cx > gx1 || cz < gz0 ||
+                            cz > gz1) {
+                            return;
+                        }
+                        const size_t idx =
+                            static_cast<size_t>(cz - gz0) * gw +
+                            static_cast<size_t>(cx - gx0);
+                        if (seen[idx]) {
+                            return;
+                        }
+                        seen[idx] = 1;
+                        const f32 g = fineAt(
+                            static_cast<f32>(cx) * kPoolMaskTexel,
+                            static_cast<f32>(cz) * kPoolMaskTexel);
+                        if (g >= level - 0.1f) {
+                            return;
+                        }
+                        heap.push({ g, cx, cz });
+                    };
+                    for (size_t k = i; k <= j; ++k) {
+                        push(static_cast<i32>(std::floor(
+                                 river.points[k].x / kPoolMaskTexel)),
+                             static_cast<i32>(std::floor(
+                                 river.points[k].z /
+                                 kPoolMaskTexel)));
+                    }
+                    vector<PoolCell> popped;
+                    f32 spill = level;
+                    bool escaped = false;
+                    while (!heap.empty()) {
+                        const PoolCell c = heap.top();
+                        heap.pop();
+                        if (c.cx == gx0 || c.cx == gx1 ||
+                            c.cz == gz0 || c.cz == gz1) {
+                            // The lowest way out: everything above
+                            // this saddle drains through it.
+                            spill = c.ground;
+                            escaped = true;
+                            break;
+                        }
+                        popped.push_back(c);
+                        push(c.cx - 1, c.cz);
+                        push(c.cx + 1, c.cz);
+                        push(c.cx, c.cz - 1);
+                        push(c.cx, c.cz + 1);
+                    }
+                    const f32 poolLevel =
+                        escaped ? spill - 0.1f : level;
+                    if (escaped) {
+                        // Re-seat the run on the corrected level: the
+                        // monotone max keeps the profile sound, the
+                        // pooled plateau simply sits lower.
+                        f32 lvl = river.points[j + 1 < count ? j + 1
+                                                             : j]
+                                      .surface;
+                        if (j + 1 >= count) {
+                            lvl = -1.0e18f;
+                        }
+                        for (size_t k = j + 1; k-- > i;) {
+                            const f32 own =
+                                glm::min(f3[k], bound[k]) -
+                                kEdgeTuck;
+                            lvl = glm::max(
+                                glm::max(own, glm::min(lvl,
+                                                       poolLevel)),
+                                hydrology.seaLevel);
+                            river.points[k].surface = lvl;
+                        }
+                        // Upstream of the run keeps monotonicity: its
+                        // levels were >= the old pool, which only
+                        // dropped.
+                        for (size_t k = i; k-- > 0;) {
+                            if (river.points[k].surface >= lvl) {
+                                break;
+                            }
+                            lvl = glm::max(river.points[k].surface,
+                                           lvl);
+                            river.points[k].surface = lvl;
+                        }
+                    }
+                    u32 cells = 0;
+                    i32 wMinX = gx1, wMaxX = gx0, wMinZ = gz1,
+                        wMaxZ = gz0;
+                    for (const PoolCell& c : popped) {
+                        if (c.ground >= poolLevel - 0.1f) {
+                            continue;
+                        }
+                        ++cells;
+                        wMinX = glm::min(wMinX, c.cx);
+                        wMaxX = glm::max(wMaxX, c.cx);
+                        wMinZ = glm::min(wMinZ, c.cz);
+                        wMaxZ = glm::max(wMaxZ, c.cz);
+                    }
+                    if (cells >= kPoolMinCells) {
+                        // One dry ring around the covered cells: the
+                        // mask border is shore (S5d-bis and the mesh
+                        // perimeter probes both expect it).
+                        Lake pool;
+                        pool.dug = 0;
+                        pool.level = poolLevel;
+                        pool.cells = cells;
+                        pool.catchment = river.points[j].area;
+                        pool.maskTexel = kPoolMaskTexel;
+                        pool.minX = static_cast<f32>(wMinX - 1) *
+                                    kPoolMaskTexel;
+                        pool.minZ = static_cast<f32>(wMinZ - 1) *
+                                    kPoolMaskTexel;
+                        pool.maxX = static_cast<f32>(wMaxX + 1) *
+                                    kPoolMaskTexel;
+                        pool.maxZ = static_cast<f32>(wMaxZ + 1) *
+                                    kPoolMaskTexel;
+                        pool.maskWidth =
+                            static_cast<u32>(wMaxX - wMinX + 3);
+                        pool.maskHeight =
+                            static_cast<u32>(wMaxZ - wMinZ + 3);
+                        pool.mask.assign(
+                            static_cast<size_t>(pool.maskWidth) *
+                                pool.maskHeight,
+                            0);
+                        for (const PoolCell& c : popped) {
+                            if (c.ground >= poolLevel - 0.1f) {
+                                continue;
+                            }
+                            pool.mask[static_cast<size_t>(
+                                          c.cz - wMinZ + 1) *
+                                          pool.maskWidth +
+                                      static_cast<size_t>(
+                                          c.cx - wMinX + 1)] = 1;
+                        }
+                        out.hydro.lakes.push_back(std::move(pool));
+                    }
+                    i = j + 1;
+                }
+            }
+        }
+        // Junction ponds were leveled from the pre-recompute surfaces
+        // (makePond: surface - 0.1): re-seat each dug pond on the
+        // recomputed stem so its sheet never floats above the water
+        // it joins.
+        for (size_t r = 0; r < riverCount; ++r) {
+            if (links[r].receiver < 0 || rivers[r].points.empty()) {
+                continue;
+            }
+            const RiverPoint& tail = rivers[r].points.back();
+            const f32 sj =
+                rivers[static_cast<size_t>(links[r].receiver)]
+                    .points[links[r].recvIdx]
+                    .surface;
+            for (Lake& lake : out.hydro.lakes) {
+                if (!lake.dug) {
+                    continue;
+                }
+                if (tail.x < lake.minX - lake.maskTexel ||
+                    tail.x > lake.maxX + lake.maskTexel ||
+                    tail.z < lake.minZ - lake.maskTexel ||
+                    tail.z > lake.maxZ + lake.maskTexel) {
+                    continue;
+                }
+                lake.level = glm::min(lake.level, sj - 0.1f);
+            }
+        }
+        // A ford on a rapids reach would cap the carve to a wading
+        // shelf mid-chute: fords stay on quiet water only.
+        for (River& river : rivers) {
+            if (river.fords.empty() || river.points.size() < 2) {
+                continue;
+            }
+            const vector<RiverPoint>& pts = river.points;
+            std::erase_if(river.fords, [&](const Vec2& ford) {
+                for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                    const f32 sx = pts[i + 1].x - pts[i].x;
+                    const f32 sz = pts[i + 1].z - pts[i].z;
+                    const f32 segLen2 =
+                        glm::max(sx * sx + sz * sz, 1.0e-6f);
+                    const f32 slope =
+                        (pts[i].surface - pts[i + 1].surface) /
+                        std::sqrt(segLen2);
+                    if (slope <= 0.08f) {
+                        continue;
+                    }
+                    const f32 t = glm::clamp(
+                        ((ford.x - pts[i].x) * sx +
+                         (ford.y - pts[i].z) * sz) /
+                            segLen2,
+                        0.0f, 1.0f);
+                    const f32 dx = ford.x - (pts[i].x + t * sx);
+                    const f32 dz = ford.y - (pts[i].z + t * sz);
+                    if (dx * dx + dz * dz < 12.0f * 12.0f) {
+                        return true;
+                    }
+                }
+                return false;
+            });
         }
     }
     return out;
