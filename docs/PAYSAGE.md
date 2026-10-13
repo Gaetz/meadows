@@ -3074,6 +3074,53 @@ l'hydrologie définitive).
   jauges virages + stick-out en garde-fous. Quatre caches v99 livrés,
   suites au vert.
 
+- **2026-10-13 — FALAISES PATHOLOGIQUES : les carves ne remblaient ni
+  ne percent plus les murs — bump v100.** Enquête sur la falaise de
+  (5846, 3058) (vu dev : « falaise très fine et très découpée avec des
+  pics et des textures qui remontent au-dessus du sol », « falaises
+  ultrafines ») : un mur VERTICAL de 140 m dans UN texel de 2 m, le
+  long d'un cercle. Nouvelle jauge **rasoir** (marches >30 m / >60 m
+  entre texels adjacents de 2 m), carte (0,0) : 30 539 / **7 107**
+  cellules. Trois familles, UNE cause commune — le désaccord
+  fenêtre 16 m ↔ sol fin 2 m (le même qui porte la RÉASSISE) rencontré
+  par les creuseurs de la phase C, qui écrivaient tous
+  `max(min(h, bed), floorCut)` :
+  1. **La coupelle d'étang S5d creusait le DISQUE entier** (d ≤ 1 de la
+     bbox, rayon jusqu'à 277 m — dimensionné sur les largeurs de rubans
+     à la jonction), masque clippé ignoré : cratère circulaire poinçonné
+     dans le versant quand le disque chevauche un sol fin au-dessus du
+     niveau (59 étangs sur 96 avec un mur de rebord >6 m, pire 276 m).
+     → gate : ne creuser que les texels dont le sol fin ≤ niveau + 0,5
+     (le test « le sol tient la nappe » du clip fenêtre, à la résolution
+     du creuseur) ; idem lit de lac S5d-bis.
+  2. **Le floorCut REMBLAYAIT** : quand le sol fin préexistant est SOUS
+     floorCut (cours/étang fenêtre suspendu au-dessus d'une vraie vallée
+     fine), `max(…, floorCut)` REMONTAIT la vallée en un bouchon plat à
+     niveau constant aux bords d'un texel — les « textures qui remontent
+     au-dessus du sol » (plateaux mesurés à 757,2 / 979,3 / 422,8…).
+     → les quatre écrivains (lit S5c, épaule S5c, lit de lac, coupelle)
+     passent en **dig-only** : `min(h, max(min(h, bed), floorCut))`.
+  3. **Les canyons-fentes** : un cours fenêtre enterré 150 m sous un mur
+     fin creusait quand même son lit à `surface − depth` À TRAVERS la
+     montagne — fente de 1-2 texels, murs de 148 m (le clamp de ligne
+     d'eau S5c ne fait que descendre, jamais remonter). → gate : un
+     cours enterré au-delà de son gabarit (tierDepthMax + bankMaxCut
+     + 4 m) sous le sol local ne creuse pas ce texel (les bosses de
+     détail à raser restent loin sous ce seuil — leçon « dotted
+     rivers » respectée).
+  Mesuré (0,0) : rasoirs >60 m **7 107 → 407 (−94 %)**, >30 m
+  30 539 → 17 141 ; le reliquat >60 m est concentré sur les lignes de
+  carte (la retouche de bordure, APRÈS les carves — famille à part) et
+  les gorges de perçage voulues (transitions ≥16 m, pas des rasoirs).
+  La falaise du dev a disparu (versant continu). Effet eau assumé et
+  ATTENDU : enterrés 2,7 % → 9,3 % (les cours qui se creusaient une
+  fente sont maintenant honnêtement enterrés sous les murs — le
+  terrain ne ment plus, c'est à l'EAU de se corriger) ; stick-out ≥2 m
+  35,8 → 33,8 %. **Prochain chantier eau (décision dev) : traiter ces
+  biefs fenêtre-sous-mur** (couper/rerouter les tronçons enterrés, ou
+  assouplir le plafond de la réassise là où le sol fin l'exige).
+  Quatre caches v100 livrés, suites au vert.
+
 ---
 
 ## 8. Glossaire

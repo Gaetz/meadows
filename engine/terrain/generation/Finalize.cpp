@@ -531,6 +531,17 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                         preCarve[static_cast<size_t>(pr) *
                                      out.fineSpec.n +
                                  static_cast<size_t>(pc)];
+                    // A course buried deeper under the local ground
+                    // than its own carve envelope is a window-vs-fine
+                    // wall disagreement, not a channel: digging there
+                    // cut 150 m slot canyons one texel wide through
+                    // the walls (razor cliffs, measured). Detail bumps
+                    // to shave stay well inside the envelope.
+                    if (glm::mix(a.surface, b.surface, t) <
+                        centerGround -
+                            (tierDepthMax + params.bankMaxCut + 4.0f)) {
+                        continue;
+                    }
                     const f32 surface = glm::min(
                         glm::mix(a.surface, b.surface, t),
                         centerGround + 0.3f);
@@ -559,12 +570,21 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                     // surface un-shaved — dotted rivers (the surface
                     // now lives on the final ground, so a
                     // waterline-anchored cut is bounded by nature).
+                    // floorCut bounds the DIG only — it must never
+                    // RAISE the ground: where the window course hangs
+                    // over a real fine valley, max(.., floorCut) used
+                    // to lift the valley floor into a flat plug with
+                    // one-texel razor edges (the pathological cliffs,
+                    // measured up to 190 m).
                     const f32 floorCut =
                         surface - depth - params.bankMaxCut;
                     if (n <= 1.0f) {
                         // Parabolic bed up to the waterline at the bank.
                         const f32 bed = surface - depth * (1.0f - n * n);
-                        out.height[i] = glm::max(glm::min(out.height[i], bed), floorCut);
+                        out.height[i] = glm::min(
+                            out.height[i],
+                            glm::max(glm::min(out.height[i], bed),
+                                     floorCut));
                     } else if (n <= 1.0f + params.bankShoulder) {
                         // Bank shoulder: never below the waterline, and
                         // blending up into the untouched hillside.
@@ -574,9 +594,11 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                                                 n);
                         const f32 cap =
                             glm::mix(surface, out.height[i], blend);
-                        out.height[i] = glm::max(
-                            glm::min(out.height[i], glm::max(cap, surface)),
-                            floorCut);
+                        out.height[i] = glm::min(
+                            out.height[i],
+                            glm::max(glm::min(out.height[i],
+                                              glm::max(cap, surface)),
+                                     floorCut));
                     }
                 }
             }
@@ -660,12 +682,25 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                     const size_t i =
                         static_cast<size_t>(row) * out.fineSpec.n +
                         static_cast<size_t>(col);
+                    // Only cells that can HOLD the sheet become bed:
+                    // the mask is window-resolution, and where the
+                    // fine ground stands above the level, cutting it
+                    // punched a one-texel wall along the mask edge
+                    // (razor cliffs, measured up to 276 m at pond
+                    // rims). The dry rim is shore, not bed.
+                    if (out.height[i] > lake.level + 0.5f) {
+                        continue;
+                    }
                     // Bounded by the SHEET: a bank below the level
                     // at most (a ground-anchored bound left detail
-                    // bumps poking through the sheet).
-                    out.height[i] = glm::max(
-                        glm::min(out.height[i], lake.level - depth),
-                        lake.level - depth - params.bankMaxCut);
+                    // bumps poking through the sheet). Dig-only: the
+                    // bound never raises a deeper pre-existing floor.
+                    out.height[i] = glm::min(
+                        out.height[i],
+                        glm::max(glm::min(out.height[i],
+                                          lake.level - depth),
+                                 lake.level - depth -
+                                     params.bankMaxCut));
                 }
             }
         }
@@ -713,13 +748,25 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                 const size_t i =
                     static_cast<size_t>(row) * out.fineSpec.n +
                     static_cast<size_t>(col);
+                // Only cells that can HOLD the sheet become bed: the
+                // junction disc is sized on ribbon widths, not on the
+                // terrain, and where it overlaps a hillside above the
+                // level the full-disc dig punched a crater with a
+                // one-texel rim wall (59 ponds with walls over 6 m on
+                // one map, worst 276 m — the dev's razor cliffs). The
+                // dry part of the disc is land, not bed.
+                if (out.height[i] > pond.level + 0.5f) {
+                    continue;
+                }
                 // Bounded by the pond's own sheet: dish plus a
-                // bank below the LEVEL at most.
+                // bank below the LEVEL at most. Dig-only — the bound
+                // never raises a deeper pre-existing floor.
                 const f32 floorCut = pond.level -
                                      params.riverDepthMax * 0.5f -
                                      params.bankMaxCut;
-                out.height[i] =
-                    glm::max(glm::min(out.height[i], bed), floorCut);
+                out.height[i] = glm::min(
+                    out.height[i],
+                    glm::max(glm::min(out.height[i], bed), floorCut));
             }
         }
     }
