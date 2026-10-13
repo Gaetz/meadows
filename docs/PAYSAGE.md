@@ -3398,6 +3398,37 @@ l'hydrologie définitive).
   le recensement du rapport échantillonnent le treillis de POINTS
   (min + m·texel) au lieu des coins.
 
+- **2026-10-13 — AUDIT, brique D : lot runtime & outillage (sans
+  bump).** Les huit points restants de l'audit, tous runtime ou
+  outillage : (1) le **mesh des nappes proches est centré** sur son
+  treillis de points (l'ancrage par coin décalait toute nappe d'un
+  demi-texel vers +x/+z : débords aux crêtes +, manques aux crêtes
+  −) ; (2) **sources d'entrée du sim dédupliquées** — seule une VRAIE
+  tête injecte (headIsSource ou LakeOutlet) : chaque reprise après
+  nappe/bassin/couture ré-injectait le plein débit du cours (ruisseaux
+  visiblement gonflés après chaque bassin) ; (3) la **requête d'eau
+  rivière** passe à 1,4·hw (l'épaule que le carve mouille et que le
+  ruban et le sim affichent — nage/scatter lisaient « sec » dans une
+  marge visiblement en eau) ; (4) les **rochers** testent enfin l'eau
+  douce (seule classe de scatter sans test : blocs et colliders dans
+  les lits et sous les nappes ; marge 0,3 — les rochers de rive
+  restent) ; (5) les **impostors lointains** sondent aussi 16 m plus
+  bas (la hauteur ~35 m moyenne les berges : des panneaux d'arbres
+  trônaient en pleine rivière de gorge — la canopée lointaine suit) ;
+  (6) un **arrivage lacs-seul re-scatte** les chunks résidents que
+  les nappes couvrent (l'herbe plantée avant l'arrivée restait dans
+  la nappe jusqu'au re-stream) ; (7) la **garde de crête de pinLakes
+  teste le masque ET la distance au bord du bbox** : l'anneau sec des
+  bassins (le texel extérieur) redevient une crête (colonnes d'eau
+  pleine hauteur aux lèvres de sortie sinon), mais un texel sec
+  PROFOND dans le bbox reste exempté — la version au masque seul
+  ré-ouvrait les cratères de film autour des trous de rasterisation
+  mi-lac (leçon du test « mask hole mid-lake », rattrapée par la
+  suite complète) ;
+  (8) **MapView remplit ses rivières** (le spawn du rapport pouvait
+  s'asseoir sur un ruban). Préexistants pour la plupart — révélés par
+  l'audit demandé par le dev après v105.
+
 ---
 
 ## 8. Glossaire

@@ -233,7 +233,9 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                     1.0f - glm::smoothstep(0.82f * line, line, trueH);
                 if (trueH < params.seaLevel + 3.0f || slope > 0.3f ||
                     terrain::underLocalWater(params, x, z, trueH,
-                                             1.0f)) {
+                                             1.0f) ||
+                    terrain::underLocalWater(params, x, z,
+                                             trueH - 16.0f, 1.0f)) {
                     forest = 0.0f; // no canopy raise/tint on water
                 }
                 // The REAL weight rule paints the far vertex with the
@@ -330,10 +332,16 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                     1.0f - glm::smoothstep(0.82f * line, line, h);
                 if (h < params.seaLevel + 3.0f ||
                     rng.next() >= lineFade || slope > 0.3f ||
-                    terrain::underLocalWater(params, x, z, h, 1.0f)) {
+                    terrain::underLocalWater(params, x, z, h, 1.0f) ||
+                    terrain::underLocalWater(params, x, z, h - 16.0f,
+                                             1.0f)) {
                     // Same rule as the near scatter: no impostor on
                     // lakes/rivers (the far-water sheets made the
-                    // stragglers visible).
+                    // stragglers visible). The second, LOWER probe
+                    // covers narrow gorges: the ~35 m grid height
+                    // averages the banks in, so the probe at h sat
+                    // too far above the river for the plausibility
+                    // window and billboards stood mid-water.
                     continue;
                 }
                 // Sized from the MEASURED real trees: the mesh

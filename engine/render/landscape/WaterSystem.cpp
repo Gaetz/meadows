@@ -8,6 +8,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/terrain/RiverGeometry.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -121,7 +122,18 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         // stayed dry — the enquête eau runtime).
         if (!river.nodes.empty()) {
             const render::RiverNode& head = river.nodes.front();
-            if (inside(head.x, head.z) &&
+            // Only a TRUE head injects: a run that merely RESUMES
+            // (after a lake or pool sheet, or a tile-seam split)
+            // re-injected the course's full discharge at every cut —
+            // brooks ran visibly fatter downstream of each pool. A
+            // lake outlet keeps its injection (the course's water
+            // comes from a basin the window never integrates).
+            const bool trueHead =
+                river.headIsSource != 0 ||
+                river.headType ==
+                    static_cast<u32>(
+                        render::terraingen::RiverHeadType::LakeOutlet);
+            if (trueHead && inside(head.x, head.z) &&
                 head.halfWidth < pinnedHalfWidth) {
                 out.push_back(
                     { head.x, head.z, glm::min(nodeQ(head), 30.0f) });
@@ -473,10 +485,15 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                              static_cast<i32>(row))) {
                     continue;
                 }
+                // Masks are POINT lattices (texel m at min + m*mt):
+                // the quad is CENTRED on its sample — the old corner
+                // anchoring shifted every sheet half a texel toward
+                // +x/+z (jutting over +x/+z crests, stopping short of
+                // the -x/-z ones).
                 const f32 tx0 =
-                    lake.minX + static_cast<f32>(col) * mt;
+                    lake.minX + (static_cast<f32>(col) - 0.5f) * mt;
                 const f32 tz0 =
-                    lake.minZ + static_cast<f32>(row) * mt;
+                    lake.minZ + (static_cast<f32>(row) - 0.5f) * mt;
                 const f32 cx = tx0 + 0.5f * mt;
                 const f32 cz = tz0 + 0.5f * mt;
                 // Per-side extension AND crest flag: a crest side (the

@@ -1478,6 +1478,42 @@ void LandscapeScene::update(f32 dt) {
             publishBakedTiles(std::move(batch), focus);
         } else if (lakesChanged) {
             publishWaterBodies();
+            // A lakes-only arrival (registry landing, membership
+            // refresh) changes the WATER under chunks that were
+            // scattered before it: without a re-scatter, trees and
+            // grass placed on a then-dry bed stand in the new sheet
+            // until the chunk re-streams. Ground is untouched, so
+            // only the scatter queue runs — bounded to resident
+            // chunks that a lake actually covers.
+            const f32 reach =
+                static_cast<f32>(tuning.terrainViewRadius + 1) *
+                64.0f;
+            for (const auto& lake : sandboxLakes) {
+                const f32 minX =
+                    glm::max(lake.minX, focus.x - reach);
+                const f32 maxX =
+                    glm::min(lake.maxX, focus.x + reach);
+                const f32 minZ =
+                    glm::max(lake.minZ, focus.z - reach);
+                const f32 maxZ =
+                    glm::min(lake.maxZ, focus.z + reach);
+                if (minX > maxX || minZ > maxZ) {
+                    continue;
+                }
+                for (i32 cz =
+                         static_cast<i32>(std::floor(minZ / 64.0f));
+                     cz <= static_cast<i32>(std::floor(maxZ / 64.0f));
+                     ++cz) {
+                    for (i32 cx = static_cast<i32>(
+                             std::floor(minX / 64.0f));
+                         cx <=
+                         static_cast<i32>(std::floor(maxX / 64.0f));
+                         ++cx) {
+                        renderer.sculptScatterQueue().push_back(
+                            render::HeightPatches::keyOf(cx, cz));
+                    }
+                }
+            }
         }
     }
     // Stream cells around the focus; on any ring change,

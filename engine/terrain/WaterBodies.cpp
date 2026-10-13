@@ -39,7 +39,11 @@ std::optional<f32> riverSurface(const RiverSurface& river, f32 x, f32 z,
         const f32 dist =
             std::sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
         const f32 half = glm::mix(a.halfWidth, b.halfWidth, t);
-        if (dist > half) {
+        // The carve wets the shoulder out to ~1.4x the law width and
+        // both the ribbon and the sim place water there: the query
+        // must agree, or swim/wade/scatter read DRY in a visibly
+        // submerged margin.
+        if (dist > half * 1.4f) {
             continue;
         }
         const f32 level = glm::mix(a.surface, b.surface, t);

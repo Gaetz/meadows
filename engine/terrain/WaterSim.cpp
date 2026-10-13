@@ -645,8 +645,26 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies) {
                                 spec.x(static_cast<u32>(nc));
                             const f32 nz =
                                 spec.z(static_cast<u32>(nr));
-                            if (nx >= lake.minX && nx <= lake.maxX &&
-                                nz >= lake.minZ && nz <= lake.maxZ) {
+                            // Wet mask: in-basin, never a crest.
+                            if (lake.covers(nx, nz)) {
+                                continue;
+                            }
+                            // A dry texel DEEP inside the bbox is a
+                            // rasterization hole or an island ring
+                            // over deep water — cresting there seeded
+                            // 4-cell film craters (measured dev). But
+                            // a pool's bbox pads its wet hull with a
+                            // one-texel dry ring: a dry texel within
+                            // one mask texel of the bbox edge IS the
+                            // outer shore, and a drop there is the
+                            // void past the crest (full-level columns
+                            // grew on pool outlet lips without this).
+                            const f32 edge = glm::min(
+                                glm::min(nx - lake.minX,
+                                         lake.maxX - nx),
+                                glm::min(nz - lake.minZ,
+                                         lake.maxZ - nz));
+                            if (edge >= lake.maskTexel + 0.01f) {
                                 continue;
                             }
                             // Beyond THIS piece's bbox — but a big

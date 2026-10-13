@@ -188,7 +188,13 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            if (h < params.seaLevel + 0.5f || slope > 0.55f) {
+            // Shoreline boulders stay (0.3 m of margin), but a rock
+            // was the one scatter class with NO fresh-water test:
+            // boulders (and their colliders) landed through lake and
+            // pool sheets and mid-river.
+            if (h < params.seaLevel + 0.5f || slope > 0.55f ||
+                terrain::underLocalWater(params, chunkWater, x, z, h,
+                                         0.3f)) {
                 continue; // not underwater, not on cliff faces
             }
             const auto weights =

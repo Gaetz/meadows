@@ -102,6 +102,39 @@ std::optional<MapView> loadMapView(const TileBakeParams& params, i32 mapX,
                 surface.mask = lake.mask;
                 view.bodies.lakes.push_back(std::move(surface));
             }
+            // The report's wet()/spawn() read view.bodies: without
+            // the ribbons, a report spawn could sit mid-river.
+            for (const River& river : rivers) {
+                render::RiverSurface surface;
+                surface.headType = river.headType;
+                surface.headIsSource = river.headIsSource;
+                surface.flowSpeed =
+                    render::terraingen::riverFlowSpeedForTier(
+                        river.tier);
+                surface.minX = surface.minZ = 1.0e30f;
+                surface.maxX = surface.maxZ = -1.0e30f;
+                for (const render::terraingen::RiverPoint& pt :
+                     river.points) {
+                    render::RiverNode node;
+                    node.x = pt.x;
+                    node.z = pt.z;
+                    node.surface = pt.surface;
+                    node.halfWidth = pt.halfWidth;
+                    node.area = pt.area;
+                    surface.nodes.push_back(node);
+                    surface.minX =
+                        glm::min(surface.minX, pt.x - pt.halfWidth);
+                    surface.maxX =
+                        glm::max(surface.maxX, pt.x + pt.halfWidth);
+                    surface.minZ =
+                        glm::min(surface.minZ, pt.z - pt.halfWidth);
+                    surface.maxZ =
+                        glm::max(surface.maxZ, pt.z + pt.halfWidth);
+                }
+                if (surface.nodes.size() >= 2) {
+                    view.bodies.rivers.push_back(std::move(surface));
+                }
+            }
             view.lakes.insert(view.lakes.end(), lakes.begin(), lakes.end());
             view.rivers.insert(view.rivers.end(), rivers.begin(),
                                rivers.end());
