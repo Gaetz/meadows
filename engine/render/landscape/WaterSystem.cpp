@@ -715,11 +715,24 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
         // their chord while chutes hug their bed.
         {
             vector<RiverNode> dense;
+            // Per dense node, the grounding CEILING: the max published
+            // surface of its segment's end nodes (for an original node,
+            // of its two neighbors). A chute may legitimately fill up
+            // to its upstream node's surface; a reach whose axis ground
+            // sits ABOVE its published surface (window-vs-wall courses
+            // the fine terrain contradicts) must never be redrawn
+            // higher — the uncapped max() repainted those as sheets
+            // floating over the banks, undoing the phase-B re-seat
+            // (measured dev).
+            vector<f32> caps;
             dense.reserve(nodes.size() * 2);
+            caps.reserve(nodes.size() * 2);
             for (size_t i = 0; i < nodes.size(); ++i) {
                 if (i > 0) {
                     const RiverNode& a = nodes[i - 1];
                     const RiverNode& b = nodes[i];
+                    const f32 segCap =
+                        glm::max(a.surface, b.surface);
                     const f32 segLen =
                         std::hypot(b.x - a.x, b.z - a.z);
                     const i32 cuts = static_cast<i32>(segLen / 4.0f);
@@ -733,11 +746,23 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                         m.halfWidth =
                             glm::mix(a.halfWidth, b.halfWidth, t);
                         dense.push_back(m);
+                        caps.push_back(segCap);
                     }
                 }
+                f32 nodeCap = nodes[i].surface;
+                if (i > 0) {
+                    nodeCap =
+                        glm::max(nodeCap, nodes[i - 1].surface);
+                }
+                if (i + 1 < nodes.size()) {
+                    nodeCap =
+                        glm::max(nodeCap, nodes[i + 1].surface);
+                }
                 dense.push_back(nodes[i]);
+                caps.push_back(nodeCap);
             }
-            for (RiverNode& nd : dense) {
+            for (size_t k = 0; k < dense.size(); ++k) {
+                RiverNode& nd = dense[k];
                 // The S5d pass CARVED the bed by ~0.18 x width — the
                 // water fills that channel (a 15 cm film left every
                 // chute looking nearly dry between the fully-deep
@@ -751,9 +776,11 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                 // the truth up close (the enquête eau runtime).
                 const f32 bed = glm::clamp(
                     0.18f * 2.0f * nd.halfWidth, 0.12f, 4.0f);
-                nd.surface = glm::max(
-                    nd.surface,
-                    terrain::height(params, nd.x, nd.z) + bed);
+                nd.surface = glm::min(
+                    glm::max(nd.surface,
+                             terrain::height(params, nd.x, nd.z) +
+                                 bed),
+                    caps[k]);
             }
             nodes = std::move(dense);
         }

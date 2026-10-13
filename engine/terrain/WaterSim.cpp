@@ -826,7 +826,7 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
             const RiverNode& a = river.nodes[s];
             const RiverNode& b = river.nodes[s + 1];
             const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);
-            const f32 reach = hwMax + texel;
+            const f32 reach = hwMax * 1.4f + texel;
             const i32 c0 = glm::max(
                 static_cast<i32>((glm::min(a.x, b.x) - reach -
                                   spec.originX) /
@@ -868,7 +868,17 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                         std::sqrt(dx * dx + dz * dz);
                     const f32 hw =
                         glm::mix(a.halfWidth, b.halfWidth, t);
-                    if (dist > hw) {
+                    // The carve wets past the law width: its shoulder
+                    // cuts under the waterline out to ~1.4x hw (the
+                    // ribbon quad spans the same). Water is PLACED on
+                    // every carved-under texel of that footprint, not
+                    // just the law ribbon — the dug apron between
+                    // ribbon and bank otherwise waits on the pinned
+                    // reservoirs' capped pour behind the settle
+                    // curtain: a dry band under the waterline
+                    // (measured dev). The depth gates below keep the
+                    // placement on genuinely submerged ground.
+                    if (dist > hw * 1.4f) {
                         continue;
                     }
                     const size_t i =
@@ -877,8 +887,12 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                     if (hw < minHalfWidth) {
                         // Too narrow to pin: brook relief only — the
                         // sim still derives the water, extraction just
-                        // stops hiding its thin film.
-                        state.brookMask[i] = 1;
+                        // stops hiding its thin film. The relief stays
+                        // on the law ribbon (the brook carve has no
+                        // shoulder apron worth placing).
+                        if (dist <= hw) {
+                            state.brookMask[i] = 1;
+                        }
                         continue;
                     }
                     const f32 surf =

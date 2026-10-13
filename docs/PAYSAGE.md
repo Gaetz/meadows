@@ -3186,6 +3186,42 @@ l'hydrologie définitive).
   suivante, désormais prioritaire). Virages 0,0 %. Quatre caches
   v102 livrés, suites au vert.
 
+- **2026-10-13 — L'EAU AU-DESSUS DU SOL : deux fuites côté RUNTIME
+  annulaient le siège v102 (aucun rebake).** Retour dev après v102 :
+  « j'ai toujours l'eau au-dessus du sol » + trois hypothèses
+  (représentation, taille des voxels, pentes en escalier). Enquête
+  mesurée sur la tuile des témoins (1,0) : la donnée v102 était
+  bonne, c'est la CHAÎNE DE REPRÉSENTATION qui recréait le défaut.
+  (a) **La remontée du ruban au rendu** : le mesh local re-levait
+  chaque nœud densifié à `max(surface, sol_axe + 0.18×largeur)`
+  (protection anti-corde des chutes, plafond 4 m) — sur les biefs
+  enterrés (sol d'axe AU-DESSUS de la surface publiée, 24 % des
+  points depuis v102), le ruban était redessiné en nappe flottante :
+  jauge « bande RENDUE » >1 m à **48,6 %** contre 28,6 % en surface
+  publiée. Correctif : la remontée est PLAFONNÉE à l'enveloppe des
+  nœuds voisins (max des surfaces du segment / des deux voisins) —
+  une chute remplit légitimement jusqu'à la surface de son nœud
+  amont, un bief enterré ne remonte jamais au-dessus de sa
+  publication. Mesuré (simulation offline du cap sur le cache) :
+  bande rendue >1 m **48,6 → 29,5 %** (= la publiée + 0,9 point de
+  chutes légitimes), >2 m 40,4 → 24,6 %. (b) **La pose du sim
+  s'arrêtait au gabarit** : `pinRivers` ne mouillait que
+  `dist ≤ hw` alors que le carve taille sous la ligne d'eau jusqu'à
+  ~±1,4 hw — le tablier d'épaulement (0-2 m sous l'eau sur 10-20 m
+  aux témoins) restait sec derrière le rideau du settle, à la merci
+  du déversoir plafonné (2 m³/s/cellule). Correctif : la POSE couvre
+  l'empreinte du carve (±1,4 hw), gates de profondeur inchangés
+  (berges jamais touchées), cœur pinné inchangé (hw − texel), relief
+  ruisseau inchangé (≤ hw). Mesuré : **+25 % de texels posés** (le
+  tablier). Hypothèses écartées en chemin : taille des voxels (sim
+  2 m = sol fin ; mais lacs 16 m et eau de loin 64-70 m expliquent
+  l'incohérence loin/près), maillage en escalier (marching squares
+  sous-texel, innocent). Confirmé et DIFFÉRÉ : le profil
+  LONGITUDINAL publié descend en marches (paliers 60-100 m, chutes
+  4-13 m — produit du routage par biefs + min monotone) ; à traiter
+  si encore visible après cette brique. Runtime pur : aucun bump,
+  caches v102 inchangés.
+
 ---
 
 ## 8. Glossaire

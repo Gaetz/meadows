@@ -141,8 +141,11 @@ void pinLakes(WaterSimState& state, const WaterBodies& bodies);
 // sources. Guards inherited from the lakes: only ground clearly
 // BELOW the surface is pinned (banks never — the artesian lesson),
 // the pin core is eroded one texel inside the ribbon half-width, and
-// the reservoir weir cap bounds the outflow. Small rivers stay 100%
-// sim. Call AFTER pinLakes (which resets the pinned plane).
+// the reservoir weir cap bounds the outflow. SEEDING covers the full
+// carve footprint (~1.4x the law half-width): the shoulder apron dug
+// under the waterline fills at placement instead of waiting on the
+// reservoirs' capped pour. Small rivers stay 100% sim. Call AFTER
+// pinLakes (which resets the pinned plane).
 void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                f32 minHalfWidth);
 
