@@ -3324,6 +3324,31 @@ l'hydrologie définitive).
   RÉSOLUTION — le proche contre le 2 m (v103), le lointain contre son
   64 m (v105).
 
+- **2026-10-13 — AUDIT « mauvais étage / mauvaise résolution » (3
+  explorations) et brique A : l'eau de loin des bassins.** À la
+  demande du dev, audit systématique de la famille de bugs des
+  briques v103-v105 (un consommateur lisant un étage périmé ou une
+  résolution étrangère) sur trois fronts : placement, ordre du bake,
+  consommateurs runtime. 13 trouvailles classées (journal de l'audit :
+  cette entrée et les 3 suivantes). Brique A (runtime pur, pas de
+  bump) — le point le plus visible : **les bassins découverts
+  n'avaient AUCUNE eau de loin** — la re-rasterisation 64 m des
+  nappes lointaines exigeait une majorité (≥32 texels par bloc 8×8)
+  qu'un bassin de 1-3 texels de large n'atteint jamais, et le ruban
+  dessous est coupé à l'émission → trou d'eau lointaine de la
+  longueur du bassin. Trois correctifs dans collectFarWater :
+  (1) **couverture any-texel** des blocs (le depth-test contre le
+  FarTerrain coupe déjà les débords aux berges, comme pour toute
+  nappe) ; (2) **le nœud terminal d'un run n'est plus mangé** par la
+  décimation 48 m (c'est le point de chevauchement sous la nappe —
+  jusqu'à 48 m de trou sec à chaque entrée de lac) ; (3) les nappes
+  lointaines ENTERRÉES sous l'overview bilinéaire sont **relevées
+  jusqu'à affleurer leur bloc le plus bas** (borné +4 m — même
+  réconciliation de résolution que le clamp des rubans v105 ; un
+  bassin sous-résolution reste caché plutôt que flottant). Bonus :
+  le probe de spawn lointain (farWaterWetAt) voit à nouveau les
+  bassins.
+
 ---
 
 ## 8. Glossaire

@@ -666,15 +666,66 @@ render::WaterSystem::FarWaterSet collectFarWater(
                                         : 0u;
                         }
                     }
+                    // ANY wet texel marks the block: a discovered
+                    // pool 1-3 texels wide never wins a majority of
+                    // an 8x8 block — whole pools vanished from the
+                    // far view while their ribbon is cut underneath
+                    // (no far water at all over them, measured dev).
+                    // The depth test against the FarTerrain cuts the
+                    // overdraw at the banks, as it already does for
+                    // every far sheet.
                     far.mask[static_cast<size_t>(r) * far.w + c] =
-                        (total != 0 && hits * 2 >= total) ? 1 : 0;
+                        (total != 0 && hits != 0) ? 1 : 0;
+                }
+            }
+            // A narrow sheet can still sit under the 64 m overview's
+            // bilinear banks (the same aliasing the ribbon clamp
+            // handles): lift a BURIED sheet just enough to graze the
+            // far ground at its lowest covered block, bounded — a
+            // sub-resolution pool stays hidden rather than floating.
+            if (farOverview) {
+                f32 minG = 1.0e18f;
+                for (u32 r = 0; r < far.h; ++r) {
+                    for (u32 c = 0; c < far.w; ++c) {
+                        if (!far.mask[static_cast<size_t>(r) * far.w +
+                                      c]) {
+                            continue;
+                        }
+                        const f32 bx = far.minX +
+                                       (static_cast<f32>(c) + 0.5f) *
+                                           far.cell;
+                        const f32 bz = far.minZ +
+                                       (static_cast<f32>(r) + 0.5f) *
+                                           far.cell;
+                        minG = glm::min(
+                            minG, farGroundLift(bx, bz, -1.0e18f));
+                    }
+                }
+                if (minG < 1.0e17f && far.level < minG) {
+                    far.level =
+                        glm::min(minG, far.level + 4.0f);
                 }
             }
             set.lakes.push_back(std::move(far));
         }
         for (const River& river : rivers) {
             render::WaterSystem::FarWaterSet::Ribbon run;
+            // The decimation must not eat a run's TERMINAL node: the
+            // last point is the one overlap point under a lake sheet
+            // or the mouth itself — dropping it left up to 48 m of
+            // dry far gap at every inlet (measured dev).
+            const RiverPoint* pending = nullptr;
+            const auto push = [&](const RiverPoint& pt) {
+                run.nodes.push_back(
+                    { pt.x, pt.z,
+                      farGroundLift(pt.x, pt.z, pt.surface),
+                      pt.halfWidth });
+            };
             const auto flush = [&] {
+                if (pending && !run.nodes.empty()) {
+                    push(*pending);
+                }
+                pending = nullptr;
                 if (run.nodes.size() >= 2) {
                     set.ribbons.push_back(std::move(run));
                 }
@@ -696,13 +747,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
                     const f32 dx = pt.x - last.x;
                     const f32 dz = pt.z - last.z;
                     if (dx * dx + dz * dz < 48.0f * 48.0f) {
-                        continue; // ~48 m spacing is plenty far away
+                        pending = &pt; // kept if the run ends here
+                        continue;      // ~48 m is plenty far away
                     }
                 }
-                run.nodes.push_back(
-                    { pt.x, pt.z,
-                      farGroundLift(pt.x, pt.z, pt.surface),
-                      pt.halfWidth });
+                pending = nullptr;
+                push(pt);
             }
             flush();
         }
