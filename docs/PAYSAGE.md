@@ -3121,6 +3121,38 @@ l'hydrologie définitive).
   assouplir le plafond de la réassise là où le sol fin l'exige).
   Quatre caches v100 livrés, suites au vert.
 
+- **2026-10-13 — RÉASSISE SANS PLAFOND : l'eau s'enfonce dans le
+  plancher qu'elle mesure — bump v101.** Diagnostic de (5930, 3600)
+  (vu dev : « écartement entre les bords de la rivière et les bords du
+  canyon — taille min/max plutôt qu'un lien avec le terrain ? marge de
+  sécurité ? ») : les DEUX intuitions étaient justes. (a) La largeur
+  est une pure loi de drainage (`hw = coef·aire^exp`, resserrement de
+  pente, plancher 1,2 m) qui ne lit jamais la forme de la vallée —
+  53 % des points à écartement ≥2 m sont dans une vallée plus large
+  que ruban+40 m ; (b) le plafond `kReseatMaxDrop = 12 m` bridait les
+  canyons plus profonds que le biais visé (21 % des points résiduels,
+  mesuré par diff v98↔v100 ≈ 12,00 pile). **Décision dev : plutôt que
+  d'asservir la largeur au terrain (≈8 consommateurs de hw, largeur
+  instable sur fond bruité), on CREUSE — la rivière descend au
+  plancher mesuré et le carve y taille son gabarit, les berges
+  affleurent.** Le siège devient le MIN pur de l'empreinte, SANS
+  plafond. Deux gardes « anti-rainure » essayées et REJETÉES sur
+  mesure : étalement-vs-médiane (l'échantillon ±1,4 hw touche
+  naturellement le mur du canyon → la médiane bloquait les descentes
+  légitimes : témoins +9 à +11 m) et 2ᵉ-plus-bas (7 échantillons sur
+  une perpendiculaire ne distinguent pas une rainure d'un plancher
+  effleuré une fois : témoins +4 à +9 m). Une plongée sous un mur ne
+  coûte plus de terrain depuis v100 (les carves ne taillent plus de
+  fente) — elle MARQUE un bief fenêtre que le sol fin contredit.
+  Mesuré (0,0) : stick-out ≥2 m **33,8 → 31,4 %** (meilleur état),
+  ≥8 m 17,1 → 14,1 %, témoins (5800, 4000) +2,30, (5900, 3660) +1,59,
+  (5930, 3600) +2,89 (reliquat = sous-capage de méandres ±2-3 m) ;
+  virages 0,0 %, rasoirs >60 m 373. Compromis journalisé : enterrés
+  9,3 → 11,4 % — la part des biefs fenêtre-contre-mur qui plongent,
+  CIBLE DE LA PROCHAINE BRIQUE (couper/rerouter ces tronçons : leur
+  eau est invisible, leurs rubans mentent). Quatre caches v101
+  livrés, suites au vert.
+
 ---
 
 ## 8. Glossaire

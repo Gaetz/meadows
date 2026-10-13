@@ -677,26 +677,29 @@ MapHydrology extractMapHydrology(
             }
             return g;
         };
-        // How far a clamp may pull one point down. The bias class it
-        // fixes is 2-10 m (window floor vs fine floor); the pierce
-        // notches and neighbour gorges a wide footprint can graze sit
-        // 18 m+ below — the cap keeps those out without a special
-        // case.
-        constexpr f32 kReseatMaxDrop = 12.0f;
+        // The water seats on the LOWEST fine ground under its
+        // footprint, with no cap (dev decision: sink the river into
+        // the floor it measures rather than bend the width law; the
+        // carve digs its gabarit from the seated surface and the
+        // banks meet the water). Guards measured and rejected: a flat
+        // 12 m drop cap bridled every canyon deeper than the bias it
+        // targeted (21 % of residual gap points were cap-bound); a
+        // spread-vs-median rule and a second-lowest rule both blocked
+        // legitimate descents — seven samples on one perpendicular
+        // cannot tell a groove from a floor it grazes once. A dive
+        // under a wall marks a window course the fine terrain
+        // contradicts; since the carves stopped cutting slots there,
+        // it costs no terrain — those reaches are the next brick's
+        // target (cut or reroute).
         vector<f32> fine;
         for (River& river : out.hydro.rivers) {
             const size_t count = river.points.size();
             fine.resize(count);
             for (size_t i = 0; i < count; ++i) {
                 const RiverPoint& pt = river.points[i];
-                // Floor = the LOWEST pre-carve ground under the
-                // water's whole footprint (ribbon + carve shoulder):
-                // the window axis often rides a fine-scale levee with
-                // the real channel beside it, still under the ribbon —
-                // the carve digs the levee but can never RAISE the low
-                // ground next to it, so the waterline must come down
-                // to it.
-                f32 floor = fineAt(pt.x, pt.z);
+                f32 samples[7];
+                u32 nSamples = 0;
+                samples[nSamples++] = fineAt(pt.x, pt.z);
                 const RiverPoint& fw =
                     river.points[i + 1 < count ? i + 1 : i];
                 const RiverPoint& bw = river.points[i > 0 ? i - 1 : i];
@@ -709,9 +712,13 @@ MapHydrology extractMapHydrology(
                     for (const f32 off :
                          { -1.4f, -1.0f, -0.5f, 0.5f, 1.0f, 1.4f }) {
                         const f32 d = off * pt.halfWidth;
-                        floor = glm::min(
-                            floor, fineAt(pt.x + px * d, pt.z + pz * d));
+                        samples[nSamples++] =
+                            fineAt(pt.x + px * d, pt.z + pz * d);
                     }
+                }
+                f32 floor = samples[0];
+                for (u32 k = 1; k < nSamples; ++k) {
+                    floor = glm::min(floor, samples[k]);
                 }
                 fine[i] = floor;
             }
@@ -724,8 +731,6 @@ MapHydrology extractMapHydrology(
                     target = glm::max(target, fine[i + 1]);
                 }
                 target += 0.3f;
-                target = glm::max(target, river.points[i].surface -
-                                              kReseatMaxDrop);
                 target = glm::max(target, hydrology.seaLevel);
                 river.points[i].surface =
                     glm::min(river.points[i].surface, target);
