@@ -3153,6 +3153,39 @@ l'hydrologie définitive).
   eau est invisible, leurs rubans mentent). Quatre caches v101
   livrés, suites au vert.
 
+- **2026-10-13 — SIÈGE EN ENVELOPPE BASSE : plus de bande sèche sous
+  la ligne d'eau au bord des rivières — bump v102.** Retour dev à
+  (5900, 3660) après v101 : « le sol n'est pas creusé et l'eau est
+  toujours au-dessus du sol ». La vérification du cache a corrigé mon
+  diagnostic : la donnée v101 AVAIT le défaut — l'eau affichée
+  s'arrête au gabarit (±hw, le sim ne mouille que `dist ≤ hw`) mais le
+  sol ne remontait au niveau de l'eau qu'à ±40-50 m : une BANDE de
+  8-20 m, 1-4 m SOUS la ligne d'eau, bordait chaque rive (jauge neuve
+  « bande sous ligne d'eau » : max(surface − sol) sur hw+2..hw+14 —
+  LE critère visuel, que le stick-out à ±(hw+4) ne capturait pas).
+  Causes en v101 : le max 3-points le long du cours (+0,3) relevait
+  chaque cible au-dessus de son propre min. Variantes mesurées et
+  REJETÉES : siège sur le sol pré-carve au bord du gabarit (les
+  berges du joueur sont des PRODUITS du carve ; le bord pré-carve est
+  la colline non creusée → quasi aucune descente, témoins +10/+11 —
+  le point fixe surface↔fouille interdit cette lecture), médiane
+  glissante 5 points (au-dessus du min local un point sur deux :
+  bande 39,8 %). Retenu : **l'enveloppe basse** — min de l'empreinte
+  (10 offsets ±0,5..±1,4 hw + axe) puis **min glissant sur 5 points
+  le long du cours** (inclut le point lui-même → aucun offset
+  échantillonné ne reste sous la ligne d'eau), ancrage −0,2, plancher
+  monotone à seat−6. Mesuré (0,0) : bande >1 m **45,9 → 27,7 %**,
+  >2 m 37,4 → 21,8 % ; témoins (5900, 3660) **−0,00** (contour =
+  ruban), (5930, 3600) +0,62, (5800, 4000) +3,2 (reliquat : un creux
+  de ~3 m taillé en phase C au-delà de l'épaulement que le siège
+  pré-carve ne voit pas — candidat : transfert de perçage ; à
+  instruire avec la brique suivante). Compromis assumé : enterrés
+  11,4 → 20,2 % — les biefs fenêtre-contre-mur passent sous le seuil
+  du gate anti-fente et ne creusent plus : eau invisible plutôt que
+  flottante, et c'est la population à COUPER/REROUTER (brique
+  suivante, désormais prioritaire). Virages 0,0 %. Quatre caches
+  v102 livrés, suites au vert.
+
 ---
 
 ## 8. Glossaire

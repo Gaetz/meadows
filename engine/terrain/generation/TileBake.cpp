@@ -677,29 +677,32 @@ MapHydrology extractMapHydrology(
             }
             return g;
         };
-        // The water seats on the LOWEST fine ground under its
-        // footprint, with no cap (dev decision: sink the river into
-        // the floor it measures rather than bend the width law; the
-        // carve digs its gabarit from the seated surface and the
-        // banks meet the water). Guards measured and rejected: a flat
-        // 12 m drop cap bridled every canyon deeper than the bias it
-        // targeted (21 % of residual gap points were cap-bound); a
-        // spread-vs-median rule and a second-lowest rule both blocked
-        // legitimate descents — seven samples on one perpendicular
-        // cannot tell a groove from a floor it grazes once. A dive
-        // under a wall marks a window course the fine terrain
-        // contradicts; since the carves stopped cutting slots there,
-        // it costs no terrain — those reaches are the next brick's
-        // target (cut or reroute).
+        // The water seats JUST UNDER the lowest fine ground of its
+        // footprint (ribbon + carve shoulder), with no cap — the
+        // dev's rule: sink the river into the floor it measures, the
+        // carve digs the gabarit from the seated surface, and nothing
+        // beyond the ribbon edge may stay below the waterline (the
+        // visible defect was that strip, 1-4 m under the water). The
+        // seat is the 5-point running MIN of the floor ALONG the
+        // course — the LOWER ENVELOPE: it includes the point itself,
+        // so no sampled offset ever stays below the waterline (a
+        // 3-point max and a running median both lifted the surface
+        // above the local floor and re-created the strip, measured).
+        // An isolated pit costs a ~35 m local dip of the surface,
+        // bounded by the monotone floor below.
+        // Seating on the pre-carve ground at the ribbon edge
+        // was measured and rejected: the player's banks are carve
+        // products, the pre-carve edge is the un-dug hillside —
+        // seating there barely descends at all.
+        constexpr f32 kEdgeTuck = 0.2f;
         vector<f32> fine;
+        vector<f32> seat;
         for (River& river : out.hydro.rivers) {
             const size_t count = river.points.size();
             fine.resize(count);
             for (size_t i = 0; i < count; ++i) {
                 const RiverPoint& pt = river.points[i];
-                f32 samples[7];
-                u32 nSamples = 0;
-                samples[nSamples++] = fineAt(pt.x, pt.z);
+                f32 floor = fineAt(pt.x, pt.z);
                 const RiverPoint& fw =
                     river.points[i + 1 < count ? i + 1 : i];
                 const RiverPoint& bw = river.points[i > 0 ? i - 1 : i];
@@ -710,27 +713,26 @@ MapHydrology extractMapHydrology(
                     const f32 px = -dz / len;
                     const f32 pz = dx / len;
                     for (const f32 off :
-                         { -1.4f, -1.0f, -0.5f, 0.5f, 1.0f, 1.4f }) {
+                         { -1.4f, -1.2f, -1.0f, -0.75f, -0.5f, 0.5f,
+                           0.75f, 1.0f, 1.2f, 1.4f }) {
                         const f32 d = off * pt.halfWidth;
-                        samples[nSamples++] =
-                            fineAt(pt.x + px * d, pt.z + pz * d);
+                        floor = glm::min(
+                            floor, fineAt(pt.x + px * d, pt.z + pz * d));
                     }
-                }
-                f32 floor = samples[0];
-                for (u32 k = 1; k < nSamples; ++k) {
-                    floor = glm::min(floor, samples[k]);
                 }
                 fine[i] = floor;
             }
+            seat.resize(count);
             for (size_t i = 0; i < count; ++i) {
-                f32 target = fine[i];
-                if (i > 0) {
-                    target = glm::max(target, fine[i - 1]);
+                f32 lo = fine[i];
+                for (size_t k = (i >= 2 ? i - 2 : 0);
+                     k <= glm::min(i + 2, count - 1); ++k) {
+                    lo = glm::min(lo, fine[k]);
                 }
-                if (i + 1 < count) {
-                    target = glm::max(target, fine[i + 1]);
-                }
-                target += 0.3f;
+                seat[i] = lo;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                f32 target = seat[i] - kEdgeTuck;
                 target = glm::max(target, hydrology.seaLevel);
                 river.points[i].surface =
                     glm::min(river.points[i].surface, target);
@@ -747,7 +749,7 @@ MapHydrology extractMapHydrology(
                 river.points[i].surface = glm::min(
                     river.points[i].surface,
                     glm::max(river.points[i - 1].surface,
-                             fine[i] + 0.3f - kThroughCut));
+                             seat[i] - kThroughCut));
             }
         }
     }
