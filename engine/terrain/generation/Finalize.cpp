@@ -424,28 +424,6 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
         }
     }
     const vector<f32> waterDist = distanceToMask(coarse, waterMask);
-    // Coarse slope (central differences) for the rock mask.
-    vector<f32> slopeCoarse(coarse.cells());
-    {
-        const i32 cn = static_cast<i32>(coarse.n);
-        for (i32 cz = 0; cz < cn; ++cz) {
-            for (i32 cx = 0; cx < cn; ++cx) {
-                const auto at = [&](i32 px, i32 pz) {
-                    px = glm::clamp(px, 0, cn - 1);
-                    pz = glm::clamp(pz, 0, cn - 1);
-                    return eroded[static_cast<size_t>(pz) * coarse.n +
-                                  static_cast<size_t>(px)];
-                };
-                const f32 gx = (at(cx + 1, cz) - at(cx - 1, cz)) /
-                               (2.0f * coarse.texelSize);
-                const f32 gz = (at(cx, cz + 1) - at(cx, cz - 1)) /
-                               (2.0f * coarse.texelSize);
-                slopeCoarse[static_cast<size_t>(cz) * coarse.n + cx] =
-                    std::sqrt(gx * gx + gz * gz);
-            }
-        }
-    }
-
     // S5c — river carving on the fine grid: parabolic bed under the
     // water surface, bank shoulder blending back into the hillside.
     // Pre-carve snapshot: the carve REFERENCE ground must not read
@@ -867,6 +845,55 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
     out.beach.resize(coarse.cells());
     out.detailAmp.resize(coarse.cells());
     out.rockExposure.resize(coarse.cells());
+    const f32 s6FineMaxX =
+        out.fineSpec.originX +
+        static_cast<f32>(out.fineSpec.n - 1) * out.fineSpec.texelSize;
+    const f32 s6FineMaxZ =
+        out.fineSpec.originZ +
+        static_cast<f32>(out.fineSpec.n - 1) * out.fineSpec.texelSize;
+    // Coarse slope for the rock mask — computed on the FINAL ground
+    // resampled at the same 16 m lattice, AFTER the carves: the gorge
+    // walls, pierce notches and lake beds are carve products the
+    // stage-1 slope never saw, so they wore meadow materials draped
+    // on near-vertical rock. Same grid, same thresholds: the look
+    // only moves where the carves moved the ground. Outside this
+    // slice's fine rect the stage-1 value remains.
+    vector<f32> slopeCoarse(coarse.cells());
+    {
+        const i32 cn = static_cast<i32>(coarse.n);
+        const f32 fineMaxX =
+            out.fineSpec.originX +
+            static_cast<f32>(out.fineSpec.n - 1) *
+                out.fineSpec.texelSize;
+        const f32 fineMaxZ =
+            out.fineSpec.originZ +
+            static_cast<f32>(out.fineSpec.n - 1) *
+                out.fineSpec.texelSize;
+        const auto finalAt = [&](i32 px, i32 pz) {
+            px = glm::clamp(px, 0, cn - 1);
+            pz = glm::clamp(pz, 0, cn - 1);
+            const f32 wx = coarse.x(static_cast<u32>(px));
+            const f32 wz = coarse.z(static_cast<u32>(pz));
+            if (wx >= out.fineSpec.originX && wx <= fineMaxX &&
+                wz >= out.fineSpec.originZ && wz <= fineMaxZ) {
+                return bilinearWorld(out.fineSpec, out.height, wx, wz);
+            }
+            return eroded[static_cast<size_t>(pz) * coarse.n +
+                          static_cast<size_t>(px)];
+        };
+        for (i32 cz = 0; cz < cn; ++cz) {
+            for (i32 cx = 0; cx < cn; ++cx) {
+                const f32 gx =
+                    (finalAt(cx + 1, cz) - finalAt(cx - 1, cz)) /
+                    (2.0f * coarse.texelSize);
+                const f32 gz =
+                    (finalAt(cx, cz + 1) - finalAt(cx, cz - 1)) /
+                    (2.0f * coarse.texelSize);
+                slopeCoarse[static_cast<size_t>(cz) * coarse.n + cx] =
+                    std::sqrt(gx * gx + gz * gz);
+            }
+        }
+    }
     for (u32 row = 0; row < coarse.n; ++row) {
         for (u32 col = 0; col < coarse.n; ++col) {
             const size_t i = static_cast<size_t>(row) * coarse.n + col;
@@ -926,9 +953,45 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                 4.0f;
             const f32 band =
                 strataBand01(eroded[i], warp, params.strataPeriod);
+            // A face the carve or the pierce CUT is freshly bared
+            // rock whatever the deposit said: the scree term described
+            // the pre-cut soil apron, and it kept every carved gorge
+            // wall dressed as meadow. The cut term bypasses scree
+            // only; the slope gate still keeps carved BEDS (flat)
+            // rock-free.
+            // The cut is sampled over the 16 m NEIGHBOURHOOD: a
+            // gorge wall is not itself dug — it stands because the
+            // bed BESIDE it was. The bed stays rock-free through the
+            // slope gate (flat), the wall fires through its deep-cut
+            // neighbour.
+            f32 cut = 0.0f;
+            for (i32 dn = 0; dn < 5; ++dn) {
+                static constexpr f32 kOff[5][2] = { { 0.0f, 0.0f },
+                                                    { 16.0f, 0.0f },
+                                                    { -16.0f, 0.0f },
+                                                    { 0.0f, 16.0f },
+                                                    { 0.0f, -16.0f } };
+                const f32 wx = coarse.x(col) + kOff[dn][0];
+                const f32 wz = coarse.z(row) + kOff[dn][1];
+                if (wx < out.fineSpec.originX || wx > s6FineMaxX ||
+                    wz < out.fineSpec.originZ || wz > s6FineMaxZ) {
+                    continue;
+                }
+                cut = glm::max(
+                    cut,
+                    bilinearWorld(out.fineSpec, preCarve, wx, wz) -
+                        bilinearWorld(out.fineSpec, out.height, wx,
+                                      wz));
+            }
+            // (The pierce gorges arrive already cut in preCarve;
+            // their rim saddles carry little deposit, so the slope
+            // gate alone bares them.)
+            const f32 cutFresh =
+                noise::smoothstep01(2.0f, 6.0f, cut);
             const f32 rock =
                 noise::smoothstep01(0.35f, 0.75f, slopeCoarse[i]) *
-                (1.0f - scree) * (0.7f + 0.3f * band);
+                glm::max(1.0f - scree, cutFresh) *
+                (0.7f + 0.3f * band);
             out.rockExposure[i] = toU8(rock);
         }
     }

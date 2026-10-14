@@ -3429,6 +3429,27 @@ l'hydrologie définitive).
   s'asseoir sur un ruban). Préexistants pour la plupart — révélés par
   l'audit demandé par le dev après v105.
 
+- **2026-10-14 — AUDIT, brique E : la roche connaît le sol final
+  (bump v108).** La pente du masque rockExposure (S6) était calculée
+  sur le stage-1 d'avant phase A et carves. Deux correctifs :
+  (1) **pente sur le sol final** rééchantillonné à la même grille
+  16 m, après les carves — même formule, mêmes seuils : le look ne
+  bouge que où le terrain a bougé (mesuré : 0,06 % des texels).
+  (2) En mesurant, découverte que le vrai suppresseur des parois de
+  gorge est le terme **scree** (zones de dépôt → (1−scree) écrase la
+  roche) : une face TAILLÉE par le carve est pourtant de la roche à
+  nu — ajout du terme de **coupe fraîche** (max du delta
+  preCarve−final sur le voisinage ±16 m : la paroi n'est pas creusée,
+  son voisin-lit l'est) qui contourne le scree seul ; le gate de
+  pente garde les lits plats sans roche. Mesuré : +0,69 % de texels
+  en roche, concentrés aux faces réellement taillées (fentes de
+  sortie de lacs, gorges fraîches). Vérité d'enquête consignée : les
+  grandes parois du canyon témoin sont NATURELLES (le V de 65 m
+  préexiste au carve, le lit n'a été approfondi que de ~7,5 m) et
+  sous dépôt — leur habillage herbeux est un réglage scree/deposit
+  existant, pas un bug d'étage ; à retoucher à l'œil du dev si
+  voulu.
+
 ---
 
 ## 8. Glossaire
