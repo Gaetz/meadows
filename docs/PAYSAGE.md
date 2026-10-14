@@ -3497,6 +3497,26 @@ l'hydrologie définitive).
   échappent à la décimation 48 m (une chute de 10 m s'étalait en
   toboggan de loin).
 
+- **2026-10-14 — Embruns visibles + vue survol (runtime, sans
+  bump).** Retour dev : « je ne vois pas les embruns ». Causes :
+  portée héritée des sources (90 m — une cascade se lit de bien plus
+  loin) et gerbe de brume de source trop discrète. Correctifs dans
+  updateRiverCascadeFx : portée dédiée 250 m ; gerbe PROPORTIONNÉE à
+  la chute (rate/burst ×clamp(chute/4, 1..3), rayon d'émission ≥
+  0,25·hw, sprites grossis) ; et garde « eau visible » — un profil
+  raide que le sol fin contredit est un bief enterré, pas une chute
+  (67 sites détectés sur la tuile 1_0 dont des « chutes » de
+  100-330 m qui sont des murs : pas d'embruns sur la roche sèche).
+  **Vue survol** (demande dev : « voir quasi une map entière pour
+  repérer les points d'intérêt ») : case « Overview flight (14 km
+  view) » dans le panneau Rendering — farPlane 14 km (le FarTerrain
+  couvre 18 km, c'était la caméra qui bornait à ~1,6-2 km) et
+  brouillard aminci À LA SOUMISSION seulement (×0,08, fogStart
+  ≥2 500 m) : le tuning persisté (mods/render-tuning.toml) n'en voit
+  rien. Le champ proche (arbres, mesh d'eau fin) reste au rayon de
+  vue ; le lointain 64 m + nappes/rubans lointains suffisent pour
+  repérer canyons, lacs et cascades.
+
 ---
 
 ## 8. Glossaire

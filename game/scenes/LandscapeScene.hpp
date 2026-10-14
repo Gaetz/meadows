@@ -241,6 +241,9 @@ private:
     static constexpr f32 kFxSourceReach = 90.0f;
     void updateFxSources();
     void updateRiverSourceFx();
+    // Validation overview: the whole map in one glance (far plane
+    // pushed to 14 km, fog thinned at submit — never persisted).
+    bool overviewView { false };
     void updateRiverCascadeFx();
     void resetFxSources(); // map swap / exit: the emitters go with the world
     // The igniters among them (FxSource.igniteHeat > 0), rebuilt each

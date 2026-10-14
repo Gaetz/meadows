@@ -1339,11 +1339,15 @@ void LandscapeScene::onExit() {
 
 
 void LandscapeScene::updateCameraFarPlane() {
+    // Overview flight sees the FarTerrain's whole reach (its span is
+    // 18 km): enough to read a full 8 km map from altitude.
     flyCamera.camera.farPlane =
-        glm::max(1600.0f, static_cast<f32>(
-                              renderer.terrainSystem().viewRadius) *
-                                  render::TerrainSystem::kChunkSize *
-                                  1.3f);
+        overviewView
+            ? 14000.0f
+            : glm::max(1600.0f,
+                       static_cast<f32>(
+                           renderer.terrainSystem().viewRadius) *
+                           render::TerrainSystem::kChunkSize * 1.3f);
 }
 
 void LandscapeScene::update(f32 dt) {
@@ -7094,6 +7098,8 @@ void LandscapeScene::updateRiverCascadeFx() {
     const Vec3 cam = flyCamera.camera.position;
     constexpr f32 kFallSlope = 0.25f; // rise/run along the ribbon
     constexpr f32 kFallDropMin = 3.0f;
+    // A waterfall reads much further than a spring wisp.
+    constexpr f32 kFxCascadeReach = 250.0f;
     for (const render::RiverSurface& river : waterBodies->rivers) {
         const auto& nodes = river.nodes;
         size_t i = 0;
@@ -7121,8 +7127,21 @@ void LandscapeScene::updateRiverCascadeFx() {
             }
             const render::RiverNode& fn = nodes[foot];
             const Vec3 at { fn.x, fn.surface + 0.5f, fn.z };
+            const size_t lip = i;
             i = foot + 1;
-            if (glm::distance(at, cam) > kFxSourceReach) {
+            if (glm::distance(at, cam) > kFxCascadeReach) {
+                continue;
+            }
+            // A steep profile whose water the fine ground CONTRADICTS
+            // is a buried wall reach, not a visible fall (the
+            // re-route backlog owns those): no spray on dry rock.
+            if (render::terrain::height(renderer.terrainParams(),
+                                        fn.x, fn.z) >
+                    fn.surface + 2.0f ||
+                render::terrain::height(renderer.terrainParams(),
+                                        nodes[lip].x,
+                                        nodes[lip].z) >
+                    nodes[lip].surface + 2.0f) {
                 continue;
             }
             const u64 key =
@@ -7143,6 +7162,18 @@ void LandscapeScene::updateRiverCascadeFx() {
                 fx::EmitterParams params =
                     gameplay::toEmitterParams(*form);
                 params.duration = 1.0e9f; // for the fall's life
+                // Spray scales with the fall: a 12 m cascade throws
+                // more water than a spring wisp.
+                const f32 boost =
+                    glm::clamp(drop / 4.0f, 1.0f, 3.0f);
+                params.rate *= boost;
+                params.burst = static_cast<i32>(
+                    static_cast<f32>(params.burst) * boost);
+                params.shapeRadius =
+                    glm::max(params.shapeRadius,
+                             0.25f * fn.halfWidth);
+                params.sizeStart *= 0.5f * (1.0f + boost);
+                params.sizeEnd *= 0.5f * (1.0f + boost);
                 emitters.haze = fxSim.spawn(params, at, seed);
             }
             if (sound.isValid()) {
@@ -8059,9 +8090,17 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             forms.get(activeWorldspace))) {
         buriedBelowY = space->buriedBelowY;
     }
+    // Overview flight thins the fog AT SUBMIT only: the tuning (and
+    // the mods/render-tuning.toml it saves to) never sees it.
+    render::AtmosphereParams frameAtmos = atmos;
+    if (overviewView) {
+        frameAtmos.fogDensity *= 0.08f;
+        frameAtmos.fogStart =
+            glm::max(frameAtmos.fogStart, 2500.0f);
+    }
     const render::RenderView view {
         .camera = flyCamera.camera,
-        .atmos = atmos,
+        .atmos = frameAtmos,
         .interiorMode = interiorMode,
         .timeSeconds = timeSeconds,
         .windTime = windTime,
@@ -8328,6 +8367,10 @@ void LandscapeScene::drawUi() {
     });
     rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
     rightWindow("Rendering & post-FX", uiRenderOpen, [&] {
+        if (ImGui::Checkbox("Overview flight (14 km view)",
+                            &overviewView)) {
+            updateCameraFarPlane();
+        }
         RenderTuningPanels::drawRenderPanel(renderer, atmos);
     });
     rightWindow("Tree builder", uiTreesOpen, [&] {
