@@ -3517,6 +3517,23 @@ l'hydrologie définitive).
   vue ; le lointain 64 m + nappes/rubans lointains suffisent pour
   repérer canyons, lacs et cascades.
 
+- **2026-10-14 — Les « triangles » au pied des chutes : masques de
+  vasques non clippés (bump v111).** Retour dev : « les embruns, ce
+  sont les triangles en bas des chutes ? ça ne marche pas du tout ».
+  Ce n'étaient pas les embruns (particules) mais les NAPPES des
+  vasques : les étangs de l'hydrologie clippent leur masque contre le
+  sol (la nappe ne couvre que ce qu'elle tient, ≥4 cellules
+  mouillées) — les vasques de la brique G émettaient leur disque
+  PLEIN. Sur la pente d'une chute, le mesh dessinait des dalles à
+  niveau au-dessus du vide : coins chanfreinés + jupes de crête = des
+  triangles à chaque pied. Correctif : le masque de vasque ne garde
+  que les cellules dont le sol fin ≤ niveau + 0,5 (la règle du dig),
+  et un pied sans cuvette réelle (<4 cellules) n'émet RIEN — une
+  goulotte qui file n'a pas de bassin à montrer. Mesuré (tuile 1_0) :
+  **125 → 28 vasques**, masques limités à la poche réelle. Leçon : la
+  machinerie réutilisée inclut ses GARDES — makePond sans son clip
+  n'est pas makePond.
+
 ---
 
 ## 8. Glossaire

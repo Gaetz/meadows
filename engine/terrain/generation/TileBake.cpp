@@ -1681,18 +1681,33 @@ MapHydrology extractMapHydrology(
                                     static_cast<f32>(mr) *
                                         kPlungeTexel;
                                 if ((px - fp.x) * (px - fp.x) +
-                                        (pz - fp.z) * (pz - fp.z) <=
+                                        (pz - fp.z) * (pz - fp.z) >
                                     radius * radius) {
-                                    pond.mask[static_cast<size_t>(
-                                                  mr) *
-                                                  pond.maskWidth +
-                                              mc] = 1;
-                                    ++pond.cells;
+                                    continue;
                                 }
+                                // The sheet only covers ground that
+                                // can HOLD it (the hydrology ponds'
+                                // own clip rule): an unclipped disc
+                                // on a fall's slope painted chamfered
+                                // slabs and crest skirts over thin
+                                // air — "triangles" at every foot
+                                // (measured dev).
+                                if (fineAt(px, pz) >
+                                    pond.level + 0.5f) {
+                                    continue;
+                                }
+                                pond.mask[static_cast<size_t>(mr) *
+                                              pond.maskWidth +
+                                          mc] = 1;
+                                ++pond.cells;
                             }
                         }
-                        pond.catchment = fp.area;
-                        plunges.push_back(std::move(pond));
+                        // A foot with no basin to hold (steep chute
+                        // running straight on) gets no sheet at all.
+                        if (pond.cells >= 4) {
+                            pond.catchment = fp.area;
+                            plunges.push_back(std::move(pond));
+                        }
                     }
                     k = bottom;
                 }
