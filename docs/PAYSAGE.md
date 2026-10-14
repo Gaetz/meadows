@@ -3554,6 +3554,26 @@ l'hydrologie définitive).
   lisible dans la console du jeu pour vérifier qu'on est à portée
   (250 m d'un pied de chute d'eau VISIBLE).
 
+- **2026-10-14 — VASQUES SUPPRIMÉES : l'amphithéâtre de terrasses
+  (bump v113).** Capture dev à (4837, 428, 5031) : un bol entier en
+  terrasses d'eau empilées. Diagnostic dans la donnée : la rivière y
+  fait hw 56 (fleuve de 112 m) → chaque vasque de plongée faisait
+  **134 m de diamètre** (rayon 1,2·hw), et la descente en lacets en
+  semait une par grappe fusionnée — 5 nappes géantes autour du seul
+  point témoin, en échelle sur tout le versant. Les vasques sont des
+  MARCHES par construction : contraires à la direction « des pentes,
+  pas d'escaliers » prise la veille. Supprimées entièrement (le
+  profil à pente bornée + le carve suffisent : des rapides ; les
+  plats restants sont les bassins hydrauliques réels et les étangs
+  d'hydrologie). Conservés : les embruns/grondement des chutes
+  (détection par pente, indépendante des vasques) et le ruban
+  lointain non décimé aux segments raides. Mesuré (tuile 1_1) :
+  vasques 8 m **→ 0**, 3 étangs 16 m restants au niveau de la
+  rivière. Leçon : un habillage dimensionné par hw devait être
+  PLAFONNÉ — à 56 m de demi-largeur, « proportionné » devient
+  monumental ; et surtout, tester l'esthétique sur un fleuve autant
+  que sur un ruisseau avant de généraliser.
+
 ---
 
 ## 8. Glossaire
