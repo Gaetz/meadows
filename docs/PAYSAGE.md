@@ -3574,6 +3574,28 @@ l'hydrologie définitive).
   monumental ; et surtout, tester l'esthétique sur un fleuve autant
   que sur un ruisseau avant de généraliser.
 
+- **2026-10-14 — LISSAGE LONGITUDINAL : les vrais escaliers étaient
+  le profil suiveur de banquettes (bump v114).** Retour dev après
+  v113 : « ça a rien changé » — exact, les vasques n'étaient qu'un
+  figurant. Le profil amont complet du bol témoin (4837, 5031) l'a
+  montré : descente réelle de **96 m sur ~150 m** (pente 0,64), que
+  la passe v112 ne pouvait pas rectifier — son plancher « ≤6 m sous
+  le sol » la forçait à SUIVRE les banquettes du terrain : segments
+  quasi plats alternant avec des plongeons de 3-10 m tous les 8 m,
+  qu'un ruban de 156 m de large rend en terrasses empilées.
+  Correctif : **lissage longitudinal du profil** (boîte ±5 points
+  ≈ ±38 m, 2 itérations) — sur un tronçon raide l'eau taille une
+  goulotte RECTILIGNE à travers les nez de banquettes (le gate du
+  carve, 7,5-14 m, les creuse), remontée bornée à +2 m au-dessus de
+  l'ancienne ligne, planchers lac/mer conservés, monotonie
+  re-imposée. Mesuré : le bol passe d'une alternance
+  +2,6/+9,9/+9,0 m par nœud à une rampe PROGRESSIVE 0,15→0,8 sans un
+  plat ; alternances plat/plongeon sur la tuile 2,12 % → 1,18 % ;
+  enterrés stables (14,9 %). Chaîne du jour consignée honnêtement :
+  v112 (pente max, nécessaire mais insuffisante) → v113 (vasques
+  supprimées, bonne décision mais mauvais diagnostic) → v114 (le
+  vrai correctif).
+
 ---
 
 ## 8. Glossaire

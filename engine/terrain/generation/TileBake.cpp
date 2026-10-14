@@ -1684,6 +1684,60 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        // Longitudinal smoothing: on a slope steeper than the cap the
+        // profile was FLOOR-FOLLOWING (bounded 6 m under the benches)
+        // — quasi-flat treads alternating with 3-10 m plunges every
+        // node, which a wide ribbon renders as stacked terraces (the
+        // dev's "water staircases everywhere", measured on a 0.64
+        // bowl descent). Water running a steep reach cuts a STRAIGHT
+        // chute: the profile is box-smoothed along the course, riding
+        // over bench noses (the carve gate, 7.5-14 m, digs through
+        // them) and pooling at most lightly above the old line. Lake
+        // levels and the sea stay floors; monotonicity is re-enforced.
+        {
+            constexpr i32 kSmoothIters = 2;
+            constexpr i32 kSmoothHalf = 5;    // ~±38 m of course
+            constexpr f32 kSmoothRaise = 2.0f; // max rise over the old
+            vector<f32> buf;
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                if (count < static_cast<size_t>(2 * kSmoothHalf + 3)) {
+                    continue;
+                }
+                const vector<f32>& lv = lakeLvls[r];
+                vector<f32> s(count);
+                for (size_t i = 0; i < count; ++i) {
+                    s[i] = river.points[i].surface;
+                }
+                buf = s;
+                for (i32 it = 0; it < kSmoothIters; ++it) {
+                    for (size_t i = kSmoothHalf;
+                         i + kSmoothHalf < count; ++i) {
+                        f32 acc = 0.0f;
+                        for (i32 o = -kSmoothHalf; o <= kSmoothHalf;
+                             ++o) {
+                            acc += buf[i + o];
+                        }
+                        s[i] = acc /
+                               static_cast<f32>(2 * kSmoothHalf + 1);
+                    }
+                    buf = s;
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    f32 v = glm::min(
+                        s[i], river.points[i].surface + kSmoothRaise);
+                    v = glm::max(glm::max(v, lv[i] - kEdgeTuck),
+                                 hydrology.seaLevel);
+                    river.points[i].surface = v;
+                }
+                for (size_t i = count - 1; i-- > 0;) {
+                    river.points[i].surface =
+                        glm::max(river.points[i].surface,
+                                 river.points[i + 1].surface);
+                }
+            }
+        }
         // Tributaries were filled against their receiver's surface
         // BEFORE the pool re-seat and the cascade coalescing moved it:
         // a lowered stem left hanging lips at confluences. Re-clamp
