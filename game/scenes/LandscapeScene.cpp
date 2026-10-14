@@ -7183,6 +7183,9 @@ void LandscapeScene::updateRiverCascadeFx() {
                 }
             }
             if (emitters.haze != 0 || emitters.sound != 0) {
+                LOG_INFO("cascade fx: spray at ({:.0f}, {:.0f}) "
+                         "drop {:.1f} m",
+                         fn.x, fn.z, drop);
                 riverCascadeEmitters.emplace(key, emitters);
             }
         }

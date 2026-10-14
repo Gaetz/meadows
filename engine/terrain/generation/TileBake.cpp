@@ -1716,6 +1716,53 @@ MapHydrology extractMapHydrology(
                 out.hydro.lakes.push_back(std::move(pond));
             }
         }
+        // Slope cap: a lip steeper than rapids is tilted INTO the
+        // ground — the approach above a drop slopes down at the cap
+        // and the carve digs the chute through the lip, so the water
+        // descends as a visible rapid instead of a stair of slabs
+        // (dev direction: slopes show the simulated water, steps
+        // hide it). The cap never pulls a point under a crossed
+        // lake's sheet (the anti-tunnel rule holds).
+        {
+            constexpr f32 kMaxDownSlope = 0.4f; // m per m of course
+            // The tilt may dive at most this far under the local fine
+            // floor: within the S5c gate's reach, so the chute is
+            // actually DUG — an unbounded tilt buried whole
+            // approaches under lips taller than the gate (enterres
+            // 13.6 -> 30.1 %, measured).
+            constexpr f32 kTiltCut = 6.0f;
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                if (count < 2) {
+                    continue;
+                }
+                const vector<f32>& lv = lakeLvls[r];
+                const vector<f32>& f5 = floors[r];
+                for (size_t k = count - 1; k-- > 0;) {
+                    const f32 ds = glm::max(
+                        std::hypot(river.points[k + 1].x -
+                                       river.points[k].x,
+                                   river.points[k + 1].z -
+                                       river.points[k].z),
+                        0.001f);
+                    f32 capped = glm::min(
+                        river.points[k].surface,
+                        river.points[k + 1].surface +
+                            kMaxDownSlope * ds);
+                    capped = glm::max(
+                        glm::max(capped,
+                                 glm::max(f5[k] - kTiltCut,
+                                          lv[k] - kEdgeTuck)),
+                        hydrology.seaLevel);
+                    // Never ABOVE the original profile: the floors
+                    // only bound the dive, they must not re-raise.
+                    capped = glm::min(capped,
+                                      river.points[k].surface);
+                    river.points[k].surface = capped;
+                }
+            }
+        }
         // Tributaries were filled against their receiver's surface
         // BEFORE the pool re-seat and the cascade coalescing moved it:
         // a lowered stem left hanging lips at confluences. Re-clamp

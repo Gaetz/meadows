@@ -3534,6 +3534,26 @@ l'hydrologie définitive).
   machinerie réutilisée inclut ses GARDES — makePond sans son clip
   n'est pas makePond.
 
+- **2026-10-14 — Les chutes deviennent des pentes (bump v112).**
+  Direction dev : « enlever l'effet d'escalier des chutes pour
+  revenir à des pentes, qui montrent mieux l'eau simulée ». Passe de
+  PENTE MAXIMALE après la fusion des cascades : toute descente est
+  bornée à 0,4 m/m — l'approche amont d'une lèvre s'incline À TRAVERS
+  elle (la ligne d'eau passe sous le sol pré-carve = la consigne de
+  creusement ; le carve taille la goulotte, et le sol FINAL repasse
+  sous l'eau), jamais sous le niveau d'un lac traversé (anti-tunnel)
+  ni plus de 6 m sous le plancher fin local (kTiltCut, dans la marge
+  du gate anti-fente — non bornée, l'inclinaison enterrait 30 % des
+  points sous les grandes lèvres que le carve refuse de percer,
+  mesuré). Mesuré : segments >0,45 de pente 12,6 % → **7,7-8,6 %**,
+  enterrés 12,4-13,6 → 14,6-15,6 % (le prix des rampes creusées) ;
+  le résiduel raide = les grandes lèvres hors gate (lèvre franche
+  plutôt qu'eau invisible) et les déversoirs de lacs (chute libre
+  légitime depuis la nappe). Diagnostic embruns : LOG_INFO au spawn
+  de chaque émetteur de cascade (« cascade fx: spray at (x, z) ») —
+  lisible dans la console du jeu pour vérifier qu'on est à portée
+  (250 m d'un pied de chute d'eau VISIBLE).
+
 ---
 
 ## 8. Glossaire
