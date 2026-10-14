@@ -459,17 +459,16 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                                  kFoamLakeArea
                                  ? 1.0f
                                  : 0.0f;
-        // One quad per covered texel, with PER-SIDE extension:
-        // covered neighbour -> flush (adjacent quads share the edge
-        // exactly); uncovered RISING bank -> grown 0.75 texel so the
-        // sheet reaches under the bank and the depth test cuts the
-        // exact shoreline (the historical behavior); uncovered
-        // FALLING ground (below the level: an eroded crest) -> flush.
-        // The old whole-run growth pushed the sheet 6 m into thin air
-        // past every outlet crest — the jutting corner floating over
-        // the void at the spawn lake (measured dev). Terrain is
-        // sampled only on uncovered sides (the perimeter), so the
-        // rebuild stays cheap.
+        // Welded sheet with a SMOOTHED boundary ring: the per-texel
+        // quads with per-side growth drew the mask's 8-16 m staircase
+        // outline straight into the water — crenellated, "blocky"
+        // sheets. From Dust's round blobs are a RENDERING property of
+        // a heightfield, not a sim method: corners are welded on the
+        // lattice, the boundary ring is Laplacian-rounded, and the
+        // old per-side semantics (grow under banks so the depth test
+        // cuts the true shoreline, flush + skirt at crests, shelf
+        // reach, sibling-piece seams) become per-boundary-corner
+        // probes along the outward normal.
         const f32 grow = lake.maskTexel * 0.75f;
         const f32 mt = lake.maskTexel;
         const auto covered = [&](i32 mc, i32 mr) {
@@ -479,239 +478,226 @@ void WaterSystem::buildLocalGeometry(const render::WaterBodies& bodiesIn,
                    lake.mask[static_cast<size_t>(mr) * lake.maskWidth +
                              static_cast<size_t>(mc)] != 0;
         };
-        for (u32 row = 0; row < lake.maskHeight; ++row) {
-            for (u32 col = 0; col < lake.maskWidth; ++col) {
-                if (!covered(static_cast<i32>(col),
-                             static_cast<i32>(row))) {
+        const i32 mw = static_cast<i32>(lake.maskWidth);
+        const i32 mh = static_cast<i32>(lake.maskHeight);
+        // Corner lattice (mw+1) x (mh+1): texel m spans corners
+        // m..m+1, corner c at minX + (c - 0.5) * mt (point-centred
+        // masks).
+        const i32 cw = mw + 1;
+        const i32 ch = mh + 1;
+        const auto cid = [&](i32 c, i32 r) {
+            return static_cast<size_t>(r) * cw + static_cast<size_t>(c);
+        };
+        vector<f32> cx(static_cast<size_t>(cw) * ch);
+        vector<f32> cz(static_cast<size_t>(cw) * ch);
+        vector<u8> onRing(static_cast<size_t>(cw) * ch, 0);
+        vector<u8> crestC(static_cast<size_t>(cw) * ch, 0);
+        for (i32 r = 0; r < ch; ++r) {
+            for (i32 c = 0; c < cw; ++c) {
+                cx[cid(c, r)] =
+                    lake.minX + (static_cast<f32>(c) - 0.5f) * mt;
+                cz[cid(c, r)] =
+                    lake.minZ + (static_cast<f32>(r) - 0.5f) * mt;
+                i32 wet = 0;
+                wet += covered(c - 1, r - 1) ? 1 : 0;
+                wet += covered(c, r - 1) ? 1 : 0;
+                wet += covered(c - 1, r) ? 1 : 0;
+                wet += covered(c, r) ? 1 : 0;
+                onRing[cid(c, r)] = (wet > 0 && wet < 4) ? 1 : 0;
+            }
+        }
+        // A corner-grid edge is part of the ring where it separates a
+        // wet texel from a dry one.
+        const auto hEdgeRing = [&](i32 c, i32 r) {
+            return covered(c, r - 1) != covered(c, r);
+        };
+        const auto vEdgeRing = [&](i32 c, i32 r) {
+            return covered(c - 1, r) != covered(c, r);
+        };
+        // Round the ring: each ring corner with exactly two ring
+        // neighbours relaxes toward them (two Laplacian passes turn
+        // the axis-aligned staircase into a smooth closed curve);
+        // pinch points stay put.
+        for (i32 pass = 0; pass < 2; ++pass) {
+            vector<f32> nx = cx;
+            vector<f32> nz = cz;
+            for (i32 r = 0; r < ch; ++r) {
+                for (i32 c = 0; c < cw; ++c) {
+                    if (!onRing[cid(c, r)]) {
+                        continue;
+                    }
+                    size_t nb[4];
+                    i32 n = 0;
+                    if (c + 1 < cw && hEdgeRing(c, r)) {
+                        nb[n++] = cid(c + 1, r);
+                    }
+                    if (c > 0 && hEdgeRing(c - 1, r)) {
+                        nb[n++] = cid(c - 1, r);
+                    }
+                    if (r + 1 < ch && vEdgeRing(c, r)) {
+                        nb[n++] = cid(c, r + 1);
+                    }
+                    if (r > 0 && vEdgeRing(c, r - 1)) {
+                        nb[n++] = cid(c, r - 1);
+                    }
+                    if (n != 2) {
+                        continue;
+                    }
+                    nx[cid(c, r)] = 0.5f * cx[cid(c, r)] +
+                                    0.25f * (cx[nb[0]] + cx[nb[1]]);
+                    nz[cid(c, r)] = 0.5f * cz[cid(c, r)] +
+                                    0.25f * (cz[nb[0]] + cz[nb[1]]);
+                }
+            }
+            cx.swap(nx);
+            cz.swap(nz);
+        }
+        // Per-ring-corner shoreline semantics, probed along the
+        // outward normal (away from the adjacent wet texel centres):
+        // a bank that HOLDS the level grows the sheet under it, a
+        // moderate dip that rises back within reach is a submerged
+        // shelf (reach to it), a deep void is the crest (flush, the
+        // skirt pours), and a deep point covered by a sibling piece
+        // of the same lake is a tile seam (grown overlap).
+        for (i32 r = 0; r < ch; ++r) {
+            for (i32 c = 0; c < cw; ++c) {
+                if (!onRing[cid(c, r)]) {
                     continue;
                 }
-                // Masks are POINT lattices (texel m at min + m*mt):
-                // the quad is CENTRED on its sample — the old corner
-                // anchoring shifted every sheet half a texel toward
-                // +x/+z (jutting over +x/+z crests, stopping short of
-                // the -x/-z ones).
-                const f32 tx0 =
-                    lake.minX + (static_cast<f32>(col) - 0.5f) * mt;
-                const f32 tz0 =
-                    lake.minZ + (static_cast<f32>(row) - 0.5f) * mt;
-                const f32 cx = tx0 + 0.5f * mt;
-                const f32 cz = tz0 + 0.5f * mt;
-                // Per-side extension AND crest flag: a crest side (the
-                // void past the edge) ends flush and then POURS — a
-                // short outward-dipping skirt replaces the square slab
-                // silhouette with an edge that starts its fall (the
-                // "flan" softening, step 3a of the shores plan).
-                struct SideExt {
-                    f32 grow { 0.0f };
-                    bool crest { false };
+                f32 wx = 0.0f;
+                f32 wz = 0.0f;
+                i32 wn = 0;
+                const i32 tc[4][2] = {
+                    { c - 1, r - 1 }, { c, r - 1 },
+                    { c - 1, r }, { c, r }
                 };
-                const auto ext = [&](i32 dc, i32 dr, f32 ex, f32 ez) {
-                    SideExt se;
-                    if (covered(static_cast<i32>(col) + dc,
-                                static_cast<i32>(row) + dr)) {
-                        return se;
+                for (const auto& t : tc) {
+                    if (covered(t[0], t[1])) {
+                        wx += lake.minX + static_cast<f32>(t[0]) * mt;
+                        wz += lake.minZ + static_cast<f32>(t[1]) * mt;
+                        ++wn;
                     }
-                    // Probe a FULL mask texel past the edge (three
-                    // samples), not just half a texel: at a mountain
-                    // COL the near sample lands on the rising saddle
-                    // while the ground plunges right behind — the
-                    // grown sheet jutted square over the drop
-                    // (measured dev). The extension is granted if the
-                    // ground HOLDS the level along the whole probe (a
-                    // true bank, cut by the depth test). A deep,
-                    // sibling-uncovered point is the void past a crest
-                    // — flush, the water stops at its fall — UNLESS
-                    // the dip is moderate (≤ 6 m under the level) and
-                    // the ground RISES BACK within reach: a submerged
-                    // SHELF, a shore band too shallow and narrow for
-                    // the 16 m mask. Cutting there hung the stepped
-                    // edge + skirt over a still-underwater bank
-                    // (measured dev, small deep lakes); the sheet must
-                    // instead run to the rising bank so the depth test
-                    // cuts the true shoreline. A deep point covered by
-                    // a SIBLING piece of the same lake is a tile seam:
-                    // the grown overlap bridges the raster
-                    // misalignment as before.
-                    bool dipped = false;
-                    for (i32 s = 0; s < 3; ++s) {
-                        const f32 px =
-                            ex + static_cast<f32>(dc) *
-                                     (0.5f + static_cast<f32>(s)) * mt;
-                        const f32 pz =
-                            ez + static_cast<f32>(dr) *
-                                     (0.5f + static_cast<f32>(s)) * mt;
-                        const f32 g = terrain::height(params, px, pz);
-                        if (g >= lake.level - 2.0f) {
-                            if (dipped) {
-                                // Shelf: extend to the rising bank.
-                                se.grow =
-                                    (0.5f + static_cast<f32>(s)) * mt;
-                                return se;
-                            }
+                }
+                if (wn == 0) {
+                    continue;
+                }
+                f32 ox = cx[cid(c, r)] - wx / static_cast<f32>(wn);
+                f32 oz = cz[cid(c, r)] - wz / static_cast<f32>(wn);
+                const f32 ol = std::sqrt(ox * ox + oz * oz);
+                if (ol < 1.0e-3f) {
+                    continue;
+                }
+                ox /= ol;
+                oz /= ol;
+                f32 push = grow; // bank by default
+                bool isCrest = false;
+                bool dipped = false;
+                for (i32 s = 0; s < 3; ++s) {
+                    const f32 d = (0.5f + static_cast<f32>(s)) * mt;
+                    const f32 px = cx[cid(c, r)] + ox * d;
+                    const f32 pz = cz[cid(c, r)] + oz * d;
+                    const f32 g = terrain::height(params, px, pz);
+                    if (g >= lake.level - 2.0f) {
+                        if (dipped) {
+                            push = d; // shelf: reach the rising bank
+                        }
+                        break;
+                    }
+                    bool seam = false;
+                    for (const LakeSurface& other : bodies->lakes) {
+                        if (&other == &lake) {
                             continue;
                         }
-                        bool seam = false;
-                        for (const LakeSurface& other : bodies->lakes) {
-                            if (&other == &lake) {
-                                continue;
-                            }
-                            if (glm::abs(other.level - lake.level) <
-                                    1.0f &&
-                                other.covers(px, pz)) {
-                                seam = true;
-                                break;
-                            }
+                        if (glm::abs(other.level - lake.level) <
+                                1.0f &&
+                            other.covers(px, pz)) {
+                            seam = true;
+                            break;
                         }
-                        if (seam) {
-                            continue;
-                        }
-                        if (g >= lake.level - 6.0f) {
-                            dipped = true; // shelf candidate
-                            continue;
-                        }
-                        se.crest = true; // the true void
-                        return se;
                     }
-                    if (dipped) {
-                        // The dip never rose back within reach:
-                        // conservative crest (flush + skirt).
-                        se.crest = true;
-                        return se;
+                    if (seam) {
+                        continue;
                     }
-                    se.grow = grow;
-                    return se;
-                };
-                const SideExt west = ext(-1, 0, tx0, cz);
-                const SideExt east = ext(1, 0, tx0 + mt, cz);
-                const SideExt north = ext(0, -1, cx, tz0);
-                const SideExt south = ext(0, 1, cx, tz0 + mt);
-                const f32 x0 = tx0 - west.grow;
-                const f32 z0 = tz0 - north.grow;
-                const f32 x1 = tx0 + mt + east.grow;
-                const f32 z1 = tz0 + mt + south.grow;
-                // Step 3b: where TWO crest sides meet, the square
-                // corner is CHAMFERED at 45° (half a texel per side)
-                // — the horizontal silhouette softening, mirroring
-                // what marching squares did for the sim shore. Crest
-                // sides have grow = 0, so the cuts live on the raw
-                // texel edges; bank/seam corners stay square (the
-                // depth test owns those).
-                const f32 ck = 0.5f * mt;
-                const bool cutNW = west.crest && north.crest;
-                const bool cutNE = east.crest && north.crest;
-                const bool cutSE = east.crest && south.crest;
-                const bool cutSW = west.crest && south.crest;
-                f32 pxs[8];
-                f32 pzs[8];
-                u32 pcount = 0;
-                const auto pt = [&](f32 px, f32 pz) {
-                    if (pcount > 0 &&
-                        std::abs(pxs[pcount - 1] - px) < 1.0e-4f &&
-                        std::abs(pzs[pcount - 1] - pz) < 1.0e-4f) {
-                        return;
+                    if (g >= lake.level - 6.0f) {
+                        dipped = true;
+                        continue;
                     }
-                    pxs[pcount] = px;
-                    pzs[pcount] = pz;
-                    ++pcount;
-                };
-                if (cutNW) {
-                    pt(x0 + ck, z0);
-                } else {
-                    pt(x0, z0);
+                    push = 0.0f;
+                    isCrest = true;
+                    break;
                 }
-                if (cutNE) {
-                    pt(x1 - ck, z0);
-                    pt(x1, z0 + ck);
-                } else {
-                    pt(x1, z0);
+                if (!isCrest && dipped && push == grow) {
+                    // The dip never rose back within reach:
+                    // conservative crest.
+                    push = 0.0f;
+                    isCrest = true;
                 }
-                if (cutSE) {
-                    pt(x1, z1 - ck);
-                    pt(x1 - ck, z1);
-                } else {
-                    pt(x1, z1);
+                cx[cid(c, r)] += ox * push;
+                cz[cid(c, r)] += oz * push;
+                crestC[cid(c, r)] = isCrest ? 1 : 0;
+            }
+        }
+        // Tops: one quad per covered texel on the welded (rounded,
+        // pushed) corners.
+        const f32 mat = materialOf(lake.materialIndex);
+        vector<u32> cvert(static_cast<size_t>(cw) * ch, ~0u);
+        const auto cornerVert = [&](i32 c, i32 r) {
+            u32& slot = cvert[cid(c, r)];
+            if (slot == ~0u) {
+                slot = vertex(cx[cid(c, r)], lake.level,
+                              cz[cid(c, r)], 0.0f, 0.0f, 0.0f,
+                              foamGate, 0.0f, 1.0e6f, mat);
+            }
+            return slot;
+        };
+        for (i32 r = 0; r < mh; ++r) {
+            for (i32 c = 0; c < mw; ++c) {
+                if (!covered(c, r)) {
+                    continue;
                 }
-                if (cutSW) {
-                    pt(x0 + ck, z1);
-                    pt(x0, z1 - ck);
-                }  else {
-                    pt(x0, z1);
+                const u32 v00 = cornerVert(c, r);
+                const u32 v10 = cornerVert(c + 1, r);
+                const u32 v11 = cornerVert(c + 1, r + 1);
+                const u32 v01 = cornerVert(c, r + 1);
+                for (const u32 k : { v00, v11, v10, v00, v01, v11 }) {
+                    indices.push_back(k);
                 }
-                if (cutNW) {
-                    pt(x0, z0 + ck);
+            }
+        }
+        // Crest skirts: the pouring edge, one quad dipping outward
+        // from every ring edge whose BOTH corners are crests.
+        constexpr f32 kSkirtOut = 2.0f;  // m outward
+        constexpr f32 kSkirtDrop = 2.5f; // m down
+        const auto skirt = [&](i32 c0, i32 r0, i32 c1, i32 r1,
+                               f32 ox, f32 oz) {
+            const u32 v0 = cornerVert(c0, r0);
+            const u32 v1 = cornerVert(c1, r1);
+            const u32 v2 =
+                vertex(cx[cid(c1, r1)] + ox,
+                       lake.level - kSkirtDrop,
+                       cz[cid(c1, r1)] + oz, 0.0f, 0.0f, 0.0f,
+                       foamGate, 0.0f, 1.0e6f, mat);
+            const u32 v3 =
+                vertex(cx[cid(c0, r0)] + ox,
+                       lake.level - kSkirtDrop,
+                       cz[cid(c0, r0)] + oz, 0.0f, 0.0f, 0.0f,
+                       foamGate, 0.0f, 1.0e6f, mat);
+            for (const u32 k : { v0, v2, v1, v0, v3, v2 }) {
+                indices.push_back(k);
+            }
+        };
+        for (i32 r = 0; r < ch; ++r) {
+            for (i32 c = 0; c < cw; ++c) {
+                // Outward = toward the DRY side of the edge.
+                if (c + 1 < cw && hEdgeRing(c, r) &&
+                    crestC[cid(c, r)] && crestC[cid(c + 1, r)]) {
+                    const f32 oz2 = covered(c, r) ? -1.0f : 1.0f;
+                    skirt(c, r, c + 1, r, 0.0f, oz2 * kSkirtOut);
                 }
-                const f32 mat = materialOf(lake.materialIndex);
-                u32 vids[8];
-                for (u32 q = 0; q < pcount; ++q) {
-                    vids[q] = vertex(pxs[q], lake.level, pzs[q], 0.0f,
-                                     0.0f, 0.0f, foamGate, 0.0f,
-                                     1.0e6f, mat);
-                }
-                for (u32 q = 1; q + 1 < pcount; ++q) {
-                    indices.push_back(vids[0]);
-                    indices.push_back(vids[q + 1]);
-                    indices.push_back(vids[q]);
-                }
-                // Crest skirts (step 3a): the pouring edge — a short
-                // quad dipping OUTWARD from every crest segment
-                // (shortened sides AND chamfer diagonals), so the
-                // slab silhouette reads as water starting its fall.
-                constexpr f32 kSkirtOut = 2.0f;  // m outward
-                constexpr f32 kSkirtDrop = 2.5f; // m down
-                const auto skirt = [&](f32 ax, f32 az, f32 bx, f32 bz,
-                                       f32 ox, f32 oz) {
-                    if (std::abs(ax - bx) < 1.0e-3f &&
-                        std::abs(az - bz) < 1.0e-3f) {
-                        return; // side fully consumed by its chamfers
-                    }
-                    const u32 v0 = vertex(ax, lake.level, az, 0.0f,
-                                          0.0f, 0.0f, foamGate, 0.0f,
-                                          1.0e6f, mat);
-                    const u32 v1 = vertex(bx, lake.level, bz, 0.0f,
-                                          0.0f, 0.0f, foamGate, 0.0f,
-                                          1.0e6f, mat);
-                    const u32 v2 = vertex(bx + ox, lake.level - kSkirtDrop,
-                                          bz + oz, 0.0f, 0.0f, 0.0f,
-                                          foamGate, 0.0f, 1.0e6f, mat);
-                    const u32 v3 = vertex(ax + ox, lake.level - kSkirtDrop,
-                                          az + oz, 0.0f, 0.0f, 0.0f,
-                                          foamGate, 0.0f, 1.0e6f, mat);
-                    for (const u32 k : { v0, v2, v1, v0, v3, v2 }) {
-                        indices.push_back(k);
-                    }
-                };
-                constexpr f32 kDiag = 0.70710678f;
-                if (west.crest) {
-                    skirt(x0, cutNW ? z0 + ck : z0, x0,
-                          cutSW ? z1 - ck : z1, -kSkirtOut, 0.0f);
-                }
-                if (east.crest) {
-                    skirt(x1, cutNE ? z0 + ck : z0, x1,
-                          cutSE ? z1 - ck : z1, kSkirtOut, 0.0f);
-                }
-                if (north.crest) {
-                    skirt(cutNW ? x0 + ck : x0, z0,
-                          cutNE ? x1 - ck : x1, z0, 0.0f, -kSkirtOut);
-                }
-                if (south.crest) {
-                    skirt(cutSW ? x0 + ck : x0, z1,
-                          cutSE ? x1 - ck : x1, z1, 0.0f, kSkirtOut);
-                }
-                if (cutNW) {
-                    skirt(x0, z0 + ck, x0 + ck, z0,
-                          -kDiag * kSkirtOut, -kDiag * kSkirtOut);
-                }
-                if (cutNE) {
-                    skirt(x1 - ck, z0, x1, z0 + ck,
-                          kDiag * kSkirtOut, -kDiag * kSkirtOut);
-                }
-                if (cutSE) {
-                    skirt(x1, z1 - ck, x1 - ck, z1,
-                          kDiag * kSkirtOut, kDiag * kSkirtOut);
-                }
-                if (cutSW) {
-                    skirt(x0 + ck, z1, x0, z1 - ck,
-                          -kDiag * kSkirtOut, kDiag * kSkirtOut);
+                if (r + 1 < ch && vEdgeRing(c, r) &&
+                    crestC[cid(c, r)] && crestC[cid(c, r + 1)]) {
+                    const f32 ox2 = covered(c, r) ? -1.0f : 1.0f;
+                    skirt(c, r, c, r + 1, ox2 * kSkirtOut, 0.0f);
                 }
             }
         }
