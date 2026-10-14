@@ -1553,6 +1553,14 @@ MapHydrology extractMapHydrology(
         {
             constexpr f32 kFallStep = 1.5f;  // a lip worth merging (m)
             constexpr f32 kTreadMax = 30.0f; // tread that still chains
+            // Plunge pools: the carve can only DIG from the surface,
+            // so a fall's concave foot kept its raw ground and the
+            // chute ended on a dry shelf. Each merged cascade emits a
+            // dug pond at its foot — S5d digs the dish, the nappe
+            // renders it, pinLakes holds it: the existing pond
+            // machinery, like the discovered pools.
+            constexpr f32 kPlungeTexel = 8.0f;
+            vector<Lake> plunges;
             const auto underLake = [&](const RiverPoint& pt) {
                 for (const Lake& lake : out.hydro.lakes) {
                     if (lake.mask.empty() || lake.maskWidth == 0 ||
@@ -1633,8 +1641,64 @@ MapHydrology extractMapHydrology(
                                            (arc[q] - arc[top]) / span;
                         }
                     }
+                    // One plunge pool per fall worth the name (also
+                    // the single-lip ones): foot under a sheet keeps
+                    // the sheet.
+                    if (river.points[top].surface -
+                                river.points[bottom].surface >=
+                            4.0f &&
+                        bottom < count && !wet[bottom]) {
+                        const RiverPoint& fp = river.points[bottom];
+                        Lake pond;
+                        pond.dug = 1;
+                        pond.level = fp.surface - 0.1f;
+                        const f32 radius =
+                            glm::max(fp.halfWidth * 1.2f, 8.0f);
+                        pond.minX = fp.x - radius;
+                        pond.maxX = fp.x + radius;
+                        pond.minZ = fp.z - radius;
+                        pond.maxZ = fp.z + radius;
+                        pond.maskTexel = kPlungeTexel;
+                        pond.maskWidth =
+                            static_cast<u32>(std::lround(
+                                2.0f * radius / kPlungeTexel)) +
+                            1;
+                        pond.maskHeight = pond.maskWidth;
+                        pond.mask.assign(
+                            static_cast<size_t>(pond.maskWidth) *
+                                pond.maskHeight,
+                            0);
+                        pond.cells = 0;
+                        for (u32 mr = 0; mr < pond.maskHeight; ++mr) {
+                            for (u32 mc = 0; mc < pond.maskWidth;
+                                 ++mc) {
+                                const f32 px =
+                                    pond.minX +
+                                    static_cast<f32>(mc) *
+                                        kPlungeTexel;
+                                const f32 pz =
+                                    pond.minZ +
+                                    static_cast<f32>(mr) *
+                                        kPlungeTexel;
+                                if ((px - fp.x) * (px - fp.x) +
+                                        (pz - fp.z) * (pz - fp.z) <=
+                                    radius * radius) {
+                                    pond.mask[static_cast<size_t>(
+                                                  mr) *
+                                                  pond.maskWidth +
+                                              mc] = 1;
+                                    ++pond.cells;
+                                }
+                            }
+                        }
+                        pond.catchment = fp.area;
+                        plunges.push_back(std::move(pond));
+                    }
                     k = bottom;
                 }
+            }
+            for (Lake& pond : plunges) {
+                out.hydro.lakes.push_back(std::move(pond));
             }
         }
         // Tributaries were filled against their receiver's surface

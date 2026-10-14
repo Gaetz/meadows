@@ -1094,6 +1094,10 @@ struct RiverSourceFxForm : Form {
     core::Guid soundSpring;
     core::Guid soundNeve;
     core::Guid soundGlacier;
+    // Cascade dressing (impact spray at a fall's foot). Empty = the
+    // runtime falls back to the spring mist/sound.
+    core::Guid mistCascade;
+    core::Guid soundCascade;
 
     REFLECT_BEGIN(RiverSourceFxForm, Form)
         REFLECT_FIELD(mistSpring)
@@ -1102,6 +1106,8 @@ struct RiverSourceFxForm : Form {
         REFLECT_FIELD(soundSpring)
         REFLECT_FIELD(soundNeve)
         REFLECT_FIELD(soundGlacier)
+        REFLECT_FIELD(mistCascade)
+        REFLECT_FIELD(soundCascade)
     REFLECT_END()
 };
 

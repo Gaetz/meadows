@@ -224,6 +224,7 @@ private:
     // River-source dressing (F4): mist + optional sound at the true
     // heads of published courses, start/stop by reach like FxSource.
     std::unordered_map<u64, FxSourceEmitters> riverSourceEmitters;
+    std::unordered_map<u64, FxSourceEmitters> riverCascadeEmitters;
     // The frame's water (douses, jet lumps, splashes, springs) and fire
     // (sparks, brands, the jet's pulses) events, as discs on the ground:
     // what snuffs a torch and what relights it. Cleared once consumed.
@@ -240,6 +241,7 @@ private:
     static constexpr f32 kFxSourceReach = 90.0f;
     void updateFxSources();
     void updateRiverSourceFx();
+    void updateRiverCascadeFx();
     void resetFxSources(); // map swap / exit: the emitters go with the world
     // The igniters among them (FxSource.igniteHeat > 0), rebuilt each
     // frame: their heat goes to the wooden props and trees within reach

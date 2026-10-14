@@ -749,7 +749,12 @@ render::WaterSystem::FarWaterSet collectFarWater(
                     const auto& last = run.nodes.back();
                     const f32 dx = pt.x - last.x;
                     const f32 dz = pt.z - last.z;
-                    if (dx * dx + dz * dz < 48.0f * 48.0f) {
+                    // A STEEP reach keeps its nodes: thinned to 48 m,
+                    // a 10 m cascade smeared into a long far ramp
+                    // (the near view shows a fall, the far view a
+                    // slide).
+                    if (dx * dx + dz * dz < 48.0f * 48.0f &&
+                        last.surface - pt.surface <= 2.0f) {
                         pending = &pt; // kept if the run ends here
                         continue;      // ~48 m is plenty far away
                     }

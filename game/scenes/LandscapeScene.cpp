@@ -1814,6 +1814,7 @@ void LandscapeScene::update(f32 dt) {
     fxDirector.update(dt, flyCamera);
     updateFxSources(); // the torches and campfires within reach
     updateRiverSourceFx(); // mist and murmur at the springs in reach
+    updateRiverCascadeFx(); // spray and roar at the falls in reach
     applyFxIgniters(dt);
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
@@ -7040,6 +7041,119 @@ void LandscapeScene::updateRiverSourceFx() {
         }
         if (emitters.haze != 0 || emitters.sound != 0) {
             riverSourceEmitters.emplace(key, emitters);
+        }
+    }
+    sweep(seen);
+}
+
+void LandscapeScene::updateRiverCascadeFx() {
+    // Impact spray (and an optional roar) at the FOOT of each fall:
+    // a run of steep ribbon segments is a cascade — detected from the
+    // published nodes, no baked marker needed. Same reach/diff/sweep
+    // pattern as updateRiverSourceFx; a missing cascade record falls
+    // back to the spring dressing so the falls read even before the
+    // dedicated particles are authored.
+    const auto sweep = [&](const std::unordered_set<u64>& seen) {
+        for (auto it = riverCascadeEmitters.begin();
+             it != riverCascadeEmitters.end();) {
+            if (seen.contains(it->first)) {
+                ++it;
+                continue;
+            }
+            if (it->second.haze != 0) {
+                fxSim.stopEmitter(it->second.haze);
+            }
+            if (it->second.sound != 0) {
+                audioSystem.stop(it->second.sound, 0.5f);
+            }
+            it = riverCascadeEmitters.erase(it);
+        }
+    };
+    std::unordered_set<u64> seen;
+    if (!waterBodies || interiorMode) {
+        sweep(seen);
+        return;
+    }
+    const data::RiverSourceFxForm* dress = nullptr;
+    data::forEach<data::RiverSourceFxForm>(
+        forms, [&](const data::RiverSourceFxForm& f) {
+            if (!dress) {
+                dress = &f;
+            }
+        });
+    if (!dress) {
+        sweep(seen);
+        return;
+    }
+    const core::Guid mist = dress->mistCascade.isValid()
+                                ? dress->mistCascade
+                                : dress->mistSpring;
+    const core::Guid sound = dress->soundCascade.isValid()
+                                 ? dress->soundCascade
+                                 : dress->soundSpring;
+    const Vec3 cam = flyCamera.camera.position;
+    constexpr f32 kFallSlope = 0.25f; // rise/run along the ribbon
+    constexpr f32 kFallDropMin = 3.0f;
+    for (const render::RiverSurface& river : waterBodies->rivers) {
+        const auto& nodes = river.nodes;
+        size_t i = 0;
+        while (i + 1 < nodes.size()) {
+            // Chain the steep segments of one fall.
+            f32 drop = 0.0f;
+            size_t foot = i;
+            size_t k = i;
+            while (k + 1 < nodes.size()) {
+                const f32 d = nodes[k].surface - nodes[k + 1].surface;
+                const f32 run = glm::max(
+                    std::hypot(nodes[k + 1].x - nodes[k].x,
+                               nodes[k + 1].z - nodes[k].z),
+                    0.001f);
+                if (d / run < kFallSlope) {
+                    break;
+                }
+                drop += d;
+                foot = k + 1;
+                ++k;
+            }
+            if (drop < kFallDropMin) {
+                ++i;
+                continue;
+            }
+            const render::RiverNode& fn = nodes[foot];
+            const Vec3 at { fn.x, fn.surface + 0.5f, fn.z };
+            i = foot + 1;
+            if (glm::distance(at, cam) > kFxSourceReach) {
+                continue;
+            }
+            const u64 key =
+                (static_cast<u64>(static_cast<u32>(
+                     static_cast<i32>(fn.x * 4.0f)))
+                 << 32) |
+                static_cast<u64>(
+                    static_cast<u32>(static_cast<i32>(fn.z * 4.0f)));
+            seen.insert(key);
+            if (riverCascadeEmitters.contains(key)) {
+                continue;
+            }
+            FxSourceEmitters emitters;
+            const u32 seed =
+                static_cast<u32>(key & 0xffffffffu) ^ 0xca5cade5u;
+            if (const auto* form =
+                    forms.find<data::ParticleForm>(mist)) {
+                fx::EmitterParams params =
+                    gameplay::toEmitterParams(*form);
+                params.duration = 1.0e9f; // for the fall's life
+                emitters.haze = fxSim.spawn(params, at, seed);
+            }
+            if (sound.isValid()) {
+                if (const auto params =
+                        soundResolver.resolve(sound, at, seed)) {
+                    emitters.sound = audioSystem.play(*params);
+                }
+            }
+            if (emitters.haze != 0 || emitters.sound != 0) {
+                riverCascadeEmitters.emplace(key, emitters);
+            }
         }
     }
     sweep(seen);

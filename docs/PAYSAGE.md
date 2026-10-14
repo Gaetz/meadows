@@ -3476,6 +3476,27 @@ l'hydrologie définitive).
   traitement est la COUPE/REROUTE en corridor (re-trace 8 m sous
   contrainte), consignée au backlog du chantier.
 
+- **2026-10-14 — Brique G : vasques de plongée + habillage des
+  cascades (bump v110, fin de la brique 3).** Trois étages :
+  (1) **vasque de plongée** — le carve ne sait que creuser depuis la
+  surface, le pied concave d'une chute restait un plateau sec ;
+  chaque cascade fusionnée (chute ≥4 m, pied hors nappe) émet un
+  étang creusé à son pied (dug=1, rayon max(1,2·hw, 8), texel 8) —
+  S5d creuse la cuvette, la nappe la rend, pinLakes la tient : la
+  machinerie étangs, comme les bassins. Mesuré : +125 vasques sur la
+  tuile 1_0 (morphologie step-pool des torrents) ; la tête de lac du
+  témoin a la sienne (620,4 au pied de la rampe de déversoir).
+  (2) **Habillage FX runtime** : updateRiverCascadeFx, calqué sur
+  l'habillage des sources F4 — détection des chutes PAR LA PENTE des
+  nœuds publiés (aucun marqueur baké, TWB inchangé ; enchaînement de
+  segments ≥0,25 de pente, chute cumulée ≥3 m), embruns + grondement
+  au pied, clés par position quantifiée, balayage par portée ;
+  RiverSourceFxForm gagne mistCascade/soundCascade (moddable, repli
+  sur la brume de source tant que les particules dédiées ne sont pas
+  auteurées). (3) **Ruban lointain** : les nœuds des segments raides
+  échappent à la décimation 48 m (une chute de 10 m s'étalait en
+  toboggan de loin).
+
 ---
 
 ## 8. Glossaire
