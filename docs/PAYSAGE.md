@@ -3657,6 +3657,26 @@ l'hydrologie définitive).
   qui le veulent ?) appartient au chantier TERRAIN : à trancher par
   le dev avec les hillshades /tmp/bol_v94.png et /tmp/bol_v116.png.
 
+- **2026-10-14 — L'EAU RAIDE EST ÉTROITE : rétrécissement des
+  largeurs par la pente finale (bump v117).** « La gigantesque
+  structure d'eau à (4800, 4900) » : la rivière 41 (fleuve hw 54,
+  ruban ±75 m) y fait un LACET serré — dix points en spirale dans un
+  rayon de 34 m, surfaces 414→352 : dix nappes de 150 m empilées sur
+  62 m de haut. L'absurdité de fond : la loi des largeurs ne lit
+  jamais la pente finale de l'eau — un fleuve de 108 m qui tombe de
+  62 m en 70 m de cours, l'hydraulique réelle fait l'inverse
+  (continuité du débit : l'eau rapide prend moins de section).
+  Nouvelle passe en fin de phase B : hw ×= smoothstep de la PENTE
+  FINALE (±2 points) — pleine largeur sous 0,08, 30 % de la largeur
+  au-delà de 0,30, plancher loi 1,2 m. Mesuré (tuile 1_1) : au cœur
+  du lacet hw 54 → 16 ; médiane des demi-largeurs en pente >0,2 :
+  **3,4 m** (13,6 en plat) — les descentes deviennent des goulottes
+  de cascade, plus des piles de nappes. Note d'ordre : le
+  rétrécissement court APRÈS le profil (il a besoin de la pente
+  finale) — les passes amont (empreinte du remplissage, bassins) ont
+  vu les largeurs larges, acceptable (empreinte plus large = siège
+  plus bas, conservateur).
+
 ---
 
 ## 8. Glossaire

@@ -1743,6 +1743,48 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        // Steep water runs NARROW (discharge continuity: what falls
+        // fast needs less section): the law width never read the
+        // final profile, so a 108 m fleuve could coil down a 62 m
+        // drop — ten stacked 150 m sheets at one spot (the dev's
+        // "gigantic water structure", measured at (4800, 4900)). The
+        // half-width shrinks with the FINAL water slope, floored at
+        // the law's own minimum.
+        {
+            constexpr f32 kNarrowFrom = 0.08f; // slope where it starts
+            constexpr f32 kNarrowTo = 0.30f;   // fully narrowed
+            constexpr f32 kNarrowMin = 0.3f;   // keep 30 % at steepest
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                if (count < 3) {
+                    continue;
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    const size_t a = i >= 2 ? i - 2 : 0;
+                    const size_t b = glm::min(i + 2, count - 1);
+                    const f32 run = glm::max(
+                        std::hypot(river.points[b].x -
+                                       river.points[a].x,
+                                   river.points[b].z -
+                                       river.points[a].z),
+                        1.0f);
+                    const f32 slope =
+                        (river.points[a].surface -
+                         river.points[b].surface) /
+                        run;
+                    const f32 t = glm::clamp(
+                        (slope - kNarrowFrom) /
+                            (kNarrowTo - kNarrowFrom),
+                        0.0f, 1.0f);
+                    const f32 factor =
+                        1.0f - (1.0f - kNarrowMin) * t * t *
+                                   (3.0f - 2.0f * t);
+                    river.points[i].halfWidth = glm::max(
+                        river.points[i].halfWidth * factor, 1.2f);
+                }
+            }
+        }
         // Tributaries were filled against their receiver's surface
         // BEFORE the pool re-seat and the cascade coalescing moved it:
         // a lowered stem left hanging lips at confluences. Re-clamp
