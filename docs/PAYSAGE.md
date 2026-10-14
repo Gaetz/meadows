@@ -3450,6 +3450,32 @@ l'hydrologie définitive).
   existant, pas un bug d'étage ; à retoucher à l'œil du dev si
   voulu.
 
+- **2026-10-14 — Brique F : recentrage latéral des biefs (bump
+  v109).** La brique 2 du chantier : ~19 % des points couraient le
+  long de murs fins (axe des mètres au-dessus du sillon de leur
+  empreinte → eau enterrée invisible). Chaque point glisse vers le
+  plus bas échantillon fin de sa propre empreinte, par petits pas
+  LISSÉS (champ latéral moyenné sur ~±25 m), dans un repère
+  perpendiculaire FIGÉ sur la polyligne d'origine ; extrémités,
+  queues de jonction et points sous nappe immobiles ; les gués
+  re-snappent sur l'axe déplacé. Trois leçons mesurées en route :
+  (1) le repère recalculé sur des voisins déjà bougés replie la ligne
+  en épingles (174/176 rivières invalidées) — d'où le repère figé ;
+  (2) une traction non freinée MARCHE sans fin descendant les flancs
+  (le min d'empreinte recule à mesure) — d'où le gain de convergence
+  (ne bouge que si l'axe domine son sillon de >1 m, s'éteint en
+  l'atteignant) ; (3) le gate virages tout-ou-rien par rivière jetait
+  les biefs sains avec le pli — remplacé par un **rollback
+  CHIRURGICAL** (±4 points autour de chaque virage >45°, itéré,
+  convergence par croissance monotone de l'ensemble restauré).
+  Budget : 10 passes × 4 m — mesuré optimal (14 passes sur-marche et
+  les reverts mangent les biefs sains). **Mesuré : enterrés
+  19,6→12,4 % (0_0) et 18,5→13,6 % (1_0), virages >45° inchangés
+  (2 préexistants / 0), bande hors-pin stable.** Le reliquat (~13 %)
+  = biefs contre-mur hors de portée d'un glissement de 40 m : leur
+  traitement est la COUPE/REROUTE en corridor (re-trace 8 m sous
+  contrainte), consignée au backlog du chantier.
+
 ---
 
 ## 8. Glossaire

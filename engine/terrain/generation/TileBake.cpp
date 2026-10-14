@@ -703,6 +703,197 @@ MapHydrology extractMapHydrology(
         constexpr f32 kBoundRecover = 0.01f;  // m per m of course
         auto& rivers = out.hydro.rivers;
         const size_t riverCount = rivers.size();
+        // Lateral re-centering: the window routed ~20% of points along
+        // fine-terrain walls — the axis ground sits metres above the
+        // groove the footprint min finds, so the course is buried and
+        // its water invisible. Each point drifts toward the LOWEST
+        // fine sample of its own footprint, in small SMOOTHED steps
+        // (a raw 1-step snap crenellated the polylines — v98). Ends,
+        // junction tails and points under a sheet stay put. The gate
+        // is per-river and HARD: if any turn ends sharper than 45°,
+        // the river's shift is rolled back whole.
+        {
+            constexpr i32 kRecenterPasses = 10;
+            constexpr f32 kRecenterStep = 4.0f; // m per smoothed pass
+            constexpr f32 kKinkGateCos = 0.70710678f; // 45 degrees
+            const auto underAnyLake = [&](f32 x, f32 z) {
+                for (const Lake& lake : out.hydro.lakes) {
+                    if (lake.mask.empty() || lake.maskWidth == 0 ||
+                        x < lake.minX || x > lake.maxX ||
+                        z < lake.minZ || z > lake.maxZ) {
+                        continue;
+                    }
+                    const u32 mx = glm::min(
+                        static_cast<u32>(glm::max(
+                            (x - lake.minX) / lake.maskTexel + 0.5f,
+                            0.0f)),
+                        lake.maskWidth - 1);
+                    const u32 mz = glm::min(
+                        static_cast<u32>(glm::max(
+                            (z - lake.minZ) / lake.maskTexel + 0.5f,
+                            0.0f)),
+                        lake.maskHeight - 1);
+                    if (lake.mask[static_cast<size_t>(mz) *
+                                      lake.maskWidth +
+                                  mx]) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            vector<f32> want;
+            vector<f32> smooth;
+            vector<f32> backupX;
+            vector<f32> backupZ;
+            for (River& river : rivers) {
+                const size_t count = river.points.size();
+                if (count < 9) {
+                    continue;
+                }
+                backupX.resize(count);
+                backupZ.resize(count);
+                for (size_t i = 0; i < count; ++i) {
+                    backupX[i] = river.points[i].x;
+                    backupZ[i] = river.points[i].z;
+                }
+                // The perpendicular frame is FROZEN on the original
+                // polyline: recomputing it from already-shifted
+                // neighbours fed the shift back into the frame and
+                // folded the line into hairpins (measured: 174/176
+                // rivers rolled back by the kink gate).
+                vector<f32> perpX(count, 0.0f);
+                vector<f32> perpZ(count, 0.0f);
+                for (size_t i = 1; i + 1 < count; ++i) {
+                    const f32 dx = backupX[i + 1] - backupX[i - 1];
+                    const f32 dz = backupZ[i + 1] - backupZ[i - 1];
+                    const f32 len = std::sqrt(dx * dx + dz * dz);
+                    if (len > 0.5f) {
+                        perpX[i] = -dz / len;
+                        perpZ[i] = dx / len;
+                    }
+                }
+                for (i32 pass = 0; pass < kRecenterPasses; ++pass) {
+                    want.assign(count, 0.0f);
+                    for (size_t i = 3; i + 3 < count; ++i) {
+                        const RiverPoint& pt = river.points[i];
+                        if (underAnyLake(pt.x, pt.z)) {
+                            continue;
+                        }
+                        const f32 px = perpX[i];
+                        const f32 pz = perpZ[i];
+                        if (px == 0.0f && pz == 0.0f) {
+                            continue;
+                        }
+                        const f32 axisG = fineAt(pt.x, pt.z);
+                        f32 bestG = axisG;
+                        f32 bestD = 0.0f;
+                        for (const f32 off :
+                             { -1.4f, -1.2f, -1.0f, -0.75f, -0.5f,
+                               0.5f, 0.75f, 1.0f, 1.2f, 1.4f }) {
+                            const f32 d = off * pt.halfWidth;
+                            const f32 g = fineAt(pt.x + px * d,
+                                                 pt.z + pz * d);
+                            if (g < bestG - 0.01f) {
+                                bestG = g;
+                                bestD = d;
+                            }
+                        }
+                        // Converge instead of marching: only a point
+                        // whose AXIS stands clearly above its groove
+                        // moves (the buried family), and the pull
+                        // fades out as it reaches the floor — on a
+                        // plain monotone flank the min sits forever
+                        // at the footprint edge and an ungated pull
+                        // walked the course downhill without end.
+                        const f32 gain = glm::clamp(
+                            (axisG - bestG - 1.0f) / 3.0f, 0.0f,
+                            1.0f);
+                        want[i] = bestD * gain;
+                    }
+                    // Wide smoothing (~+-25 m): sign flips in the
+                    // raw targets are what crenellates the line.
+                    smooth = want;
+                    for (i32 s = 0; s < 3; ++s) {
+                        vector<f32> next = smooth;
+                        for (size_t i = 3; i + 3 < count; ++i) {
+                            f32 acc = 0.0f;
+                            for (i32 o = -3; o <= 3; ++o) {
+                                acc += smooth[i + o];
+                            }
+                            next[i] = acc / 7.0f;
+                        }
+                        smooth.swap(next);
+                    }
+                    for (size_t i = 3; i + 3 < count; ++i) {
+                        RiverPoint& pt = river.points[i];
+                        const f32 step =
+                            glm::clamp(smooth[i], -kRecenterStep,
+                                       kRecenterStep);
+                        pt.x += perpX[i] * step;
+                        pt.z += perpZ[i] * step;
+                    }
+                }
+                // Kink gate, SURGICAL: only the points around a
+                // too-sharp turn fall back to the original line (the
+                // restored set grows monotonically, so the loop
+                // terminates — worst case the whole river reverts).
+                // An all-or-nothing gate threw away every clean reach
+                // of a river for one fold (90/176 rivers, measured).
+                for (i32 guard = 0; guard < 64; ++guard) {
+                    bool dirty = false;
+                    for (size_t i = 1; i + 1 < count; ++i) {
+                        const f32 ax = river.points[i].x -
+                                       river.points[i - 1].x;
+                        const f32 az = river.points[i].z -
+                                       river.points[i - 1].z;
+                        const f32 bx2 = river.points[i + 1].x -
+                                        river.points[i].x;
+                        const f32 bz2 = river.points[i + 1].z -
+                                        river.points[i].z;
+                        const f32 la = std::sqrt(ax * ax + az * az);
+                        const f32 lb =
+                            std::sqrt(bx2 * bx2 + bz2 * bz2);
+                        if (la < 0.1f || lb < 0.1f) {
+                            continue;
+                        }
+                        if ((ax * bx2 + az * bz2) / (la * lb) >=
+                            kKinkGateCos) {
+                            continue;
+                        }
+                        bool changed = false;
+                        for (size_t k = (i >= 4 ? i - 4 : 0);
+                             k <= glm::min(i + 4, count - 1); ++k) {
+                            if (river.points[k].x != backupX[k] ||
+                                river.points[k].z != backupZ[k]) {
+                                river.points[k].x = backupX[k];
+                                river.points[k].z = backupZ[k];
+                                changed = true;
+                            }
+                        }
+                        dirty = dirty || changed;
+                    }
+                    if (!dirty) {
+                        break;
+                    }
+                }
+                // Fords were snapped to the old axis: follow it.
+                for (Vec2& ford : river.fords) {
+                    f32 best = 1.0e18f;
+                    size_t bi = 0;
+                    for (size_t i = 0; i < count; ++i) {
+                        const f32 fx = river.points[i].x - ford.x;
+                        const f32 fz = river.points[i].z - ford.y;
+                        const f32 d2 = fx * fx + fz * fz;
+                        if (d2 < best) {
+                            best = d2;
+                            bi = i;
+                        }
+                    }
+                    ford.x = river.points[bi].x;
+                    ford.y = river.points[bi].z;
+                }
+            }
+        }
         // Window-lake re-seat: an accepted lake's spill level is a
         // 16 m estimate — containment the window guarantees can leak
         // at 2 m through a sub-cell notch, and the rivers now seated
