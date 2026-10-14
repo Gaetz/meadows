@@ -255,10 +255,10 @@ void mergeByProximity(vector<River>& rivers, f32 reachFactor,
                             // hairpin spot below).
                             spots.push_back(
                                 { snap.x, snap.z, snap.surface,
-                                  glm::max((snap.halfWidth +
-                                            other.halfWidth) *
-                                               2.2f,
-                                           15.0f) });
+                                  glm::clamp((snap.halfWidth +
+                                              other.halfWidth) *
+                                                 2.2f,
+                                             15.0f, 40.0f) });
                             break;
                         }
                     }
@@ -684,9 +684,12 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     vector<PondSpot> spots;
     const auto junctionPond = [&](const RiverPoint& at, f32 other) {
         // Pool-sized, never puddle-sized (see the hairpin spot below).
+        // Capped: a confluence pool covers the SEAM — fleuve-sized
+        // widths made 250 m discs whose dish carved semicircular
+        // benches into every hillside junction (measured dev).
         spots.push_back({ at.x, at.z, at.surface,
-                          glm::max((at.halfWidth + other) * 2.2f,
-                                   15.0f) });
+                          glm::clamp((at.halfWidth + other) * 2.2f,
+                                     15.0f, 40.0f) });
     };
     // Phase 1 — raw traces. A junction fires when the current cell OR
     // any 8-neighbour is already claimed: two courses one cell apart
@@ -815,7 +818,8 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                 // few-meter basins the landscape review flagged) — the
                 // fix spot must look like a natural river pool.
                 spots.push_back({ at.x, at.z, at.surface,
-                                  glm::max(at.halfWidth * 3.0f, 15.0f) });
+                                  glm::clamp(at.halfWidth * 3.0f,
+                                             15.0f, 40.0f) });
             }
         }
         out.rivers.push_back(std::move(river));
@@ -883,7 +887,41 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                 }
             }
             pond.cells = wet;
-            if (wet >= 4) {
+            // Relief gate: a pond whose held cells span metres of
+            // ground is a sheet draped across a SLOPE — on steep
+            // junctions the dish carved the downhill half only, a
+            // semicircular bench (the dev's "gradins"). A confluence
+            // pool lives on quasi-flat water.
+            f32 gMin = 1.0e18f;
+            f32 gMax = -1.0e18f;
+            for (u32 mz = 0; mz < pond.maskHeight; ++mz) {
+                for (u32 mx = 0; mx < pond.maskWidth; ++mx) {
+                    if (!pond.mask[static_cast<size_t>(mz) *
+                                       pond.maskWidth +
+                                   mx]) {
+                        continue;
+                    }
+                    const f32 px = pond.minX +
+                                   (static_cast<f32>(mx) + 0.5f) *
+                                       pond.maskTexel;
+                    const f32 pz = pond.minZ +
+                                   (static_cast<f32>(mz) + 0.5f) *
+                                       pond.maskTexel;
+                    const i32 col = static_cast<i32>(std::lround(
+                        (px - spec.originX) / spec.texelSize));
+                    const i32 row = static_cast<i32>(std::lround(
+                        (pz - spec.originZ) / spec.texelSize));
+                    if (col < 0 || row < 0 || col >= n || row >= n) {
+                        continue;
+                    }
+                    const f32 g =
+                        height[static_cast<size_t>(row) * spec.n +
+                               col];
+                    gMin = glm::min(gMin, g);
+                    gMax = glm::max(gMax, g);
+                }
+            }
+            if (wet >= 4 && gMax - gMin <= 5.0f) {
                 ponds.push_back(std::move(pond));
             }
         }

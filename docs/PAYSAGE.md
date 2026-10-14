@@ -3632,6 +3632,31 @@ l'hydrologie définitive).
   sim (2 m, chanfreiné sous-texel — à arrondir pareil si l'œil le
   réclame) et le lointain 64 m (coupé par le depth-test).
 
+- **2026-10-14 — LES GRADINS SEMI-CIRCULAIRES IDENTIFIÉS : les
+  étages du relief des zones, pas l'eau (bump v116 pour les étangs
+  cadrés).** Retour dev persistant (« des gradins qui s'écartent de
+  manière semi-circulaire, créés récemment »). Enquête par relief
+  ombré rendu depuis les .trg (hillshade offline) : les anneaux
+  concentriques sont dans le TERRAIN, déjà présents en v94 — avant
+  toute la série eau v99-v115 — et datent du chantier zones du
+  08/10 (cfc33490 zones 512 m, 3b058680 budget d'érosion par
+  archétype, 90e03c46 Z3 murs/portes : les « storey-step basins »
+  fermés en étages). L'eau les RÉVÈLE en les mouillant, elle ne les
+  crée pas. Diagnostic intermédiaire corrigé en route : fineAt(axe)
+  422 vs trg 378 au même point venait du creusement des segments AVAL
+  du même cours (emprise ±134 m sur un cours raide), pas d'un second
+  cours. Trouvaille annexe livrée (v116) : les **étangs de jonction
+  étaient dimensionnés (hwA+hwB)·2,2 SANS plafond** — deux fleuves de
+  hw 56 faisaient des disques de 250 m de rayon dont la cuvette S5d
+  taillait des bancs semi-circulaires dans les versants (moitié aval
+  seule creusée, gate v100) : rayon clampé [15, 40] m (jonctions,
+  reprises ET épingles), et **porte de relief** (un étang dont les
+  cellules tenues couvrent >5 m de dénivelé est une nappe drapée sur
+  un versant : supprimé). La décision sur les étages de zones
+  eux-mêmes (adoucir le rythme ? réserver les anneaux aux archétypes
+  qui le veulent ?) appartient au chantier TERRAIN : à trancher par
+  le dev avec les hillshades /tmp/bol_v94.png et /tmp/bol_v116.png.
+
 ---
 
 ## 8. Glossaire
