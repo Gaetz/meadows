@@ -1645,7 +1645,12 @@ MapHydrology extractMapHydrology(
         // hide it). The cap never pulls a point under a crossed
         // lake's sheet (the anti-tunnel rule holds).
         {
-            constexpr f32 kMaxDownSlope = 0.4f; // m per m of course
+            // Dev direction (after seeing 0.4): long gentle glides,
+            // and FRANK falls where the terrain truly cliffs — the
+            // tilt floors below turn anything steeper than the cap +
+            // 6 m of cut into a vertical drop with its spray, instead
+            // of a continuum of steep ramps.
+            constexpr f32 kMaxDownSlope = 0.18f; // m per m of course
             // The tilt may dive at most this far under the local fine
             // floor: within the S5c gate's reach, so the chute is
             // actually DUG — an unbounded tilt buried whole

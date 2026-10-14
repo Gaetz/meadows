@@ -3596,6 +3596,42 @@ l'hydrologie définitive).
   supprimées, bonne décision mais mauvais diagnostic) → v114 (le
   vrai correctif).
 
+- **2026-10-14 — ARCHÉOLOGIE des escaliers + glissades/cascades
+  franches (bump v115).** Demande dev : dater les commits qui ont
+  amené les escaliers d'eau. Jaugé sur les caches v88→v114 (tuile du
+  bol) : chutes >2 m/segment **96 (v88-89) → 395 (v90, E10
+  c8c6790e) → 590 (v91, W1+W2) → 1252 (v93, W5) → 554 (v94,
+  restructuration)** — tout le 12/10 entre 11h20 et 15h36, pas le
+  9/10. W5 n'existe plus (supprimé avec reconcileRiversWithTerrain
+  par la restructuration, 38 min après). Vérité de fond : l'eau
+  d'avant n'était pas plus lisse, elle FLOTTAIT (v88-90 : 62 % de
+  stick-out ≥2 m, 63 % de nappes plates) — E10 a rendu le relief
+  réel, W5/restructuration ont collé l'eau dessus, et le relief est
+  raide : les escaliers sont le terrain qui remonte à travers l'eau.
+  Décision dev : **glissades douces + cascades franches** — pente max
+  0,4 → 0,18 (kMaxDownSlope) : ce que la rampe + l'entaille de 6 m ne
+  peuvent absorber devient un décrochement vertical assumé (avec ses
+  embruns). Mesuré : rampes 0,22-0,6 **12,3→8,4 %** (0_0) et
+  13,4→10,1 % (1_1), chutes franches >0,6 : 9,2→9,7 %, enterrés
+  +1-2 pts (16,7 %).
+
+- **2026-10-14 — Nappes rondes : le mesher des lacs passe à l'anneau
+  soudé-lissé (runtime, sans bump).** Retour dev : « l'eau est très
+  blocky — From Dust faisait des blobs ronds ». Les nappes étaient LA
+  source du blocky : des quads par texel de masque (8-16 m) à
+  extension par côté, chanfreins 45° et jupes — l'escalier du masque
+  dessiné tel quel dans l'eau. La rondeur de From Dust est une
+  propriété de RENDU d'une heightfield, pas de la méthode de sim : le
+  nouveau mesher SOUDE les coins sur le treillis, arrondit l'anneau
+  de bord (2 passes Laplaciennes sur les coins de frontière à 2
+  voisins — les pincements restent), et transpose les sémantiques
+  par-côté en sondes par-coin le long de la normale sortante (berge
+  qui tient → pousse de 0,75 texel sous la berge, replat immergé →
+  portée au relèvement, couture de pièce sœur → chevauchement, vide
+  profond → crête affleurante + jupe). Reste anguleux : le rivage du
+  sim (2 m, chanfreiné sous-texel — à arrondir pareil si l'œil le
+  réclame) et le lointain 64 m (coupé par le depth-test).
+
 ---
 
 ## 8. Glossaire
