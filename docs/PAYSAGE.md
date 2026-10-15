@@ -3696,6 +3696,23 @@ l'hydrologie définitive).
   et le champ proche le prend à l'approche (même règle que le clamp
   des nappes, brique A).
 
+- **2026-10-15 — Les blocs d'eau qui se vidangent : le trou entre pin
+  et sources (runtime, sans bump).** Retour dev à (5300, 580, 4880) :
+  des blocs d'eau apparaissent à la distance de sim, se VIDANGENT
+  sans renouvellement, et ne reviennent qu'en s'éloignant (le baké
+  les redessine). Mesuré au point : cours hw 15,6 (≥ 4 → classé
+  « pinné » par les sources d'entrée) mais pentes 0,18-1,5 (→ jamais
+  tenu par le gate de pente du matin). Le partage pin/sources se
+  faisait sur hw SEUL : les biefs larges ET raides tombaient dans la
+  fente — ni réservoirs, ni injection — et l'eau du pré-roll se
+  vidangeait. Correctif : la « pinnabilité effective » (large ET
+  quasi plat, la règle même de pinRivers) remplace le seuil de
+  largeur aux TROIS portes de bakedEntrySources (tête vraie, runoff
+  distribué, entrées de bord de fenêtre) : un bief raide est au sim
+  et reçoit son débit. Leçon : quand une règle à deux faces (pin /
+  source) évolue d'un côté, l'autre face doit suivre LE MÊME
+  prédicat — partagé, pas dupliqué.
+
 ---
 
 ## 8. Glossaire

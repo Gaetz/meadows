@@ -106,6 +106,27 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         return x >= spec.originX && x <= maxX && z >= spec.originZ &&
                z <= maxZ;
     };
+    // "Effectively pinned" matches pinRivers' own rule: wide AND
+    // quasi-flat. The slope gate (a ramp is never held) opened a gap —
+    // wide steep reaches were neither pinned nor sourced, so their
+    // pre-rolled water drained and never came back until the window
+    // left (measured dev, (5300, 4880)).
+    const auto pinnedAt = [&](const render::RiverSurface& river,
+                              size_t k) {
+        if (river.nodes[k].halfWidth < pinnedHalfWidth) {
+            return false;
+        }
+        const size_t a = k > 0 ? k - 1 : k;
+        const size_t b =
+            k + 1 < river.nodes.size() ? k + 1 : k;
+        const f32 run = glm::max(
+            std::hypot(river.nodes[b].x - river.nodes[a].x,
+                       river.nodes[b].z - river.nodes[a].z),
+            0.001f);
+        return (river.nodes[a].surface - river.nodes[b].surface) /
+                   run <=
+               0.05f;
+    };
     const auto nodeQ = [&](const render::RiverNode& node) {
         const f32 area =
             node.area > 0.0f
@@ -134,7 +155,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                     static_cast<u32>(
                         render::terraingen::RiverHeadType::LakeOutlet);
             if (trueHead && inside(head.x, head.z) &&
-                head.halfWidth < pinnedHalfWidth) {
+                !pinnedAt(river, 0)) {
                 out.push_back(
                     { head.x, head.z, glm::min(nodeQ(head), 30.0f) });
             }
@@ -150,7 +171,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
             const render::RiverNode& na = river.nodes[k - 1];
             const render::RiverNode& nb = river.nodes[k];
             if (inside(na.x, na.z) && inside(nb.x, nb.z) &&
-                nb.halfWidth < pinnedHalfWidth) {
+                !pinnedAt(river, k)) {
                 accum += glm::max(0.0f, nodeQ(nb) - nodeQ(na));
                 if (accum >= 0.05f) {
                     out.push_back(
@@ -177,10 +198,11 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
             if (nearMaster) {
                 continue;
             }
-            // A ribbon wide enough to be PINNED (E1b) supplies itself
-            // through its reservoir cells — injecting an entry source
-            // on top would double its discharge.
-            if (b.halfWidth >= pinnedHalfWidth) {
+            // A ribbon effectively PINNED (E1b: wide AND flat)
+            // supplies itself through its reservoir cells — injecting
+            // an entry source on top would double its discharge. A
+            // steep entry is sim-owned and needs its inflow.
+            if (pinnedAt(river, k)) {
                 continue;
             }
             out.push_back(
