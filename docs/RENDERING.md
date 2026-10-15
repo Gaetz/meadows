@@ -1238,6 +1238,19 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   frame 58.2 ms — mainPass +0.5 ms for the extra 131 k tris (≤1 ms
   gauge). Mountain chains to ~24 km + no phantom land = dev tour
   (S1). Fast suite 706/706.
+- **2026-10-15 — H5: clouds at 24 km.** (a) `cloudDensityAt` fades to
+  the coverage mean at the baked field's border (the CLAMP sampler
+  stretched its edge texel into frozen shadow streaks across the
+  4-24 km landscape — same bank idiom as the dome's horizon LOD).
+  (b) The 2D dome now draws the layer SEEN FROM ABOVE (downward rays
+  intersect the same field as a mostly-lit top deck, full dome share)
+  — before, both the dome and the volumetric march exited above the
+  950 m base: the sky was EMPTY from exactly the ridges that see the
+  far horizon. The volumetric march from above stays out of scope
+  (deferred). The 15 km march cap is untouched (dome handoff is
+  complementary by design). **Measured**: frame 58.7 ≈ baseline,
+  zero errors; storm 360° from a crest + streak check = dev tour.
+  Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

@@ -50,7 +50,14 @@ layout(binding = 2) uniform sampler2D uCloudMap;
 
 float cloudDensityAt(vec2 planePos) {
     vec2 uv = (planePos - uCloudMapInfo.xy) * uCloudMapInfo.z + 0.5;
-    return texture(uCloudMap, uv).r;
+    // Past the baked field (±4.1 km) the CLAMP sampler would stretch
+    // the border texel into frozen streaks across the whole far
+    // landscape: fade to the coverage mean instead — the same bank
+    // idiom as the dome's horizon LOD.
+    float edge = smoothstep(0.45, 0.5,
+                            max(abs(uv.x - 0.5), abs(uv.y - 0.5)));
+    float mean = clamp(uCloudInfo.x, 0.0, 1.0) * 0.6;
+    return mix(texture(uCloudMap, uv).r, mean, edge);
 }
 #endif
 
@@ -62,15 +69,22 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     // far-cloud flattening, and both read the same coverage field so
     // the patterns agree across the seam. (The reflection pass has
     // cloudVolInfo.x = 0 and keeps the full 2D layer.)
+    // Seen from ABOVE the layer (ridges over the base height), the
+    // volumetric march exits too — without this branch the sky was
+    // EMPTY from exactly the viewpoints that see the far horizon. The
+    // dome takes the full share there and draws the same field as a
+    // sunlit top deck on downward rays.
+    bool above = uCameraPos.y >= uCloudInfo.y;
     float domeShare = 1.0;
-    if (uCloudVolInfo.x > 0.5) {
+    if (uCloudVolInfo.x > 0.5 && !above) {
         domeShare = 1.0 - smoothstep(0.04, 0.10, dir.y);
         if (domeShare <= 0.0) {
             return sky;
         }
     }
-    float horizonFade = smoothstep(0.006, 0.04, dir.y);
-    if (horizonFade <= 0.0 || uCameraPos.y >= uCloudInfo.y) {
+    float rayDown = above ? -dir.y : dir.y;
+    float horizonFade = smoothstep(0.006, 0.04, rayDown);
+    if (horizonFade <= 0.0) {
         return sky;
     }
     float t = (uCloudInfo.y - uCameraPos.y) / dir.y;
@@ -100,6 +114,11 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
                (1.0 - 0.35 * skyFill);
     vec3 core = lit * mix(0.80, 0.38, skyFill);
     float coreAmount = smoothstep(mix(0.35, 0.22, skyFill), 0.9, density);
+    if (above) {
+        // Top deck: the dark core is the UNDERSIDE's shadowing — from
+        // above the sun hits the tops, keep them mostly lit.
+        coreAmount *= 0.35;
+    }
     vec3 cloudColor = mix(lit, core, coreAmount);
 
     // Sparse-sky jewelry, fading out as the sky fills in:
