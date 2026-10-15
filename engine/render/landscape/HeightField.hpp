@@ -28,12 +28,19 @@ public:
         f32 texel;
         u32 n; // samples per side; span = (n - 1) * texel
     };
-    static constexpr u32 kLevelCount = 3;
+    static constexpr u32 kLevelCount = 4;
     // L0 4 m/4 km (near maps), L1 16 m/8 km (sun-march mid range),
-    // L2 64 m/32 km (far terrain, minimap L, march tails).
+    // L2 64 m/32 km (far terrain inner ring, minimap L, march tails),
+    // L3 256 m/65 km (the horizon ring — without it ~60 % of its bake
+    // samples would pay the analytic stack past L2's ±16 km cover).
+    // With L3 beneath it, L2's UNCOVERED-sandbox fill upsamples 256 m
+    // data instead of paying the analytic stack: a fidelity trade on
+    // ground that is only ever seen veiled (8-16 km), for a far
+    // cheaper L2 rebake.
     static constexpr LevelSpec kLevels[kLevelCount] = { { 4.0f, 1025 },
                                                        { 16.0f, 513 },
-                                                       { 64.0f, 513 } };
+                                                       { 64.0f, 513 },
+                                                       { 256.0f, 257 } };
 
     struct Level {
         f32 originX { 0.0f };

@@ -49,7 +49,8 @@ void HeightField::create(core::JobSystem& jobSystem) {
     // One mailbox per level: independent one-in-flight bakes; the probe
     // names land on the F6 worker table.
     static constexpr const char* kNames[kLevelCount] = {
-        "heightField.L0", "heightField.L1", "heightField.L2"
+        "heightField.L0", "heightField.L1", "heightField.L2",
+        "heightField.L3"
     };
     for (u32 i = 0; i < kLevelCount; ++i) {
         mailboxes[i].create(jobSystem, kNames[i]);

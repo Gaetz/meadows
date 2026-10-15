@@ -1207,6 +1207,15 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   **Measured** (spawn boot): frame 58.18 ms ≈ baseline (free, one
   madd), zero validation errors on the grown UBO. Weather pass
   (Clear/mist/rain/storm) = dev tour. Fast suite 706/706.
+- **2026-10-15 — H3: HeightField L3 (256 m / 65 km).** Fourth pyramid
+  level for the horizon ring's bake (L2 stops at ±16.4 km; without L3
+  ~60 % of a 57.6 km bake would pay the analytic stack). The
+  coarsest-first fill order hands the analytic bill to L3 and lets L2
+  upsample it on uncovered sandbox — a fidelity trade on ground only
+  seen veiled (8-16 km), documented at the LevelSpec. **Measured**
+  (spawn boot): heightField.L3 802 ms avg (the new analytic payer),
+  **L2 1 543 → 853 ms**, L1/L0 unchanged, frame 58.7 ≈ baseline.
+  Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 
