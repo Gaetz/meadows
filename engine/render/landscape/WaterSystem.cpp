@@ -109,8 +109,9 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
     // Dev experiment: the baked ribbons are interrupted in places
     // (buried reaches, lake cuts) and the holes read dry — boosting
     // the injected discharge lets the sim bridge them with visibly
-    // flowing water. Tune or revert on verdict.
-    constexpr f32 kBakedDischargeBoost = 3.0f;
+    // flowing water. Tune or revert on verdict (x3 -> x2 after the
+    // fine-routing rework grounded most holes at the bake).
+    constexpr f32 kBakedDischargeBoost = 2.0f;
     const auto nodeQ = [&](const render::RiverNode& node) {
         const f32 area =
             node.area > 0.0f
@@ -142,7 +143,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
             if (trueHead && inside(head.x, head.z) &&
                 head.halfWidth < pinnedHalfWidth) {
                 out.push_back(
-                    { head.x, head.z, glm::min(nodeQ(head), 90.0f) });
+                    { head.x, head.z, glm::min(nodeQ(head), 60.0f) });
             }
         }
         // DISTRIBUTED runoff along in-window reaches: the drainage
@@ -160,7 +161,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 accum += glm::max(0.0f, nodeQ(nb) - nodeQ(na));
                 if (accum >= 0.05f) {
                     out.push_back(
-                        { nb.x, nb.z, glm::min(accum, 90.0f) });
+                        { nb.x, nb.z, glm::min(accum, 60.0f) });
                     accum = 0.0f;
                 }
             }
@@ -190,7 +191,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 continue;
             }
             out.push_back(
-                { b.x, b.z, glm::min(nodeQ(b), 360.0f) });
+                { b.x, b.z, glm::min(nodeQ(b), 240.0f) });
         }
     }
     return out;
