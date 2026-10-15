@@ -71,7 +71,14 @@ void smoothRiver(River& river, const GridSpec& spec,
         rawArc.push_back(arc);
         rawWidth.push_back(pt.halfWidth);
     }
-    vector<Vec3> simplified = core::simplifyPolylineXz(raw, texel * 0.9f);
+    // Simplify BELOW the publication scale (0.3 x kCourseTexel =
+    // 4.8 m): the old course-scale tolerance (14.4 m) straightened the
+    // polyline ACROSS the grooves the routing had just found — courses
+    // re-buried under walls their own trace had avoided (measured:
+    // buried-ribbon 11.25 % -> 8.7 % map-wide at 4.8 m, turns stable,
+    // diminishing returns and lip counts creeping up past this point).
+    vector<Vec3> simplified =
+        core::simplifyPolylineXz(raw, texel * 0.3f);
     // Relaxation: the epsilon drainage wanders in tight sub-width
     // switchbacks on flat floors — a few Laplacian passes iron those out
     // while the large meanders (way above the window scale) survive.

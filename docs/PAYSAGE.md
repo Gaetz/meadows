@@ -3851,6 +3851,25 @@ l'hydrologie définitive).
   (interne, pas un contrat aval). Suites : rapide 706/706, slow
   ciblés 8/8 + MapBakerTest vert.
 
+- **2026-10-15 — Brique B3b : le lissage suit le sillon — simplify
+  4,8 m (bump v120).** La distribution des runs enterrés résiduels de
+  v119 (jauge offline, carte (0,0)) : 236 runs / 1 977 pts, mais les
+  seuils prévus pour la coupe de selle (≤80 m ET excès ≤8 m) n'en
+  couvraient que **1 %** — l'excès est lourd (12-40+ m), et la cause
+  amont est le LISSAGE : la tolérance de simplify à l'échelle du
+  cours (texel·0,9 = 14,4 m) redressait la polyligne À TRAVERS les
+  sillons que le routage 8 m venait de trouver. Banc une-variable :
+  14,4 → 7,2 m : ruban-enterré 11,25 → 9,55 % ; **7,2 → 4,8 m :
+  9,55 → 8,7 %**, virages stables (0-4), lèvres +5 % (rendements
+  décroissants — on s'arrête là). Adopté : `texel·0,3` = 4,8 m
+  (spline et pas de publication inchangés — le contrat aval tient).
+  Lacs naturels (0,0) : 68 → 40 (moins de pools découverts : les
+  profils suivent mieux les planchers). **Mesuré** : depuis v118,
+  ruban-enterré 16,7 → 8,7 % (−48 %) ; enterrés d'empreinte 7,4 →
+  2,9 % ; suites rapide 706/706 + slow ciblés 9/9 verts ; 4 cartes
+  rebakées v120. Reliquat pour la coupe de selle : runs PROFONDS —
+  ses seuils seront re-dimensionnés sur la distribution v120.
+
 ---
 
 ## 8. Glossaire
