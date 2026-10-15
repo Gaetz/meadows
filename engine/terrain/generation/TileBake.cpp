@@ -508,6 +508,7 @@ MapHydrology extractMapHydrology(
     size_t retracedRuns = 0;    // buried runs the corridor replaced
     f64 fillShift = 0.0;        // |profile fill - routed surface|, m
     size_t poolLakes = 0;       // discovered pools emitted as lakes
+    size_t saddleRuns = 0;      // short buried runs the cut grounded
     const f32 mapSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
     out.window.texelSize = params.hydroTexelResolved();
@@ -2254,15 +2255,149 @@ MapHydrology extractMapHydrology(
                 return false;
             });
         }
+        lap("clamps");
+        // Saddle cut: a SHORT buried run (the course crosses a fine
+        // swell no other pass can fix — the hole-necklace read) gets
+        // the ground brought down to its water, with the pierce
+        // notch's own geometry (gentle V at the course gabarit, 0.7
+        // flanks — the lake-outlet gorges already use this language
+        // map-wide). Long or very deep runs stay buried: a cut there
+        // is a canyon trench through terrain the water should never
+        // have crossed. Dig-only, written through pierceDelta so the
+        // fine transfer and the S5c carve see it like any pierce.
+        {
+            constexpr f32 kSaddleMaxLen = 160.0f;
+            constexpr f32 kSaddleMaxExcess = 32.0f;
+            constexpr f32 kSaddleBuried = 2.0f; // ribbon-buried gate
+            constexpr f32 kSaddleFloor = 0.5f;  // notch under waterline
+            const i32 n = static_cast<i32>(out.window.n);
+            const auto underAcceptedLake = [&](f32 x, f32 z) {
+                for (const Lake& lake : out.hydro.lakes) {
+                    if (lake.mask.empty() || lake.maskWidth == 0 ||
+                        x < lake.minX || x > lake.maxX ||
+                        z < lake.minZ || z > lake.maxZ) {
+                        continue;
+                    }
+                    const u32 mx = glm::min(
+                        static_cast<u32>(glm::max(
+                            (x - lake.minX) / lake.maskTexel + 0.5f,
+                            0.0f)),
+                        lake.maskWidth - 1);
+                    const u32 mz = glm::min(
+                        static_cast<u32>(glm::max(
+                            (z - lake.minZ) / lake.maskTexel + 0.5f,
+                            0.0f)),
+                        lake.maskHeight - 1);
+                    if (lake.mask[static_cast<size_t>(mz) *
+                                      lake.maskWidth +
+                                  mx]) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            const auto notchAt = [&](const RiverPoint& pt) {
+                const f32 level0 = pt.surface - kSaddleFloor;
+                const f32 bandHalf =
+                    glm::clamp(pt.halfWidth * 1.6f, 6.0f, 48.0f);
+                // Reach: band + enough flank to daylight the deepest
+                // allowed cut at the 0.7 side slope.
+                const f32 reach =
+                    bandHalf + kSaddleMaxExcess / 0.7f + 8.0f;
+                const f32 texel = out.window.texelSize;
+                const i32 cx = static_cast<i32>(
+                    std::floor((pt.x - out.window.originX) / texel));
+                const i32 cz = static_cast<i32>(
+                    std::floor((pt.z - out.window.originZ) / texel));
+                const i32 r =
+                    static_cast<i32>(std::ceil(reach / texel));
+                for (i32 dz = -r; dz <= r; ++dz) {
+                    for (i32 dx = -r; dx <= r; ++dx) {
+                        const i32 px = cx + dx;
+                        const i32 pz = cz + dz;
+                        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                            continue;
+                        }
+                        const size_t p =
+                            static_cast<size_t>(pz) * out.window.n +
+                            static_cast<size_t>(px);
+                        const f32 wx = out.window.x(
+                            static_cast<u32>(px));
+                        const f32 wz = out.window.z(
+                            static_cast<u32>(pz));
+                        const f32 dist =
+                            std::hypot(wx - pt.x, wz - pt.z);
+                        const f32 inner = glm::min(dist, bandHalf);
+                        const f32 lateral =
+                            glm::max(dist - bandHalf, 0.0f);
+                        const f32 target = level0 + 0.15f * inner +
+                                           0.7f * lateral;
+                        const f32 delta = target - preGround[p];
+                        if (delta < out.pierceDelta[p]) {
+                            out.pierceDelta[p] = delta;
+                            out.ground[p] = preGround[p] + delta;
+                        }
+                    }
+                }
+            };
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                if (count < 3) {
+                    continue;
+                }
+                vector<u8> flag(count, 0);
+                vector<f32> excess(count, 0.0f);
+                for (size_t i = 0; i < count; ++i) {
+                    const RiverPoint& pt = river.points[i];
+                    const f32 g = fineAt(pt.x, pt.z);
+                    excess[i] = g - pt.surface;
+                    flag[i] = excess[i] > kSaddleBuried &&
+                                      !underAcceptedLake(pt.x, pt.z)
+                                  ? 1
+                                  : 0;
+                }
+                size_t i = 0;
+                while (i < count) {
+                    if (!flag[i]) {
+                        ++i;
+                        continue;
+                    }
+                    size_t j = i;
+                    f32 worst = excess[i];
+                    f32 runLen = 0.0f;
+                    while (j + 1 < count && flag[j + 1]) {
+                        runLen += std::hypot(
+                            river.points[j + 1].x - river.points[j].x,
+                            river.points[j + 1].z - river.points[j].z);
+                        ++j;
+                        worst = glm::max(worst, excess[j]);
+                    }
+                    if (runLen <= kSaddleMaxLen &&
+                        worst <= kSaddleMaxExcess) {
+                        const size_t a = i > 0 ? i - 1 : i;
+                        const size_t b =
+                            j + 1 < count ? j + 1 : j;
+                        for (size_t k = a; k <= b; ++k) {
+                            notchAt(river.points[k]);
+                        }
+                        ++saddleRuns;
+                    }
+                    i = j + 1;
+                }
+            }
+        }
+        lap("saddle");
     }
-    lap("clamps");
     LOG_INFO("map hydrology phases: {} | total {:.1f} s | recenter {} "
-             "pts | retrace {} runs | fill |ds| {:.0f} m | pools {}",
+             "pts | retrace {} runs | fill |ds| {:.0f} m | pools {} | "
+             "saddle {} runs",
              phases,
              std::chrono::duration<f64>(std::chrono::steady_clock::now() -
                                         phaseStart)
                  .count(),
-             recenterMoved, retracedRuns, fillShift, poolLakes);
+             recenterMoved, retracedRuns, fillShift, poolLakes,
+             saddleRuns);
     return out;
 }
 

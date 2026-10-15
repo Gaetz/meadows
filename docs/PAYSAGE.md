@@ -3870,6 +3870,29 @@ l'hydrologie définitive).
   rebakées v120. Reliquat pour la coupe de selle : runs PROFONDS —
   ses seuils seront re-dimensionnés sur la distribution v120.
 
+- **2026-10-15 — Brique B3c : la coupe de selle — le sol rejoint
+  l'eau des runs courts (bump v121).** Réponse à la question dev
+  « modifier le sol pour éviter le collier de bassins ? » : OUI pour
+  les runs courts, au gabarit du pierce. Distribution v120 (carte
+  (0,0)) : 196 runs / 1 595 pts enterrés, masse dans les runs COURTS
+  mais PROFONDS (16-32 m d'excès) — les seuils du plan (≤80 m, ≤8 m)
+  ne couvraient que 2 %, le critère retenu est **L ≤ 160 m ET excès
+  ≤ 32 m** (45 % des points couverts ; précédent visuel : les gorges
+  du pierce taillent jusqu'à 60 m avec les mêmes flancs 0,7). En fin
+  de re-leveling (fineAt dispo), chaque run court enterré (ruban
+  > 2 m sous le sol fin, hors nappes) est MIS AU SOL : encoche
+  lowerBand (V doux 0,15 au gabarit 1,6·hw clampé 6-48 m, flancs
+  0,7) écrite dans `pierceDelta` (dig-only, plancher surface−0,5) —
+  le transfert fin et le carve S5c la voient comme une percée
+  ordinaire. Les runs longs ou plus profonds restent enterrés
+  (lecture karstique assumée ; une tranchée là = l'artefact
+  anti-fente). **Mesuré** (carte (0,0) solo) : 962 runs mis au sol
+  (0,02 s) ; **ruban-enterré 8,7 → 5,05 %** (5,6/3,7/4,6/6,3) —
+  **16,7 → 5,05 % depuis v118, −70 % : la cible ≤8 % du chantier est
+  tenue** ; virages 1-3 stables, lèvres inchangées, lacs = v120 ;
+  retrace 147→105 runs, pools 63→35 (les correctives se détendent).
+  Suite rapide 706/706 ; 4 cartes rebakées v121.
+
 ---
 
 ## 8. Glossaire
