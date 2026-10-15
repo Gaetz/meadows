@@ -3812,6 +3812,18 @@ l'hydrologie définitive).
   (shasum) ; suite rapide 706/706, fixtures 8 m (HydrologyTest,
   TileBakeTest) vertes sans retouche d'attente.
 
+- **2026-10-15 — Brique B2 : le texel de routage découplé
+  (`hydroTexel`), bit-exact.** `TileBakeParams::hydroTexel { 0 }`
+  (0 = suivre `macroTexel`, le legacy) + `hydroTexelResolved()` ;
+  seule la fenêtre d'`extractMapHydrology` le consomme.
+  `computeMapDrainage` reste volontairement sur `macroTexel` (son
+  champ n'oriente que l'érosion fine) ; stage-1 intact ; pas
+  d'exposition pupitre (pas de changement de clé de cache). Hors
+  carte, une fenêtre plus fine sur-échantillonne un patch bilinéaire
+  lisse (pas de nouveau puits) — documenté au commentaire de la
+  fenêtre. **Mesuré** : bake carte (0,0) seule BIT-EXACT au stash B0
+  (9 shasums identiques) ; suite rapide 706/706.
+
 ---
 
 ## 8. Glossaire

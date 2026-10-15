@@ -66,6 +66,16 @@ struct TileBakeParams {
     // Stage-2 hydrology window: tile + this margin, sampled from the
     // composed neighbourhood terrain.
     f32 waterMargin { 1024.0f };
+    // Hydrology ROUTING texel — the grid extractMapHydrology floods,
+    // routes and extracts on, decoupled from the erosion's macroTexel
+    // (the window samples the phase-A fine ground either way; a finer
+    // grid sees the counter-ridges that bury courses). 0 = follow
+    // macroTexel. The course PUBLICATION step stays 8 m regardless
+    // (kCourseTexel in Hydrology.cpp — the downstream contract).
+    f32 hydroTexel { 0.0f };
+    f32 hydroTexelResolved() const {
+        return hydroTexel > 0.0f ? hydroTexel : macroTexel;
+    }
     ProceduralControlParams controls; // .seed overwritten by worldSeed
     MacroParams macro;
     FluvialParams fluvial;

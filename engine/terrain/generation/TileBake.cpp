@@ -510,18 +510,20 @@ MapHydrology extractMapHydrology(
     size_t poolLakes = 0;       // discovered pools emitted as lakes
     const f32 mapSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
-    out.window.texelSize = params.macroTexel;
+    out.window.texelSize = params.hydroTexelResolved();
     out.window.originX =
         static_cast<f32>(mapX) * mapSize - params.waterMargin;
     out.window.originZ =
         static_cast<f32>(mapZ) * mapSize - params.waterMargin;
-    out.window.n =
-        texels(mapSize + 2.0f * params.waterMargin, params.macroTexel) +
-        1;
+    out.window.n = texels(mapSize + 2.0f * params.waterMargin,
+                          out.window.texelSize) +
+                   1;
     // The window samples the FINAL (phase-A) ground where the slices
     // cover it — water placed on the terrain the player walks — and
     // falls back to the stage-1 past the map rect (blended over
-    // ~192 m so the flood sees no step along the coverage edge).
+    // ~192 m so the flood sees no step along the coverage edge). A
+    // window finer than the 16 m fallback simply oversamples a smooth
+    // bilinear patch out there: no new pits, no step at the seam.
     const f32 mapMinX = static_cast<f32>(mapX) * mapSize;
     const f32 mapMinZ = static_cast<f32>(mapZ) * mapSize;
     const auto groundAt = [&](f32 x, f32 z) -> f32 {
@@ -2302,6 +2304,9 @@ MapDrainage computeMapDrainage(const TileBakeParams& params,
     MapDrainage out;
     const f32 mapSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
+    // Deliberately macroTexel, NOT hydroTexelResolved: this drainage
+    // field only orients the fine erosion over the stage-1 ground —
+    // the routing window's texel is a separate concern.
     out.window.texelSize = params.macroTexel;
     out.window.originX =
         static_cast<f32>(mapX) * mapSize - params.waterMargin;
