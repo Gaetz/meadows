@@ -840,22 +840,33 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
             river.maxZ < spec.originZ || river.minZ > winMaxZ) {
             continue;
         }
+        // Pin ceiling: the minimum baked surface over the next ~45 m
+        // of course. A pinned cell must never HOLD water above what
+        // the course publishes just downstream — the foot of a ramp
+        // then holds the POOL's level, not the ramp's (holding the
+        // ramp materialized fixed water mesas at every fall foot,
+        // measured dev). On the ramp itself the ceiling dives under
+        // the carved bed, the depth gate skips the cell, and the sim
+        // owns the flow; a blanket "never pin steep water" gate
+        // instead starved every wide steep reach (placed water
+        // drained for good — measured dev, the second regression).
+        vector<f32> fwdMin(river.nodes.size());
+        if (!river.nodes.empty()) {
+            const size_t count = river.nodes.size();
+            for (size_t i = count; i-- > 0;) {
+                f32 lo = river.nodes[i].surface;
+                for (size_t k = i;
+                     k < glm::min(i + 7, count); ++k) {
+                    lo = glm::min(lo, river.nodes[k].surface);
+                }
+                fwdMin[i] = lo;
+            }
+        }
         for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
             const RiverNode& a = river.nodes[s];
             const RiverNode& b = river.nodes[s + 1];
-            // STEEP water is never PINNED: holding a baked ramp's
-            // level cell by cell materialized fixed water mesas at
-            // every fall foot, metres above the pool the sim settles
-            // (measured dev, opaque crenellated plateaus). A ramp
-            // flows — the sim owns it, fed by the pinned flat reach
-            // upstream; only quasi-flat water is placed and held.
-            {
-                const f32 segLen = glm::max(
-                    std::hypot(b.x - a.x, b.z - a.z), 0.001f);
-                if ((a.surface - b.surface) / segLen > 0.05f) {
-                    continue;
-                }
-            }
+            const f32 segCap =
+                glm::min(fwdMin[s], fwdMin[s + 1]);
             const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);
             const f32 reach = hwMax * 1.4f + texel;
             const i32 c0 = glm::max(
@@ -926,8 +937,8 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
                         }
                         continue;
                     }
-                    const f32 surf =
-                        glm::mix(a.surface, b.surface, t);
+                    const f32 surf = glm::min(
+                        glm::mix(a.surface, b.surface, t), segCap);
                     const f32 ground = state.terrain[i];
                     // Banks never pin/seed (artesian lesson); and a
                     // surface hanging absurdly high over the ground

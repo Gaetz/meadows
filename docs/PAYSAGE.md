@@ -3713,6 +3713,24 @@ l'hydrologie définitive).
   source) évolue d'un côté, l'autre face doit suivre LE MÊME
   prédicat — partagé, pas dupliqué.
 
+- **2026-10-15 — Le pin revient partout, plafonné à l'AVAL (runtime,
+  sans bump).** Le correctif précédent n'a pas suffi (les blocs se
+  vidangeaient toujours : sur une pente, l'eau simulée est un film
+  mince et rapide que les seuils de publication cachent — aucune
+  injection ne reproduit l'eau épaisse du baké). Proposition dev
+  validée par l'enquête : le gate « jamais de pin en pente » n'avait
+  AUCUN autre usage que les mesas — supprimé, et remplacé par la
+  règle juste : **une cellule pinnée ne tient jamais plus haut que le
+  minimum baké des ~45 m aval** (fwdMin sur 7 nœuds). Au pied d'une
+  rampe, le pin tient le niveau du BASSIN (la mesa ne peut plus
+  exister) ; sur la rampe, le plafond plonge sous le lit carvé → la
+  garde de profondeur saute la cellule et le sim possède l'écoulement.
+  Les trois portes de sources reviennent au prédicat largeur seule
+  (le pin couvre à nouveau tous les biefs larges : plus de fente
+  pin/sources). Deux régressions symétriques en 24 h — mesas (pin
+  trop haut) puis vidange (pas de pin du tout) — résolues par le
+  plafond, pas par l'interdiction.
+
 ---
 
 ## 8. Glossaire
