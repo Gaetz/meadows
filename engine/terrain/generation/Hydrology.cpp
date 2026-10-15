@@ -3,6 +3,7 @@
 #include "engine/terrain/generation/GridOps.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <unordered_map>
 
@@ -384,15 +385,21 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
     // bounded (each pass re-floods, ~2 s at the map window — the whole
     // loop ends early the first quiet pass).
     for (u32 pass = 0; pass < 16; ++pass) {
+        // Pass clock: pierce passes dominate the map hydrology budget
+        // (each one re-floods and re-routes the whole window) — the
+        // per-pass line is what sizes the perf levers.
+        const auto passStart = std::chrono::steady_clock::now();
         const vector<f32> filled =
             priorityFloodFill(spec, ground, params.seaLevel,
                               params.minSlope, &epsScalePierce);
+        const auto floodEnd = std::chrono::steady_clock::now();
         // Accumulation on this pass's surface: the notch band is cut
         // at the LAW gabarit of the discharge crossing the gate — the
         // course that will run there (sizing it on the basin's cell
         // count cut 60 m beds for 16 m rivers, measured dev).
         const vector<f32> passArea =
             routeFlow(spec, filled, ground, params.seaLevel).area;
+        const auto routeEnd = std::chrono::steady_clock::now();
         vector<u32> label(cells, 0);
         u32 nextLabel = 0;
         u32 pierced = 0;
@@ -556,6 +563,13 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             }
             ++pierced;
         }
+        LOG_INFO("pierce pass {}: {} basins, {} pierced | flood "
+                 "{:.2f} s, route {:.2f} s",
+                 pass, nextLabel, pierced,
+                 std::chrono::duration<f64>(floodEnd - passStart)
+                     .count(),
+                 std::chrono::duration<f64>(routeEnd - floodEnd)
+                     .count());
         if (pierced == 0) {
             break;
         }

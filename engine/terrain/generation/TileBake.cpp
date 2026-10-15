@@ -483,6 +483,31 @@ MapHydrology extractMapHydrology(
     const vector<render::TerrainRegion>& neighbourRegions,
     const std::atomic<bool>* cancel) {
     MapHydrology out;
+    // Phase clock (docs/CPU-PERF.md): one line per map with the seconds
+    // of each hydrology pass plus the corrective-pass activity counters
+    // — the measure that decides which correction survives a routing
+    // change and where the perf levers go.
+    const auto phaseStart = std::chrono::steady_clock::now();
+    auto lapStart = phaseStart;
+    char phases[768];
+    size_t phasesLen = 0;
+    const auto lap = [&](const char* name) {
+        const auto now = std::chrono::steady_clock::now();
+        const f64 sec =
+            std::chrono::duration<f64>(now - lapStart).count();
+        lapStart = now;
+        const int n = std::snprintf(phases + phasesLen,
+                                    sizeof(phases) - phasesLen, "%s%s %.2f",
+                                    phasesLen ? " | " : "", name, sec);
+        if (n > 0) {
+            phasesLen = glm::min(phasesLen + static_cast<size_t>(n),
+                                 sizeof(phases) - 1);
+        }
+    };
+    size_t recenterMoved = 0;   // points shifted by the re-center
+    size_t retracedRuns = 0;    // buried runs the corridor replaced
+    f64 fillShift = 0.0;        // |profile fill - routed surface|, m
+    size_t poolLakes = 0;       // discovered pools emitted as lakes
     const f32 mapSize =
         params.tileSize * static_cast<f32>(tilesPerSide);
     out.window.texelSize = params.macroTexel;
@@ -579,6 +604,7 @@ MapHydrology extractMapHydrology(
                 groundAt(out.window.x(col), out.window.z(row));
         }
     }
+    lap("fill");
     if (cancel && cancel->load(std::memory_order_relaxed)) {
         return out; // partial: caller discards
     }
@@ -593,7 +619,9 @@ MapHydrology extractMapHydrology(
     for (size_t i = 0; i < out.ground.size(); ++i) {
         out.pierceDelta[i] = out.ground[i] - preGround[i];
     }
+    lap("pierce");
     out.hydro = extractHydrology(out.window, out.ground, hydrology);
+    lap("extract");
     // Tier classification (S4 tail): the master network's TRUE drainage
     // areas, once for the whole map.
     {
@@ -643,6 +671,7 @@ MapHydrology extractMapHydrology(
             }
         }
     }
+    lap("classify");
     // Fine re-leveling: the 16 m window overstates an incised valley's
     // floor (the walls average in) and the priority-flood routing
     // surface is a chain of FLAT pools at spill levels — published
@@ -716,6 +745,13 @@ MapHydrology extractMapHydrology(
             constexpr i32 kRecenterPasses = 10;
             constexpr f32 kRecenterStep = 4.0f; // m per smoothed pass
             constexpr f32 kKinkGateCos = 0.70710678f; // 45 degrees
+            vector<f32> prePos;
+            for (const River& river : rivers) {
+                for (const RiverPoint& pt : river.points) {
+                    prePos.push_back(pt.x);
+                    prePos.push_back(pt.z);
+                }
+            }
             const auto underAnyLake = [&](f32 x, f32 z) {
                 for (const Lake& lake : out.hydro.lakes) {
                     if (lake.mask.empty() || lake.maskWidth == 0 ||
@@ -893,7 +929,17 @@ MapHydrology extractMapHydrology(
                     ford.y = river.points[bi].z;
                 }
             }
+            size_t pre = 0;
+            for (const River& river : rivers) {
+                for (const RiverPoint& pt : river.points) {
+                    if (pt.x != prePos[pre] || pt.z != prePos[pre + 1]) {
+                        ++recenterMoved;
+                    }
+                    pre += 2;
+                }
+            }
         }
+        lap("recenter");
         // Corridor retrace: a course the window routed along a fine
         // RIDGE sits metres above the groove of its own footprint —
         // the nudging re-center cannot cross 40+ m, so the reach stays
@@ -1170,11 +1216,14 @@ MapHydrology extractMapHydrology(
                             river.points[k].x = backupX[k];
                             river.points[k].z = backupZ[k];
                         }
+                    } else {
+                        ++retracedRuns;
                     }
                     i = j + 1;
                 }
             }
         }
+        lap("retrace");
         // Window-lake re-seat: an accepted lake's spill level is a
         // 16 m estimate — containment the window guarantees can leak
         // at 2 m through a sub-cell notch, and the rivers now seated
@@ -1312,6 +1361,7 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        lap("relakes");
         vector<vector<f32>> floors(riverCount);
         vector<vector<f32>> bounds(riverCount);
         // Per point, the level of the accepted lake covering it (or
@@ -1554,6 +1604,8 @@ MapHydrology extractMapHydrology(
                              kEdgeTuck,
                          bndry),
                 hydrology.seaLevel);
+            fillShift +=
+                std::abs(level - river.points[count - 1].surface);
             river.points[count - 1].surface = level;
             for (size_t i = count - 1; i-- > 0;) {
                 const f32 own =
@@ -1564,9 +1616,11 @@ MapHydrology extractMapHydrology(
                     next = glm::min(next, glm::max(lakeLevel, level));
                 }
                 level = next;
+                fillShift += std::abs(level - river.points[i].surface);
                 river.points[i].surface = level;
             }
         }
+        lap("fill103");
         // Discovered pools: where the fill pooled the surface above
         // the local floor, the real water body is WIDER than the
         // ribbon — the far water paints it while the sim pin stops at
@@ -1576,6 +1630,7 @@ MapHydrology extractMapHydrology(
         // the existing machinery owns it from there — S5d-bis digs
         // the bed, the nappe renders it far and near, pinLakes
         // reservoirs it, the ribbon is cut under it at emission.
+        const size_t lakesBeforePools = out.hydro.lakes.size();
         {
             constexpr f32 kPoolMinRise = 1.0f;
             constexpr size_t kPoolMinRun = 3;
@@ -1819,6 +1874,8 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        poolLakes = out.hydro.lakes.size() - lakesBeforePools;
+        lap("pools");
         // Cascade coalescing: a real benched descent (lake-outlet
         // pierce ramps, terraced gorges) re-emerges from the fine
         // floor as stacked 5-10 m lips with 8-25 m treads — a
@@ -1918,6 +1975,7 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        lap("cascade");
         // Slope cap: a lip steeper than rapids is tilted INTO the
         // ground — the approach above a drop slopes down at the cap
         // and the carve digs the chute through the lip, so the water
@@ -1970,6 +2028,7 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        lap("slope");
         // Longitudinal smoothing: on a slope steeper than the cap the
         // profile was FLOOR-FOLLOWING (bounded 6 m under the benches)
         // — quasi-flat treads alternating with 3-10 m plunges every
@@ -2024,6 +2083,7 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        lap("smooth");
         // Steep water runs NARROW (discharge continuity: what falls
         // fast needs less section): the law width never read the
         // final profile, so a 108 m fleuve could coil down a 62 m
@@ -2066,6 +2126,7 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        lap("narrow");
         // Tributaries were filled against their receiver's surface
         // BEFORE the pool re-seat and the cascade coalescing moved it:
         // a lowered stem left hanging lips at confluences. Re-clamp
@@ -2188,6 +2249,14 @@ MapHydrology extractMapHydrology(
             });
         }
     }
+    lap("clamps");
+    LOG_INFO("map hydrology phases: {} | total {:.1f} s | recenter {} "
+             "pts | retrace {} runs | fill |ds| {:.0f} m | pools {}",
+             phases,
+             std::chrono::duration<f64>(std::chrono::steady_clock::now() -
+                                        phaseStart)
+                 .count(),
+             recenterMoved, retracedRuns, fillShift, poolLakes);
     return out;
 }
 

@@ -3756,6 +3756,43 @@ l'hydrologie définitive).
   COUPER ces biefs à l'émission et assumer des pertes/résurgences
   (lecture karstique), plutôt que des interruptions brutes.
 
+- **2026-10-15 — Chantier ROUTAGE FIN ouvert + brique B0 :
+  l'instrumentation de la phase B et sa baseline.** Décision dev :
+  corriger le ROUTAGE (option 2 du verdict brique H). Plan en 6
+  briques (B0 mesure → B1 seuils cellules→monde bit-exact → B2
+  découplage `hydroTexel` → B3 bascule 8 m + plancher de percée +
+  bump 119 → B3bis coupe de selle des reliquats → B4 clôture/essai
+  4 m). **Le choix du texel est MESURÉ** (banc python offline,
+  tuile 1_1 : sous-échantillonnage du sol 2 m, flood + D8 +
+  extraction par résolution, jauge enterrés >4 m) : 16 m → 11,2 %,
+  **8 m → 4,4 % (−61 %)**, 4 m → 2,5 % (×4 de cellules — essai en
+  clôture), **2 m → 3,4 % : RÉGRESSION** (le routage se fragmente en
+  rigoles parallèles dans le bruit micro-thermique) + coût hors
+  budget (fenêtre 5121², 1,2-2 Go). Réponse à « modifier le sol pour
+  éviter le collier de bassins ? » : oui pour le RELIQUAT
+  post-routage (B3bis, encoche lowerBand écrite dans `pierceDelta`,
+  runs courts/peu profonds seulement), jamais le long d'un tracé
+  faux (tranchée anti-fente). B0 livré : horloge de phases
+  d'`extractMapHydrology` (motif stage-1), log par passe de
+  `pierceLakeOutlets` (bassins, percées, t flood/route), compteurs
+  d'activité des correctives (recenter pts, retrace runs, fill |Δs|,
+  pools). **Mesuré** (carte (0,0) SEULE, cache scratch, M1 voyage,
+  Release) : phase B **4,2 s** = fill 0,01 + pierce 1,29 + extract
+  0,09 + **classify 2,66** (appariement maître brut — indépendant du
+  texel, points figés) + correctives ~0,13 ; stage-1 18,3 s, tranches
+  7,1 s. **Surprise n° 1 : le pierce sature DÉJÀ ses 16 passes à
+  16 m** — passes 11-15 identiques « 38 bassins, 32 percés », un
+  ensemble stable re-percé sans converger (la sortie `pierced == 0`
+  ne vient jamais ; cases « pit on the way ») : le plancher de B3
+  corrige une pathologie existante. Surprise n° 2 : 2 883 bassins
+  dès la passe 0 à 16 m (le banc en prévoit ~15× plus à 8 m).
+  Compteurs baseline : recenter 15 811 pts, retrace 155 runs, fill
+  |Δs| 227 413 m, pools 161 ; 263 lacs, 179 rivières. Stash v118
+  (bake solo, 4 .twb/.trg + overview + shasums) conservé hors dépôt
+  pour les preuves bit-exactes de B1/B2. Jauges rivières v118
+  inchangées (brique H) : enterrés 17,4 %, tout-haut 96 %, virages
+  2/4 076, marches 9.
+
 ---
 
 ## 8. Glossaire
