@@ -1339,15 +1339,16 @@ void LandscapeScene::onExit() {
 
 
 void LandscapeScene::updateCameraFarPlane() {
-    // Overview flight sees the FarTerrain's whole reach (its span is
-    // 18 km): enough to read a full 8 km map from altitude.
+    // The clip plane follows the renderer's active horizon (far mesh
+    // reach, else the streaming ring) with 10 % of slack, so the fog
+    // closure — capped at farPlane·0.95 by the renderer — always
+    // finishes before the clip. Overview flight needs no special case:
+    // the normal farPlane already covers the far mesh.
     flyCamera.camera.farPlane =
-        overviewView
-            ? 14000.0f
-            : glm::max(1600.0f,
-                       static_cast<f32>(
-                           renderer.terrainSystem().viewRadius) *
-                           render::TerrainSystem::kChunkSize * 1.3f);
+        glm::max(static_cast<f32>(
+                     renderer.terrainSystem().viewRadius) *
+                     render::TerrainSystem::kChunkSize * 1.3f,
+                 renderer.horizonReach() * 1.1f);
 }
 
 void LandscapeScene::update(f32 dt) {

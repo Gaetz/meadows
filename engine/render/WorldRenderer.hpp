@@ -210,6 +210,16 @@ public:
     render::ShaderLibrary& shaderLibrary() { return *shaders; }
     render::SkySystem& skySystem() { return sky; }
     render::TerrainSystem& terrainSystem() { return terrain; }
+    // The active horizon distance: the farthest standing geometry (the
+    // far mesh when ready, else the streaming ring). The camera's
+    // farPlane and the fog's horizon closure both derive from it — one
+    // source of truth, so the closure always finishes before the clip.
+    f32 horizonReach() const {
+        return tuning.farTerrain && farTerrain.ready()
+                   ? farTerrain.reach()
+                   : static_cast<f32>(terrain.viewRadius) *
+                         render::TerrainSystem::kChunkSize;
+    }
     render::VegetationSystem& vegetationSystem() { return vegetation; }
     render::WaterSystem& waterSystem() { return water; }
     const render::WaterSystem& waterSystem() const { return water; }

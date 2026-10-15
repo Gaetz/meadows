@@ -24,14 +24,16 @@ void main() {
     float d = distance(p.xz, uCameraPos.xz);
     float ringFade =
         smoothstep(uFogLayerInfo.z * 0.85, uFogLayerInfo.z * 1.5, d);
-    // The sink GROWS with distance: 0..1 non-reversed depth loses
-    // ~d^2*1.2e-6 meters of precision (near 0.1), so a constant bias
-    // falls under the quantization noise kilometres out and the 62 m
-    // quads z-fight the sea and the flats — the black low-res grid,
-    // triangle by triangle. 8 mm/m keeps the mesh below the noise to
-    // the horizon; at those distances the drop is angularly invisible.
-    // (The systemic cure is reversed-Z — reserved in docs §1.2.)
-    p.y += aUv.x * ringFade - mix(12.0, 0.0, ringFade) - d * 0.008;
+    // The sink GROWS with distance, then CLAMPS at 16 m: the growth
+    // exists for the non-reversed GL fallback, whose depth noise at
+    // range once z-fought the 62 m quads against the sea (the black
+    // low-res grid). Reversed-Z (the shipped path) needs none of it,
+    // and an unbounded 8 mm/m sank far coasts 192 m UNDER the sea quad
+    // at 24 km and lowered every distant silhouette — so the slope is
+    // kept only to its anti-fight range. GL past 2 km is an assumed
+    // regression (frozen backend).
+    p.y += aUv.x * ringFade - mix(12.0, 0.0, ringFade) -
+           min(d, 2000.0) * 0.008;
     vWorldPos = p;
     vNormal = aNormal;
     vColor = aColor;

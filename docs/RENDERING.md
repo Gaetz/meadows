@@ -1179,6 +1179,19 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   mesh) are small against it, and the real-detail steps (H7/H8) must
   be judged against THIS frame, not §4.2's. To consolidate with F6
   spot measures in the dev session (S1-S5).
+- **2026-10-15 — H1: farPlane follows the horizon, sink clamped.**
+  `WorldRenderer::horizonReach()` is the single source of truth: the
+  camera farPlane takes `max(ring·1.3, reach·1.1)` (8 316 m with the
+  18 km ring — the Overview special case is gone) and the fog horizon
+  closure is capped at `farPlane·0.95` (it always finishes before the
+  clip). The far mesh sink becomes `min(d, 2000)·0.008` (≤16 m): the
+  unbounded slope was the GL-era anti-z-fight and sank 24 km coasts
+  192 m under the sea quad; GL past 2 km = assumed regression (frozen
+  backend). **Measured** (spawn boot A/B, dev settings): frame
+  58.08 → 60.45 ms avg (+2.4 — mainPass +1.6: the 2.5-7.5 km far-mesh
+  band actually renders now, mist +0.5), the horizon closes in fog
+  instead of clipping. Visual z-fight check at the ring seam and the
+  coast = dev tour. Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

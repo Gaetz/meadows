@@ -2225,16 +2225,16 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .ssdmAmplitude = tuning.ssdmMode != 0 ? tuning.ssdmAmp : 0.0f,
         .shadowFarUvScale = render::ShadowMapper::kFarCascadeScale,
         .reflectionsActive = reflectionsActive,
-        // Horizon closure: at the far mesh's reach when it stands in,
-        // else at the streaming ring. z of the same uniform carries the
-        // ring for the far mesh's sink bias.
+        // Horizon closure: the active horizon (far mesh reach or the
+        // streaming ring), NEVER past the camera's farPlane — the fog
+        // must finish dissolving before the clip plane cuts (a closure
+        // beyond the farPlane leaves a hard geometry edge against the
+        // sky). z of the same uniform carries the ring for the far
+        // mesh's sink bias.
         .drawDistance =
-            cfg.terrain
-                ? (tuning.farTerrain && farTerrain.ready()
-                       ? farTerrain.reach()
-                       : static_cast<f32>(terrain.viewRadius) *
-                             render::TerrainSystem::kChunkSize)
-                : 0.0f,
+            cfg.terrain ? glm::min(horizonReach(),
+                                   view.camera.farPlane * 0.95f)
+                        : 0.0f,
         .nearRingDistance = cfg.terrain
                                 ? static_cast<f32>(terrain.viewRadius) *
                                       render::TerrainSystem::kChunkSize
