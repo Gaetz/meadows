@@ -3918,12 +3918,6 @@ l'hydrologie définitive).
   rivières v121 (coupes de selle incluses), inventaire des lacs
   (−120 par carte), expérience débit ×3 (toujours en place).
 
-- **2026-10-15 — Expérience débit : ×3 → ×2 (runtime, sans bump).**
-  Demande dev post-chantier : `kBakedDischargeBoost` 3,0 → **2,0**
-  (plafonds d'injection 90/90/360 → 60/60/240 — ils suivent le
-  boost). Le routage fin ayant mis au sol la plupart des trous au
-  bake, le sim a moins à ponter. Suite rapide 706/706.
-
 ---
 
 ## 8. Glossaire
