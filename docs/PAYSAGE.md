@@ -3731,6 +3731,31 @@ l'hydrologie définitive).
   trop haut) puis vidange (pas de pin du tout) — résolues par le
   plafond, pas par l'interdiction.
 
+- **2026-10-15 — Brique H : re-trace en corridor + LE verdict sur les
+  trous (bump v118).** Demande dev : travailler les TROUS des rubans
+  bakés (le débit ×3 n'a rien comblé). Livré : le **re-trace en
+  corridor** — chaque run enterré (axe > min d'empreinte + 4 m, ≥2
+  points) est remplacé par le chemin de plus basse selle (Dijkstra
+  8 m, coût = montées + 0,02/m) dans un corridor de ±110 m, ancres
+  fixes, rééchantillonné à nombre de points constant, une passe de
+  relaxation (4 passes ramenaient les petits runs sur la corde — le
+  retrace se défaisait lui-même), gate virages par run avec rollback
+  (couvre le virage de l'ancre amont i−1 : oubli initial mesuré
+  2→23 virages, corrigé 2→2 et 5→4). ~230 runs retracés par carte.
+  MAIS le verdict de la classification (jauge « sillon-proche vs
+  tout-haut » sur les points enterrés finaux) : **96 % des enterrés
+  n'ont AUCUN sillon dans leur empreinte ni leur corridor** — ce sont
+  les biefs TUNNELÉS PAR LE BOUND (cours que le routage fenêtre 16 m
+  a posés sur des contre-crêtes où l'eau n'irait jamais ; le
+  compromis assumé depuis v103). Le re-trace ne couvre que les 4 %
+  géométriques : enterrés 17,4 % → 17,4 % (stable), virages 0
+  régression. Les TROUS du dev = les biefs bound-tunnelés = erreurs
+  de ROUTAGE : le vrai correctif est un chantier phase-B (routage du
+  réseau sur un sol mieux échantillonné que 16 m, ou correction des
+  receivers par le sol fin) — à décider ; alternative court-terme :
+  COUPER ces biefs à l'émission et assumer des pertes/résurgences
+  (lecture karstique), plutôt que des interruptions brutes.
+
 ---
 
 ## 8. Glossaire

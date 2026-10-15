@@ -894,6 +894,287 @@ MapHydrology extractMapHydrology(
                 }
             }
         }
+        // Corridor retrace: a course the window routed along a fine
+        // RIDGE sits metres above the groove of its own footprint —
+        // the nudging re-center cannot cross 40+ m, so the reach stays
+        // buried and its ribbon reads as a HOLE in the river (the
+        // dev's standing complaint). Each buried run is REPLACED by
+        // the lowest-saddle path on the 8 m fine lattice (Dijkstra,
+        // cost = climbs + a touch of distance), confined to a corridor
+        // around the original chain, endpoints fixed, resampled to the
+        // same point count, locally relaxed; a run whose path folds
+        // past 45° rolls back alone.
+        {
+            constexpr f32 kBuriedRise = 4.0f;  // axis above footprint
+            constexpr size_t kBuriedRun = 2;   // points to qualify
+            constexpr f32 kCorridor = 110.0f;  // half-width of search
+            constexpr f32 kCellT = 8.0f;
+            constexpr f32 kKinkGateCos = 0.70710678f;
+            for (size_t r = 0; r < riverCount; ++r) {
+                River& river = rivers[r];
+                const size_t count = river.points.size();
+                if (count < kBuriedRun + 6) {
+                    continue;
+                }
+                // Buried flags from path geometry alone (the profile
+                // does not exist yet): axis ground far above the
+                // lowest fine sample of the local footprint.
+                vector<u8> buried(count, 0);
+                for (size_t i = 1; i + 1 < count; ++i) {
+                    const RiverPoint& pt = river.points[i];
+                    const f32 axis = fineAt(pt.x, pt.z);
+                    f32 lo = axis;
+                    const RiverPoint& fw = river.points[i + 1];
+                    const RiverPoint& bw = river.points[i - 1];
+                    const f32 dx = fw.x - bw.x;
+                    const f32 dz = fw.z - bw.z;
+                    const f32 len = std::sqrt(dx * dx + dz * dz);
+                    if (len < 0.5f) {
+                        continue;
+                    }
+                    const f32 px = -dz / len;
+                    const f32 pz = dx / len;
+                    for (const f32 off : { -1.4f, -0.7f, 0.7f, 1.4f }) {
+                        const f32 d = off * pt.halfWidth;
+                        lo = glm::min(lo, fineAt(pt.x + px * d,
+                                                 pt.z + pz * d));
+                    }
+                    buried[i] = axis > lo + kBuriedRise ? 1 : 0;
+                }
+                size_t i = 1;
+                while (i + 1 < count) {
+                    if (!buried[i]) {
+                        ++i;
+                        continue;
+                    }
+                    size_t j = i;
+                    while (j + 1 < count && buried[j + 1]) {
+                        ++j;
+                    }
+                    if (j - i + 1 < kBuriedRun || i < 1 ||
+                        j + 1 >= count) {
+                        i = j + 1;
+                        continue;
+                    }
+                    // Anchors just outside the buried run.
+                    const size_t ia = i - 1;
+                    const size_t ib = j + 1;
+                    const f32 ax = river.points[ia].x;
+                    const f32 az = river.points[ia].z;
+                    const f32 bx = river.points[ib].x;
+                    const f32 bz = river.points[ib].z;
+                    // Corridor grid around the run's bbox.
+                    f32 mnx = glm::min(ax, bx);
+                    f32 mxx = glm::max(ax, bx);
+                    f32 mnz = glm::min(az, bz);
+                    f32 mxz = glm::max(az, bz);
+                    for (size_t k = i; k <= j; ++k) {
+                        mnx = glm::min(mnx, river.points[k].x);
+                        mxx = glm::max(mxx, river.points[k].x);
+                        mnz = glm::min(mnz, river.points[k].z);
+                        mxz = glm::max(mxz, river.points[k].z);
+                    }
+                    const i32 gx0 = static_cast<i32>(
+                        std::floor((mnx - kCorridor) / kCellT));
+                    const i32 gx1 = static_cast<i32>(
+                        std::ceil((mxx + kCorridor) / kCellT));
+                    const i32 gz0 = static_cast<i32>(
+                        std::floor((mnz - kCorridor) / kCellT));
+                    const i32 gz1 = static_cast<i32>(
+                        std::ceil((mxz + kCorridor) / kCellT));
+                    const i32 gw = gx1 - gx0 + 1;
+                    const i32 gh = gz1 - gz0 + 1;
+                    if (gw <= 2 || gh <= 2 ||
+                        static_cast<i64>(gw) * gh > 400000) {
+                        i = j + 1;
+                        continue;
+                    }
+                    const auto cellOf = [&](f32 x, f32 z) {
+                        return std::pair<i32, i32>(
+                            static_cast<i32>(
+                                std::floor(x / kCellT)),
+                            static_cast<i32>(
+                                std::floor(z / kCellT)));
+                    };
+                    const auto idxOf = [&](i32 cx, i32 cz) {
+                        return static_cast<size_t>(cz - gz0) * gw +
+                               static_cast<size_t>(cx - gx0);
+                    };
+                    const auto [sx, sz] = cellOf(ax, az);
+                    const auto [tx2, tz2] = cellOf(bx, bz);
+                    // Dijkstra: cost = uphill climbed + 0.02/m, so the
+                    // path hugs the grooves and still reaches the far
+                    // anchor.
+                    vector<f32> dist(static_cast<size_t>(gw) * gh,
+                                     1.0e18f);
+                    vector<i32> prev(static_cast<size_t>(gw) * gh,
+                                     -1);
+                    struct QC {
+                        f32 c;
+                        i32 cx;
+                        i32 cz;
+                        bool operator>(const QC& o) const {
+                            return c > o.c;
+                        }
+                    };
+                    std::priority_queue<QC, vector<QC>,
+                                        std::greater<QC>>
+                        pq;
+                    dist[idxOf(sx, sz)] = 0.0f;
+                    pq.push({ 0.0f, sx, sz });
+                    const auto hAt = [&](i32 cx, i32 cz) {
+                        return fineAt(
+                            static_cast<f32>(cx) * kCellT + 4.0f,
+                            static_cast<f32>(cz) * kCellT + 4.0f);
+                    };
+                    bool reached = false;
+                    while (!pq.empty()) {
+                        const QC cur = pq.top();
+                        pq.pop();
+                        if (cur.cx == tx2 && cur.cz == tz2) {
+                            reached = true;
+                            break;
+                        }
+                        const size_t ci = idxOf(cur.cx, cur.cz);
+                        if (cur.c > dist[ci] + 1.0e-6f) {
+                            continue;
+                        }
+                        const f32 hc = hAt(cur.cx, cur.cz);
+                        const i32 nb[4][2] = { { 1, 0 },
+                                               { -1, 0 },
+                                               { 0, 1 },
+                                               { 0, -1 } };
+                        for (const auto& d : nb) {
+                            const i32 nx = cur.cx + d[0];
+                            const i32 nz = cur.cz + d[1];
+                            if (nx < gx0 || nx > gx1 || nz < gz0 ||
+                                nz > gz1) {
+                                continue;
+                            }
+                            const size_t ni = idxOf(nx, nz);
+                            const f32 climb = glm::max(
+                                hAt(nx, nz) - hc, 0.0f);
+                            const f32 nc =
+                                cur.c + climb + 0.02f * kCellT;
+                            if (nc < dist[ni] - 1.0e-6f) {
+                                dist[ni] = nc;
+                                prev[ni] = static_cast<i32>(ci);
+                                pq.push({ nc, nx, nz });
+                            }
+                        }
+                    }
+                    if (!reached) {
+                        i = j + 1;
+                        continue;
+                    }
+                    // Walk the path back, then resample it onto the
+                    // run's own point count (anchors excluded).
+                    vector<f32> pxs;
+                    vector<f32> pzs;
+                    i32 ci = static_cast<i32>(idxOf(tx2, tz2));
+                    while (ci >= 0) {
+                        const i32 cx =
+                            gx0 + ci % gw;
+                        const i32 cz =
+                            gz0 + ci / gw;
+                        pxs.push_back(
+                            static_cast<f32>(cx) * kCellT + 4.0f);
+                        pzs.push_back(
+                            static_cast<f32>(cz) * kCellT + 4.0f);
+                        ci = prev[ci];
+                    }
+                    std::reverse(pxs.begin(), pxs.end());
+                    std::reverse(pzs.begin(), pzs.end());
+                    if (pxs.size() < 2) {
+                        i = j + 1;
+                        continue;
+                    }
+                    pxs.front() = ax;
+                    pzs.front() = az;
+                    pxs.back() = bx;
+                    pzs.back() = bz;
+                    f32 total = 0.0f;
+                    vector<f32> arcs(pxs.size(), 0.0f);
+                    for (size_t k = 1; k < pxs.size(); ++k) {
+                        total += std::hypot(pxs[k] - pxs[k - 1],
+                                            pzs[k] - pzs[k - 1]);
+                        arcs[k] = total;
+                    }
+                    vector<f32> backupX(count);
+                    vector<f32> backupZ(count);
+                    for (size_t k = 0; k < count; ++k) {
+                        backupX[k] = river.points[k].x;
+                        backupZ[k] = river.points[k].z;
+                    }
+                    const size_t n = j - i + 1;
+                    size_t seg = 0;
+                    for (size_t k = 0; k < n; ++k) {
+                        const f32 want =
+                            total * static_cast<f32>(k + 1) /
+                            static_cast<f32>(n + 1);
+                        while (seg + 1 < arcs.size() &&
+                               arcs[seg + 1] < want) {
+                            ++seg;
+                        }
+                        const size_t nx2 =
+                            glm::min(seg + 1, arcs.size() - 1);
+                        const f32 span = glm::max(
+                            arcs[nx2] - arcs[seg], 1.0e-3f);
+                        const f32 t =
+                            glm::clamp((want - arcs[seg]) / span,
+                                       0.0f, 1.0f);
+                        river.points[i + k].x =
+                            glm::mix(pxs[seg], pxs[nx2], t);
+                        river.points[i + k].z =
+                            glm::mix(pzs[seg], pzs[nx2], t);
+                    }
+                    // Local relax (ends held by the anchors).
+                    for (i32 pass = 0; pass < 1; ++pass) {
+                        for (size_t k = i; k <= j; ++k) {
+                            river.points[k].x =
+                                0.5f * river.points[k].x +
+                                0.25f * (river.points[k - 1].x +
+                                         river.points[k + 1].x);
+                            river.points[k].z =
+                                0.5f * river.points[k].z +
+                                0.25f * (river.points[k - 1].z +
+                                         river.points[k + 1].z);
+                        }
+                    }
+                    // Kink gate on the touched span (one point of
+                    // margin): fold -> roll back this run only.
+                    bool folded = false;
+                    for (size_t k = glm::max(i - 1, size_t(1));
+                         k <= glm::min(j + 1, count - 2); ++k) {
+                        const f32 ux = river.points[k].x -
+                                       river.points[k - 1].x;
+                        const f32 uz = river.points[k].z -
+                                       river.points[k - 1].z;
+                        const f32 vx = river.points[k + 1].x -
+                                       river.points[k].x;
+                        const f32 vz = river.points[k + 1].z -
+                                       river.points[k].z;
+                        const f32 lu = std::sqrt(ux * ux + uz * uz);
+                        const f32 lv = std::sqrt(vx * vx + vz * vz);
+                        if (lu < 0.1f || lv < 0.1f) {
+                            continue;
+                        }
+                        if ((ux * vx + uz * vz) / (lu * lv) <
+                            kKinkGateCos) {
+                            folded = true;
+                            break;
+                        }
+                    }
+                    if (folded) {
+                        for (size_t k = 0; k < count; ++k) {
+                            river.points[k].x = backupX[k];
+                            river.points[k].z = backupZ[k];
+                        }
+                    }
+                    i = j + 1;
+                }
+            }
+        }
         // Window-lake re-seat: an accepted lake's spill level is a
         // 16 m estimate — containment the window guarantees can leak
         // at 2 m through a sub-cell notch, and the rivers now seated
