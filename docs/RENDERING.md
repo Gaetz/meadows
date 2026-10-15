@@ -1105,6 +1105,81 @@ postFx-less blit fallback hardening on Vulkan). The ground-mist chantier
 (§3.5, 2026-07-29) pre-built the sky-clouds socle: `volumetric_media.glsl`,
 `NoiseVolume`, `temporal_resolve.glsl` and the ½-res+temporal pattern.
 
+### 6.0c Chantier HORIZON (2026-10-15, in progress)
+
+**Goal (dev)**: see to the MAP LIMIT in normal play — low-poly backdrop
+to 24 km+, real detail pushed farther, budget set by the bench (M1 Air,
+30 fps milestone, vertex-bound). Exploration finding: the far stack
+already runs in normal play (FarTerrain 18 km span / 7 560 m reach,
+±5.2 km tree impostors, ±9 km sea and far water) — only the farPlane
+(2 496 m at r30) cuts it; the Overview toggle changes nothing else than
+farPlane + a fog override.
+
+**Physical window (assume, don't fight)**: with the BotW haze
+(density × (1+lowBoost·e^(−0.02Δ)) × e^(−0.0035Δ), Δ = mid-ray altitude
+above sea), a 24 km horizon reads from Δ ≥ ~640 m in Clear — mid-slope
+and crests. Lowland keeps its 2-5 km misty closure by design. The
+target is "the horizon is EARNED by climbing", not "24 km everywhere";
+the H2 tail compression widens that window ~×3 past the knee without
+touching the near field.
+
+**Architecture (decided)**: two rings — the 18 km ring unchanged
+(3-7 km quality, impostors) + an outer `farHorizon` ring 257² @
+57 600 m (225 m cells, reach 24 192 m), no impostors, −16 m under the
+inner ring, drawn first. Single widened span rejected (225 m cells at
+3 km where the far mesh is the only geometry); 513² grid rejected
+(524 k tris uncolled + bake ×4). farPlane becomes a derivative of
+`WorldRenderer::horizonReach()`; the fog horizon closure is ≤ farPlane
+by construction. Reversed-Z sink clamped to `min(d, 2000)·0.008`
+(unclamped it sank coasts 192 m under the sea quad at 24 km). Far
+water COLLECTION stays at 9 km (worker churn; beyond, lakes are
+painted into the outer ring's vertex colors). Sea quad follows the
+outer span (±28 800 m) through a shared constant.
+
+**Lighting contract (cross-system, per house rule)**: CSM (splits
+{0.5, 90, 320, 1600} m), TerrainLightMap (3 072 m), froxels/light
+clusters (volumetricReach = clamp(fogStart·3, 800, 2400), shared z
+slices), RC clipmaps (32/128 m): **UNCHANGED**. The 2.5-24 km zone is
+lit analytically (ambient + N·L + cloud shadow + haze) — already the
+FarTerrain model. No mountain shadow past ~3 km: assumed, the veil
+dominates. The H2 fog knee (2 500 m) sits above volumetricReach's cap
+(2 400 m) so froxels, clusters and the weather TOMLs see no change;
+`fogStart` is untouched.
+
+**Bench protocol**: Release, M1 Air; 5 spots — S1 crest+sea, S2
+village, S3 dense forest (the §4.2 27 fps floor), S4 storm, S5 fast
+flight 60 s. `MEADOWS_BOOT=sandbox MEADOWS_BOOT_SECONDS=75` for the
+frame-2000 `gpu budget` line; F6 panel for per-pass GPU avg/max, Mtri
+terrain/trees/grass, JobProbe (farTerrain/farHorizon/farWater), pool
+memory, GpuOcclusion "clip" warnings; 360° + fast move for fps min.
+Decisions taken on the numbers: outer grid 256 vs 192, far mesh in the
+reflection pass (≤0.4 ms), real-detail steps (r36/veg14 then r42/veg16
+— veg 24 rejected up front: ~7 Mtri of trees vs 1.8 today).
+
+**Bricks**: H1 farPlane coherence + sink clamp → H2 fog tail
+compression (knee 2 500, `fogHorizonTail` 0.30, Overview ×0.08 override
+removed) → H3 HeightField L3 (256 m/65 km — L2 stops at ±16.4 km) →
+H4 outer ring + sea span + painted far lakes → H5 clouds (cloud-map
+edge fade to mean coverage; 2D dome seen from ABOVE the 950 m base —
+today the sky is empty from exactly the viewpoints that see 24 km) →
+H6 far mesh in reflection (bench-gated) → H7 r36/veg14 + tree/impostor
+handoff fix (per-instance frozen fade vs live impostor fade-in) → H8
+conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
+
+**Journal** (one entry per brick, with "Measured"):
+- **2026-10-15 — H0 baseline** (M1 travel Air, Release, DEV's live
+  render-tuning, `MEADOWS_BOOT=sandbox` spawn, frame-2000 window):
+  **frame 58.08/60.68 ms avg/max (~17 fps)** — mainPass 24.94, ssdm
+  18.55, shadows 7.66, rc chain 7.5 (async), mist 1.55, skyclouds
+  1.23, copyHizWater 1.24, volumetric 0.55. CPU bakes 34.4 s/window:
+  terrainLightMap 7×637 ms, heightField.L2 2×1 543 ms, farTerrain
+  2×543 ms, waterSimPreRoll 1 411 ms, waterSim 1 954×9 ms. Reading:
+  far off the §4.2 19.2 ms era — the dev's settings (ssdm on, heavy
+  shadows) own most of the frame; HORIZON's own additions (~1 ms far
+  mesh) are small against it, and the real-detail steps (H7/H8) must
+  be judged against THIS frame, not §4.2's. To consolidate with F6
+  spot measures in the dev session (S1-S5).
+
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 
 Reviewed a state-of-the-art Skyrim ENB stack; most of it is cinematic
