@@ -95,8 +95,8 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    synthesizeMacro (contrôles sur lattice 64 m, biome par texel) → applyMapGridShape → imprintMasterChannels (fleuves CONSTRUITS avant érosion)
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
-[hydrologie] extractMapHydrology — UNE fois par carte, 16 m, carte + 1 024 m = 1665² (~2 s)
-   priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeCells 12) → rivières (riverArea 1,5e5 m²) → étangs → classifyRivers (tiers + gués)
+[hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
+   pierceLakeOutlets (≤16 passes, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m, amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -3893,6 +3893,31 @@ l'hydrologie définitive).
   retrace 147→105 runs, pools 63→35 (les correctives se détendent).
   Suite rapide 706/706 ; 4 cartes rebakées v121.
 
+- **2026-10-15 — Brique B4 : clôture du chantier ROUTAGE FIN.**
+  **Essai 4 m : REJETÉ par la mesure** — ruban-enterré 5,4 % contre
+  5,05 % à 8 m (aucun gain : le simplify 4,8 m et la coupe de selle
+  ont déjà absorbé ce que le banc nu promettait au 4 m), pour une
+  phase B à 26,7 s (pierce 22 s — budget 15 s crevé ×1,8) ; le
+  défaut reste `hydroTexel` 8. **Retraits : AUCUN** — les compteurs
+  B0 montrent toutes les correctives encore actives à 8 m (recenter
+  ~18 k pts, retrace 105 runs, fill 163 km, pools 35) : elles
+  restent, c'étaient les candidates, pas des mortes. Recalibrages :
+  pipeline §1.3 (hydrologie 8 m 1281², plancher, coupe de selle,
+  kCourseTexel), glossaire, CPU-PERF (bake 2×2 ≈ 20 s à froid).
+  **Bilan du chantier** (B0→B4, un jour, 6 commits, v118→v121) :
+  ruban-enterré **16,7 → 5,05 %** (−70 %), enterrés d'empreinte
+  7,4 → ~3 %, pierce convergent (12 passes, sortie propre), lacs
+  naturels ~192 → ~70 par carte, phase B 4,2 → 7,3 s (budget tenu),
+  virages/lèvres stables, aucun contrat aval touché (pas de points,
+  TWB7, pinRivers). **Différés journalisés** : lecture karstique
+  (FX pertes/résurgences) pour les runs longs/profonds restants
+  (~55 % des 5 % résiduels) ; radix sort du routeFlow et pierce
+  deux-étages 16→8 m (leviers perf non nécessités) ; recalibrage
+  des métriques en nœuds de LandscapeReport ; 2 m exclu par la
+  mesure (régression). Verdicts dev attendus : tour visuel des
+  rivières v121 (coupes de selle incluses), inventaire des lacs
+  (−120 par carte), expérience débit ×3 (toujours en place).
+
 ---
 
 ## 8. Glossaire
@@ -3902,7 +3927,8 @@ l'hydrologie définitive).
 | `TerrainParams` / `TerrainBase` / `HeightPatches` | params runtime (patches, base, sandbox, biomes, water) / régions bakées immutables / deltas sculpt |
 | `macroHeightAnalytic`, `proceduralBase` | macro S1 sans érosion (fallback, condition aux limites, étage 0) / fallback runtime (overview puis analytique) |
 | `MapGridSpec`, `applyMapGridShape`, `mapBorderStyleResolved`, `kMapBorder*` | grille de cartes, bordures v2 (lignes hachées Mer/Montagnes, méandre, veto) |
-| `kTileBakeVersion` 68 / `kMapBakeVersion` 1 / `kStage1Version` (orphelin) | versions du cache ; TRG3, TWB3, MOV1, TER1, TBM1 = formats |
+| `kTileBakeVersion` 121 / `kMapBakeVersion` 1 / `kStage1Version` (orphelin) | versions du cache ; TRG3, TWB7, MOV1, TER1, TBM1 = formats |
+| `hydroTexel` 8, `kCourseTexel` 16, `minLakeArea`/`lakeKeepArea`, `pierceMinArea`/`pierceMinDepth`, coupe de selle | routage fin : texel de routage découplé / échelle de PUBLICATION des cours (contrat aval) / seuils de lacs en m² / plancher de percée / runs courts enterrés mis au sol (chantier routage fin, §7.8 2026-10-15) |
 | `kMapApron` 3 072 m (ex-`kBasinResolveMargin`) | apron de production de la carte ; `kFineErosionHalo` 192 m |
 | `tier`, `tierSpread` 0,35, `uplift`, `plateau`, `hardness` | étages, rampe de tier, orogenèse, dessus de plateau, lithologie |
 | `calm` / `gentle` / `trunk` / `reliefScale` | socle calme [0,1] / corridors + cols / fond de vallée maîtresse / multiplicateur des porteuses (clairières) |

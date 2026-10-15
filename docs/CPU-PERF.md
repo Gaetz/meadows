@@ -424,7 +424,7 @@ super (…) : analytic samples | flood+route`, et le bloc `cost:` de
 | reconstruction de scène au boot | 10,8 s | **3,0 s** |
 | dont sonde de spawn (`probeSandboxSpawn`) | 7,7 s | 9 ms |
 | lightmap après le boot | +13 s | +5 s |
-| bake d'une carte 2×2, à froid | 25 s (stage-1 19,6) | **15 s (stage-1 12,5)** |
+| bake d'une carte 2×2, à froid | 25 s (stage-1 19,6) | **15 s (stage-1 12,5)** ; +5 s de phase B depuis le routage 8 m (chantier routage fin, PAYSAGE §7.8 2026-10-15 : hydrologie ~7 s à froid, horloge de phases au log) |
 | dont imprint des fleuves (réseau maître) | 6,6 s | 1,7 s à froid, 0 à chaud |
 | réseau maître plan-on, 25 super-cellules, à froid | 6,6 s | 2,5 s (parallèle), 1 ms (cache) |
 | typage des POI (réseau plan-off, 4 super-cellules) | 0,8 s | 0,2 s / 2 ms |
