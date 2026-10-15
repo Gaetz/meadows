@@ -595,10 +595,16 @@ render::WaterSystem::FarWaterSet collectFarWater(
             z > gMaxZ) {
             return surface;
         }
-        return glm::max(surface,
-                        render::terraingen::bilinearWorld(
-                            g, farOverview->heights, x, z) +
-                            0.4f);
+        // Capped: in a gorge the 64 m overview averages the rims in
+        // — an unbounded lift hung far ribbons metres in the air (the
+        // floating "tongue", measured dev). Past the cap the far
+        // ribbon stays buried; the near field owns it on approach.
+        return glm::min(
+            glm::max(surface,
+                     render::terraingen::bilinearWorld(
+                         g, farOverview->heights, x, z) +
+                         0.4f),
+            surface + 6.0f);
     };
     std::error_code ec;
     for (std::filesystem::directory_iterator it { cacheDir, ec }, end;

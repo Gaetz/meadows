@@ -843,6 +843,19 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
         for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
             const RiverNode& a = river.nodes[s];
             const RiverNode& b = river.nodes[s + 1];
+            // STEEP water is never PINNED: holding a baked ramp's
+            // level cell by cell materialized fixed water mesas at
+            // every fall foot, metres above the pool the sim settles
+            // (measured dev, opaque crenellated plateaus). A ramp
+            // flows — the sim owns it, fed by the pinned flat reach
+            // upstream; only quasi-flat water is placed and held.
+            {
+                const f32 segLen = glm::max(
+                    std::hypot(b.x - a.x, b.z - a.z), 0.001f);
+                if ((a.surface - b.surface) / segLen > 0.05f) {
+                    continue;
+                }
+            }
             const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);
             const f32 reach = hwMax * 1.4f + texel;
             const i32 c0 = glm::max(

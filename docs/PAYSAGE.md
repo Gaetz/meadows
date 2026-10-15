@@ -3677,6 +3677,25 @@ l'hydrologie définitive).
   vu les largeurs larges, acceptable (empreinte plus large = siège
   plus bas, conservateur).
 
+- **2026-10-15 — Les mesas d'eau aux pieds de chutes + la languette
+  lointaine (runtime, sans bump).** Capture dev à (4643, 386, 4964) :
+  des plateaux d'eau OPAQUES à bords crénelés de 2 m, fixes, 3-5 m
+  au-dessus du bassin, au pied de chaque cascade. Diagnostic : des
+  colonnes PINNÉES — le profil baké descend la chute en rampe, le sim
+  laisse le bassin s'équilibrer à son déversoir (plus bas), et les
+  cellules pinnées du pied TIENNENT le niveau de la rampe : mesas.
+  Correctif : **le pin ne tient plus l'eau en pente** — un segment de
+  ruban dont la pente dépasse 0,05 ne pose ni ne tient rien (une
+  rampe COULE : le sim la possède, alimentée par le bief plat pinné
+  d'amont) ; seuls les biefs quasi plats placent et renouvellent.
+  Seconde trouvaille sur la même capture : la « languette » d'eau
+  lointaine suspendue — le clamp v105 des rubans lointains
+  (max(surface, overview+0,4)) était SANS plafond : dans une gorge,
+  l'overview 64 m moyenne les crêtes et suspendait le ruban en l'air.
+  Plafonné à surface+6 m — au-delà, le ruban lointain reste enterré
+  et le champ proche le prend à l'approche (même règle que le clamp
+  des nappes, brique A).
+
 ---
 
 ## 8. Glossaire
