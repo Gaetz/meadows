@@ -784,12 +784,15 @@ TEST_CASE("water sim: pinRivers pins the carved bed, never the banks") {
         return static_cast<size_t>(z / 2.0f) * spec.n +
                static_cast<size_t>(x / 2.0f);
     };
-    // Mid-bed: pinned at the interpolated surface, seeded ~1 m deep.
+    // Mid-bed: pinned and seeded. The pin level is CAPPED at the
+    // forward minimum of the baked surfaces (~45 m downstream): a
+    // pinned cell never holds water above what the course publishes
+    // just ahead — here the downstream node's 296.5.
     const size_t bed = at(60.0f, 42.0f);
     CHECK(state.pinned[bed] > render::terrain::kWaterInfoDry + 1.0f);
     CHECK(state.pinned[bed] ==
-          doctest::Approx(296.77f).epsilon(0.01));
-    CHECK(state.depth[bed] > 0.5f);
+          doctest::Approx(296.5f).epsilon(0.01));
+    CHECK(state.depth[bed] >= 0.45f);
     // Bank inside the ribbon reach but ABOVE the surface: untouched.
     const size_t bank = at(60.0f, 50.0f);
     CHECK(state.pinned[bank] < render::terrain::kWaterInfoDry + 1.0f);
