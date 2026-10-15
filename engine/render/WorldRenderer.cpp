@@ -1679,6 +1679,14 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
         if (cfg.terrain) {
             terrain.draw(frame.cmd, reflectionBindGroup,
                          shadows.receiverBindGroup(), &reflectionFrustum);
+            // Far silhouettes in the mirror (inner ring only — the
+            // horizon ring at 24 km adds nothing to a wobbly half-res
+            // reflection): without them a lake at dusk mirrored SKY
+            // where the eye sees mountains.
+            if (tuning.farTerrain) {
+                farTerrain.draw(frame.cmd, reflectionBindGroup,
+                                sky.cloudMapBindGroup());
+            }
         }
         // Trees only: rocks and bushes are invisible in a wobbly half-res
         // reflection — low-detail canopies for the same reason.

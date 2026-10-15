@@ -1251,6 +1251,14 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   complementary by design). **Measured**: frame 58.7 ≈ baseline,
   zero errors; storm 360° from a crest + streak check = dev tour.
   Fast suite 706/706.
+- **2026-10-15 — H6: far silhouettes in the water mirror.** The
+  reflection pass draws the INNER far ring (the horizon ring adds
+  nothing at half-res over waves) — a dusk lake no longer mirrors
+  sky where the eye sees mountains. **Measured**: frame 58.97 ≈
+  baseline at the spawn, where the reflection auto-skips (no water
+  within 600 m) — the ≤0.4 ms gauge reads at a LAKE spot in the dev
+  tour (F6 "reflection" row); revert = drop the one draw if it
+  busts. Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 
