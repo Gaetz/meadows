@@ -106,13 +106,19 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
         return x >= spec.originX && x <= maxX && z >= spec.originZ &&
                z <= maxZ;
     };
+    // Dev experiment: the baked ribbons are interrupted in places
+    // (buried reaches, lake cuts) and the holes read dry — boosting
+    // the injected discharge lets the sim bridge them with visibly
+    // flowing water. Tune or revert on verdict.
+    constexpr f32 kBakedDischargeBoost = 3.0f;
     const auto nodeQ = [&](const render::RiverNode& node) {
         const f32 area =
             node.area > 0.0f
                 ? node.area
                 : render::terraingen::riverAreaFromHalfWidth(
                       node.halfWidth);
-        return render::terraingen::runoffDischarge(area, runoff);
+        return kBakedDischargeBoost *
+               render::terraingen::runoffDischarge(area, runoff);
     };
     vector<WaterSource> out;
     for (const render::RiverSurface& river : bodies.rivers) {
@@ -136,7 +142,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
             if (trueHead && inside(head.x, head.z) &&
                 head.halfWidth < pinnedHalfWidth) {
                 out.push_back(
-                    { head.x, head.z, glm::min(nodeQ(head), 30.0f) });
+                    { head.x, head.z, glm::min(nodeQ(head), 90.0f) });
             }
         }
         // DISTRIBUTED runoff along in-window reaches: the drainage
@@ -154,7 +160,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 accum += glm::max(0.0f, nodeQ(nb) - nodeQ(na));
                 if (accum >= 0.05f) {
                     out.push_back(
-                        { nb.x, nb.z, glm::min(accum, 30.0f) });
+                        { nb.x, nb.z, glm::min(accum, 90.0f) });
                     accum = 0.0f;
                 }
             }
@@ -184,7 +190,7 @@ vector<render::terraingen::WaterSource> bakedEntrySources(
                 continue;
             }
             out.push_back(
-                { b.x, b.z, glm::min(nodeQ(b), 120.0f) });
+                { b.x, b.z, glm::min(nodeQ(b), 360.0f) });
         }
     }
     return out;
