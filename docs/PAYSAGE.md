@@ -3824,6 +3824,33 @@ l'hydrologie définitive).
   fenêtre. **Mesuré** : bake carte (0,0) seule BIT-EXACT au stash B0
   (9 shasums identiques) ; suite rapide 706/706.
 
+- **2026-10-15 — Brique B3 : le routage passe à 8 m + le plancher de
+  percée (bump v119).** `hydroTexel` défaut **8** (fenêtre 641²→
+  1281²) ; **plancher de percée** `pierceMinArea` 2 048 m² /
+  `pierceMinDepth` 2 m (une cuvette petite ET peu profonde reste un
+  plat rempli — sous `minLakeArea`, donc toute cuvette éligible lac
+  garde sa décision percer-ou-garder) ; `routeFlow` PARESSEUX dans le
+  pierce (seule une passe qui perce paye le routage) ; LOG_WARN si le
+  budget de passes s'épuise ; test neuf « hydrology routes finer than
+  the erosion grid » (ratio 2, médiane du pas ≤8,5 m, monotonie
+  in-rect, couture <1 m) ; garde MapBakerTest re-bornée 220→**85**
+  (mesuré 68 ×1,2). **Mesuré** (carte (0,0) seule, M1 voyage) :
+  phase B **7,2 s** (pierce 4,0 — **convergence en 12 passes, sortie
+  « 0 pierced »**, ~5 700 micro-cuvettes ignorées/passe ; classify
+  2,66 inchangé) ; mémoire OK. Jauges publiées (même script, bakes
+  solo v118 vs v119, 4 tuiles) : **ruban-enterré (s < sol_axe−2)
+  16,7 % → 11,25 %** (17,4→10,4 / 11,9→10,4 / 19,8→9,8 / 17,7→14,4)
+  soit **−33 %** ; enterrés H (axe > min empreinte+4) 7,4 %→4,9 % ;
+  points tout-haut absolus −30 % (part relative stable ~60 % au proxy
+  1-D) ; virages 2-4/tuile stables ; lèvres stables ; **lacs naturels
+  ~192 → 68** (le 8 m draine ce que le 16 m gardait — verdict visuel
+  dev attendu). La cible ≤8 % n'est PAS atteinte : le lissage
+  (simplify 14,4 m + 3 laplaciens) décolle les polylignes des sillons
+  que le routage 8 m vient de trouver — le reliquat appartient à
+  B3bis (coupe de selle) et à un banc « tolérance de simplify »
+  (interne, pas un contrat aval). Suites : rapide 706/706, slow
+  ciblés 8/8 + MapBakerTest vert.
+
 ---
 
 ## 8. Glossaire

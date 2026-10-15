@@ -72,7 +72,10 @@ struct TileBakeParams {
     // grid sees the counter-ridges that bury courses). 0 = follow
     // macroTexel. The course PUBLICATION step stays 8 m regardless
     // (kCourseTexel in Hydrology.cpp — the downstream contract).
-    f32 hydroTexel { 0.0f };
+    // Default 8: measured −61 % buried course points vs 16 m; 4 m
+    // gains less than it costs (x4 cells) and 2 m REGRESSES (the
+    // routing fragments into parallel rills in the micro-relief).
+    f32 hydroTexel { 8.0f };
     f32 hydroTexelResolved() const {
         return hydroTexel > 0.0f ? hydroTexel : macroTexel;
     }
@@ -288,7 +291,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 118;
+constexpr u32 kTileBakeVersion = 119;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

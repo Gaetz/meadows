@@ -168,6 +168,15 @@ struct HydrologyParams {
     // wall (the ramp follows the steepest descent to daylight).
     f32 lakeKeepDepth { 12.0f };
     f32 lakeDeepPierce { 60.0f };
+    // Pierce FLOOR: a basin both smaller and shallower than this is
+    // left as a filled flat (no notch) — the fine ground's own
+    // micro-relief (±1.1 m fbm, 4 m fine erosion) seeds thousands of
+    // sub-width bowls on a fine routing grid, and notching them all
+    // both exhausts the pass budget and engraves rills everywhere.
+    // Must stay under minLakeArea, so every lake-eligible basin still
+    // gets its pierce-or-keep decision.
+    f32 pierceMinArea { 2048.0f };
+    f32 pierceMinDepth { 2.0f };
     // Extent floor INSIDE the band: the storey-wall foot trenches are
     // 10-60 m deep but a few cells wide — depth alone kept 124 of
     // them on one map (measured). A destination lake is deep AND

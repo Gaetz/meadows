@@ -406,10 +406,24 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         // Accumulation on this pass's surface: the notch band is cut
         // at the LAW gabarit of the discharge crossing the gate — the
         // course that will run there (sizing it on the basin's cell
-        // count cut 60 m beds for 16 m rivers, measured dev).
-        const vector<f32> passArea =
-            routeFlow(spec, filled, ground, params.seaLevel).area;
-        const auto routeEnd = std::chrono::steady_clock::now();
+        // count cut 60 m beds for 16 m rivers, measured dev). LAZY:
+        // the route is the pass's dominant cost and only pierced
+        // gates read it — a quiet pass (and every floor-skipped
+        // basin) never pays it.
+        vector<f32> passArea;
+        f64 routeSec = 0.0;
+        const auto areaAt = [&](size_t i) -> f32 {
+            if (passArea.empty()) {
+                const auto t0 = std::chrono::steady_clock::now();
+                passArea =
+                    routeFlow(spec, filled, ground, params.seaLevel)
+                        .area;
+                routeSec += std::chrono::duration<f64>(
+                                std::chrono::steady_clock::now() - t0)
+                                .count();
+            }
+            return passArea[i];
+        };
         vector<u32> label(cells, 0);
         u32 nextLabel = 0;
         u32 pierced = 0;
@@ -456,11 +470,18 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 }
             }
             const f32 lockDepth = level - floor;
+            const f32 areaWorld = static_cast<f32>(component.size()) *
+                                  spec.texelSize * spec.texelSize;
+            // Pierce floor: a micro-bowl (small AND shallow) is left
+            // as a filled flat — extraction ignores it (minLakeArea)
+            // and the profile fill bridges it.
+            if (areaWorld < params.pierceMinArea &&
+                lockDepth < params.pierceMinDepth) {
+                continue;
+            }
             if (lockDepth >= params.lakeKeepDepth &&
                 lockDepth < params.lakeDeepPierce &&
-                static_cast<f32>(component.size()) * spec.texelSize *
-                        spec.texelSize >=
-                    params.lakeKeepArea) {
+                areaWorld >= params.lakeKeepArea) {
                 continue; // earns its lake (see the band in the hpp)
             }
             // The SPILL: the outside neighbour the flood pours into
@@ -505,7 +526,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             // smoothed polylines left it (half the fleuve points sat
             // 16+ m under the published walls, measured).
             const f32 bandHalf = glm::clamp(
-                riverLawHalfWidth(params.widthLaw(), passArea[gate]),
+                riverLawHalfWidth(params.widthLaw(), areaAt(gate)),
                 1.25f * 16.0f, 6.0f * 16.0f);
             const i32 bandR = static_cast<i32>(
                 std::ceil(bandHalf / spec.texelSize));
@@ -583,10 +604,14 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                  pass, nextLabel, pierced,
                  std::chrono::duration<f64>(floodEnd - passStart)
                      .count(),
-                 std::chrono::duration<f64>(routeEnd - floodEnd)
-                     .count());
+                 routeSec);
         if (pierced == 0) {
             break;
+        }
+        if (pass == 15) {
+            LOG_WARN("pierce: pass budget exhausted with {} basins "
+                     "still piercing — a stable un-drainable set",
+                     pierced);
         }
     }
 }

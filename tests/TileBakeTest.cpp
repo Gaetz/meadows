@@ -554,4 +554,86 @@ TEST_CASE("map slices agree in their shared band") {
     }
 }
 
+TEST_CASE("hydrology routes finer than the erosion grid") {
+    // The production shape: hydroTexel = macroTexel / 2. The routing
+    // window doubles its resolution, samples the same phase-A ground,
+    // and the PUBLISHED courses keep their 8 m step (kCourseTexel) —
+    // the downstream point-indexed contracts never see the ratio.
+    TileBakeParams params = testParams();
+    params.hydroTexel = params.macroTexel * 0.5f; // 4 m under 8 m
+    TileBakeParams mapParams = params;
+    mapParams.tileSize = params.tileSize * 2.0f;
+    mapParams.apron = 1088.0f;
+    const TileStage1 mapS1 = bakeTileStage1(mapParams, 0, 0);
+    const MapDrainage drainage =
+        computeMapDrainage(params, mapS1, 0, 0, 2);
+    // The drainage field stays on the EROSION grid by design.
+    CHECK(drainage.window.texelSize == params.macroTexel);
+    FinalizeResult groundA =
+        bakeSliceGround(params, 0, 0, mapS1, drainage);
+    FinalizeResult groundB =
+        bakeSliceGround(params, 1, 0, mapS1, drainage);
+    const vector<const FinalizeResult*> grounds { &groundA, &groundB };
+    const MapHydrology hydro =
+        extractMapHydrology(params, mapS1, 0, 0, 2, grounds);
+    CHECK(hydro.window.texelSize == params.hydroTexel);
+    REQUIRE(hydro.window.n > 2);
+    const f32 winMinX = hydro.window.originX;
+    const f32 winMaxX =
+        winMinX +
+        static_cast<f32>(hydro.window.n - 1) * hydro.window.texelSize;
+    vector<f32> steps;
+    u32 nonMonotone = 0;
+    for (const River& river : hydro.hydro.rivers) {
+        f32 prevSurface = 1.0e18f;
+        for (size_t i = 0; i < river.points.size(); ++i) {
+            const RiverPoint& pt = river.points[i];
+            CHECK(pt.x >= winMinX);
+            CHECK(pt.x <= winMaxX);
+            // Monotone inside the map rect (the seam blend past it is
+            // allowed to ride the routed surface).
+            if (pt.x >= 0.0f && pt.x <= mapParams.tileSize &&
+                pt.z >= 0.0f && pt.z <= mapParams.tileSize) {
+                if (pt.surface > prevSurface + 1.0e-3f) {
+                    ++nonMonotone;
+                }
+                prevSurface = pt.surface;
+            } else {
+                prevSurface = 1.0e18f;
+            }
+            if (i > 0) {
+                steps.push_back(
+                    std::hypot(pt.x - river.points[i - 1].x,
+                               pt.z - river.points[i - 1].z));
+            }
+        }
+    }
+    CHECK(nonMonotone == 0);
+    if (!steps.empty()) {
+        // The publication step is the 8 m contract, not the window
+        // texel (the corridor retrace may stretch a few locally).
+        std::sort(steps.begin(), steps.end());
+        CHECK(steps[steps.size() / 2] <= 8.5f); // median
+        CHECK(steps.back() < 24.0f);
+    }
+
+    const TileBakeResult a = bakeSliceWater(params, 0, 0, mapS1, hydro,
+                                            std::move(groundA));
+    const TileBakeResult b = bakeSliceWater(params, 1, 0, mapS1, hydro,
+                                            std::move(groundB));
+    REQUIRE(a.region.width > 2);
+    REQUIRE(b.region.width > 2);
+    const f32 border = params.tileSize;
+    f32 maxDiverge = 0.0f;
+    for (f32 z = 8.0f; z < params.tileSize; z += 8.0f) {
+        for (f32 x = border - params.overlapMargin + 2.0f;
+             x < border + params.overlapMargin - 2.0f; x += 4.0f) {
+            const f32 ha = render::terrain::baseHeight(a.region, x, z);
+            const f32 hb = render::terrain::baseHeight(b.region, x, z);
+            maxDiverge = std::max(maxDiverge, std::abs(ha - hb));
+        }
+    }
+    CHECK(maxDiverge < 1.0f);
+}
+
 TEST_SUITE_END();
