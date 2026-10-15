@@ -8094,17 +8094,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             forms.get(activeWorldspace))) {
         buriedBelowY = space->buriedBelowY;
     }
-    // Overview flight thins the fog AT SUBMIT only: the tuning (and
-    // the mods/render-tuning.toml it saves to) never sees it.
-    render::AtmosphereParams frameAtmos = atmos;
-    if (overviewView) {
-        frameAtmos.fogDensity *= 0.08f;
-        frameAtmos.fogStart =
-            glm::max(frameAtmos.fogStart, 2500.0f);
-    }
+    // Overview flight no longer thins the fog: the optical-tail
+    // compression (applyFog) keeps the horizon readable from altitude
+    // with the real weather — the map reads under its true haze.
     const render::RenderView view {
         .camera = flyCamera.camera,
-        .atmos = frameAtmos,
+        .atmos = atmos,
         .interiorMode = interiorMode,
         .timeSeconds = timeSeconds,
         .windTime = windTime,

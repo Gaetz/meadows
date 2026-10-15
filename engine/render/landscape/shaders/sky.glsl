@@ -61,7 +61,14 @@ vec3 applyFog(vec3 color, vec3 worldPos, float cloudVis) {
     // march owns the near fog (uFogSunInfo.z = its reach, composer-set),
     // the analytic term is only the TAIL beyond it.
     float fogStart = max(uFogInfo.w, uFogSunInfo.z);
-    float fogDist = max(dist - fogStart, 0.0);
+    // Optical-tail compression: past the knee (kept above the froxel
+    // reach, so nothing under 2.5 km changes) each meter only counts
+    // for uFogTailInfo.y of optical depth — the weather's near haze
+    // keeps its density while the horizon stays readable kilometres
+    // further (the earned-by-climbing BotW view).
+    float dEff = min(dist, uFogTailInfo.x) +
+                 max(dist - uFogTailInfo.x, 0.0) * uFogTailInfo.y;
+    float fogDist = max(dEff - fogStart, 0.0);
     float amount = 1.0 - exp(-fogDist * density);
     // HORIZON CLOSURE (uFogLayerInfo.y = the terrain streaming edge, m):
     // whatever the weather's fog, geometry is FULLY dissolved into the

@@ -1192,6 +1192,21 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   band actually renders now, mist +0.5), the horizon closes in fog
   instead of clipping. Visual z-fight check at the ring seam and the
   coast = dev tour. Fast suite 706/706.
+- **2026-10-15 — H2: fog optical-tail compression, Overview override
+  gone.** `applyFog` counts each meter past a 2 500 m knee as only
+  `fogHorizonTail` (default 0.30) of optical depth — new appended UBO
+  lane `fogTailInfo` (2288→2304, mirrored in common.glsl; the
+  "unused" lanes scouted first were all LIES: fogLayerInfo.w carries
+  treeFadeEnd, terrainInfo.w carries reflectionsActive). The knee
+  sits above volumetricReach's cap (2 400), so froxels, light
+  clusters and the weather TOMLs are untouched by construction; below
+  2.4 km nothing changes. Tunable: LandscapeForms `fogHorizonTail` +
+  RenderTuningIo lane + "Fog horizon tail" slider (Fog & clouds).
+  The Overview ×0.08/fogStart-2500 submit override is REMOVED — the
+  tail keeps altitude views readable under the TRUE weather.
+  **Measured** (spawn boot): frame 58.18 ms ≈ baseline (free, one
+  madd), zero validation errors on the grown UBO. Weather pass
+  (Clear/mist/rain/storm) = dev tour. Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

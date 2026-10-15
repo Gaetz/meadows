@@ -2298,6 +2298,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .mistActive = tuning.mist && mistMap.ready(),
         .mistCoverageSoftness = tuning.mistCoverageSoftness,
         .mistReach = tuning.mistReach,
+        .fogHorizonTail = tuning.fogHorizonTail,
         .mistShapeInfo = tuning.mistShape,
         .mistMapInfo = mistMap.info(),
         .mistDetailInfo = { noiseVolume.ready() && tuning.mistNoiseTex ? 1.0f

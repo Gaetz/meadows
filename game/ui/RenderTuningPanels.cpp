@@ -714,6 +714,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Fog low-altitude boost", &atmos.fogLowBoost,
                            0.0f, 5.0f, "%.1f");
+        ImGui::SliderFloat("Fog horizon tail", &r.tuning.fogHorizonTail,
+                           0.05f, 1.0f, "%.2f");
         ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f,
                            "%.0f");
         ImGui::SliderFloat("Fog sun scatter", &atmos.fogSunScatter, 0.0f,

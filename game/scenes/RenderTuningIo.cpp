@@ -157,6 +157,7 @@ constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, f32> kWorldLanesF32
     { &RenderTuning::autoExposureMax, &data::LandscapeTuningForm::autoExposureMax },
     { &RenderTuning::interiorDaylightWeight, &data::LandscapeTuningForm::interiorDaylightWeight },
     { &RenderTuning::interiorDustDensity, &data::LandscapeTuningForm::interiorDustDensity },
+    { &RenderTuning::fogHorizonTail, &data::LandscapeTuningForm::fogHorizonTail },
     { &RenderTuning::mistReach, &data::LandscapeTuningForm::mistReach },
     { &RenderTuning::mistCoverageSoftness, &data::LandscapeTuningForm::mistCoverageSoftness },
     { &RenderTuning::mistSunBoost, &data::LandscapeTuningForm::mistSunBoost },

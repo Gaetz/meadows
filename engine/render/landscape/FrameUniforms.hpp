@@ -245,6 +245,12 @@ struct FrameUniforms {
     // weather's windDirectionDeg), z = gust strength lane (reserved),
     // w free. The strength and clock stay in windInfo (append-only).
     Vec4 windDirInfo { 1.0f, 0.0f, 0.0f, 0.0f };
+    // Fog optical-tail compression (applyFog): x = knee distance (m —
+    // kept above the froxel reach cap so the volumetric band and the
+    // weather TOMLs never see it), y = tail factor (fraction of each
+    // meter past the knee that still counts as optical depth; 1 =
+    // legacy), zw free. Opens the horizon without thinning near haze.
+    Vec4 fogTailInfo { 2500.0f, 0.30f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -333,7 +339,8 @@ static_assert(offsetof(FrameUniforms, fireEmberInfo) == 2176);
 static_assert(offsetof(FrameUniforms, fireCharInfo) == 2224);
 static_assert(offsetof(FrameUniforms, fireFlameInfo) == 2240);
 static_assert(offsetof(FrameUniforms, windDirInfo) == 2272);
-static_assert(sizeof(FrameUniforms) == 2288,
+static_assert(offsetof(FrameUniforms, fogTailInfo) == 2288);
+static_assert(sizeof(FrameUniforms) == 2304,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

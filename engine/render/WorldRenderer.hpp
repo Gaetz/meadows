@@ -305,6 +305,9 @@ public:
         // weather-owned and ride AtmosphereParams instead.
         f32 mistCoverageSoftness { 0.6f };
         f32 mistReach { 1200.0f };
+        // Fog optical-tail factor past the 2.5 km knee (applyFog):
+        // 1 = legacy exponential, lower opens the horizon.
+        f32 fogHorizonTail { 0.30f };
         Vec4 mistShape { 0.0035f, 0.02f, 0.2f, 49.0f };
         // Volumetric sky clouds (§8): A/B vs the 2D dome layer + the
         // shape and light knobs (panel "Sky clouds"; thickness/sigma/

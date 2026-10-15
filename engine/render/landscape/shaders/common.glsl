@@ -183,4 +183,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // drift (metres at strength 1) — what the clouds and the mist ride,
     // so a turning wind bends their path instead of jumping it.
     vec4 uWindDirInfo;
+    // Fog optical-tail compression (applyFog): x = knee (m, above the
+    // froxel reach cap), y = tail factor (1 = legacy), zw free.
+    vec4 uFogTailInfo;
 };

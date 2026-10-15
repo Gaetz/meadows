@@ -207,6 +207,9 @@ struct LandscapeTuningForm : Form {
     bool grassCoarseTint { true };
     // Ground mist structure (mist.frag; density/coverage are per-weather
     // — WeatherForm). Scales in 1/m, lift/reach in meters.
+    // applyFog optical-tail factor past the 2.5 km knee (1 = legacy
+    // exponential; lower opens the horizon without thinning near haze).
+    f32 fogHorizonTail { 0.30f };
     bool mistEnabled { true };
     f32 mistReach { 1200.0f };
     f32 mistLift { 49.0f };
@@ -407,6 +410,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(grassMaterialCutoff)
         REFLECT_FIELD(grassCoarseTint)
         REFLECT_FIELD(mistEnabled)
+        REFLECT_FIELD(fogHorizonTail)
         REFLECT_FIELD(mistReach)
         REFLECT_FIELD(mistLift)
         REFLECT_FIELD(mistCoverageSoftness)
