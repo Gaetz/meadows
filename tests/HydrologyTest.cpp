@@ -379,7 +379,7 @@ TEST_CASE("lake piercing: the shallow bowl drains, the big tarn stays") {
     // extent floor is scaled to the bench tarn (the tilted plain
     // drowns only its downhill half).
     params.lakeKeepDepth = 5.0f;
-    params.lakeKeepCellsMin = 100;
+    params.lakeKeepArea = 100.0f * 16.0f * 16.0f;
     const auto bowl = [&](vector<f32>& g, f32 cx, f32 cz, f32 radius,
                           f32 depth) {
         for (u32 row = 0; row < spec.n; ++row) {

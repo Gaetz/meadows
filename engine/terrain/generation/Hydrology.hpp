@@ -146,8 +146,10 @@ struct HydrologyParams {
     f32 minSlope { 1.0e-4f };
     // A depression counts as a lake once it is deep and wide enough —
     // below that it is just a puddle the carve pass flattens away.
+    // World units (m²), so the hydrology window texel is a free knob:
+    // written as the legacy cell count times the 16 m cell area.
     f32 minLakeDepth { 0.6f };
-    u32 minLakeCells { 12 };
+    f32 minLakeArea { 12.0f * 16.0f * 16.0f };
     // The outlet piercing (passe EAU E5, l'« enquête eau ») : before
     // extraction, every depression that does NOT earn its lake (big
     // enough OR deep enough) is DRAINED through a notch carved at its
@@ -169,8 +171,8 @@ struct HydrologyParams {
     // Extent floor INSIDE the band: the storey-wall foot trenches are
     // 10-60 m deep but a few cells wide — depth alone kept 124 of
     // them on one map (measured). A destination lake is deep AND
-    // broad; ~10 ha at the 16 m texel.
-    u32 lakeKeepCellsMin { 400 };
+    // broad; ~10 ha, in m² (texel-free).
+    f32 lakeKeepArea { 400.0f * 16.0f * 16.0f };
     // Mouth flare (estuaries): a course that reaches the sea opens
     // over its last metres — half-width ramps to x mouthFlare. The
     // ribbon and the bed carve both read hw, so the bed follows.

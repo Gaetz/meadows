@@ -44,7 +44,15 @@ namespace {
 void smoothRiver(River& river, const GridSpec& spec,
                  const vector<f32>& filled,
                  const HydrologyParams& params) {
-    const f32 texel = spec.texelSize;
+    // Course PUBLICATION scale, deliberately NOT the window texel: the
+    // published point spacing (kCourseTexel/2 = 8 m) is a downstream
+    // contract (the point-indexed windows of the fine re-leveling, the
+    // sim's pinRivers look-ahead, the .twb size), and the simplify/
+    // spline tolerances must follow it or a finer routing grid keeps
+    // its grid staircase in the polylines. Not a knob.
+    constexpr f32 kCourseTexel = 16.0f;
+    const f32 texel = kCourseTexel;
+    (void)spec;
     if (river.points.size() < 3) {
         return;
     }
@@ -340,7 +348,9 @@ vector<Lake> extractLakes(const GridSpec& spec, const vector<f32>& height,
                 }
             }
         }
-        if (lake.cells >= params.minLakeCells) {
+        if (static_cast<f32>(lake.cells) * spec.texelSize *
+                spec.texelSize >=
+            params.minLakeArea) {
             // Bbox-local basin mask (the render/query footprint).
             lake.maskTexel = spec.texelSize;
             lake.maskWidth =
@@ -448,7 +458,9 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             const f32 lockDepth = level - floor;
             if (lockDepth >= params.lakeKeepDepth &&
                 lockDepth < params.lakeDeepPierce &&
-                component.size() >= params.lakeKeepCellsMin) {
+                static_cast<f32>(component.size()) * spec.texelSize *
+                        spec.texelSize >=
+                    params.lakeKeepArea) {
                 continue; // earns its lake (see the band in the hpp)
             }
             // The SPILL: the outside neighbour the flood pours into
@@ -494,7 +506,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             // 16+ m under the published walls, measured).
             const f32 bandHalf = glm::clamp(
                 riverLawHalfWidth(params.widthLaw(), passArea[gate]),
-                1.25f * spec.texelSize, 6.0f * spec.texelSize);
+                1.25f * 16.0f, 6.0f * 16.0f);
             const i32 bandR = static_cast<i32>(
                 std::ceil(bandHalf / spec.texelSize));
             const auto lowerBand = [&](size_t center, f32 level0) {
@@ -529,7 +541,10 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             };
             lowerBand(gate, ramp);
             size_t cur = pour;
-            for (u32 step = 0; step < 192; ++step) {
+            // ~3 km of downstream ramp in world length, texel-free.
+            const u32 maxRampSteps = static_cast<u32>(
+                std::lround(3072.0f / spec.texelSize));
+            for (u32 step = 0; step < maxRampSteps; ++step) {
                 ramp -= glm::max(params.riverMinGradient, 1.0e-3f) *
                         spec.texelSize;
                 if (ground[cur] <= ramp) {
@@ -646,6 +661,11 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         }
     }
     vector<u8> channel(cells, 0);
+    // Raw-trace floor in WORLD length (the trace drops one point per
+    // cell): the shortest course worth keeping is ~96 m whatever the
+    // window texel.
+    const u32 minRawPoints = glm::max(
+        3u, static_cast<u32>(std::lround(96.0f / spec.texelSize)));
     // Who claimed each channel cell (river index + 1): the junction
     // tests must ignore the CURRENT trace's own cells (the predecessor
     // is always an adjacent claimed cell).
@@ -718,10 +738,14 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         {
             const i32 hx = static_cast<i32>(head % spec.n);
             const i32 hz = static_cast<i32>(head / spec.n);
-            // Radius 2: the fill jitter (E8) can start the outlet one
-            // cell off the shore mask — still that lake's river.
-            for (i32 dz = -2; dz <= 2 && !river.lakeFed; ++dz) {
-                for (i32 dx = -2; dx <= 2 && !river.lakeFed; ++dx) {
+            // ~32 m reach: the fill jitter (E8) can start the outlet
+            // off the shore mask — still that lake's river.
+            const i32 rLake = glm::max(
+                1, static_cast<i32>(
+                       std::lround(32.0f / spec.texelSize)));
+            for (i32 dz = -rLake; dz <= rLake && !river.lakeFed; ++dz) {
+                for (i32 dx = -rLake; dx <= rLake && !river.lakeFed;
+                     ++dx) {
                     const i32 px = hx + dx;
                     const i32 pz = hz + dz;
                     if (px >= 0 && pz >= 0 && px < n && pz < n &&
@@ -752,8 +776,13 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             const i32 cz = static_cast<i32>(i / spec.n);
             u32 neighbourJunction = 0;
             bool hasNeighbour = false;
-            for (i32 dz = -1; dz <= 1 && !hasNeighbour; ++dz) {
-                for (i32 dx = -1; dx <= 1 && !hasNeighbour; ++dx) {
+            // ~16 m junction reach whatever the texel: two parallel
+            // courses one LEGACY cell apart must still merge.
+            const i32 rJ = glm::max(
+                1, static_cast<i32>(
+                       std::lround(16.0f / spec.texelSize)));
+            for (i32 dz = -rJ; dz <= rJ && !hasNeighbour; ++dz) {
+                for (i32 dx = -rJ; dx <= rJ && !hasNeighbour; ++dx) {
                     if (dx == 0 && dz == 0) {
                         continue;
                     }
@@ -787,7 +816,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             }
             i = r;
         }
-        if (river.points.size() >= params.minRiverPoints) {
+        if (river.points.size() >= minRawPoints) {
             raw.push_back(std::move(river));
         }
     }
@@ -796,7 +825,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     // Phase 3 — smooth every survivor.
     vector<River> smoothed;
     for (River& river : raw) {
-        if (river.points.size() < params.minRiverPoints) {
+        if (river.points.size() < minRawPoints) {
             continue;
         }
         smoothRiver(river, spec, out.filled, params);
@@ -935,7 +964,10 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                     gMax = glm::max(gMax, g);
                 }
             }
-            if (wet >= 4 && gMax - gMin <= 5.0f) {
+            if (static_cast<f32>(wet) * pond.maskTexel *
+                        pond.maskTexel >=
+                    1024.0f &&
+                gMax - gMin <= 5.0f) {
                 ponds.push_back(std::move(pond));
             }
         }

@@ -3793,6 +3793,25 @@ l'hydrologie définitive).
   inchangées (brique H) : enterrés 17,4 %, tout-haut 96 %, virages
   2/4 076, marches 9.
 
+- **2026-10-15 — Brique B1 : les seuils de l'hydrologie passent en
+  unités monde (bit-exact à 16 m).** `Hydrology.{hpp,cpp}` devient
+  invariant au texel de fenêtre : `minLakeArea` 3 072 m² (ex 12
+  cellules), `lakeKeepArea` ~10 ha (ex 400), trace brute ≥ ~96 m,
+  rayon lakeFed ~32 m, rayon de jonction ~16 m, bande de percée
+  20-96 m (ex 1,25-6·texel), rampe ~3 km (ex 192 pas), gate d'étang
+  ≥ 1 024 m² (ex 4 cellules), `borderMouth`/`lakeReachesPoint` 16 m.
+  `smoothRiver` figé sur **`kCourseTexel` = 16** : simplify 14,4 m,
+  spline 8 m, **pas de publication 8 m** — le contrat aval (fenêtres
+  en points du re-leveling, pinRivers i+7 ≈ 45 m, taille .twb) ne
+  dépend plus du texel de routage. Pupitre : `hydroMinLakeArea`/
+  `hydroLakeKeepArea` (aucun TOML ne patchait les anciens noms ; le
+  hash du pupitre change → caches invalidés, mêmes contenus).
+  Toutes les constantes écrites en EXPRESSIONS du texel 16 (jamais
+  un littéral recalculé). **Mesuré** : bake carte (0,0) seule — les
+  9 fichiers publiés (.twb/.trg/overview) BIT-EXACTS au stash B0
+  (shasum) ; suite rapide 706/706, fixtures 8 m (HydrologyTest,
+  TileBakeTest) vertes sans retouche d'attente.
+
 ---
 
 ## 8. Glossaire

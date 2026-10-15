@@ -1556,11 +1556,15 @@ MapHydrology extractMapHydrology(
             f32 bndry = -1.0e18f;
             const bool seaMouth =
                 tail.surface <= hydrology.seaLevel + 0.5f;
+            // Border-mouth detection band in world metres (a smoothed
+            // mouth can sit a legacy cell off the window edge whatever
+            // the routing texel).
+            constexpr f32 kBorderBand = 16.0f;
             const bool borderMouth =
-                tail.x <= out.window.originX + winTexel ||
-                tail.x >= winMaxX - winTexel ||
-                tail.z <= out.window.originZ + winTexel ||
-                tail.z >= winMaxZ - winTexel;
+                tail.x <= out.window.originX + kBorderBand ||
+                tail.x >= winMaxX - kBorderBand ||
+                tail.z <= out.window.originZ + kBorderBand ||
+                tail.z >= winMaxZ - kBorderBand;
             if (links[r].receiver >= 0) {
                 bndry = rivers[static_cast<size_t>(links[r].receiver)]
                             .points[links[r].recvIdx]
@@ -2681,13 +2685,13 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
             lake.cells == 0) {
             continue;
         }
-        // ONE mask texel of reach: the original head-to-lake
-        // adjacency was 8 m (the hydro grid) — a receded lake whose
-        // nearest covered cell sits farther is a COINCIDENCE, not a
-        // supply (measured dev at the spawn col: a pocket of the
-        // receded lake 32 m from the head, walled off by its own
-        // rim, kept the orphan fleuve alive at 2 texels of reach).
-        const f32 reach = lake.maskTexel;
+        // 16 m of reach, in world metres (not mask texels, which
+        // follow the routing grid): a receded lake whose nearest
+        // covered cell sits farther is a COINCIDENCE, not a supply
+        // (measured dev at the spawn col: a pocket of the receded
+        // lake 32 m from the head, walled off by its own rim, kept
+        // the orphan fleuve alive at 32 m of reach).
+        constexpr f32 reach = 16.0f;
         if (x < lake.minX - reach || x > lake.maxX + reach ||
             z < lake.minZ - reach || z > lake.maxZ + reach) {
             continue;

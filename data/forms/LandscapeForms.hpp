@@ -637,13 +637,13 @@ struct TerrainGenTuningForm : Form {
     f32 hydroWidthExponent { 0.5f };
     f32 hydroFleuveWidthScale { 1.6f };
     f32 hydroMinLakeDepth { 0.6f };
-    u32 hydroMinLakeCells { 12 };
+    f32 hydroMinLakeArea { 12.0f * 16.0f * 16.0f }; // m², texel-free
     bool hydroLakePiercing { true }; // drain the undeserving basins
     f32 hydroMouthFlare { 1.8f };
     f32 hydroMouthFlareLength { 300.0f };
     f32 hydroLakeKeepDepth { 12.0f };
     f32 hydroLakeDeepPierce { 60.0f };
-    u32 hydroLakeKeepCellsMin { 400 };
+    f32 hydroLakeKeepArea { 400.0f * 16.0f * 16.0f }; // m², ~10 ha
     f32 networkLakeDepth { 2.0f };
     f32 networkRouteDither { 1.2f }; // slopes meander, no D8 grid
     f32 hydroGlacierTemp { 0.12f };
@@ -798,13 +798,13 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(hydroWidthExponent)
         REFLECT_FIELD(hydroFleuveWidthScale)
         REFLECT_FIELD(hydroMinLakeDepth)
-        REFLECT_FIELD(hydroMinLakeCells)
+        REFLECT_FIELD(hydroMinLakeArea)
         REFLECT_FIELD(hydroLakePiercing)
         REFLECT_FIELD(hydroMouthFlare)
         REFLECT_FIELD(hydroMouthFlareLength)
         REFLECT_FIELD(hydroLakeKeepDepth)
         REFLECT_FIELD(hydroLakeDeepPierce)
-        REFLECT_FIELD(hydroLakeKeepCellsMin)
+        REFLECT_FIELD(hydroLakeKeepArea)
         REFLECT_FIELD(networkLakeDepth)
         REFLECT_FIELD(networkRouteDither)
         REFLECT_FIELD(hydroGlacierTemp)
