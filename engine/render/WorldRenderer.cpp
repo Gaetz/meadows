@@ -156,7 +156,18 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
         terrainLightMap.create(device, jobs);
         terrainShadeMap.create(device, jobs);
         fireScorch.create(device);
-        farTerrain.create(device, *shaders, jobs);
+        farTerrain.create(device, *shaders, jobs, {});
+        // The HORIZON ring (chantier HORIZON, docs/RENDERING.md
+        // §6.0c): same machinery at world scale — no impostors (the
+        // canopy raise is the trees out there), sampled off the L3
+        // pyramid level, ridden 16 m under the inner ring.
+        farHorizon.create(device, *shaders, jobs,
+                          { .span = 57600.0f,
+                            .gridN = 256,
+                            .treeFar = 0.0f,
+                            .extraSink = 16.0f,
+                            .minTexel = 256.0f,
+                            .probeName = "farHorizon" });
         if (cfg.postFx) {
             mistMap.create(device, jobs);
             noiseVolume.create(device, *shaders); // no-op without caps
@@ -391,6 +402,7 @@ void WorldRenderer::destroy(rhi::Device& device) {
     terrainShadeMap.destroy(device);
     fireScorch.destroy(device);
     farTerrain.destroy(device);
+    farHorizon.destroy(device);
     mistMap.destroy(device);
     noiseVolume.destroy(device);
     radianceCascades.destroy(device);
@@ -1494,8 +1506,13 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
             rhi::Device* subDevice =
                 subProbe != nullptr ? &frame.device : nullptr;
             if (cfg.terrain && tuning.farTerrain) {
-                // Far silhouettes FIRST: everything nearer overdraws
-                // them by depth; they extend the world past the ring.
+                // Far silhouettes FIRST, horizon ring first of all:
+                // everything nearer overdraws them by depth; they
+                // extend the world past the ring.
+                if (tuning.farHorizon) {
+                    farHorizon.draw(frame.cmd, frameBindGroup,
+                                    sky.cloudMapBindGroup());
+                }
                 farTerrain.draw(frame.cmd, frameBindGroup,
                                 sky.cloudMapBindGroup());
             }
@@ -1862,6 +1879,20 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                                 terrain.layerAlbedoBase(3),
                                 terrain.layerAlbedoBase(4) },
                               heightFieldSnapshot());
+            if (tuning.farHorizon) {
+                farHorizon.update(frame.device, terrain.params,
+                                  view.camera.position,
+                                  cfg.vegetation
+                                      ? vegetation.treeSilhouette()
+                                      : render::VegetationSystem::
+                                            TreeSilhouette {},
+                                  { terrain.layerAlbedoBase(0),
+                                    terrain.layerAlbedoBase(1),
+                                    terrain.layerAlbedoBase(2),
+                                    terrain.layerAlbedoBase(3),
+                                    terrain.layerAlbedoBase(4) },
+                                  heightFieldSnapshot());
+            }
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
@@ -1947,6 +1978,7 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     if (cfg.terrain) {
         terrain.refreshPipeline(frame.device, *shaders);
         farTerrain.refreshPipeline(frame.device, *shaders);
+        farHorizon.refreshPipeline(frame.device, *shaders);
     }
     if (cfg.grass) {
         grass.refreshPipeline(frame.device, *shaders);
@@ -2299,6 +2331,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .mistCoverageSoftness = tuning.mistCoverageSoftness,
         .mistReach = tuning.mistReach,
         .fogHorizonTail = tuning.fogHorizonTail,
+        // The sea reaches the farthest ring (phantom-land guard).
+        .seaQuadHalfSpan =
+            tuning.farTerrain && tuning.farHorizon ? 28800.0f : 9000.0f,
         .mistShapeInfo = tuning.mistShape,
         .mistMapInfo = mistMap.info(),
         .mistDetailInfo = { noiseVolume.ready() && tuning.mistNoiseTex ? 1.0f

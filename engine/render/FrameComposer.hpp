@@ -139,6 +139,7 @@ struct FrameComposerInputs {
     f32 mistCoverageSoftness { 0.6f };
     f32 mistReach { 1200.0f };
     f32 fogHorizonTail { 0.30f }; // applyFog tail past the 2.5 km knee
+    f32 seaQuadHalfSpan { 9000.0f }; // water sheet reach (m)
     Vec4 mistShapeInfo { 0.0035f, 0.02f, 0.2f, 49.0f };
     Vec4 mistMapInfo {};    // from MistMap::info()
     // x = NoiseVolume active, y = steps, z = dropout (m), w = sun gain.

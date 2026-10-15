@@ -17,23 +17,34 @@ namespace {
 constexpr const char* kFarTerrainShader = "far_terrain";
 constexpr const char* kFarTreeShader = "far_tree";
 constexpr Vec3 kForestTint { 0.14f, 0.23f, 0.11f };
+// Lakes and rivers past the far-water sheets' 9 km collection are
+// PAINTED into the vertex colors — a sheet at those distances is under
+// the pixel, the tint is what reads.
+constexpr Vec3 kFarWaterTint { 0.10f, 0.16f, 0.18f };
 } // namespace
 
 void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
-                        core::JobSystem& jobSystem) {
-    mailbox.create(jobSystem, "farTerrain");
-    shaders.load(kFarTerrainShader, { { "FrameUbo", 0 } },
-                 { { "uCloudMap", 2 } });
-    shaders.load(kFarTreeShader, { { "FrameUbo", 0 } },
-                 { { "uCloudMap", 2 } });
+                        core::JobSystem& jobSystem, const Config& cfg) {
+    config = cfg;
+    mailbox.create(jobSystem, config.probeName);
+    // Two rings share the shaders — a second load() would DESTROY the
+    // first ring's modules under its live pipeline (hot-reload
+    // semantics): load once, get thereafter.
+    if (shaders.get(kFarTerrainShader).id == 0) {
+        shaders.load(kFarTerrainShader, { { "FrameUbo", 0 } },
+                     { { "uCloudMap", 2 } });
+        shaders.load(kFarTreeShader, { { "FrameUbo", 0 } },
+                     { { "uCloudMap", 2 } });
+    }
     // The grid topology never changes — one static index buffer.
+    const u32 gridN = config.gridN;
     vector<u32> indices;
-    indices.reserve(static_cast<size_t>(kGridN) * kGridN * 6);
-    for (u32 row = 0; row < kGridN; ++row) {
-        for (u32 col = 0; col < kGridN; ++col) {
-            const u32 a = row * (kGridN + 1) + col;
+    indices.reserve(static_cast<size_t>(gridN) * gridN * 6);
+    for (u32 row = 0; row < gridN; ++row) {
+        for (u32 col = 0; col < gridN; ++col) {
+            const u32 a = row * (gridN + 1) + col;
             const u32 b = a + 1;
-            const u32 c = a + (kGridN + 1);
+            const u32 c = a + (gridN + 1);
             const u32 d = c + 1;
             indices.insert(indices.end(), { a, c, b, b, c, d });
         }
@@ -49,10 +60,13 @@ void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
 void FarTerrain::destroy(rhi::Device& device) {
     (void)device;
     // Orphan in-flight bakes: the mailbox generation must keep moving
-    // ACROSS the reset (a fresh mailbox would restart it at zero).
+    // ACROSS the reset (a fresh mailbox would restart it at zero). The
+    // config survives too — it is identity, not state.
     BakeMailbox<Baked> saved = std::move(mailbox);
     saved.reset();
+    const Config savedConfig = config;
     *this = FarTerrain {};
+    config = savedConfig;
     mailbox = std::move(saved);
 }
 
@@ -125,7 +139,8 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
     const bool contentSettled =
         core::secondsSince(contentQuietSince) > 1.0;
     const bool stale = !mailbox.ready() ||
-                       glm::distance(camXz, center) > kSpan * 0.08f ||
+                       glm::distance(camXz, center) >
+                           config.span * 0.08f ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel ||
                        (bakedContentStamp != params.contentStamp &&
@@ -135,17 +150,19 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
     if (!stale) {
         return;
     }
-    constexpr f32 kCell = kSpan / static_cast<f32>(kGridN);
+    const f32 kCell = config.span / static_cast<f32>(config.gridN);
     const Vec2 want = glm::floor(camXz / kCell) * kCell;
     center = want; // draw follows the request; the bake lands async
     bakedTreeHeight = trees.height;
     bakedFromGrid = impostorsFromGrid;
     mailbox.kick([params, want, trees, layerAlbedos,
-                  fromGrid = impostorsFromGrid,
+                  cfg = config, fromGrid = impostorsFromGrid,
                   field = std::move(field)](
                      Baked& baked, const std::atomic<bool>& stop) {
-        constexpr u32 kVertsN = kGridN + 1;
-        constexpr f32 cell = kSpan / static_cast<f32>(kGridN);
+        const u32 kGridN = cfg.gridN;
+        const f32 kSpan = cfg.span;
+        const u32 kVertsN = kGridN + 1;
+        const f32 cell = kSpan / static_cast<f32>(kGridN);
         const f32 originX = want.x - kSpan * 0.5f;
         const f32 originZ = want.y - kSpan * 0.5f;
         baked.seed = params.seed;
@@ -160,7 +177,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         // canopy raise) in uv.x; the shader restores it beyond the
         // streaming ring, where the far mesh is the only geometry and
         // the crests must keep their true silhouettes.
-        constexpr u32 kHalfN = kGridN * 2 + 1;
+        const u32 kHalfN = kGridN * 2 + 1;
         vector<f32> halfHeights(static_cast<size_t>(kHalfN) * kHalfN);
         for (u32 row = 0; row < kHalfN; ++row) {
             if (stop.load(std::memory_order_relaxed)) {
@@ -171,12 +188,12 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                     originX + static_cast<f32>(col) * cell * 0.5f;
                 const f32 z =
                     originZ + static_cast<f32>(row) * cell * 0.5f;
-                // Shared grid at a >= 16 m footprint (L1 where it
-                // covers, L2 across the 18 km); exact function without
-                // a snapshot. The impostor pass reads this half-grid
+                // Shared pyramid at the ring's own footprint (inner:
+                // L1/L2, horizon ring: L3); exact function without a
+                // snapshot. The impostor pass reads this half-grid
                 // either way.
                 halfHeights[static_cast<size_t>(row) * kHalfN + col] =
-                    field ? field->heightCoarse(x, z, 16.0f)
+                    field ? field->heightCoarse(x, z, cfg.minTexel)
                           : terrain::height(params, x, z);
             }
         }
@@ -231,11 +248,13 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // over the last band below the treeline.
                 forest *=
                     1.0f - glm::smoothstep(0.82f * line, line, trueH);
-                if (trueH < params.seaLevel + 3.0f || slope > 0.3f ||
+                const bool underWater =
+                    trueH < params.seaLevel + 3.0f ||
                     terrain::underLocalWater(params, x, z, trueH,
                                              1.0f) ||
                     terrain::underLocalWater(params, x, z,
-                                             trueH - 16.0f, 1.0f)) {
+                                             trueH - 16.0f, 1.0f);
+                if (underWater || slope > 0.3f) {
                     forest = 0.0f; // no canopy raise/tint on water
                 }
                 // The REAL weight rule paints the far vertex with the
@@ -254,11 +273,19 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                               layerAlbedos[4] * mw.cliff) /
                              total;
                 color = glm::mix(color, kForestTint, forest * 0.85f);
+                // Water past the far-water sheets' collection reads as
+                // vertex tint (under the sheets where they exist — the
+                // mesh sits below everything).
+                if (underWater && trueH >= params.seaLevel + 3.0f) {
+                    color = glm::mix(color, kFarWaterTint, 0.85f);
+                }
                 // Canopy mass = ~60% of the measured tree height (the
                 // impostor crowns emerge above it) — applied by the
                 // shader beyond the ring, with the true-height delta.
+                // extraSink lowers the ring for good (never restored):
+                // its z-separation from the ring above.
                 baked.vertices[static_cast<size_t>(row) * kVertsN + col] =
-                    MeshVertex { { x, h, z },
+                    MeshVertex { { x, h - cfg.extraSink, z },
                                  n,
                                  { (trueH - h) +
                                        forest * (trees.height * 0.6f),
@@ -268,7 +295,13 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         }
         // Tree impostors: the real scatter's mask and gates, ~3.5x the
         // real spacing (silhouettes, not a forest sim), over the ring
-        // where they can ever be visible.
+        // where they can ever be visible. The horizon ring opts out
+        // (treeFar 0): past 5 km the canopy raise + forest tint ARE
+        // the trees.
+        if (cfg.treeFar <= 0.0f) {
+            return;
+        }
+        const f32 kTreeFar = cfg.treeFar;
         const i32 treeCells =
             static_cast<i32>(2.0f * kTreeFar / kTreeSpacing);
         baked.trees.reserve(4096);

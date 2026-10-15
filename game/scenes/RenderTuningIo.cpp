@@ -172,6 +172,7 @@ constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, f32> kWorldLanesF32
 };
 constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, bool> kWorldLanesBool[] = {
     { &RenderTuning::farTerrain, &data::LandscapeTuningForm::farTerrain },
+    { &RenderTuning::farHorizon, &data::LandscapeTuningForm::farHorizon },
     { &RenderTuning::farImpostorsFromGrid,
       &data::LandscapeTuningForm::farImpostorsFromGrid },
     { &RenderTuning::sharedHeightField,

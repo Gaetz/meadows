@@ -184,6 +184,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // so a turning wind bends their path instead of jumping it.
     vec4 uWindDirInfo;
     // Fog optical-tail compression (applyFog): x = knee (m, above the
-    // froxel reach cap), y = tail factor (1 = legacy), zw free.
+    // froxel reach cap), y = tail factor (1 = legacy), z = sea-quad
+    // half-span (m), w free.
     vec4 uFogTailInfo;
 };

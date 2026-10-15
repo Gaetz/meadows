@@ -249,8 +249,9 @@ struct FrameUniforms {
     // kept above the froxel reach cap so the volumetric band and the
     // weather TOMLs never see it), y = tail factor (fraction of each
     // meter past the knee that still counts as optical depth; 1 =
-    // legacy), zw free. Opens the horizon without thinning near haze.
-    Vec4 fogTailInfo { 2500.0f, 0.30f, 0.0f, 0.0f };
+    // legacy), z = sea-quad half-span (m — the water sheet follows the
+    // farthest terrain ring), w free.
+    Vec4 fogTailInfo { 2500.0f, 0.30f, 9000.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------

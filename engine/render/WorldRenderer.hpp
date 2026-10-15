@@ -215,6 +215,10 @@ public:
     // farPlane and the fog's horizon closure both derive from it — one
     // source of truth, so the closure always finishes before the clip.
     f32 horizonReach() const {
+        if (tuning.farTerrain && tuning.farHorizon &&
+            farHorizon.ready()) {
+            return farHorizon.reach(); // 24 192 m
+        }
         return tuning.farTerrain && farTerrain.ready()
                    ? farTerrain.reach()
                    : static_cast<f32>(terrain.viewRadius) *
@@ -292,6 +296,7 @@ public:
         bool clusteredLights { true };
         bool terrainLight { true }; // worker-baked terrain sun/sky map
         bool farTerrain { true };   // distant silhouettes (§3.6)
+        bool farHorizon { true };   // the 57.6 km horizon ring (§6.0c)
         // Master switch of the shared height pyramid (E3): off = the
         // pyramid stops filling and every converted consumer falls
         // back to its exact pointwise path (same code, null snapshot).
@@ -506,6 +511,7 @@ private:
     render::FireScorchMap fireScorch;
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
+    render::FarTerrain farHorizon; // the 57.6 km HORIZON ring
     // Worker-baked valley data for the ground-mist raymarch (§3.5).
     render::MistMap mistMap;
     // Shared tileable Perlin-Worley volume (mist + sky-cloud erosion).

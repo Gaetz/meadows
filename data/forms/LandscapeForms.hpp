@@ -32,6 +32,7 @@ struct LandscapeTuningForm : Form {
     i32 terrainViewRadius { 30 };
     // Distant silhouettes past the ring (FarTerrain, ~12 km coarse mesh).
     bool farTerrain { true };
+    bool farHorizon { true }; // the 57.6 km horizon ring
     // Impostor grounding on the far bake's own half-grid (A/B vs the
     // analytic function — docs/CPU-PERF.md).
     bool farImpostorsFromGrid { true };
@@ -316,6 +317,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(terrainViewRadius)
         REFLECT_FIELD(farTerrain)
+        REFLECT_FIELD(farHorizon)
         REFLECT_FIELD(farImpostorsFromGrid)
         REFLECT_FIELD(occlusionRebuildDistance)
         REFLECT_FIELD(sharedHeightField)

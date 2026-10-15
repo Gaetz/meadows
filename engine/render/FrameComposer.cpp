@@ -117,7 +117,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // BASE: the reflection dissolves its horizon like the main view.
     // Knee fixed above the froxel reach cap (2 400), so the volumetric
     // band and the weather TOMLs never see the compression.
-    base.fogTailInfo = { 2500.0f, in.fogHorizonTail, 0.0f, 0.0f };
+    base.fogTailInfo = { 2500.0f, in.fogHorizonTail,
+                         in.seaQuadHalfSpan, 0.0f };
     base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
                               in.pomDepth,
                               in.barkEnabled ? 1.0f : 0.0f };

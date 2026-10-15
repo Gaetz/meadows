@@ -31,19 +31,31 @@ class ShaderLibrary;
 // near chunks; applyFog's horizon closure moves out to reach().
 class FarTerrain {
 public:
-    static constexpr u32 kGridN = 256;     // cells per side
-    static constexpr f32 kSpan = 18000.0f; // meters covered (~70 m cells)
     // Tree impostors: cylindrical-billboard silhouettes scattered by the
     // SAME forestMask/gates as the real trees, fading in where those end
     // (~880 m) and out into the veil.
     static constexpr f32 kTreeNear = 700.0f;
-    static constexpr f32 kTreeFar = 5200.0f;
     // Crowns ~0.95x the height meet at this spacing — the canopy reads
     // as a continuous mass with emergent crowns, not isolated lollipops.
     static constexpr f32 kTreeSpacing = 20.0f;
 
+    // One FarTerrain = one camera-centered ring. The defaults are the
+    // historical inner ring; the HORIZON outer ring runs the same code
+    // at a wider span (see WorldRenderer::farHorizon).
+    struct Config {
+        f32 span { 18000.0f };  // meters covered (~70 m cells at 256)
+        u32 gridN { 256 };      // cells per side
+        f32 treeFar { 5200.0f };// impostor reach (0 = no impostors)
+        // Constant extra lowering baked into the vertices and NEVER
+        // restored: the outer ring rides this far under the inner one
+        // so the two never z-fight (invisible at its distances).
+        f32 extraSink { 0.0f };
+        f32 minTexel { 16.0f }; // heightCoarse footprint for the bake
+        const char* probeName { "farTerrain" }; // JobProbe row
+    };
+
     void create(rhi::Device& device, ShaderLibrary& shaders,
-                core::JobSystem& jobs);
+                core::JobSystem& jobs, const Config& cfg);
     void destroy(rhi::Device& device);
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -80,7 +92,7 @@ public:
     bool ready() const { return mailbox.ready(); }
     // The horizon-closure distance this mesh supports (conservative:
     // half-span minus the rebake stray).
-    f32 reach() const { return kSpan * 0.42f; }
+    f32 reach() const { return config.span * 0.42f; }
 
     struct TreeInstance {
         Vec4 positionScale; // xyz = ground point, w = tree height (m)
@@ -97,6 +109,7 @@ private:
         u64 gen { 0 };
     };
 
+    Config config;
     BakeMailbox<Baked> mailbox;
     rhi::UniqueBuffer vertexBuffer;
     rhi::UniqueBuffer indexBuffer;

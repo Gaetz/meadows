@@ -14,9 +14,12 @@ void main() {
     // the bare seabed as phantom land beyond its edge (measured in
     // game). Waves flatten with distance (ripple LOD), so the single
     // per-pixel quad scales fine.
+    // Half-span rides uFogTailInfo.z (composer-set): it follows the
+    // farthest terrain ring, so the sea always reaches the horizon.
     vec2 center = floor(uCameraPos.xz / 64.0) * 64.0;
-    vec3 world = vec3(center.x + aGrid.x * 9000.0, uTerrainInfo.x,
-                      center.y + aGrid.y * 9000.0);
+    float halfSpan = max(uFogTailInfo.z, 9000.0);
+    vec3 world = vec3(center.x + aGrid.x * halfSpan, uTerrainInfo.x,
+                      center.y + aGrid.y * halfSpan);
     vWorldPos = world;
     gl_Position = uViewProj * vec4(world, 1.0);
 }

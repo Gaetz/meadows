@@ -371,6 +371,7 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         // Coarse 12 km silhouette mesh past the ring (terrain + forest
         // fringe dissolving into the sky).
         ImGui::Checkbox("Far terrain (silhouettes)", &r.tuning.farTerrain);
+        ImGui::Checkbox("Far horizon ring (24 km)", &r.tuning.farHorizon);
         // A/B chantier économie: impostor grounding from the bake's own
         // half-grid vs the analytic function (re-bakes on toggle).
         ImGui::Checkbox("Far impostors from grid",

@@ -1216,6 +1216,28 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   (spawn boot): heightField.L3 802 ms avg (the new analytic payer),
   **L2 1 543 → 853 ms**, L1/L0 unchanged, frame 58.7 ≈ baseline.
   Fast suite 706/706.
+- **2026-10-15 — H4: the 57.6 km horizon ring, and the sea follows.**
+  FarTerrain's constexpr span/grid became a per-instance `Config`
+  (defaults = the historical inner ring, config survives destroy());
+  `WorldRenderer::farHorizon` runs the same code at {span 57 600,
+  grid 256² (225 m cells), no impostors, extraSink 16 m (permanent
+  z-separation under the inner ring), minTexel 256 (the L3 level),
+  probe "farHorizon"} — reach **24 192 m**, drawn before the inner
+  ring, `horizonReach()` prefers it, so the farPlane rides to
+  ~26.6 km. The sea quad's half-span rides the new fogTailInfo.z
+  (composer-set, 28 800 m with the ring — the water.vert 9 000 was a
+  phantom constant whose comment already lied). Water past the far
+  sheets' 9 km collection is PAINTED into the ring's vertex colors
+  (kFarWaterTint on the existing underLocalWater verdict, both
+  rings). Toggle `farHorizon` (form + lane + checkbox).
+  **Lesson**: the two rings share shaders — a second
+  ShaderLibrary::load() DESTROYS the first ring's modules under its
+  live pipeline (hot-reload semantics, "no graphics stages" at every
+  draw): load once, get thereafter. **Measured** (spawn boot): zero
+  errors, farHorizon bake 1 471 ms (≤2.5 s gauge), inner 552 ms,
+  frame 58.2 ms — mainPass +0.5 ms for the extra 131 k tris (≤1 ms
+  gauge). Mountain chains to ~24 km + no phantom land = dev tour
+  (S1). Fast suite 706/706.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 
