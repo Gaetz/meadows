@@ -147,6 +147,9 @@ if(APPLE)
     # §3.1 first per-OS source: Cocoa activation (keyboard needs the app to
     # be ACTIVE — see platform/macos/Activation.mm).
     target_sources(meadows-render PRIVATE platform/macos/Activation.mm)
+    # Objective-C++ cannot consume the C++ PCH below.
+    set_source_files_properties(platform/macos/Activation.mm
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
     target_link_libraries(meadows-render PUBLIC "-framework AppKit")
 endif()
 target_link_libraries(meadows-render

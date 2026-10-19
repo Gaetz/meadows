@@ -126,7 +126,13 @@ target_precompile_headers(true-adventurer PRIVATE
 set(TERRAIN_MATERIALS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data/base/textures/terrain)
 set(TERRAIN_MATERIALS_MANIFEST
     ${CMAKE_CURRENT_SOURCE_DIR}/data/base/terrain/materials.toml)
-if(EXISTS ${PROJECT_SOURCE_DIR}/assets-src/terrain)
+# A machine with a PARTIAL assets-src/ (travel laptop) opts out with
+# -DMEADOWS_COOK_TERRAIN_MATERIALS=OFF and ships the committed .mtex,
+# exactly like a fresh clone.
+option(MEADOWS_COOK_TERRAIN_MATERIALS
+       "Re-cook terrain .mtex when assets-src/terrain is present" ON)
+if(MEADOWS_COOK_TERRAIN_MATERIALS
+   AND EXISTS ${PROJECT_SOURCE_DIR}/assets-src/terrain)
     file(GLOB_RECURSE TERRAIN_MATERIAL_SOURCES
          ${PROJECT_SOURCE_DIR}/assets-src/terrain/*.png)
     add_custom_command(
