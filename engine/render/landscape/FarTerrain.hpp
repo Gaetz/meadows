@@ -21,7 +21,8 @@ namespace render {
 class ShaderLibrary;
 
 // Distant landscape silhouettes (docs/RENDERING.md §3.6): ONE coarse
-// worker-baked grid over ~12 km around the camera, drawn UNDER the
+// worker-baked grid around the camera (span per Config: 18 km inner
+// ring, 57.6 km horizon ring), drawn UNDER the
 // streamed near terrain — the same height function sampled at ~62 m
 // cells, painted through the REAL weight rule with the splat layers'
 // mean albedos (the horizon matches the ground), and raised +

@@ -492,12 +492,14 @@ MoltenVK exposes no RT anyway).
   the veil instead of popping and trees stop sprouting from bare
   ground. 0 disables (tool scenes without terrain). The ring radius is
   LIVE-TUNABLE (`TerrainSystem::viewRadius`, panel "View radius",
-  `LandscapeTuningForm::terrainViewRadius`, 8-30 chunks = 512-1920 m;
+  `LandscapeTuningForm::terrainViewRadius`, 8-45 chunks = 512-2880 m;
   chunk count grows (2r+1)² — watch F6).
 - **Far terrain** (`FarTerrain`, 2026-07-30 — the "see the landscape"
-  chantier): ONE coarse worker-baked grid (257², 18 km span, ~70 m
-  cells, ~131k tris) of the same height function, drawn under the near
-  terrain in the main pass — ridgeline silhouettes to ~5 km, painted
+  chantier; TWO rings since HORIZON §6.0c, 2026-10-15: inner 18 km +
+  horizon 57.6 km/225 m cells, reach 24 192 m): coarse worker-baked
+  grids (257² each, ~131k tris per ring) of the same height function,
+  drawn under the near terrain in the main pass — ridgeline
+  silhouettes to the map limit, painted
   with the SHARED `terrainColor` palette and raised+darkened by the
   SHARED `forestMask` (both made public for it), so the distant forest
   fringe continues the real scatter past the vegetation ring.
@@ -822,7 +824,7 @@ radius — the checklist, for the next time a cap hides somewhere:
 - **TerrainLightMap** span 3072 m (1024² keeps ~3 m texels).
 - Request budget doubles past radius 24 (cold-start fill).
 - Does NOT scale: grass (192 m by design), shadow cascades (800 m),
-  FarTerrain (12 km, already past any ring), fog closure (reads the
+  FarTerrain (rings 18/57.6 km, already past any ring), fog closure (reads the
   ring from the UBO).
 
 M1 Air protocol at radius 30 and 45: F6 four-spot numbers + GPU memory
@@ -1279,6 +1281,26 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   line). No GpuOcclusion "clip", zero errors. Fast suite 706/706.
   H8 (r42/veg16) is therefore NOT taken: the ≥3 ms margin gate was
   already unmet at r36.
+- **2026-10-19 — H9: HORIZON closed.** Stale references refreshed
+  (FarTerrain header, WorldRenderer draw-site, §3.5 far-terrain entry,
+  §4.4 ring range 8-45). **Conditional levers: NONE consumed** — the
+  horizon ring held its ≤1 ms gauge, so outer grid 192/128, ring hole,
+  sector cull, kTreeSpacing 26 and stray hysteresis stay documented
+  levers only (this list). **Deferred, reviewed**: volumetric cloud
+  march seen from above (the 2D dome stands in, H5); far-water
+  collection past 9 km (painted vertex tint stands in, H4); crest
+  shimmer at 20 km without a temporal resolver (veiled — revisit with
+  TAA, §6.1 backlog); H6's ≤0.4 ms reflection gauge and H2's weather
+  pass read at the dev tour; the real-detail axis stops at the
+  bench-arbitrated H7 (the full-shader band is the intrinsic cost —
+  any future step pays it knowingly). **Chantier total** (7 commits,
+  `cb9562c5..`): in-game horizon 2.5 km → **24 km** (farPlane
+  ~26.6 km), fog closure coherent by construction, Overview = a plain
+  camera mode, clouds correct from above and past the map, sea to the
+  horizon, distant lakes painted, mirror silhouettes, live-safe radius
+  sliders — for **+0.5 ms** measured at the spawn. Dev tour: S1-S5 +
+  the visibility window (the horizon is earned by climbing).
+  Full Release suite green before push.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

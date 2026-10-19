@@ -1872,7 +1872,8 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                            view.camera.position, heightFieldSnapshot());
         }
         if (cfg.terrain && tuning.farTerrain) {
-            // Distant silhouettes: coarse 12 km mesh, worker-baked.
+            // Distant silhouettes: the two worker-baked rings
+            // (18 km + 57.6 km horizon).
             core::FrameProbe::Scope probe { *view.probe, "farterrain" };
             farTerrain.impostorsFromGrid = tuning.farImpostorsFromGrid;
             farTerrain.update(frame.device, terrain.params,
