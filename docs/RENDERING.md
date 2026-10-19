@@ -1287,7 +1287,8 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   horizon ring held its ≤1 ms gauge, so outer grid 192/128, ring hole,
   sector cull, kTreeSpacing 26 and stray hysteresis stay documented
   levers only (this list). **Deferred, reviewed**: volumetric cloud
-  march seen from above (the 2D dome stands in, H5); far-water
+  march seen from above (the 2D dome stands in, H5 — CONSUMED by H5b
+  below, 2026-10-19: the dead band was 800 m thick); far-water
   collection past 9 km (painted vertex tint stands in, H4); crest
   shimmer at 20 km without a temporal resolver (veiled — revisit with
   TAA, §6.1 backlog); H6's ≤0.4 ms reflection gauge and H2's weather
@@ -1301,6 +1302,31 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   sliders — for **+0.5 ms** measured at the spawn. Dev tour: S1-S5 +
   the visibility window (the horizon is earned by climbing).
   Full Release suite green before push.
+- **2026-10-19 — H5b (post-closure fix): crossing the cloud layer.**
+  Dev report: climbing past ~700 m the clouds vanished at once. Two
+  hard camera-height gates flipped at the layer BASE (780 m in the
+  dev's live tuning; thickness there ≈ 814 m): the volumetric march
+  exited (`uCameraPos.y >= base`, its slab test assumed the camera
+  below) and the dome's H5 top deck draws downward rays only — the
+  whole [base, top] band showed an empty sky. Fix: (a) skyclouds.frag
+  slab intersection GENERALIZED to any camera height (entry/exit from
+  |tBase|/|tTop|, t0 clamped to 0 inside — the in-cloud whiteout is
+  now real, and the H9-deferred "march seen from above" comes free:
+  sunlit volumetric tops on downward rays); the grazing handoff to
+  the dome is overridden while inside the slab (the dome has no plane
+  to intersect there), with a 40 m continuity band at each face.
+  (b) clouds.glsl dome share unified: the same `rayDown` horizon-band
+  handoff on BOTH sides of the layer (the H5 full-share top deck would
+  now double-paint the march's tops); reflection pass untouched
+  (cloudVolInfo.x = 0 keeps the full 2D layer). Residual, accepted:
+  the dome's up/down band swap at exactly the base (grazing rays only,
+  both read the bank mean), and ground mist composites OVER the tops
+  seen from above (mist sits below the slab — revisit only if a dev
+  shot shows it). **Measured**: spawn boot 170 s, frame 66.31 ≈ 66.36
+  baseline (same dev settings, skyclouds 1.48 ms — the below-layer
+  path is byte-identical math), zero shader errors. Fast suite
+  706/706. Visual gauge = dev climb through the layer (780→1 600 m):
+  approach, whiteout, break through to sunlit tops — no pop.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

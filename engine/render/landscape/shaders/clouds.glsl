@@ -69,20 +69,19 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     // far-cloud flattening, and both read the same coverage field so
     // the patterns agree across the seam. (The reflection pass has
     // cloudVolInfo.x = 0 and keeps the full 2D layer.)
-    // Seen from ABOVE the layer (ridges over the base height), the
-    // volumetric march exits too — without this branch the sky was
-    // EMPTY from exactly the viewpoints that see the far horizon. The
-    // dome takes the full share there and draws the same field as a
-    // sunlit top deck on downward rays.
+    // Seen from ABOVE the layer (ridges over the base height) the same
+    // handoff applies mirrored to the DOWNWARD rays: the march draws
+    // the sunlit tops at steep angles, the dome paints the far deck
+    // past its reach — the same field on both sides of the seam.
     bool above = uCameraPos.y >= uCloudInfo.y;
+    float rayDown = above ? -dir.y : dir.y;
     float domeShare = 1.0;
-    if (uCloudVolInfo.x > 0.5 && !above) {
-        domeShare = 1.0 - smoothstep(0.04, 0.10, dir.y);
+    if (uCloudVolInfo.x > 0.5) {
+        domeShare = 1.0 - smoothstep(0.04, 0.10, rayDown);
         if (domeShare <= 0.0) {
             return sky;
         }
     }
-    float rayDown = above ? -dir.y : dir.y;
     float horizonFade = smoothstep(0.006, 0.04, rayDown);
     if (horizonFade <= 0.0) {
         return sky;

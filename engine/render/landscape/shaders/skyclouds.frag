@@ -135,8 +135,10 @@ void main() {
         rayLen = 1.0e8;
     }
 
-    // Slab intersection (camera below the layer in normal play) + the
-    // dome's horizon fade — grazing rays dissolve into the haze.
+    // Slab intersection, GENERALIZED: the camera may sit below, INSIDE
+    // or above the layer (ridges and the free camera cross it) — a
+    // below-only test made the clouds vanish the frame the camera hit
+    // the base, with nothing drawn until past the tops.
     // Effective thickness scales with the WEATHER's coverage: filling
     // skies tower (storm slabs), sparse skies stay shallow cumulus.
     float base = uCloudInfo.y;
@@ -145,17 +147,24 @@ void main() {
                       1.0 + uCloudVolShapeInfo.x,
                       clamp(uCloudInfo.x, 0.0, 1.0));
     float top = base + thick;
-    // Below this band the 2D dome takes over (the classical far-cloud
-    // flattening: a grazing slab subtends no vertical angle — one 2D
-    // sample says it all, and the dome IS that sample, on the same
-    // coverage field). The two fades are complementary.
-    float horizonFade = smoothstep(0.04, 0.10, dir.y);
-    if (horizonFade <= 0.0 || uCameraPos.y >= base || dir.y <= 1e-3) {
+    float dirY = abs(dir.y) < 1e-4 ? (dir.y < 0.0 ? -1e-4 : 1e-4) : dir.y;
+    float tBase = (base - uCameraPos.y) / dirY;
+    float tTop = (top - uCameraPos.y) / dirY;
+    float t0 = max(min(tBase, tTop), 0.0);
+    float t1 = max(tBase, tTop);
+    // Toward the grazing band the 2D dome takes over (the classical
+    // far-cloud flattening: a grazing slab subtends no vertical angle —
+    // one 2D sample says it all, and the dome IS that sample, on the
+    // same coverage field). The two fades are complementary — EXCEPT
+    // from inside the slab, where the dome has no plane to intersect:
+    // the march owns every direction there (the in-cloud whiteout).
+    float inside = smoothstep(base - 40.0, base, uCameraPos.y) *
+                   (1.0 - smoothstep(top, top + 40.0, uCameraPos.y));
+    float horizonFade = max(smoothstep(0.04, 0.10, abs(dir.y)), inside);
+    if (horizonFade <= 0.0) {
         fragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
-    float t0 = (base - uCameraPos.y) / dir.y;
-    float t1 = (top - uCameraPos.y) / dir.y;
     float span = min(min(t1, rayLen) - t0, 15000.0);
     bool marchSlab = rayLen >= t0 && span > 0.0;
     if (!marchSlab) {
