@@ -226,6 +226,9 @@ public:
     bool barkLoaded() const { return barkTextures[0].get().id != 0; }
     array<u8, kTreeVariants> variantBark { { 0, 0, 0, 1, 1 } };
     bool barkGroupsDirty { false }; // panel edits; applied in update()
+    // Fade the resident chunks scattered with (per-instance, frozen):
+    // a live radius change re-scatters the ring against it. -1 = none.
+    f32 scatteredFadeEnd { -1.0f };
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 

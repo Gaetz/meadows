@@ -45,7 +45,9 @@ public:
     struct Config {
         f32 span { 18000.0f };  // meters covered (~70 m cells at 256)
         u32 gridN { 256 };      // cells per side
-        f32 treeFar { 5200.0f };// impostor reach (0 = no impostors)
+        // Impostor reach (0 = none). far_tree.vert hard-fades at
+        // 4200..5200 to match — change both together.
+        f32 treeFar { 5200.0f };
         // Constant extra lowering baked into the vertices and NEVER
         // restored: the outer ring rides this far under the inner one
         // so the two never z-fight (invisible at its distances).

@@ -168,7 +168,7 @@ struct LandscapeTuningForm : Form {
     f32 interiorDustDensity { 0.025f };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
     // pass is a major GPU cost driver). Radii in 64 m chunks.
-    i32 vegViewRadius { 12 };       // resident/drawn ring
+    i32 vegViewRadius { 14 };       // resident/drawn ring (~900 m)
     i32 vegHighDetailRadius { 2 };  // full-detail canopies inside (~128 m)
     // 80-face twins inside; 20-face ultra lobes beyond.
     i32 vegLowDetailRadius { 4 };

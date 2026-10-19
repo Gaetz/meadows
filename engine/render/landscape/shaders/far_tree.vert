@@ -32,7 +32,9 @@ void main() {
     vUv = c;
     vParams = aParams;
     // In past the real-tree fade (uFogLayerInfo.w tracks the vegetation
-    // ring), out into the fog veil.
+    // ring), out into the fog veil. The 4200/5200 fade-out mirrors the
+    // INNER ring's Config.treeFar (FarTerrain, WorldRenderer's create):
+    // the bake stops scattering impostors there — change both together.
     float fadeEnd = max(uFogLayerInfo.w, 100.0);
     vFade = smoothstep(fadeEnd * 0.8, fadeEnd + 20.0, d) *
             (1.0 - smoothstep(4200.0, 5200.0, d));

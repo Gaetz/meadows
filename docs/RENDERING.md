@@ -1259,6 +1259,26 @@ conditional r42/veg16 (≥3 ms margin on S3) → H9 closure.
   within 600 m) — the ≤0.4 ms gauge reads at a LAKE spot in the dev
   tour (F6 "reflection" row); revert = drop the one draw if it
   busts. Fast suite 706/706.
+- **2026-10-19 — H7: real-detail step, bench-arbitrated.** (a) The
+  tree/impostor HANDOFF is now live-safe: resident veg chunks freeze
+  their fade-out per instance at scatter while the impostors' fade-in
+  reads the live uniform — a radius change used to open a treeless
+  900-1 200 m band until natural eviction; the ring now re-scatters
+  itself when treeFadeEnd changes (VegetationStreaming, one
+  invalidateAll). (b) far_tree.vert's 4200/5200 fade-out is
+  comment-locked to the inner ring's Config.treeFar on both sides
+  (phantom-constant guard). (c) Defaults: `vegViewRadius` 12→**14**;
+  `terrainViewRadius` stays **30** — **measured** (spawn boot, dev
+  settings, ×2 runs): r36 costs **+8.1 ms** (frame 58.2→66.2,
+  mainPass +4.1) because the 1.9-2.3 km band switches from the far
+  mesh's flat shading to the FULL terrain shader — the real price of
+  "real detail farther", intrinsic, not waste. On a 58 ms frame the
+  default does not swallow it; the slider (now live-safe) opts in.
+  NOTE: the dev's live render-tuning.toml pins vegViewRadius = 12 —
+  the new default only shows after moving the slider (or dropping the
+  line). No GpuOcclusion "clip", zero errors. Fast suite 706/706.
+  H8 (r42/veg16) is therefore NOT taken: the ≥3 ms margin gate was
+  already unmet at r36.
 
 ### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
 

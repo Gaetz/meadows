@@ -156,6 +156,21 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     if (showcaseCount != 0) {
         return; // showcase replaces the streamed scatter entirely
     }
+    // Radius change: resident chunks baked their fade-out PER INSTANCE
+    // at scatter while the far impostors' fade-in reads the live
+    // uniform — a live change would leave a treeless band until
+    // natural eviction. Drop the ring, re-scatter at the new fade.
+    const f32 fadeNow = treeFadeEnd();
+    if (scatteredFadeEnd >= 0.0f && fadeNow != scatteredFadeEnd) {
+        streamer.invalidateAll([&](Chunk& chunk) {
+            if (chunk.resident && chunk.total > 0 &&
+                chunk.poolOffset != kNoOffset) {
+                instancePool.free(chunk.poolOffset, chunk.total);
+            }
+        });
+        instances = 0;
+    }
+    scatteredFadeEnd = fadeNow;
     instancePool.tick(); // two-frame-cooled blocks become reusable
     // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
     // is the vegetation-specific accept — variant packing + GPU upload
