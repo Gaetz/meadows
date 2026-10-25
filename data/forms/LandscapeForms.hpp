@@ -105,10 +105,9 @@ struct LandscapeTuningForm : Form {
     f32 bloomIntensity { 0.35f };
     f32 godRayIntensity { 0.6f };
     f32 volumetricIntensity { 1.0f };
-    // Unused (no screen-space AO in the engine —
-    // grounding = terrain light map + contact shadows + baked vertex
-    // AO). The field stays so existing records that set it keep
-    // resolving; it is simply never read.
+    // Deprecated: no screen-space AO in the engine (grounding = terrain
+    // light map + contact shadows + baked vertex AO); existing records
+    // keep resolving, nothing reads it.
     f32 ssaoStrength { 0.0f };
     // Clouds.
     f32 cloudCoverage { 0.3f };
@@ -245,10 +244,9 @@ struct LandscapeTuningForm : Form {
     f32 skyCloudRimGain { 25.0f };  // view-thin silhouette glow
     f32 skyCloudRimLobe { 0.75f };
     f32 skyCloudBaseDark { 7.4f }; // storm-base ambient occlusion
-    // Unused (the under-cloud sky-ray tail was tried 2026-07-30 and
-    // removed: after its containments it only lit the air BETWEEN the
-    // clouds — the ground-to-cloud shafts are the froxels' job). The
-    // field stays so records that set it keep resolving.
+    // Deprecated: the under-cloud sky-ray tail only lit the air BETWEEN
+    // the clouds (the ground-to-cloud shafts are the froxels' job);
+    // existing records keep resolving, nothing reads it.
     f32 skyCloudRays { 0.0f };
 
     // Terrain shape, continued (appended — reflection lists only grow).
@@ -350,7 +348,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(bloomIntensity)
         REFLECT_FIELD(godRayIntensity)
         REFLECT_FIELD(volumetricIntensity)
-        REFLECT_FIELD(ssaoStrength)
+        REFLECT_FIELD_FLAGS(ssaoStrength, reflect::Deprecated)
         REFLECT_FIELD(cloudCoverage)
         REFLECT_FIELD(cloudShadowStrength)
         REFLECT_FIELD(cloudHeight)
@@ -444,7 +442,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(skyCloudRimGain)
         REFLECT_FIELD(skyCloudRimLobe)
         REFLECT_FIELD(skyCloudBaseDark)
-        REFLECT_FIELD(skyCloudRays)
+        REFLECT_FIELD_FLAGS(skyCloudRays, reflect::Deprecated)
         REFLECT_FIELD(terrainOctaves)
         REFLECT_FIELD(terrainLacunarity)
         REFLECT_FIELD(terrainGain)

@@ -16,6 +16,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/reflect/Visit.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 #include "world/scene/AnimBridge.hpp"
 
 namespace game {
@@ -638,9 +639,7 @@ void AnimPreviewPanel::render(engine::FrameContext& frame) {
                               .format = rhi::VertexFormat::F32x4,
                               .offset = offsetof(render::SkinnedVertex,
                                                  weights) } } } },
-              .depth = { .testEnable = true,
-                         .writeEnable = true,
-                         .compare = rhi::CompareFunc::Less },
+              .depth = render::kDepthCaster,
               .cull = rhi::CullMode::Back }) };
         ubo = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Uniform,

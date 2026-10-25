@@ -2,6 +2,7 @@
 #include "compat.glsl"
 #include "common.glsl"
 #include "sky.glsl"
+#include "prop_encoding.glsl"
 
 layout(binding = 0) uniform sampler2D uLeafMask;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
@@ -104,7 +105,7 @@ void main() {
     // that size). Mip-driven, so tree scale is accounted for free.
     float leafShade = 1.0;
     vec3 baseColor = vColor;
-    if (vCardUv.x >= 0.0) {
+    if (hasCardUv(vCardUv)) {
         if (vBurn > 0.98) {
             discard; // a consumed canopy: nothing left of the card
         }
@@ -117,7 +118,8 @@ void main() {
         leafShade = mix(mix(0.7, 1.3, mask.x), 1.0, solid);
         // Season: mix toward the slot's autumn tint, weighted by its
         // seasonality — evergreens stay green.
-        vec4 season = uLeafSeason[int(clamp(floor(vCardUv.x * 8.0), 0.0, 7.0))];
+        vec4 season = uLeafSeason[int(clamp(floor(vCardUv.x * kPropCardSlotCount),
+                                            0.0, kPropCardSlotCount - 1.0))];
         // Burning leaves russet like autumn first (evergreen or not),
         // over the first 40 % of the burn, then char below.
         float russet = max(uSeasonInfo.x * season.a, clamp(vBurn * 2.5, 0.0, 1.0));
@@ -140,7 +142,7 @@ void main() {
     // map perturbs through a derivative cotangent frame (no mesh
     // tangents needed — Schüler's trick).
     vec3 shadeN = normalize(vNormal);
-    if (vPropUv.x > -5.0) {
+    if (hasPropUv(vPropUv)) {
         vec4 texel = texture(uLeafMask, vPropUv);
         if (texel.a < 0.5) {
             discard;
@@ -172,8 +174,8 @@ void main() {
     // parallax bump-offset shifts the taps along the view, the packed
     // normal map perturbs the shading normal (whiteout blend), and the
     // vertex color keeps carrying AO + the vertical gradient.
-    if (vObjPos.w > 0.5 && uSplatVarietyInfo.w > 0.5) {
-        float yaw = vObjPos.w - 1.0;
+    if (hasBark(vObjPos.w) && uSplatVarietyInfo.w > 0.5) {
+        float yaw = barkYaw(vObjPos.w);
         float yc = cos(yaw);
         float ys = sin(yaw);
         vec3 onrm = normalize(vObjNormal);
@@ -249,7 +251,7 @@ void main() {
 
     // Per-instance hue roll: some trees lean yellow-green, some deep
     // green. FOLIAGE only — on wood it shifted the bark texture's hue.
-    vec3 hueRoll = vObjPos.w > 0.5
+    vec3 hueRoll = hasBark(vObjPos.w)
                        ? vec3(1.0)
                        : mix(vec3(0.85, 1.0, 0.75),
                              vec3(1.1, 1.0, 1.15), vTint);

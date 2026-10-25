@@ -30,19 +30,12 @@ CombatMove chooseCombatMove(const CombatSituation& s) {
 }
 
 std::optional<CombatMove> parseCombatMove(std::string_view name) {
-    if (name == "approach") {
-        return CombatMove::Approach;
-    }
-    if (name == "strike") {
-        return CombatMove::Strike;
-    }
-    if (name == "strafe") {
-        return CombatMove::Strafe;
-    }
-    if (name == "flee") {
-        return CombatMove::Flee;
-    }
-    return std::nullopt;
+    return reflect::parseEnum<CombatMove>(kCombatMoves, name);
+}
+
+CombatStyle parseCombatStyle(std::string_view name) {
+    return reflect::parseEnum<CombatStyle>(kCombatStyles, name)
+        .value_or(CombatStyle::Default);
 }
 
 const char* combatMoveName(CombatMove move) {

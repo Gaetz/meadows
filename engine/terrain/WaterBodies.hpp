@@ -100,6 +100,11 @@ struct RiverSurface {
     u8 headIsSource { 0 };
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 flowSpeed { 1.0f };
+    // The course's character (0 ruisseau, 1 rivière, 2 fleuve): the
+    // bake's classification carried by RiverForm so a mod's river stays
+    // the obstacle it was baked as. Gameplay reads the tier HERE, never
+    // back from the flow speed derived from it.
+    u32 tier { 0 };
     u32 materialIndex { 0 }; // into WaterBodies::materials (0 = water)
     // Bounds incl. widths (kept for the point queries).
     f32 minX { 0.0f };

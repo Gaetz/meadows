@@ -85,6 +85,23 @@ struct Lake {
     // its basin — the spill carries it all): the outlet river's width
     // justification, and the E7 report's size measure. TWB5.
     f32 catchment { 0.0f };
+
+    // Point-in-basin test EVERY pass shares (nearest mask texel, +0.5
+    // rounding; an empty mask covers nothing): one formula, so no pass
+    // judges a shore half a texel differently from the others.
+    bool covers(f32 x, f32 z) const {
+        if (mask.empty() || maskWidth == 0 || maskHeight == 0 ||
+            x < minX || x > maxX || z < minZ || z > maxZ) {
+            return false;
+        }
+        const u32 mx = glm::min(
+            static_cast<u32>(glm::max((x - minX) / maskTexel + 0.5f, 0.0f)),
+            maskWidth - 1);
+        const u32 mz = glm::min(
+            static_cast<u32>(glm::max((z - minZ) / maskTexel + 0.5f, 0.0f)),
+            maskHeight - 1);
+        return mask[static_cast<size_t>(mz) * maskWidth + mx] != 0;
+    }
 };
 
 struct RiverPoint {
@@ -104,13 +121,27 @@ struct RiverPoint {
     f32 area { 0.0f };
 };
 
-// Tier character as the runtime current (m/s): the ruisseau ambles, the
-// rivière flows, the fleuve DRAGS (the swim controller multiplies by
-// swimDriftFactor — the fleuve is the obstacle tier). ONE law for the
-// baked sandbox rivers and the exported RiverForm records.
-inline f32 riverFlowSpeedForTier(u8 tier) {
-    return tier == 0 ? 0.6f : tier == 2 ? 1.8f : 1.0f;
+// The character of a river tier (0 ruisseau, 1 rivière, 2 fleuve), one
+// row per tier. `flowSpeed` is the runtime current (m/s): the ruisseau
+// ambles, the rivière flows, the fleuve DRAGS (the swim controller
+// multiplies by swimDriftFactor — the fleuve is the obstacle tier) —
+// ONE law for the baked sandbox rivers and the exported RiverForm
+// records. `flatBoost` is the bed-flattening weight the carve applies
+// on gentle reaches. The depth/shoulder columns are FinalizeParams
+// fields (moddable), read by tierProfile() in Finalize.
+struct TierTraits {
+    f32 flowSpeed;
+    f32 flatBoost;
+};
+inline constexpr TierTraits kTierTraits[] = {
+    { 0.6f, 0.3f }, // ruisseau
+    { 1.0f, 0.5f }, // rivière
+    { 1.8f, 0.5f }, // fleuve
+};
+inline const TierTraits& tierTraits(u8 tier) {
+    return kTierTraits[tier < 3 ? tier : 1];
 }
+inline f32 riverFlowSpeedForTier(u8 tier) { return tierTraits(tier).flowSpeed; }
 
 struct River {
     vector<RiverPoint> points; // downstream order

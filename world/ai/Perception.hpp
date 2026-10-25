@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iterator>
+
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 
@@ -22,6 +24,11 @@
 namespace world {
 
 enum class AwareState : u8 { Calm, Suspicious, Alert, Searching };
+inline constexpr std::string_view kAwareStateNames[] = { "calm", "suspicious",
+                                                         "alert", "searching" };
+inline constexpr reflect::EnumTable kAwareStates { kAwareStateNames };
+static_assert(std::size(kAwareStateNames) ==
+              static_cast<size_t>(AwareState::Searching) + 1);
 
 // Reflected component (§2.3): tuning fields are per-actor data an editor
 // or a mod can retune; the runtime tail rebuilds after a load.
@@ -32,7 +39,7 @@ struct Perception {
     f32 memorySeconds { 5.0f };     // sight memory before Alert -> Searching
     f32 searchSeconds { 8.0f };     // Searching/Suspicious patience -> Calm
     // Runtime (reflected so a save keeps an alerted camp alerted).
-    i32 state { 0 };                // AwareState — reflect has no enum kind
+    i32 state { 0 };                // AwareState ordinal (kAwareStates)
     Vec3 lastKnownPos { 0.0f };     // where the target was last seen/heard
     f32 sinceSeen { 1.0e6f };       // seconds since direct sight
     f32 stateSeconds { 0.0f };      // time in the current state
@@ -43,7 +50,7 @@ struct Perception {
         REFLECT_FIELD(hearingRadius)
         REFLECT_FIELD(memorySeconds)
         REFLECT_FIELD(searchSeconds)
-        REFLECT_FIELD(state)
+        REFLECT_FIELD_ENUM(state, kAwareStates)
         REFLECT_FIELD(lastKnownPos)
         REFLECT_FIELD(sinceSeen)
         REFLECT_FIELD(stateSeconds)

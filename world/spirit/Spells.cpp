@@ -4,28 +4,26 @@
 
 namespace world {
 
+// The names are data::vocab (bound to SpellForm's fields); the asserts
+// pin the enum order they encode.
+static_assert(data::vocab::kSpellForms.size() ==
+              static_cast<size_t>(SpellVerb::Understand) + 1);
+static_assert(data::vocab::kSpellTrajectories.size() ==
+              static_cast<size_t>(SpellTrajectory::Line) + 1);
+static_assert(data::vocab::kSpellAreas.size() ==
+              static_cast<size_t>(SpellArea::Ring) + 1);
+
 std::optional<SpellVerb> parseSpellVerb(std::string_view name) {
-    if (name == "create") return SpellVerb::Create;
-    if (name == "destroy") return SpellVerb::Destroy;
-    if (name == "transform") return SpellVerb::Transform;
-    if (name == "control") return SpellVerb::Control;
-    if (name == "understand") return SpellVerb::Understand;
-    return std::nullopt;
+    return reflect::parseEnum<SpellVerb>(data::vocab::kSpellForms, name);
 }
 
 std::optional<SpellTrajectory> parseSpellTrajectory(std::string_view name) {
-    if (name == "self") return SpellTrajectory::Self;
-    if (name == "point") return SpellTrajectory::Point;
-    if (name == "stream") return SpellTrajectory::Stream;
-    if (name == "projectile") return SpellTrajectory::Projectile;
-    if (name == "line") return SpellTrajectory::Line;
-    return std::nullopt;
+    return reflect::parseEnum<SpellTrajectory>(data::vocab::kSpellTrajectories,
+                                               name);
 }
 
 std::optional<SpellArea> parseSpellArea(std::string_view name) {
-    if (name == "disc") return SpellArea::Disc;
-    if (name == "ring") return SpellArea::Ring;
-    return std::nullopt;
+    return reflect::parseEnum<SpellArea>(data::vocab::kSpellAreas, name);
 }
 
 std::optional<SpellSpec> compileSpell(const data::SpellForm& form,
@@ -88,76 +86,23 @@ f32 launchSpeedForRange(f32 range, f32 gravity) {
     return std::sqrt(glm::max(range, 0.0f) * gravity);
 }
 
+const SpellCell* spellCell(const SpellSpec& spec) {
+    for (const SpellCell& cell : kSpellMatrix) {
+        if (cell.element != spec.element || cell.verb != spec.verb ||
+            cell.trajectory != spec.trajectory) {
+            continue;
+        }
+        const bool channelFits = cell.channel == Channel::Any ||
+                                 (cell.channel == Channel::Held) == spec.channeled;
+        if (channelFits) {
+            return &cell;
+        }
+    }
+    return nullptr;
+}
+
 bool spellSupported(const SpellSpec& spec) {
-    using render::terrain::SpiritKind;
-    // The matrix grows one brick at a time (docs/SPELLS.md §4).
-    if (spec.element == SpiritKind::Earth) {
-        switch (spec.verb) {
-        case SpellVerb::Create:
-            // The bump (point, instant), the stone brush (point, channeled)
-            // and the wall (line, press to release).
-            return spec.trajectory == SpellTrajectory::Point ||
-                   spec.trajectory == SpellTrajectory::Line;
-        case SpellVerb::Destroy: // the dig, channeled by nature
-            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
-        case SpellVerb::Understand: // the ground reading
-            return spec.trajectory == SpellTrajectory::Point;
-        case SpellVerb::Control: // a rock seized and carried, channeled
-            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
-        case SpellVerb::Transform:
-            break;
-        }
-        return false;
-    }
-    if (spec.element == SpiritKind::Fire) {
-        switch (spec.verb) {
-        case SpellVerb::Create: // the spark at the aim, or the flame jet ahead (held)
-            return spec.trajectory == SpellTrajectory::Point ||
-                   (spec.trajectory == SpellTrajectory::Stream && spec.channeled);
-        case SpellVerb::Destroy: // put out at the aim; held on self = the fire ward
-            return spec.trajectory == SpellTrajectory::Point ||
-                   (spec.trajectory == SpellTrajectory::Self && spec.channeled);
-        case SpellVerb::Understand: // the fire reading
-            return spec.trajectory == SpellTrajectory::Point;
-        case SpellVerb::Control: // the firebrand: a flame carried at the aim, held
-            return spec.trajectory == SpellTrajectory::Point && spec.channeled;
-        case SpellVerb::Transform:
-            break;
-        }
-        return false;
-    }
-    if (spec.element == SpiritKind::Wind) {
-        switch (spec.verb) {
-        case SpellVerb::Create: // a gust placed at the aim, or the breath ahead (held)
-            return spec.trajectory == SpellTrajectory::Point ||
-                   (spec.trajectory == SpellTrajectory::Stream && spec.channeled);
-        case SpellVerb::Destroy: // calm the wind while concentrating
-            return spec.trajectory == SpellTrajectory::Self && spec.channeled;
-        case SpellVerb::Control: // steer the wind where the caster faces
-            return spec.trajectory == SpellTrajectory::Self && spec.channeled;
-        case SpellVerb::Understand:
-        case SpellVerb::Transform:
-            break;
-        }
-        return false;
-    }
-    if (spec.element != SpiritKind::Water) {
-        return false;
-    }
-    switch (spec.verb) {
-    case SpellVerb::Create:
-        return spec.trajectory == SpellTrajectory::Point ||
-               spec.trajectory == SpellTrajectory::Stream;
-    case SpellVerb::Destroy: // a draining source (the kernel releases the pin)
-        return spec.trajectory == SpellTrajectory::Point;
-    case SpellVerb::Control: // the held volume — channeled by nature
-        return spec.trajectory == SpellTrajectory::Point && spec.channeled;
-    case SpellVerb::Understand: // a reading at the aim, no world action
-        return spec.trajectory == SpellTrajectory::Point;
-    case SpellVerb::Transform:
-        break;
-    }
-    return false;
+    return spellCell(spec) != nullptr;
 }
 
 } // namespace world

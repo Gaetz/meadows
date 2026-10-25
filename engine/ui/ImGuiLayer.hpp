@@ -4,6 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace platform {
 class Window;
@@ -49,19 +50,33 @@ private:
     bool createDeviceObjects();
     void growBuffers(size_t vertexCount, size_t indexCount);
     rhi::BindGroupHandle groupFor(u32 textureId);
+    void purgeStaleGroups();
 
     platform::Window& window;
     rhi::Device& device;
 
-    rhi::ShaderHandle shader {};
-    rhi::PipelineHandle pipeline {};
-    rhi::SamplerHandle sampler {};
-    rhi::TextureHandle fontTexture {};
-    rhi::BufferHandle vertexBuffer {};
-    rhi::BufferHandle indexBuffer {};
+    // Owning handles, released by the members' destructors in reverse
+    // declaration order: bind groups (declared last) before the font
+    // texture and sampler they reference, the pipeline before its shader.
+    // The Device must outlive the layer.
+    rhi::UniqueShader shader;
+    rhi::UniquePipeline pipeline;
+    rhi::UniqueSampler sampler;
+    rhi::UniqueTexture fontTexture;
+    rhi::UniqueBuffer vertexBuffer;
+    rhi::UniqueBuffer indexBuffer;
     size_t vertexCapacity { 0 };
     size_t indexCapacity { 0 };
-    std::unordered_map<u32, rhi::BindGroupHandle> textureGroups;
+    // One bind group per ImGui texture id, built on first use and dropped
+    // once unused for a while (panels that recreate textures every frame
+    // would otherwise grow this map without bound). Both backends consume
+    // a bind group at record time, so an unused one is free to destroy.
+    struct TextureGroup {
+        rhi::UniqueBindGroup group;
+        u64 lastUsedFrame { 0 };
+    };
+    std::unordered_map<u32, TextureGroup> textureGroups;
+    u64 frameIndex { 0 };
 
     // Per-frame scratch (flattened vertices/indices/list bases). Its element
     // types are renderer-private, so it stays behind a pimpl (§3.1) and is

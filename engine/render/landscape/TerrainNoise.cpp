@@ -229,16 +229,11 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
     if (region && !region->biome.empty() && region->maskWidth >= 2 &&
         region->maskHeight >= 2) {
         // Nearest texel of the region's biome channel (ids don't blend).
-        const f32 texel =
-            region->spanX() / static_cast<f32>(region->maskWidth - 1);
+        const Vec2 uv = maskTexelOf(*region, x, z);
         const u32 cx = static_cast<u32>(glm::clamp(
-            (x - region->originX) / texel + 0.5f, 0.0f,
-            static_cast<f32>(region->maskWidth - 1)));
-        const f32 texelZ =
-            region->spanZ() / static_cast<f32>(region->maskHeight - 1);
+            uv.x + 0.5f, 0.0f, static_cast<f32>(region->maskWidth - 1)));
         const u32 cz = static_cast<u32>(glm::clamp(
-            (z - region->originZ) / texelZ + 0.5f, 0.0f,
-            static_cast<f32>(region->maskHeight - 1)));
+            uv.y + 0.5f, 0.0f, static_cast<f32>(region->maskHeight - 1)));
         index = region->biome[static_cast<size_t>(cz) *
                                   region->maskWidth +
                               cx];
@@ -330,14 +325,11 @@ BiomeParams biomeBlended(const TerrainParams& params, f32 x, f32 z) {
         region->maskHeight < 2) {
         return biomeAt(params, x, z);
     }
-    const f32 texelX =
-        region->spanX() / static_cast<f32>(region->maskWidth - 1);
-    const f32 texelZ =
-        region->spanZ() / static_cast<f32>(region->maskHeight - 1);
-    const f32 fx = glm::clamp((x - region->originX) / texelX, 0.0f,
-                              static_cast<f32>(region->maskWidth - 1));
-    const f32 fz = glm::clamp((z - region->originZ) / texelZ, 0.0f,
-                              static_cast<f32>(region->maskHeight - 1));
+    const Vec2 uv = maskTexelOf(*region, x, z);
+    const f32 fx =
+        glm::clamp(uv.x, 0.0f, static_cast<f32>(region->maskWidth - 1));
+    const f32 fz =
+        glm::clamp(uv.y, 0.0f, static_cast<f32>(region->maskHeight - 1));
     const u32 c0 = glm::min(static_cast<u32>(fx), region->maskWidth - 2);
     const u32 r0 = glm::min(static_cast<u32>(fz), region->maskHeight - 2);
     const f32 tx = fx - static_cast<f32>(c0);
@@ -682,21 +674,18 @@ bool flowMaskTouches(const TerrainParams& params, f32 minX, f32 minZ,
             continue;
         }
         // The mask texels a bilinear read inside the rect can touch:
-        // maskSample's own u/v mapping, floors extended by +1, clamped.
-        const f32 texelX = r.spanX() / static_cast<f32>(r.maskWidth - 1);
-        const f32 texelZ = r.spanZ() / static_cast<f32>(r.maskHeight - 1);
+        // maskSample's mapping, floors extended by +1, clamped.
         const auto lo = [](f32 v, u32 n) {
             return static_cast<u32>(glm::clamp(
                 std::floor(v), 0.0f, static_cast<f32>(n - 1)));
         };
-        const u32 u0 = lo((minX - r.originX) / texelX, r.maskWidth);
-        const u32 u1 = glm::min(
-            lo((maxX - r.originX) / texelX, r.maskWidth) + 1,
-            r.maskWidth - 1);
-        const u32 v0 = lo((minZ - r.originZ) / texelZ, r.maskHeight);
-        const u32 v1 = glm::min(
-            lo((maxZ - r.originZ) / texelZ, r.maskHeight) + 1,
-            r.maskHeight - 1);
+        const Vec2 lowUv = maskTexelOf(r, minX, minZ);
+        const Vec2 highUv = maskTexelOf(r, maxX, maxZ);
+        const u32 u0 = lo(lowUv.x, r.maskWidth);
+        const u32 u1 = glm::min(lo(highUv.x, r.maskWidth) + 1, r.maskWidth - 1);
+        const u32 v0 = lo(lowUv.y, r.maskHeight);
+        const u32 v1 =
+            glm::min(lo(highUv.y, r.maskHeight) + 1, r.maskHeight - 1);
         for (u32 mz = v0; mz <= v1; ++mz) {
             for (u32 mx = u0; mx <= u1; ++mx) {
                 if (r.flow[static_cast<size_t>(mz) * r.maskWidth + mx] >=

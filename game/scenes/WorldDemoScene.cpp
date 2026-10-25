@@ -6,6 +6,7 @@
 #include "engine/platform/Window.hpp"
 #include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "game/AllForms.hpp"
 #include "game/SceneSubmit.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -42,12 +43,9 @@ rhi::TextureHandle createCheckerTexture(rhi::Device& device) {
 void WorldDemoScene::onEnter() {
     dataDir = platform::executableDir() / "data";
 
-    data::registerCoreFormTypes(types);
-    world::registerWorldFormTypes(types);
-    gameplay::registerGameplayFormTypes(types);
-    gameplay::registerStatsFormTypes(types);
-    quest::registerQuestFormTypes(types);
-    quest::registerDialogueFormTypes(types);
+    // The single registration list: a partial one left every record of a
+    // type it skipped (cues, visuals, UI...) silently unknown to this scene.
+    game::registerAllFormTypes(types);
     world::registerCoreCategories(categories);
     world::registerCoreSpawners(spawner);
     world::registerSceneComponents(world);

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
 
+#include "data/forms/Vocabularies.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -22,6 +24,10 @@ enum class StatusType {
     Ignition, Glaciation, Electrocution,
     kCount
 };
+// The names are data::vocab::kStatusTypes (bound to every buildupType
+// field); this pins the order.
+static_assert(data::vocab::kStatusTypes.size() ==
+              static_cast<size_t>(StatusType::kCount));
 
 // Per-type accumulated buildup points (reflected: serializes §5).
 struct StatusBuildup {
@@ -91,7 +97,7 @@ void buildupStatusModifiers(const AbilitySystem& system,
                             StatModifiers& mods);
 
 // The Status.* tag name for a type (e.g. "Status.Poisoned").
-const char* statusTagName(StatusType type);
+std::string_view statusTagName(StatusType type);
 
 // Parses a buildup type name from an EffectForm buildupType string.
 // Returns StatusType::Poison for unknown strings.

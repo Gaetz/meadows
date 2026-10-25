@@ -140,13 +140,75 @@ TEST_CASE("save forms: an active effect survives capture -> TOML -> restore") {
     CHECK(effect.sinceLastTick == doctest::Approx(original.sinceLastTick));
     CHECK(effect.gameTime == original.gameTime);
     CHECK(effect.grantedTag == original.grantedTag);
-    CHECK(effect.effectId == 1);            // reallocated, never persisted
+    CHECK(effect.effectId == 1);            // fresh id: the saved one only pairs rows
     CHECK(restored.nextEffectId == 2);
     CHECK(restored.tags.has(original.grantedTag)); // refcount re-added
 
     // Determinism (§8): capturing twice yields the same record identity.
     const auto again = gameplay::captureActiveEffects(source, actor, tags);
     CHECK(again[0].formId == plugin.records[0].formId);
+}
+
+TEST_CASE("save forms: rows sharing an effectId are paired again on load") {
+    gameplay::GameplayTagRegistry tags;
+    gameplay::AbilitySystem source;
+    // An EffectForm with attribute2 spawns two rows under ONE id (the
+    // malus line), and a third unrelated effect; a legacy row carries 0.
+    gameplay::ActiveEffect primary;
+    primary.attribute = core::fnv1a("health");
+    primary.magnitude = -3.0f;
+    primary.infinite = true;
+    primary.effectId = 7;
+    gameplay::ActiveEffect malus = primary;
+    malus.attribute = core::fnv1a("energy");
+    malus.magnitude = -1.0f;
+    gameplay::ActiveEffect other = primary;
+    other.attribute = core::fnv1a("essence");
+    other.effectId = 9;
+    gameplay::ActiveEffect legacy = primary;
+    legacy.attribute = core::fnv1a("posture");
+    legacy.effectId = 0;
+    source.activeEffects = { primary, malus, other, legacy };
+
+    const core::Guid actor = guid("30000000-0000-4000-8000-0000000000ab");
+    const auto records = gameplay::captureActiveEffects(source, actor, tags);
+    REQUIRE(records.size() == 4);
+    data::FormTypeRegistry types;
+    gameplay::registerSaveFormTypes(types);
+    data::Plugin plugin;
+    plugin.id = guid("30000000-0000-4000-8000-000000000002");
+    plugin.name = "save";
+    plugin.records = records;
+    data::FormDatabase db;
+    data::resolve({ &plugin }, types, db);
+    const auto rows =
+        data::collectChildren<gameplay::SavedEffectForm>(db, actor);
+    REQUIRE(rows.size() == 4);
+
+    gameplay::AbilitySystem restored;
+    restored.nextEffectId = 100;
+    gameplay::EffectIdRemap remap;
+    for (const gameplay::SavedEffectForm* row : rows) {
+        gameplay::restoreActiveEffect(restored, *row, tags, &remap);
+    }
+    REQUIRE(restored.activeEffects.size() == 4);
+    const auto idOf = [&](u32 attribute) {
+        for (const gameplay::ActiveEffect& e : restored.activeEffects) {
+            if (e.attribute == attribute) {
+                return e.effectId;
+            }
+        }
+        return 0u;
+    };
+    const u32 healthId = idOf(core::fnv1a("health"));
+    const u32 essenceId = idOf(core::fnv1a("essence"));
+    const u32 postureId = idOf(core::fnv1a("posture"));
+    CHECK(healthId >= 100);                          // fresh, never 7
+    CHECK(idOf(core::fnv1a("energy")) == healthId);  // paired again
+    CHECK(essenceId != healthId);                    // its own id
+    CHECK(postureId != healthId);                    // the 0-id row: its own
+    CHECK(postureId != essenceId);
+    CHECK(restored.nextEffectId == 103);             // 3 ids: pair, other, legacy
 }
 
 TEST_CASE("save forms: CombatState is reflected (field-name bridge)") {

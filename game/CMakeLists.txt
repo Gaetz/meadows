@@ -50,6 +50,8 @@ add_executable(true-adventurer
     scenes/FollowerController.cpp
     scenes/FollowerSocial.cpp
     scenes/FxDirector.cpp
+    scenes/AmbientFxController.cpp
+    scenes/FireDirector.cpp
     scenes/GameHud.cpp
     scenes/InteractionController.cpp
     scenes/LandscapeScene.cpp
@@ -66,14 +68,20 @@ add_executable(true-adventurer
     scenes/QuestDirector.cpp
     scenes/RenderTuningIo.cpp
     scenes/RideController.cpp
+    scenes/SandboxWorldController.cpp
     scenes/SaveController.cpp
     scenes/SceneConsole.cpp
     scenes/SpiritDirector.cpp
+    scenes/SpiritEarth.cpp
+    scenes/SpiritFire.cpp
+    scenes/SpiritWater.cpp
+    scenes/SpiritWind.cpp
     scenes/SceneEditor.cpp
     scenes/StreamingController.cpp
     scenes/TerrainSculptTool.cpp
     scenes/TreeCreationScene.cpp
     scenes/UiRouter.cpp
+    scenes/WarmupController.cpp
     scenes/WeatherController.cpp
     ui/AbilityPanel.cpp
     ui/TestActor.cpp

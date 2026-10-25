@@ -342,11 +342,11 @@ void main() {
                     if (dryHere) {
                         dryA += hexW[t] *
                                 texture(uSplat,
-                                        vec3(tapUv * 0.77, 24.0)).rgb;
+                                        vec3(tapUv * 0.77, kSteppeGrassLayer)).rgb;
                         dryN +=
                             hexW[t] *
                             (texture(uSplatNormal,
-                                     vec3(tapUv * 0.77, 24.0)).rg *
+                                     vec3(tapUv * 0.77, kSteppeGrassLayer)).rg *
                                  2.0 -
                              1.0);
                     }
@@ -367,11 +367,11 @@ void main() {
                     if (overlayHere) {
                         frostA += hexW[t] *
                                   texture(uSplat,
-                                          vec3(tapUv * 0.83, 21.0)).rgb;
+                                          vec3(tapUv * 0.83, kFrostGrassLayer)).rgb;
                         frostN +=
                             hexW[t] *
                             (texture(uSplatNormal,
-                                     vec3(tapUv * 0.83, 21.0)).rg *
+                                     vec3(tapUv * 0.83, kFrostGrassLayer)).rg *
                                  2.0 -
                              1.0);
                         snowA += hexW[t] *
@@ -398,7 +398,7 @@ void main() {
                 if (wantOrm) {
                     layerOrm = mix(
                         layerOrm,
-                        texture(uSplatOrm, vec3(baseUv, 24.0)).rg,
+                        texture(uSplatOrm, vec3(baseUv, kSteppeGrassLayer)).rg,
                         dryCover);
                 }
             }
@@ -417,7 +417,7 @@ void main() {
                 if (wantOrm) {
                     layerOrm = mix(
                         layerOrm,
-                        texture(uSplatOrm, vec3(baseUv, 22.0)).rg,
+                        texture(uSplatOrm, vec3(baseUv, kHeathLayerA)).rg,
                         heathCover);
                 }
             }
@@ -445,7 +445,7 @@ void main() {
                     // roughness never shows the tile grid.
                     layerOrm = mix(
                         mix(layerOrm,
-                            texture(uSplatOrm, vec3(baseUv, 21.0)).rg,
+                            texture(uSplatOrm, vec3(baseUv, kFrostGrassLayer)).rg,
                             frostCover),
                         texture(uSplatOrm, vec3(baseUv, 2.0)).rg,
                         snowCover);

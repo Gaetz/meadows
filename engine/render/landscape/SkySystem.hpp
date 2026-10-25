@@ -1,8 +1,10 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
-#include "engine/rhi/Rhi.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
+#include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 #include <glm/glm.hpp>
 
@@ -83,17 +85,13 @@ public:
     f32 timeOfDay { 10.5f }; // hours, [0, 24)
 
 private:
-    void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    WatchedPipeline pipeline;
 
-    rhi::PipelineHandle pipeline {};
-    ShaderLibrary::Watch shaderWatch;
-
-    rhi::TextureHandle cloudMap {};
-    rhi::FramebufferHandle cloudMapFb {};
-    rhi::SamplerHandle cloudMapSampler {};
-    rhi::BindGroupHandle cloudMapGroup {};
-    rhi::PipelineHandle bakePipeline {};
-    ShaderLibrary::Watch bakeWatch;
+    rhi::UniqueTexture cloudMap;
+    rhi::UniqueFramebuffer cloudMapFb;
+    rhi::UniqueSampler cloudMapSampler;
+    rhi::UniqueBindGroup cloudMapGroup; // references cloudMap + sampler
+    WatchedPipeline bakePipeline;
 };
 
 } // namespace render

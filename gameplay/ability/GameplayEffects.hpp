@@ -3,6 +3,7 @@
 #include <span>
 
 #include "data/forms/Form.hpp"
+#include "data/forms/Vocabularies.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -14,14 +15,27 @@ namespace gameplay {
 // (multi-modifier / multi-tag effects compose several effects; lists await the
 // reflection container story). Application is a fixed linear pipeline
 // (no node-graph); branching is expressed by required/blocked tags.
+// How long an effect lives (EffectForm.duration).
+enum class DurationPolicy { Instant, Duration, Infinite, Periodic };
+inline constexpr std::string_view kDurationPolicyNames[] = {
+    "instant", "duration", "infinite", "periodic" };
+inline constexpr reflect::EnumTable kDurationPolicies { kDurationPolicyNames };
+static_assert(std::size(kDurationPolicyNames) ==
+              static_cast<size_t>(DurationPolicy::Periodic) + 1);
+
+// Resonance-channel expiry (EffectForm.expiryMode).
+inline constexpr std::string_view kExpiryModeNames[] = { "immediate",
+                                                         "decay" };
+inline constexpr reflect::EnumTable kExpiryModes { kExpiryModeNames };
+
 struct EffectForm : data::Form {
     str attribute;              // target attribute field name ("health", "damage"…)
-    str op { "add" };           // "add" | "multiply" | "override"
+    str op { "add" };           // kModifierOps
     f32 magnitude { 0.0f };
     str attribute2;             // optional second attribute (e.g. affliction attr malus)
     f32 magnitude2 { 0.0f };
 
-    str duration { "instant" }; // "instant" | "duration" | "infinite" | "periodic"
+    str duration { "instant" }; // kDurationPolicies
     f32 durationSeconds { 0.0f }; // real-time seconds
     f32 durationHours { 0.0f };   // game-time hours (takes precedence if > 0)
     f32 period { 0.0f };        // periodic interval (seconds)
@@ -50,21 +64,21 @@ struct EffectForm : data::Form {
 
     REFLECT_BEGIN(EffectForm, data::Form)
         REFLECT_FIELD(attribute)
-        REFLECT_FIELD(op)
+        REFLECT_FIELD_ENUM(op, kModifierOps)
         REFLECT_FIELD(magnitude)
         REFLECT_FIELD(attribute2)
         REFLECT_FIELD(magnitude2)
-        REFLECT_FIELD(duration)
+        REFLECT_FIELD_ENUM(duration, kDurationPolicies)
         REFLECT_FIELD(durationSeconds)
         REFLECT_FIELD(durationHours)
         REFLECT_FIELD(period)
         REFLECT_FIELD(grantedTag)
         REFLECT_FIELD(requiredTag)
         REFLECT_FIELD(blockedTag)
-        REFLECT_FIELD(expiryMode)
+        REFLECT_FIELD_ENUM(expiryMode, kExpiryModes)
         REFLECT_FIELD(decayPerHour)
         REFLECT_FIELD(expiryMagnitude)
-        REFLECT_FIELD(buildupType)
+        REFLECT_FIELD_ENUM(buildupType, data::vocab::kStatusTypes)
         REFLECT_FIELD(bypassEnergyRegenDelay)
     REFLECT_END()
 };

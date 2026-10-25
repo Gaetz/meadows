@@ -28,14 +28,20 @@ void FormDatabase::indexForm(FormHandle handle, const Form& form,
          walk = walk->parent) {
         byType[walk->id].push_back(handle);
     }
+    // Every owner link: the `parent` field of the child-record convention
+    // and any Guid field flagged ParentLink (reflect::FieldFlags).
     static const u32 kParentField = core::fnv1a("parent");
-    if (const reflect::FieldInfo* field = type.findField(kParentField);
-        field && field->kind == reflect::FieldKind::Guid) {
-        const auto parent = std::get<core::Guid>(field->get(&form));
-        if (parent.isValid()) {
-            byParent[parent].push_back(handle);
+    reflect::forEachField(type, [&](const reflect::FieldInfo& field) {
+        if (field.kind != reflect::FieldKind::Guid ||
+            (field.id != kParentField &&
+             (field.flags & reflect::ParentLink) == 0)) {
+            return;
         }
-    }
+        const auto owner = std::get<core::Guid>(field.get(&form));
+        if (owner.isValid()) {
+            byParent[owner].push_back(handle);
+        }
+    });
 }
 
 const vector<FormHandle>& FormDatabase::handlesByType(u32 typeId) const {

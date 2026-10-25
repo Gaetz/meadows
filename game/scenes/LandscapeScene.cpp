@@ -13,7 +13,8 @@
 //                  mode transition — every mode side effect lives there)
 //   4. Contexts    make*Context() — one adapter per controller: Sculpt,
 //                  Editor, Interaction, Ride, Hud, Save, UiRouter,
-//                  Options, Map, Quest, Player, Npc, Follower, Streaming
+//                  Options, Map, Quest, Player, Npc, Follower, Streaming,
+//                  Sandbox, Warmup, Spirit
 //   5. Game UI     createGameUi / updateGameUi / syncScreens /
 //                  applyLanguage (RmlUi screens; HUD models in GameHud)
 //   6. World glue  finalizeActorSpawn / refreshNpcs / performTravel
@@ -45,7 +46,6 @@
 #include "data/plugins/TomlWriter.hpp" // saveRenderTuning
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
-#include "game/MapBaker.hpp" // mapCacheDir + kMapTilesPerSide (M1.4)
 #include "world/scene/MapBounds.hpp"
 #include "game/RendererAssets.hpp"
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
@@ -66,6 +66,7 @@
 #include "engine/FrameContext.hpp"
 #include "engine/core/Clock.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/platform/Input.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
@@ -83,7 +84,8 @@
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/actors/FollowerForms.hpp" // spawn-time class curves
-#include "gameplay/actors/Followers.hpp"     // applyFollowerClass
+#include "gameplay/actors/FollowerParty.hpp"       // FollowerStance
+#include "gameplay/actors/FollowerProgression.hpp" // applyFollowerClass, syncClassPerks
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
@@ -93,7 +95,6 @@
 #include "gameplay/stats/Skills.hpp" // skills-by-use wiring
 #include "game/WeaponMeshes.hpp" // the procedural sword
 #include "script/Vm.hpp"
-#include "world/spirit/SpiritWaterMesh.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Floaters.hpp"
 #include "world/scene/KillZ.hpp"
@@ -104,7 +105,6 @@
 #include "world/terrain/BiomeMapBuilder.hpp"
 #include "world/terrain/TerrainPatches.hpp"
 #include "world/terrain/TerrainRegions.hpp"
-#include "world/terrain/WaterBodiesBuilder.hpp"
 
 namespace game {
 
@@ -259,7 +259,7 @@ void LandscapeScene::bootstrapData() {
     if (!terrainBase->regions.empty()) {
         LOG_INFO("Terrain: {} baked region(s)", terrainBase->regions.size());
     }
-    publishWaterBodies();
+    sandboxWorld.publishWaterBodies(makeSandboxContext());
     renderer.terrainParams().biomes = world::buildBiomeSet(forms, assetDb);
     activeSnowLine = tuning.snowLine;
     // Boot clocks (docs/CPU-PERF.md): the steps of the data bootstrap
@@ -652,11 +652,8 @@ void LandscapeScene::setupGameplay() {
     // The sim-side physics world + terrain collision (tiles follow
     // the streaming focus).
     physics = std::make_unique<phys::PhysicsWorld>();
-    terrainCollision = std::make_unique<TerrainCollision>(
-        *physics, renderer.terrainParams(), &engine->getJobSystem());
-    vegCollision =
-        std::make_unique<VegetationCollision>(
-            *physics, renderer.terrainParams(), &engine->getJobSystem());
+    SandboxWorldController::rebuildCollision(makeSandboxContext(),
+                                             /*onlyIfBuilt=*/false);
 
     // Navigation over the SAME height function as
     // everything else (patches included — the pointer rides in params).
@@ -719,7 +716,7 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
-    buildSpellBook();
+    spiritDirector.buildSpellBook(forms);
     // The audio backend + the SoundForm resolver (idempotent on
     // re-enter: create() is a no-op once ready).
     if (!audioSystem.ready()) {
@@ -955,7 +952,7 @@ void LandscapeScene::setupGameplay() {
             }
             const Vec3 at = event.source.get<world::Transform>().position;
             const char* material = "Wood";
-            if (!interiorMode) {
+            if (policy().snapsToTerrain) {
                 // The SHADED weights (wander included): the step sounds
                 // like the ground LOOKS, not like the altitude contour.
                 // The scene queries the terrain (it owns the renderer);
@@ -1085,17 +1082,19 @@ void LandscapeScene::setupWorldAndStreaming() {
         // restoring the position alone put the player in the previous
         // map's ocean.
         if (sandboxActive && loadedWorldState->sandboxMap &&
-            (loadedWorldState->activeMapX != activeMapX ||
-             loadedWorldState->activeMapZ != activeMapZ)) {
-            applyMapWorld(loadedWorldState->activeMapX,
-                          loadedWorldState->activeMapZ);
+            (loadedWorldState->activeMapX != sandboxWorld.mapX() ||
+             loadedWorldState->activeMapZ != sandboxWorld.mapZ())) {
+            sandboxWorld.applyMap(makeSandboxContext(),
+                                  loadedWorldState->activeMapX,
+                                  loadedWorldState->activeMapZ);
             const Vec3 around =
                 glm::length(loadedWorldState->cameraPosition) > 0.001f
                     ? loadedWorldState->cameraPosition
-                    : probeSandboxSpawn();
-            armWarmup(around, false, true);
+                    : sandboxWorld.probeSpawn(makeSandboxContext());
+            warmup.arm(makeWarmupContext(), around, false, true);
         }
     }
+    decideWorldKind(); // the enter/load path's verdict
     // A loaded save's fire (its FireStateForm record, this worldspace's):
     // the lane relights it with the first job.
     if (saveController.loadedFromSave()) {
@@ -1109,7 +1108,9 @@ void LandscapeScene::setupWorldAndStreaming() {
     }
     // A fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
-    mode = SceneMode::Spectator; // fresh on (re-)enter; Play set later if a save
+    // Fresh on (re-)enter (onExit already left Play); the save path
+    // drives into Play/Edit at the end of onEnter.
+    restoreMode(SceneMode::Spectator);
     sceneEditor.deselect();
     // The dev boot override (the header): the mode pick the menu would
     // make, before the warmup arms.
@@ -1117,7 +1118,7 @@ void LandscapeScene::setupWorldAndStreaming() {
         const str pick { boot };
         if (pick == "sandbox" || pick == "story") {
             bootPlayPending = true;
-            bootSandbox = pick == "sandbox";
+            bootMode = pick == "sandbox" ? BootMode::Sandbox : BootMode::Story;
             if (const char* seconds = std::getenv("MEADOWS_BOOT_SECONDS")) {
                 bootQuitSeconds = static_cast<f32>(std::atof(seconds));
             }
@@ -1128,8 +1129,9 @@ void LandscapeScene::setupWorldAndStreaming() {
     // The warmup re-arms on every (re-)enter — UNLESS the sandbox boot
     // above already armed it with the probed spawn: re-arming here
     // would clobber the PlaceSpawn step and skip the spawn validation.
-    if (warmupPhase == WarmupPhase::Idle) {
-        armWarmup(flyCamera.camera.position, false, false);
+    if (warmup.phase() == WarmupPhase::Idle) {
+        warmup.arm(makeWarmupContext(), flyCamera.camera.position, false,
+                   false);
     }
     createConsole(); // F8 in-game dev console
 }
@@ -1238,8 +1240,8 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
 
     // A loaded game resumes where it stood — camera on the
     // player, saved look angles, straight into Play (no boot menu). The
-    // capsule spawns at the SAVED position directly (the travel pattern —
-    // enterPlayMode would re-ground on the terrain, wrong indoors).
+    // capsule spawns at the SAVED position (restoreMode's `feet` — the
+    // travel pattern; grounding on the terrain would be wrong indoors).
     if (saveController.loadedFromSave()) {
         const bool playMode = !loadedWorldState || loadedWorldState->playMode;
         const Vec3 eye { 0.0f, statsTuning.eyeHeight, 0.0f };
@@ -1263,15 +1265,11 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
         screenStack.close("mainmenu");
         syncScreens();
         if (playMode && physics) {
-            playerController.spawnBody(*physics,
-                                       feet + Vec3 { 0.0f, 0.25f, 0.0f });
-            mode = SceneMode::Play;
-            engine->getWindow().setRelativeMouseMode(true);
-            screenStack.show("hud");
+            restoreMode(SceneMode::Play, &feet);
             syncScreens();
         } else if (loadedWorldState && loadedWorldState->editMode &&
                    levelEditor) {
-            mode = SceneMode::Edit; // the tree-creator round trip resumes
+            restoreMode(SceneMode::Edit); // the tree-creator round trip resumes
         }
     }
 
@@ -1293,6 +1291,9 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
 
 void LandscapeScene::onExit() {
     rhi::Device& device = engine->getDevice();
+    // Leave Play/Edit through the funnel while the systems it touches
+    // (capsule, screens, console, editor selection) are still alive.
+    restoreMode(SceneMode::Spectator);
     engine->getWindow().setRelativeMouseMode(false);
     engine->getWindow().setTextInput(false);
     // Game UI (one UiSystem per process — release before any
@@ -1328,8 +1329,7 @@ void LandscapeScene::onExit() {
     cellLoader.reset();
     overworldHandle = data::FormHandle {};
     // Physics: bodies -> tiles -> world (each references the previous).
-    mode = SceneMode::Spectator;
-    playerController.destroyBody();
+    playerController.destroyBody(); // already gone with Play; idempotent
     debugCapsule.reset();
     streaming.reset(physics.get());
     vegCollision.reset();
@@ -1368,11 +1368,53 @@ void LandscapeScene::update(f32 dt) {
     if (genTuningApplyRequested) {
         genTuningApplyRequested = false;
         if (sandboxActive) {
-            travelToMap(activeMapX, activeMapZ);
+            sandboxWorld.travelTo(makeSandboxContext(), sandboxWorld.mapX(),
+                                  sandboxWorld.mapZ());
         }
     }
+    drainCompletions();
+    // The frame's pause decisions come from the game UI; every step below
+    // is gated here, in update(), never inside the phases.
+    const FrameGates gates = updateUi(dt);
+    if (physics && !gates.simPaused) {
+        tickPhysics(dt);
+    }
+    updateWorld(gates.uiPaused);
+    if (!gates.simPaused) {
+        updateSim(dt);
+    }
+    extractScene();
+    if (!gates.simPaused) {
+        updateActorsAndFx(dt);
+    }
+    updateAmbientAndAudio(dt);
+    extractFx();
+    extractViewmodel();
+    updateAtmosphere(dt);
+    updateInput(dt, gates.uiPaused);
+    // Remember the active gameplay mode (outside menus) so a menu returns here
+    // on Escape. Defaults to Play, so the boot main menu closes into Play.
+    if (!(uiCreated && screenStack.modalOpen())) {
+        lastActiveMode = mode;
+    }
+    // The world-warmup machine (boot / sandbox entry / spectator
+    // catch-up): pure state — the veil itself is the RmlUi "loading"
+    // document this feeds. Runs on the SIM dt, paused or not (the boot
+    // completes behind the main menu), after the camera moved (the
+    // spectator catch-up reads this frame's speed).
+    warmup.update(makeWarmupContext(), dt);
+    // A requested load re-enters the scene with the save
+    // resolved as the last layer. End of update: nothing touches the
+    // world after this.
+    if (saveController.takeReloadRequest()) {
+        onExit();
+        onEnter();
+    }
+}
+
+void LandscapeScene::drainCompletions() {
     // Mesh path: pump async residency (worker decodes -> main-thread
-    // uploads, §7), then extract this frame's snapshot from the world.
+    // uploads, §7) before anything reads the assets this frame.
     {
         core::FrameProbe::Scope probe { frameProbe, "assets" };
         if (materialTextures) {
@@ -1390,6 +1432,9 @@ void LandscapeScene::update(f32 dt) {
             texts, [this](const str& m) { interaction.say(m, 3.0f); })) {
         saveController.performSave(makeSaveContext(), *slot);
     }
+}
+
+LandscapeScene::FrameGates LandscapeScene::updateUi(f32 dt) {
     // The game UI runs first — an open MODAL screen pauses
     // the sim below (UiScreenForm.modal) and owns mouse/keyboard; the HUD
     // overlay just reads. Dev ImGui stays live either way.
@@ -1397,129 +1442,50 @@ void LandscapeScene::update(f32 dt) {
         core::FrameProbe::Scope probe { frameProbe, "gameUi" };
         updateGameUi(dt);
     }
-    const bool uiPaused = uiCreated && screenStack.modalOpen();
+    FrameGates gates;
+    gates.uiPaused = uiCreated && screenStack.modalOpen();
     // Spectator freezes the *living* sim — physics, the game clock (so the
     // sun stops too), the character tick and the NPCs — while the free camera
     // keeps roaming and the world keeps streaming and rendering. That frozen-
     // moment-you-can-look-around is the base for a future photo mode. A modal
     // UI still pauses everything, camera included (it owns the input).
-    const bool simPaused = uiPaused || (mode == SceneMode::Spectator);
+    gates.simPaused = gates.uiPaused || (mode == SceneMode::Spectator);
+    return gates;
+}
+
+void LandscapeScene::tickPhysics(f32 dt) {
     // Physics tick + collision tiles around the focus (the player
     // in Play mode, the camera in Fly); the debug capsule free-falls.
-    if (physics && !simPaused) {
-        core::FrameProbe::Scope probe { frameProbe, "physics" };
-        physics->tick(dt);
-        // Seized rocks: the entity follows its body (rolling, resting).
-        for (auto it = spiritRocks.begin(); it != spiritRocks.end();) {
-            if (!it->entity.is_alive()) {
-                physics->removeBody(it->body); // its cell unloaded
-                it = spiritRocks.erase(it);
-                continue;
-            }
-            const phys::PhysicsWorld::BodyPose pose = physics->bodyPose(it->body);
-            auto& transform = it->entity.get_mut<world::Transform>();
-            transform.position = pose.position;
-            transform.rotation = pose.rotation;
-            if (it->entity.has<world::Displaced>()) {
-                it->entity.get_mut<world::Displaced>().groundOffsetY =
-                    pose.position.y -
-                    render::terrain::height(renderer.terrainParams(),
-                                            pose.position.x, pose.position.z);
-            }
-            ++it;
-        }
-        if (!interiorMode) { // interiors have no terrain to collide with
-            const Vec3 focus =
-                (mode == SceneMode::Play) && playerController.body()
-                    ? playerController.body()->position()
-                    : flyCamera.camera.position;
-            terrainCollision->update(focus);
-            vegCollision->update(focus); // trunks + rocks
-        }
-        if (debugCapsule) {
-            debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
-        }
+    core::FrameProbe::Scope probe { frameProbe, "physics" };
+    physics->tick(dt);
+    // Seized rocks: the entity follows its body (rolling, resting).
+    spiritDirector.syncRocks(*physics, renderer.terrainParams());
+    if (policy().snapsToTerrain) { // interiors have no terrain to collide with
+        const Vec3 focus =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
+        terrainCollision->update(focus);
+        vegCollision->update(focus); // trunks + rocks
     }
+    if (debugCapsule) {
+        debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
+    }
+}
+
+void LandscapeScene::updateWorld(bool uiPaused) {
     // Sandbox terrain: converge/bake super-tiles around the focus and
     // land finished ones (workers bake, this thread publishes). NOT
     // gated on uiPaused: the title menu's backdrop is the live scene,
     // and prewarming the tiles there means the world (and its
     // collision) is ready the moment the player enters.
-    if (bakeStreamer && !interiorMode) {
+    if (policy().streamsBakes && sandboxWorld.streamer()) {
         core::FrameProbe::Scope probe { frameProbe, "terrainbake" };
         const Vec3 focus =
             (mode == SceneMode::Play) && playerController.body()
                 ? playerController.body()->position()
                 : flyCamera.camera.position;
-        // Drain the WHOLE mailbox, publish once: N tiles used to mean N
-        // water rebuilds, N collision rebuilds and N queue passes.
-        vector<TerrainBakeStreamer::PublishedTile> batch;
-        bakeStreamer->update(
-            focus, [&batch](TerrainBakeStreamer::PublishedTile&& tile) {
-                batch.push_back(std::move(tile));
-            });
-        // Map-wide lake registry: lands once per map, then membership
-        // follows the focus (bbox distance) even between tile events —
-        // a lake must be pinnable wherever the player stands on it,
-        // not only while its owner slice is published.
-        vector<render::terraingen::Lake> registry;
-        bool lakesChanged = false;
-        if (bakeStreamer->takeMapLakes(registry)) {
-            mapLakes = std::move(registry);
-            mapLakesValid = true;
-            LOG_INFO("Sandbox water: map lake registry loaded "
-                     "({} lakes)",
-                     mapLakes.size());
-            lakesChanged = refreshSandboxLakes(focus);
-        } else if (mapLakesValid &&
-                   (!lakeRefreshFocusValid ||
-                    glm::max(
-                        std::abs(focus.x - lastLakeRefreshFocus.x),
-                        std::abs(focus.z - lastLakeRefreshFocus.z)) >
-                        512.0f)) {
-            lakesChanged = refreshSandboxLakes(focus);
-        }
-        if (!batch.empty()) {
-            publishBakedTiles(std::move(batch), focus);
-        } else if (lakesChanged) {
-            publishWaterBodies();
-            // A lakes-only arrival (registry landing, membership
-            // refresh) changes the WATER under chunks that were
-            // scattered before it: without a re-scatter, trees and
-            // grass placed on a then-dry bed stand in the new sheet
-            // until the chunk re-streams. Ground is untouched, so
-            // only the scatter queue runs — bounded to resident
-            // chunks that a lake actually covers.
-            const f32 reach =
-                static_cast<f32>(tuning.terrainViewRadius + 1) *
-                64.0f;
-            for (const auto& lake : sandboxLakes) {
-                const f32 minX =
-                    glm::max(lake.minX, focus.x - reach);
-                const f32 maxX =
-                    glm::min(lake.maxX, focus.x + reach);
-                const f32 minZ =
-                    glm::max(lake.minZ, focus.z - reach);
-                const f32 maxZ =
-                    glm::min(lake.maxZ, focus.z + reach);
-                if (minX > maxX || minZ > maxZ) {
-                    continue;
-                }
-                for (i32 cz =
-                         static_cast<i32>(std::floor(minZ / 64.0f));
-                     cz <= static_cast<i32>(std::floor(maxZ / 64.0f));
-                     ++cz) {
-                    for (i32 cx = static_cast<i32>(
-                             std::floor(minX / 64.0f));
-                         cx <=
-                         static_cast<i32>(std::floor(maxX / 64.0f));
-                         ++cx) {
-                        renderer.sculptScatterQueue().push_back(
-                            render::HeightPatches::keyOf(cx, cz));
-                    }
-                }
-            }
-        }
+        sandboxWorld.update(makeSandboxContext(), focus);
     }
     // Stream cells around the focus; on any ring change,
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
@@ -1551,171 +1517,105 @@ void LandscapeScene::update(f32 dt) {
     // the (still open) pause menu kept the stale sun.
     renderer.skySystem().timeOfDay =
         static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
-    // Map crossing (chantier PAYSAGE N1): the focus left the active
-    // rect — switch maps through the travel path (veil, background
-    // bake if the neighbour is cold). Checked every frame, cheap;
-    // never while a warmup or a travel is pending. NOT inside the
-    // simPaused gate: the spectator camera flies across lines with
-    // the sim paused — only an open menu holds it.
-    if (!uiPaused && sandboxActive && bakeStreamer && !pendingMapTravel &&
-        warmupPhase == WarmupPhase::Idle) {
-        const auto& sandbox = renderer.terrainParams().sandbox;
-        if (sandbox && sandbox->grid.valid) {
-            const Vec3 at =
-                (mode == SceneMode::Play) && playerController.body()
-                    ? playerController.body()->position()
-                    : flyCamera.camera.position;
-            const f32 size = sandbox->grid.mapSize;
-            const f32 minX = static_cast<f32>(activeMapX) * size;
-            const f32 minZ = static_cast<f32>(activeMapZ) * size;
-            const f32 out = 8.0f; // hysteresis past the line
-            const i32 dx = at.x < minX - out          ? -1
-                           : at.x > minX + size + out ? 1
-                                                      : 0;
-            const i32 dz = at.z < minZ - out          ? -1
-                           : at.z > minZ + size + out ? 1
-                                                      : 0;
-            if (dx != 0 || dz != 0) {
-                pendingMapTravel = PendingMapTravel {
-                    activeMapX + dx, activeMapZ + dz, true,
-                    Vec2 { at.x, at.z }
-                };
-            }
-        }
+    // Map crossing: the focus left the active rect — switch maps through
+    // the travel path (veil, background bake if the neighbour is cold).
+    // Checked every frame, cheap; never while a warmup or a travel is
+    // pending. NOT inside the simPaused gate: the spectator camera flies
+    // across lines with the sim paused — only an open menu holds it.
+    if (!uiPaused && sandboxActive && sandboxWorld.streamer() &&
+        !sandboxWorld.travelPending() &&
+        warmup.phase() == WarmupPhase::Idle) {
+        const Vec3 at =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
+        sandboxWorld.queueCrossing(makeSandboxContext(), at);
     }
     // A queued crossing (the check above, a pass trigger's Lua, the
-    // console): execute at this safe point, outside any ECS iteration,
-    // in every mode — the sim-paused section below only reaches it in
-    // Play.
-    if (pendingMapTravel && !uiPaused) {
-        const PendingMapTravel travel = *pendingMapTravel;
-        pendingMapTravel.reset();
-        travelToMap(travel.mapX, travel.mapZ,
-                    travel.hasArrival ? &travel.arrival : nullptr);
+    // console) executes HERE and only here: the one safe point of the
+    // frame, outside any ECS iteration, in every mode. A travel a trigger
+    // queues later in this frame waits for this point next frame — the
+    // swap tears the world down (the flecs locked-storage rule), so it
+    // never runs mid-section.
+    if (sandboxWorld.travelPending() && !uiPaused) {
+        sandboxWorld.runPendingTravel(makeSandboxContext());
     }
-    if (!simPaused) {
-        // Interaction prompts + the travel fade state machine.
-        interaction.update(dt, makeInteractionContext());
-        // The game clock owns time — advancing it stays
-        // paused with the sim; tickCharacter gets REAL game-seconds
-        // (regen/survival at timescale).
-        gameClock.timescale = animateTime ? 720.0f : 12.0f;
-        const f64 gameDt = gameClock.advance(dt);
-        if (playerEntity.is_alive()) {
-            core::FrameProbe::Scope probe { frameProbe, "charTick" };
-            const gameplay::CharacterTickContext tickCtx { derivedStats,
-                                                           gameTags,
-                                                           statsTuning };
-            gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
-                                    playerEquipMods());
-        }
-        // Gameplay volumes: loaded TriggerVolumes vs
-        // actor positions — enter/leave fire the volume's event on the
-        // scene bus (quests/dialogue subscribe there) and its Lua snippet
-        // through the shared VM. NPC positions are last frame's (they
-        // move in updateNpcs, later) — one frame of latency is fine.
-        {
-            // ONE actor snapshot per frame — the trigger sweep
-            // and the faction shout (callForHelp) query it. Hearing
-            // stays a per-perceiver sweep (its radius is per-NPC).
-            spatialIndex.rebuild(world);
-            world::TriggerCallbacks triggerCb;
-            triggerCb.events = &eventBus;
-            triggerCb.runScript = [this](const str& code, ecs::Entity actor,
-                                         ecs::Entity) {
-                script::Vm* vm = sceneConsole.vm();
-                if (!vm) {
-                    return;
-                }
-                script::ScriptContext ctx;
-                ctx.entity = actor;
-                if (actor.has<gameplay::AttributeSet>()) {
-                    ctx.attributes =
-                        &actor.get_mut<gameplay::AttributeSet>();
-                }
-                if (actor.has<gameplay::AbilitySystem>()) {
-                    ctx.abilitySystem =
-                        &actor.get_mut<gameplay::AbilitySystem>();
-                }
-                ctx.tags = &gameTags;
-                ctx.forms = &forms;
-                if (const auto result = vm->run(code, ctx); !result.ok) {
-                    LOG_WARN("Trigger script failed: {}", result.error);
-                }
-            };
-            world::updateTriggerVolumes(world, triggerCb, &spatialIndex);
-        }
-        // Approach prefetch (M4.3): nearing a rim warms the neighbour
-        // map in the background — the crossing then costs a fade, not
-        // a bake. Cheap check every 2 s.
-        mapPrefetchCooldown -= dt;
-        if (sandboxActive && bakeStreamer &&
-            mapPrefetchCooldown <= 0.0f) {
-            mapPrefetchCooldown = 2.0f;
-            const auto& sandbox = renderer.terrainParams().sandbox;
-            if (sandbox && sandbox->grid.valid) {
-                const Vec3 at = flyCamera.camera.position;
-                const f32 near = 1536.0f;
-                const f32 size = sandbox->grid.mapSize;
-                const f32 minX = static_cast<f32>(activeMapX) * size;
-                const f32 minZ = static_cast<f32>(activeMapZ) * size;
-                const i32 nx = at.x - minX < near          ? -1
-                               : minX + size - at.x < near ? 1
-                                                           : 0;
-                const i32 nz = at.z - minZ < near          ? -1
-                               : minZ + size - at.z < near ? 1
-                                                           : 0;
-                if (nx != 0) {
-                    bakeStreamer->prefetchMap(activeMapX + nx, activeMapZ);
-                }
-                if (nz != 0) {
-                    bakeStreamer->prefetchMap(activeMapX, activeMapZ + nz);
-                }
-                if (nx != 0 && nz != 0) {
-                    bakeStreamer->prefetchMap(activeMapX + nx,
-                                              activeMapZ + nz);
-                }
-                // Neighbour overviews landing (a prefetch finished):
-                // publish a new sandbox identity holding them — the
-                // horizon past the rim becomes the neighbour's own
-                // truth — and bump the content stamp on that rect.
-                auto next =
-                    std::make_shared<render::SandboxTerrain>(*sandbox);
-                if (loadNeighbourOverviews(*next, makeMapBakeParams()) >
-                    0) {
-                    render::TerrainParams& tp = renderer.terrainParams();
-                    tp.contentEvents.push(tp.contentStamp + 1,
-                                          minX - size, minZ - size,
-                                          minX + 2.0f * size,
-                                          minZ + 2.0f * size);
-                    ++tp.contentStamp;
-                    tp.sandbox = next;
-                }
-            }
-        }
-        // A pass trigger asked for a map crossing: execute now, after
-        // every ECS iteration of the frame section is done.
-        if (pendingMapTravel) {
-            const PendingMapTravel travel = *pendingMapTravel;
-            pendingMapTravel.reset();
-            travelToMap(travel.mapX, travel.mapZ,
-                        travel.hasArrival ? &travel.arrival : nullptr);
-        }
-        applyPendingSpiritActions();
-        // Spirit sources live in SIM seconds: a spring pours rate x
-        // duration whatever the dev time scale. Re-push only on change.
-        // Every world: the spirits need the ground, not the sandbox (the
-        // water ones need the live sim — checked at the cast).
-        {
-            const f32 simDt = dt * renderer.waterSystem().simConfig().timeScale;
-            vector<u32> stopped;
-            if (spiritDirector.tick(simDt, &stopped)) {
-                stopSpiritEmitters(stopped);
-                pushRuntimeWaterSources();
-            }
-            updateSpiritFire(simDt);
-        }
+}
+
+void LandscapeScene::updateSim(f32 dt) {
+    // Interaction prompts + the travel fade state machine.
+    interaction.update(dt, makeInteractionContext());
+    // The game clock owns time — advancing it stays
+    // paused with the sim; tickCharacter gets REAL game-seconds
+    // (regen/survival at timescale).
+    gameClock.timescale = animateTime ? 720.0f : 12.0f;
+    const f64 gameDt = gameClock.advance(dt);
+    if (playerEntity.is_alive()) {
+        core::FrameProbe::Scope probe { frameProbe, "charTick" };
+        const gameplay::CharacterTickContext tickCtx { derivedStats,
+                                                       gameTags,
+                                                       statsTuning };
+        gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
+                                playerEquipMods());
     }
+    // Gameplay volumes: loaded TriggerVolumes vs
+    // actor positions — enter/leave fire the volume's event on the
+    // scene bus (quests/dialogue subscribe there) and its Lua snippet
+    // through the shared VM. NPC positions are last frame's (they
+    // move in updateNpcs, later) — one frame of latency is fine.
+    {
+        // ONE actor snapshot per frame — the trigger sweep
+        // and the faction shout (callForHelp) query it. Hearing
+        // stays a per-perceiver sweep (its radius is per-NPC).
+        spatialIndex.rebuild(world);
+        world::TriggerCallbacks triggerCb;
+        triggerCb.events = &eventBus;
+        triggerCb.runScript = [this](const str& code, ecs::Entity actor,
+                                     ecs::Entity) {
+            script::Vm* vm = sceneConsole.vm();
+            if (!vm) {
+                return;
+            }
+            script::ScriptContext ctx;
+            ctx.entity = actor;
+            if (actor.has<gameplay::AttributeSet>()) {
+                ctx.attributes =
+                    &actor.get_mut<gameplay::AttributeSet>();
+            }
+            if (actor.has<gameplay::AbilitySystem>()) {
+                ctx.abilitySystem =
+                    &actor.get_mut<gameplay::AbilitySystem>();
+            }
+            ctx.tags = &gameTags;
+            ctx.forms = &forms;
+            if (const auto result = vm->run(code, ctx); !result.ok) {
+                LOG_WARN("Trigger script failed: {}", result.error);
+            }
+        };
+        world::updateTriggerVolumes(world, triggerCb, &spatialIndex);
+    }
+    // Approach prefetch: nearing a rim warms the neighbour
+    // map in the background — the crossing then costs a fade, not
+    // a bake. Cheap check every 2 s.
+    sandboxWorld.updatePrefetch(makeSandboxContext(), dt,
+                                flyCamera.camera.position);
+    spiritDirector.applyPendingActions(makeSpiritContext());
+    // Spirit sources live in SIM seconds: a spring pours rate x
+    // duration whatever the dev time scale. Re-push only on change.
+    // Every world: the spirits need the ground, not the sandbox (the
+    // water ones need the live sim — checked at the cast).
+    {
+        const f32 simDt = dt * renderer.waterSystem().simConfig().timeScale;
+        vector<u32> stopped;
+        if (spiritDirector.tick(simDt, &stopped)) {
+            SpiritDirector::stopEmitters(fxSim, stopped);
+            pushRuntimeWaterSources();
+        }
+        fire.update(makeFireContext(), simDt);
+    }
+}
+
+void LandscapeScene::extractScene() {
     {
         // Everything render() needs from the World is extracted HERE —
         // the render path reads only the snapshot (the Phase-5 seam).
@@ -1725,7 +1625,7 @@ void LandscapeScene::update(f32 dt) {
         snapshot.shadowLights.clear();
         snapshot.waterVolumes.clear();
         snapshot.waterMeshes.clear();
-        extractSpiritWater(snapshot);
+        spiritDirector.extract(snapshot, timeSeconds);
         extractMeshes(world, snapshot);
         resolveMeshMaterials(forms, snapshot);
         // Frustum-aware selection (docs/RENDERING.md §5 B1): visible far
@@ -1739,7 +1639,7 @@ void LandscapeScene::update(f32 dt) {
         extractLights(world, flyCamera.camera.position,
                       render::WorldRenderer::kMaxLights, snapshot,
                       &cameraViewProj);
-        extractFireLights(snapshot);
+        fire.extractLights(makeFireContext(), snapshot);
         extractWaterVolumes(world, snapshot);
     }
     if (debugCapsule) {
@@ -1750,81 +1650,87 @@ void LandscapeScene::update(f32 dt) {
                        Vec3 { 0.9f, 2.25f, 0.9f });
         snapshot.meshes.push_back({ core::Guid {}, core::Guid {}, transform });
     }
+}
+
+void LandscapeScene::updateActorsAndFx(f32 dt) {
     // Patrol + graph-driven poses for every Forms-built NPC.
-    if (!simPaused) {
-        core::FrameProbe::Scope probe { frameProbe, "npcs" };
-        updateNpcs(dt);
-        // After the tick mirrored State.Downed, run the
-        // follower sweep — protection sync, time-together affinity,
-        // bleedout clock, resolution (recover / convalescence dismiss /
-        // real death). A dismiss to a non-resident home despawns the
-        // entity: prune the list NOW.
-        if (followerController.updateFollowers(makeFollowerContext(), dt)) {
-            refreshNpcs(engine->getDevice());
-        }
-        // Arrows fly with the sim.
-        projectileDirector.update(
-            dt, ProjectileContext { physics.get(), npcDirector.npcs(),
-                                    playerEntity, playerController.body(),
-                                    gameTags, derivedStats, statsTuning,
-                                    eventBus, &fxDirector.cues(),
-                                    &combatRng,
-                                    sceneConsole.godMode() });
-        // The particle sim advances with the world (paused sim =
-        // frozen sparks, like everything else).
-        fxSim.update(dt);
-        // The kill-z floor (WorldspaceForm.killZ) — falling out
-        // of the world is an outright death through the NORMAL pipeline
-        // (an outright kill), never a teleport-back. The sweep itself
-        // is headless in world/scene/KillZ; the scene only
-        // resolves the worldspace's killZ (fallback = the Form's own
-        // default, never a re-hardcoded literal) and gates the player.
-        f32 killZ = world::WorldspaceForm {}.killZ;
-        if (const data::Form* space = forms.get(activeWorldspace)) {
-            const reflect::TypeInfo* type = forms.typeOf(activeWorldspace);
-            if (type &&
-                type->isA(world::WorldspaceForm::staticTypeInfo().id)) {
-                killZ = static_cast<const world::WorldspaceForm*>(space)
-                            ->killZ;
-            }
-        }
-        const bool sweepPlayer = mode == SceneMode::Play &&
-                                 playerController.body() &&
-                                 !sceneConsole.godMode();
-        world::enforceKillZ(world, killZ, gameTags, derivedStats,
-                            statsTuning,
-                            sweepPlayer ? ecs::Entity {} : playerEntity);
-        // Floating props ride the same water the swimmer feels
-        // (world/scene/Floaters — kinematic v1). R3: the unified query,
-        // so a floater bobs on a sim spread and dries with it.
-        if (!interiorMode && waterBodies) {
-            const render::terrain::WaterQuery waterQuery = makeWaterQuery();
-            world::updateFloaters(
-                world, dt, timeSeconds,
-                [&waterQuery](const Vec3& at) {
-                    return render::terrain::waterSurfaceQuery(
-                        waterQuery, at.x, at.z, at.y);
-                },
-                [&waterQuery, this](const Vec3& at) {
-                    // The current, and the wind's share (E4): a crate
-                    // drifts downwind across a still pond.
-                    return render::terrain::waterFlowQuery(
-                        waterQuery, at.x, at.z, at.y) +
-                           windField.windAt(at.x, at.z) * kFloaterWindDrift;
-                });
+    core::FrameProbe::Scope probe { frameProbe, "npcs" };
+    updateNpcs(dt);
+    // After the tick mirrored State.Downed, run the
+    // follower sweep — protection sync, time-together affinity,
+    // bleedout clock, resolution (recover / convalescence dismiss /
+    // real death). A dismiss to a non-resident home despawns the
+    // entity: prune the list NOW.
+    if (followerController.updateFollowers(makeFollowerContext(), dt)) {
+        refreshNpcs(engine->getDevice());
+    }
+    // Arrows fly with the sim.
+    projectileDirector.update(
+        dt, ProjectileContext { physics.get(), npcDirector.npcs(),
+                                playerEntity, playerController.body(),
+                                gameTags, derivedStats, statsTuning,
+                                eventBus, &fxDirector.cues(),
+                                &combatRng,
+                                sceneConsole.godMode() });
+    // The particle sim advances with the world (paused sim =
+    // frozen sparks, like everything else).
+    fxSim.update(dt);
+    // The kill-z floor (WorldspaceForm.killZ) — falling out
+    // of the world is an outright death through the NORMAL pipeline
+    // (an outright kill), never a teleport-back. The sweep itself
+    // is headless in world/scene/KillZ; the scene only
+    // resolves the worldspace's killZ (fallback = the Form's own
+    // default, never a re-hardcoded literal) and gates the player.
+    f32 killZ = world::WorldspaceForm {}.killZ;
+    if (const data::Form* space = forms.get(activeWorldspace)) {
+        const reflect::TypeInfo* type = forms.typeOf(activeWorldspace);
+        if (type &&
+            type->isA(world::WorldspaceForm::staticTypeInfo().id)) {
+            killZ = static_cast<const world::WorldspaceForm*>(space)
+                        ->killZ;
         }
     }
+    const bool sweepPlayer = mode == SceneMode::Play &&
+                             playerController.body() &&
+                             !sceneConsole.godMode();
+    world::enforceKillZ(world, killZ, gameTags, derivedStats,
+                        statsTuning,
+                        sweepPlayer ? ecs::Entity {} : playerEntity);
+    // Floating props ride the same water the swimmer feels
+    // (world/scene/Floaters — kinematic v1): the unified query,
+    // so a floater bobs on a sim spread and dries with it.
+    if (policy().hasWaterBodies && waterBodies) {
+        const render::terrain::WaterQuery waterQuery = makeWaterQuery();
+        world::updateFloaters(
+            world, dt, timeSeconds,
+            [&waterQuery](const Vec3& at) {
+                return render::terrain::waterSurfaceQuery(
+                    waterQuery, at.x, at.z, at.y);
+            },
+            [&waterQuery, this](const Vec3& at) {
+                // The current, and the wind's share: a crate
+                // drifts downwind across a still pond.
+                return render::terrain::waterFlowQuery(
+                    waterQuery, at.x, at.z, at.y) +
+                       spiritDirector.wind().windAt(at.x, at.z) *
+                           SpiritDirector::kFloaterWindDrift;
+            });
+    }
+}
+
+void LandscapeScene::updateAmbientAndAudio(f32 dt) {
     // Shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
     fxDirector.update(dt, flyCamera);
-    updateFxSources(); // the torches and campfires within reach
-    updateRiverSourceFx(); // mist and murmur at the springs in reach
-    updateRiverCascadeFx(); // spray and roar at the falls in reach
-    applyFxIgniters(dt);
+    ambientFx.update(makeAmbientFxContext()); // torches, river heads, falls within reach
+    fire.applyIgniters(makeFireContext(), dt);
     // Reap finished one-shots; the listener rides the camera.
     audioSystem.update(dt);
     audioSystem.setListener(flyCamera.camera.position,
                             flyCamera.camera.forward());
+}
+
+void LandscapeScene::extractFx() {
     // Live particles -> POD batches; the ALPHA batch is sorted
     // far-to-near around the camera (additive needs no order).
     snapshot.fxAlpha.clear();
@@ -1878,77 +1784,85 @@ void LandscapeScene::update(f32 dt) {
     snapshot.skinned.clear();
     npcDirector.extract(snapshot);
     projectileDirector.extract(snapshot); // Arrows in flight/planted
+}
+
+void LandscapeScene::extractViewmodel() {
     // The first-person viewmodel — the player's sword
     // rides the simulated swing socket (guard pose bottom-right when
     // Idle; the LMB swing sweeps it right-to-left along the same arc the
     // hit test travels). Socket constants live in swingSocketLocal
     // [cpp-tuning: dev visual pass].
-    if (mode == SceneMode::Play && playerWeapon &&
-        playerEntity.is_alive() && playerController.weaponDrawn()) {
-        const render::Camera3D& cam = flyCamera.camera;
-        const Vec3 fwd = cam.forward();
-        const Vec3 right = cam.right();
-        const Vec3 up = glm::normalize(glm::cross(right, fwd));
-        const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
-                           Vec4 { -fwd, 0.0f },
-                           Vec4 { cam.position, 1.0f } };
-        // The viewmodel shows the EQUIPPED weapon (loot a club, equip
-        // it, see it) — the swing's weapon while one is in flight, the
-        // scene fallback only without any equipment.
-        const data::WeaponForm* shown = playerWeapon;
-        if (playerController.swingWeapon()) {
-            shown = playerController.swingWeapon();
-        } else if (playerEntity.has<gameplay::Equipment>()) {
-            const auto& equipment = playerEntity.get<gameplay::Equipment>();
-            if (equipment.weapon.isValid()) {
-                if (const auto* form =
-                        forms.find<data::WeaponForm>(equipment.weapon)) {
-                    shown = form;
-                }
+    if (!(mode == SceneMode::Play && playerWeapon &&
+          playerEntity.is_alive() && playerController.weaponDrawn())) {
+        return;
+    }
+    const render::Camera3D& cam = flyCamera.camera;
+    const Vec3 fwd = cam.forward();
+    const Vec3 right = cam.right();
+    const Vec3 up = glm::normalize(glm::cross(right, fwd));
+    const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
+                       Vec4 { -fwd, 0.0f },
+                       Vec4 { cam.position, 1.0f } };
+    // The viewmodel shows the EQUIPPED weapon (loot a club, equip
+    // it, see it) — the swing's weapon while one is in flight, the
+    // scene fallback only without any equipment.
+    const data::WeaponForm* shown = playerWeapon;
+    if (playerController.swingWeapon()) {
+        shown = playerController.swingWeapon();
+    } else if (playerEntity.has<gameplay::Equipment>()) {
+        const auto& equipment = playerEntity.get<gameplay::Equipment>();
+        if (equipment.weapon.isValid()) {
+            if (const auto* form =
+                    forms.find<data::WeaponForm>(equipment.weapon)) {
+                shown = form;
             }
         }
-        const data::WeaponForm& weapon = *shown;
-        const gameplay::SwingTiming timing { weapon.swingWindup,
-                                             weapon.swingActive,
-                                             weapon.swingRecovery };
-        const auto& swing = playerEntity.get<gameplay::MeleeSwing>();
-        // A raised guard shows the parry pose (sword oblique across the
-        // front); otherwise the socket follows the swing arc.
-        const Mat4 pose =
-            basis * (swing.guardSeconds >= 0.0f
-                         ? gameplay::guardSocketLocal()
-                         : gameplay::swingSocketLocal(swing, timing));
-        const core::Guid model =
-            weapon.model.isValid() ? weapon.model : swordMeshGuid();
-        snapshot.meshes.push_back({ model, core::Guid {}, pose });
-        snapshot.meshes.back().giOccluder = false; // viewmodel (see seam)
-        // While the bow is drawn, a nocked arrow rides the viewmodel
-        // and slides BACK with the charge — Rx(-90°)
-        // turns the +Y shaft toward -Z (the aim direction).
-        const f32 charge = playerController.bowCharge();
-        if (charge >= 0.0f) {
-            const Mat4 arrowLocal =
-                glm::translate(Mat4 { 1.0f },
-                               Vec3 { 0.13f, -0.30f,
-                                      -0.42f + charge * 0.22f }) *
-                glm::rotate(Mat4 { 1.0f }, glm::radians(-90.0f),
-                            Vec3 { 1.0f, 0.0f, 0.0f });
-            snapshot.meshes.push_back(
-                { arrowMeshGuid(), core::Guid {}, basis * arrowLocal });
-            snapshot.meshes.back().giOccluder = false; // viewmodel
-        }
     }
+    const data::WeaponForm& weapon = *shown;
+    const gameplay::SwingTiming timing { weapon.swingWindup,
+                                         weapon.swingActive,
+                                         weapon.swingRecovery };
+    const auto& swing = playerEntity.get<gameplay::MeleeSwing>();
+    // A raised guard shows the parry pose (sword oblique across the
+    // front); otherwise the socket follows the swing arc.
+    const Mat4 pose =
+        basis * (swing.guardSeconds >= 0.0f
+                     ? gameplay::guardSocketLocal()
+                     : gameplay::swingSocketLocal(swing, timing));
+    const core::Guid model =
+        weapon.model.isValid() ? weapon.model : swordMeshGuid();
+    snapshot.meshes.push_back({ model, core::Guid {}, pose });
+    snapshot.meshes.back().giOccluder = false; // viewmodel (see seam)
+    // While the bow is drawn, a nocked arrow rides the viewmodel
+    // and slides BACK with the charge — Rx(-90°)
+    // turns the +Y shaft toward -Z (the aim direction).
+    const f32 charge = playerController.bowCharge();
+    if (charge >= 0.0f) {
+        const Mat4 arrowLocal =
+            glm::translate(Mat4 { 1.0f },
+                           Vec3 { 0.13f, -0.30f,
+                                  -0.42f + charge * 0.22f }) *
+            glm::rotate(Mat4 { 1.0f }, glm::radians(-90.0f),
+                        Vec3 { 1.0f, 0.0f, 0.0f });
+        snapshot.meshes.push_back(
+            { arrowMeshGuid(), core::Guid {}, basis * arrowLocal });
+        snapshot.meshes.back().giOccluder = false; // viewmodel
+    }
+}
+
+void LandscapeScene::updateAtmosphere(f32 dt) {
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(atmos.windStrength, 0.05f);
     windDrift += render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg) *
                  (dt * glm::max(atmos.windStrength, 0.05f));
-
     // Weather crossfade (owned by WeatherController): slides `atmos` from the
     // captured start state to the selected weather over its duration.
     weather.update(atmos, dt);
-    updateSpiritWindHold(dt);
+    spiritDirector.updateWindHold(makeSpiritContext(), dt);
+}
 
+void LandscapeScene::updateInput(f32 dt, bool uiPaused) {
     // Mode switching lives with the F2/F3 hotkeys (drawn overlay); Play is
     // home. Nothing to toggle here anymore.
     if (uiPaused || uiPadConsumedA || uiPadConsumedB) {
@@ -1973,22 +1887,12 @@ void LandscapeScene::update(f32 dt) {
         if (script::Vm* vm = sceneConsole.vm()) {
             vm->tickCoroutines(dt);
         }
-        updateSpiritJets(dt);
-        updateSpiritHold(dt);
-        updateSpiritEarth(dt);
-        updateSpiritLine();
-        updateSpiritRocks(dt);
-        updateSpiritReading(dt);
-        updateSpiritBrand(dt);
-        updateSpiritGlobe(dt);
-        updateSpiritFlameJet(dt);
-        updateSpiritBlow(dt);
-        updateSpiritWind(dt);
+        spiritDirector.update(makeSpiritContext(), dt);
         // The wheel cycles the spell book (draft UI, no screen open —
         // a modal owns the wheel through the UI system).
         if (const f32 wheel = engine->getInput().wheelDelta();
             wheel != 0.0f && !screenStack.modalOpen()) {
-            cycleSpell(wheel > 0.0f ? -1 : 1);
+            spiritDirector.cycleSpell(wheel > 0.0f ? -1 : 1);
         }
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
@@ -2013,48 +1917,35 @@ void LandscapeScene::update(f32 dt) {
         flyCamera.update(engine->getInput(), engine->getWindow(), dt,
                          allowCapture, trigger);
     }
-    // (Time-of-day now advances through the game clock, above.)
-
-    // Remember the active gameplay mode (outside menus) so a menu returns here
-    // on Escape. Defaults to Play, so the boot main menu closes into Play.
-    if (!(uiCreated && screenStack.modalOpen())) {
-        lastActiveMode = mode;
-    }
-
-    // The world-warmup machine (boot / sandbox entry / spectator
-    // catch-up): pure state — the veil itself is the RmlUi "loading"
-    // document this feeds. Runs on the SIM dt, paused or not (the boot
-    // completes behind the main menu), after the camera moved (the
-    // spectator catch-up reads this frame's speed).
-    updateWarmup(dt);
-
-    // A requested load re-enters the scene with the save
-    // resolved as the last layer. End of update: nothing touches the
-    // world after this.
-    if (saveController.takeReloadRequest()) {
-        onExit();
-        onEnter();
-    }
+    // (Time-of-day now advances through the game clock, in updateSim.)
 }
 
-void LandscapeScene::enterPlayMode() {
+void LandscapeScene::enterPlayMode(const Vec3* feet) {
     if (!physics) {
         return;
     }
     // Sandbox: the spawn is not FINAL until the warmup validated it on
     // the baked world — dropping the capsule now would land it on the
     // analytic guess (possibly at the bottom of a lake the bake creates
-    // there). The machine enters play the moment the spawn is placed.
-    if (sandboxActive && (warmupPhase == WarmupPhase::BakeRing ||
-                          warmupPhase == WarmupPhase::PlaceSpawn)) {
-        pendingPlayEntry = true;
+    // there). The machine enters play the moment the spawn is placed. A
+    // saved position is exact already and never waits.
+    if (!feet && sandboxActive && warmup.spawnPending()) {
+        warmup.deferPlayEntry();
         return;
     }
-    // Spawn the capsule under the camera, feet grounded on the height
-    // function (+0.5 m so a slope never pins the spawn into the field).
-    Vec3 feet = flyCamera.camera.position;
-    feet.y = render::terrain::height(renderer.terrainParams(), feet.x, feet.z) + 0.5f;
-    playerController.spawnBody(*physics, feet);
+    Vec3 spawn;
+    if (feet) {
+        // The saved feet, lifted the travel pattern's 0.25 m.
+        spawn = *feet + Vec3 { 0.0f, 0.25f, 0.0f };
+    } else {
+        // Under the camera, feet grounded on the height function (+0.5 m
+        // so a slope never pins the spawn into the field).
+        spawn = flyCamera.camera.position;
+        spawn.y = render::terrain::height(renderer.terrainParams(), spawn.x,
+                                          spawn.z) +
+                  0.5f;
+    }
+    playerController.spawnBody(*physics, spawn);
     mode = SceneMode::Play;
     // Play owns the keyboard: drop any lingering ImGui nav focus. With
     // NavEnableKeyboard, WantCaptureKeyboard stays true as long as a panel
@@ -2078,10 +1969,10 @@ void LandscapeScene::exitPlayMode() {
 }
 
 // THE mode transition (one mode REPLACES the
-// other — every switch funnels here, hotkeys and menu resume alike, and
-// the per-mode side effects live in the two flat switches below, not in
-// nested ifs at the call sites).
-void LandscapeScene::restoreMode(SceneMode target) {
+// other — every switch funnels here, hotkeys, menu resume, save load,
+// boot and teardown alike, and the per-mode side effects live in the two
+// flat switches below, not in nested ifs at the call sites).
+void LandscapeScene::restoreMode(SceneMode target, const Vec3* feet) {
     if (mode == target) {
         return;
     }
@@ -2105,7 +1996,7 @@ void LandscapeScene::restoreMode(SceneMode target) {
             // "cannot get back into the game" trap) — ` reopens it.
             sceneConsole.toggle(true);
         }
-        enterPlayMode(); // spawns the capsule, grabs the mouse, shows HUD
+        enterPlayMode(feet); // spawns the capsule, grabs the mouse, shows HUD
         break;
     case SceneMode::Spectator:
         mode = SceneMode::Spectator;
@@ -2124,6 +2015,30 @@ void LandscapeScene::restoreMode(SceneMode target) {
     }
 }
 
+void LandscapeScene::beginPlay(BootMode boot) {
+    // The world pick flips BEFORE the capsule spawns (the sandbox also
+    // moves the start point to generated land); restoreMode no-ops when
+    // Play is already the mode.
+    setSandboxMode(boot == BootMode::Sandbox);
+    screenStack.closeAll();
+    restoreMode(SceneMode::Play);
+}
+
+// --- The world kind --------------------------------------------------------
+
+// The single decider. An interior wins over the exterior identity; the
+// exterior identity (the sandbox map or the authored cells) is remembered
+// by sandboxActive and comes back the moment the interior is left.
+void LandscapeScene::decideWorldKind() {
+    if (interiorMode) {
+        activeWorld = WorldKind::Interior;
+    } else {
+        activeWorld = sandboxActive ? WorldKind::SandboxMap
+                                    : WorldKind::AuthoredCells;
+    }
+    activePolicy = worldPolicy(activeWorld);
+}
+
 // --- The level editor -------------------------------------------------------
 
 // mouseRayDirection / pickEntity / groundUnderMouse moved to SceneEditor.
@@ -2137,13 +2052,13 @@ void LandscapeScene::restoreMode(SceneMode target) {
 void LandscapeScene::placeStartCamera() {
     // Sandbox: the probed generated start (a stable spot per seed — the
     // player expects to come back to the SAME place across sessions).
-    if (sandboxActive && sandboxSpawnValid) {
+    if (sandboxActive && sandboxWorld.spawnValid()) {
         flyCamera.camera.position =
-            sandboxSpawn +
+            sandboxWorld.spawn() +
             Vec3 { 0.0f, statsTuning.eyeHeight + 1.0f, 0.0f };
-        if (!sandboxKeepHeading) {
+        if (!sandboxWorld.keepHeading()) {
             flyCamera.camera.pitch = -0.12f;
-            flyCamera.camera.yaw = 3.1415927f;
+            flyCamera.camera.yaw = core::kPi;
         }
         return;
     }
@@ -2158,347 +2073,14 @@ void LandscapeScene::placeStartCamera() {
                                          flyCamera.camera.position);
         // Title backdrop faces AWAY from the character spot:
         // the vista behind, not the character close-up.
-        flyCamera.camera.yaw = std::atan2(look.x, -look.z) + 3.1415927f;
+        flyCamera.camera.yaw = std::atan2(look.x, -look.z) + core::kPi;
         flyCamera.camera.pitch = -std::asin(look.y);
     } else {
         const f32 ground = render::terrain::height(renderer.terrainParams(), 32.0f,
                                                    400.0f);
         flyCamera.camera.position = { 32.0f, ground + 30.0f, 400.0f };
         flyCamera.camera.pitch = -0.30f;
-        flyCamera.camera.yaw = 3.1415927f; // opposite of the old default
-    }
-}
-
-// Loads the overviews of the cached neighbour maps (3x3 around the
-// active one) that `sb` does not hold yet; returns how many landed.
-// Cheap (a manifest read per missing neighbour): polled every 2 s so a
-// background prefetch shows up on the horizon without a relaunch.
-u32 LandscapeScene::loadNeighbourOverviews(
-    render::SandboxTerrain& sb,
-    const render::terraingen::TileBakeParams& bakeParams) const {
-    const auto cacheRoot = platform::executableDir() / "terrain-cache" /
-                           std::to_string(tuning.terrainSeed);
-    u32 added = 0;
-    for (i32 dz = -1; dz <= 1; ++dz) {
-        for (i32 dx = -1; dx <= 1; ++dx) {
-            if (dx == 0 && dz == 0) {
-                continue;
-            }
-            const i32 mx = activeMapX + dx;
-            const i32 mz = activeMapZ + dz;
-            bool held = false;
-            for (const auto& o : sb.neighbourOverviews) {
-                held = held || (o.mapX == mx && o.mapZ == mz);
-            }
-            if (held || !mapBakedAndValid(cacheRoot, mx, mz,
-                                          kMapTilesPerSide, &bakeParams)) {
-                continue;
-            }
-            if (auto overview =
-                    loadMapOverview(mapCacheDir(cacheRoot, mx, mz))) {
-                sb.neighbourOverviews.push_back(
-                    { mx, mz, overview->grid, std::move(overview->heights) });
-                ++added;
-            }
-        }
-    }
-    if (added > 0) {
-        LOG_INFO("Sandbox terrain: {} neighbour overview(s) loaded ({} held)",
-                 added, sb.neighbourOverviews.size());
-    }
-    return added;
-}
-
-// A pleasant start on the ACTIVE map: the headless probe shared with
-// the diagnostics (render::probeMapSpawn — criterion, spiral and
-// fallback ground live there); the map centre when nothing qualifies.
-Vec3 LandscapeScene::probeSandboxSpawn() const {
-    const render::TerrainParams& params = renderer.terrainParams();
-    const auto& sandbox = params.sandbox;
-    const f32 size = sandbox->grid.mapSize;
-    // The map's cached water (nothing is published yet): the probe
-    // must not pick a lake bed -- the flattest ground there is.
-    const render::WaterSystem::FarWaterSet water = makeFarWaterProvider(
-        activeMapX, activeMapZ, makeMapBakeParams(), sandbox->grid,
-        renderer.waterSystem().simConfig().pinRiverHalfWidth)(
-        (static_cast<f32>(activeMapX) + 0.5f) * size,
-        (static_cast<f32>(activeMapZ) + 0.5f) * size, size * 0.5f);
-    if (const auto spot = render::probeMapSpawn(
-            *sandbox, activeMapX, activeMapZ, tuning.seaLevel,
-            [&water](f32 x, f32 z) { return farWaterWetAt(water, x, z); })) {
-        return *spot;
-    }
-    return { (static_cast<f32>(activeMapX) + 0.5f) * size, 0.0f,
-             (static_cast<f32>(activeMapZ) + 0.5f) * size };
-}
-
-// Map-to-map travel core (chantier CARTES M4.1): the whole-world swap
-// plus a fresh spawn on the target map, behind the warmup veil (a cold
-// map bakes in the background with the real progress bar). The console
-// `map` command drives it today; the M4.2 pass/door wiring reuses it
-// behind the travel fade. Procedural maps share ONE worldspace record
-// for now (the implicit-cell grid separates their content by
-// coordinates); per-map worldspaces come with the authored path (M5).
-void LandscapeScene::travelToMap(i32 mapX, i32 mapZ,
-                                 const Vec2* arrival) {
-    applyMapWorld(mapX, mapZ);
-    renderer.setStreamingHold(true);
-    if (arrival) {
-        // Land at the pass's far side, grounded on the map fallback
-        // (overview when baked, shaped analytic otherwise); the warmup
-        // spawn validation refines it on the real baked ground.
-        const render::TerrainParams& params = renderer.terrainParams();
-        const f32 h =
-            render::terrain::height(params, arrival->x, arrival->y);
-        sandboxSpawn = { arrival->x, h, arrival->y };
-    } else {
-        sandboxSpawn = probeSandboxSpawn();
-    }
-    sandboxSpawnValid = true;
-    // A crossing must READ as one: hold the veil at least ~1 s even
-    // with both maps warm in cache (dev ask — the instant swap was
-    // unreadable at the col). The arrival is an AUTHORED point: the
-    // wet-spawn validation may nudge it a couple hundred meters (a
-    // pond at the pass), never re-scout kilometers away.
-    armWarmup(sandboxSpawn, true, false, 1.0f, 240.0f);
-    // MOVE the traveler: the old position lies outside the new map's
-    // rect — nothing streams there, the fallback reads open sea, and a
-    // player left behind stares at water forever (the M4.1 first-run
-    // bug). Same mechanism as performTravel: respawn the capsule, park
-    // the fly camera at the spawn.
-    if (playerController.body()) {
-        playerController.spawnBody(
-            *physics, sandboxSpawn + Vec3 { 0.0f, 0.25f, 0.0f });
-        followerController.repositionActiveFollowers(
-            makeFollowerContext(), sandboxSpawn);
-    }
-    // A crossing is walked through, not teleported to: keep the look
-    // direction (the start pose faced -Z, which read as "turning
-    // around" at every line). The flag also covers the warmup's
-    // re-placement once the slices land.
-    sandboxKeepHeading = arrival != nullptr;
-    placeStartCamera();
-    streaming.snapCellEntities(makeStreamingContext());
-}
-
-render::WaterSystem::FarWaterFn LandscapeScene::makeFarWaterProvider(
-    i32 mapX, i32 mapZ, const render::terraingen::TileBakeParams& bake,
-    const render::terraingen::MapGridSpec& grid,
-    f32 pinHalfWidth) const {
-    render::terraingen::ProceduralControlParams cp = bake.controls;
-    cp.seed = bake.worldSeed;
-    render::terraingen::MasterNetworkParams net = bake.network;
-    net.seaLevel = bake.macro.seaLevel;
-    net.mapGrid = grid;
-    return [cp, macro = bake.macro, net, grid,
-            law = bake.hydrology.widthLaw(), pinHalfWidth,
-            sea = tuning.seaLevel, tileSize = bake.tileSize,
-            cacheRoot = platform::executableDir() / "terrain-cache" /
-                        std::to_string(tuning.terrainSeed),
-            mapX, mapZ](f32 cx, f32 cz, f32 halfSpan) {
-        return collectFarWater(cacheRoot, mapX, mapZ, tileSize, cp, macro,
-                               net, grid, law, pinHalfWidth, sea, cx, cz,
-                               halfSpan);
-    };
-}
-
-// The ONE map-swap transaction (chantier CARTES M2.3): everything that
-// must change when the active bounded map changes, in one place --
-// rehearsed by every sandbox mode switch, reused by map-to-map travel
-// (M4). Camera placement and cell snapping stay with the callers (a
-// travel puts the player at its marker, a mode switch at the start
-// camera).
-void LandscapeScene::applyMapWorld(i32 mapX, i32 mapZ) {
-    // A crossing (a sandbox map was already streaming) keeps the
-    // previous map's resident slices and water -- see the base below.
-    const bool crossing = sandboxActive && bakeStreamer != nullptr;
-    activeMapX = mapX;
-    activeMapZ = mapZ;
-    render::TerrainParams& params = renderer.terrainParams();
-    auto sandbox = std::make_shared<render::SandboxTerrain>();
-    // Bounded map (chantier CARTES M1.4): the sandbox world IS a
-    // bounded map; the fallback beyond the borders shows the lattice
-    // neighbours' preview. The fallback and the spawn probe read the
-    // SAME params as the bake (the pupitre included).
-    const render::terraingen::TileBakeParams bakeParams =
-        makeMapBakeParams();
-    sandbox->controls = bakeParams.controls;
-    sandbox->controls.seed = tuning.terrainSeed;
-    sandbox->macro = bakeParams.macro;
-    TerrainBakeStreamer::MapStreamConfig mapCfg;
-    mapCfg.tilesPerSide = kMapTilesPerSide;
-    mapCfg.mapX = mapX;
-    mapCfg.mapZ = mapZ;
-    sandbox->grid.valid = true;
-    sandbox->grid.seed = tuning.terrainSeed;
-    sandbox->grid.mapSize = bakeParams.tileSize *
-                            static_cast<f32>(mapCfg.tilesPerSide);
-    sandbox->grid.seaLevel = tuning.seaLevel;
-    // The baked map's overview (when the cache holds it): the
-    // fallback inside the map becomes the map's own coarse truth.
-    // A cold cache boots on the analytic + rim shape and picks the
-    // overview up on the NEXT session (the background bake writes
-    // it; hot-swapping it mid-session would move the fallback
-    // ground under unbaked chunks).
-    if (const auto overview = loadMapOverview(mapCacheDir(
-            platform::executableDir() / "terrain-cache" /
-                std::to_string(tuning.terrainSeed),
-            mapCfg.mapX, mapCfg.mapZ))) {
-        sandbox->overviewGrid = overview->grid;
-        sandbox->overview = std::move(overview->heights);
-        LOG_INFO("Sandbox terrain: map overview loaded ({}x{} at "
-                 "{:.0f} m)",
-                 overview->grid.n, overview->grid.n,
-                 overview->grid.texelSize);
-    }
-    loadNeighbourOverviews(*sandbox, bakeParams);
-    params.sandbox = sandbox;
-    activeSnowLine = tuning.sandboxSnowLine;
-    bakeStreamer = std::make_unique<TerrainBakeStreamer>(
-        bakeParams,
-        platform::executableDir() / "terrain-cache" /
-            std::to_string(tuning.terrainSeed),
-        &engine->getJobSystem(), mapCfg);
-    // The lake registry is per map: the new streamer re-scans.
-    mapLakes.clear();
-    mapLakesValid = false;
-    lakeRefreshFocusValid = false;
-    LOG_INFO("Sandbox terrain: seed {}, map ({}, {}) = {:.0f} m "
-             "island, {} m slices",
-             tuning.terrainSeed, mapX, mapZ, sandbox->grid.mapSize,
-             bakeParams.tileSize);
-    // Live water sim (option C): boundary inflow from the master
-    // network — worker-callable and pure (the memoized network
-    // makes repeat queries cheap after the first).
-    {
-        render::terraingen::ProceduralControlParams cp =
-            bakeParams.controls;
-        cp.seed = bakeParams.worldSeed;
-        render::terraingen::MasterNetworkParams net =
-            bakeParams.network;
-        net.seaLevel = bakeParams.macro.seaLevel;
-        net.mapGrid = sandbox->grid;
-        render::terraingen::WaterSolveParams solveParams =
-            bakeParams.waterSolve;
-        solveParams.seaLevel = bakeParams.macro.seaLevel;
-        const render::terraingen::MacroParams macro =
-            bakeParams.macro;
-        renderer.waterSystem().setSimSources(
-            [cp, macro, net, solveParams](f32 minX, f32 minZ,
-                                          f32 maxX, f32 maxZ) {
-                return render::terraingen::masterBoundarySources(
-                    render::terraingen::ProceduralControls { cp },
-                    macro, net, solveParams, minX, minZ, maxX,
-                    maxZ);
-            });
-        renderer.waterSystem().simConfig().params.seaLevel =
-            tuning.seaLevel;
-        // Far water (E4a): distant lakes/rivers for the FarTerrain
-        // — cached .twb + master fleuves, gathered on the worker.
-        renderer.waterSystem().setFarWater(makeFarWaterProvider(
-            mapX, mapZ, bakeParams, sandbox->grid,
-            renderer.waterSystem().simConfig().pinRiverHalfWidth));
-    }
-    // The base: the authored regions, plus -- on a crossing -- the
-    // previous map's resident slices and water outside the new rect.
-    // The ground behind the traveler stays the SAME ground (heights,
-    // masks, hence materials and scatter), not the neighbour's 64 m
-    // overview; the distance eviction in publishBakedTiles prunes
-    // them like the active map's own tiles. Slices inside the new
-    // rect are dropped: the fresh streamer republishes them from the
-    // cache (its published set starts empty).
-    {
-        const f32 size = sandbox->grid.mapSize;
-        const f32 minX = static_cast<f32>(mapX) * size;
-        const f32 minZ = static_cast<f32>(mapZ) * size;
-        const auto inNewRect = [&](f32 cx, f32 cz) {
-            return cx >= minX && cx < minX + size && cz >= minZ &&
-                   cz < minZ + size;
-        };
-        const sptr<const render::TerrainBase> authored =
-            world::buildTerrainBase(forms, assetDb);
-        auto base = std::make_shared<render::TerrainBase>();
-        base->regions = authored->regions;
-        if (crossing && terrainBase) {
-            const auto isAuthored = [&](const render::TerrainRegion& r) {
-                for (const auto& a : authored->regions) {
-                    if (a->originX == r.originX &&
-                        a->originZ == r.originZ && a->width == r.width &&
-                        a->height == r.height) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-            u32 kept = 0;
-            for (const auto& rp : terrainBase->regions) {
-                const render::TerrainRegion& r = *rp;
-                if (isAuthored(r) ||
-                    inNewRect(r.originX + r.spanX() * 0.5f,
-                              r.originZ + r.spanZ() * 0.5f)) {
-                    continue;
-                }
-                base->regions.push_back(rp);
-                ++kept;
-            }
-            std::erase_if(sandboxLakes,
-                          [&](const render::terraingen::Lake& lake) {
-                              return inNewRect(
-                                  (lake.minX + lake.maxX) * 0.5f,
-                                  (lake.minZ + lake.maxZ) * 0.5f);
-                          });
-            std::erase_if(
-                sandboxRivers,
-                [&](const render::terraingen::River& river) {
-                    if (river.points.empty()) {
-                        return true;
-                    }
-                    f32 lo = 1.0e30f, hi = -1.0e30f;
-                    f32 loZ = 1.0e30f, hiZ = -1.0e30f;
-                    for (const render::terraingen::RiverPoint& pt :
-                         river.points) {
-                        lo = glm::min(lo, pt.x);
-                        hi = glm::max(hi, pt.x);
-                        loZ = glm::min(loZ, pt.z);
-                        hiZ = glm::max(hiZ, pt.z);
-                    }
-                    return inNewRect((lo + hi) * 0.5f, (loZ + hiZ) * 0.5f);
-                });
-            LOG_INFO("Sandbox terrain: {} slices of the previous map "
-                     "stay resident across the line",
-                     kept);
-        } else {
-            sandboxLakes.clear();
-            sandboxRivers.clear();
-        }
-        base->buildIndex();
-        terrainBase = base;
-        params.base = terrainBase;
-    }
-    publishWaterBodies();
-    interiorEscapes.clear();
-    params.snowLine = activeSnowLine;
-    stopSpiritEmitters(spiritDirector.jetList().clear()); // gestures die with the map
-    resetSpiritFire();
-    resetFxSources();
-    resetSpiritWind();
-    releaseSpiritHold(false);
-    finishSpiritEarth(false);
-    spiritLine.reset();
-    releaseSpiritRocks();
-    pushRuntimeWaterSources(); // this map's springs into the sim
-    // The whole world changed: a world-sized event keeps the
-    // contentTouchedSince contract (every bump records its rects).
-    params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
-                              1.0e9f, 1.0e9f);
-    ++params.contentStamp;
-    renderer.requestRegenerate();
-    renderer.invalidateOcclusion();
-    if (physics && terrainCollision) {
-        terrainCollision = std::make_unique<TerrainCollision>(
-            *physics, params, &engine->getJobSystem());
-        vegCollision = std::make_unique<VegetationCollision>(
-            *physics, params, &engine->getJobSystem());
+        flyCamera.camera.yaw = core::kPi; // opposite of the old default
     }
 }
 
@@ -2507,7 +2089,7 @@ void LandscapeScene::setSandboxMode(bool enable) {
         return;
     }
     sandboxActive = enable;
-    render::TerrainParams& params = renderer.terrainParams();
+    decideWorldKind(); // the exterior identity changed
     if (enable) {
         auto sandboxClock = std::chrono::steady_clock::now();
         const auto sandboxLap = [&](const char* name) {
@@ -2519,698 +2101,126 @@ void LandscapeScene::setSandboxMode(bool enable) {
         };
         // The stage-0 networks read/written next to the map caches.
         render::terraingen::setMasterNetworkCacheDir(
-            platform::executableDir() / "terrain-cache" /
-            std::to_string(tuning.terrainSeed));
-        // Sandbox world: infinite generated terrain. The analytic macro
+            SandboxWorldController::cacheRoot(tuning.terrainSeed));
+        // Sandbox world: the bounded generated map. The analytic macro
         // becomes the fallback (far silhouettes agree with future
-        // tiles); the streamer bakes/caches super-tiles around the
-        // player and publishes them through publishBakedTile.
-        applyMapWorld(0, 0);
+        // tiles); the streamer bakes/caches slices around the player
+        // and publishes them through publishTiles.
+        sandboxWorld.applyMap(makeSandboxContext(), 0, 0);
         sandboxLap("apply map world");
         // Park the terrain/grass/vegetation rings until the first tile
         // publishes: chunks meshed against the empty base are ALL remeshed
         // on publish — double work that competed with the bakes for
         // workers and stretched the loading gate.
         renderer.setStreamingHold(true);
-        sandboxSpawn = probeSandboxSpawn();
+        sandboxWorld.setSpawn(sandboxWorld.probeSpawn(makeSandboxContext()));
         sandboxLap("spawn probe");
-        sandboxSpawnValid = true;
         // The warmup machine bakes the ring at the probed spawn, then
         // validates it ONCE on the final baked+water world.
-        armWarmup(sandboxSpawn, true, false);
+        warmup.arm(makeWarmupContext(), sandboxWorld.spawn(), true, false);
         sandboxLap("arm warmup");
     } else {
-        sandboxSpawnValid = false;
-        params.sandbox = nullptr;
-        activeSnowLine = tuning.snowLine;
-        bakeStreamer.reset();
-        renderer.setStreamingHold(false);
-        sandboxLakes.clear();
-        sandboxRivers.clear();
-        mapLakes.clear();
-        mapLakesValid = false;
-        lakeRefreshFocusValid = false;
-        // Back to the authored layers only.
-        terrainBase = world::buildTerrainBase(forms, assetDb);
-        params.base = terrainBase;
-        publishWaterBodies();
-        // The sim window runs here too (authored lakes pinned, rain,
-        // the player's springs) — without the sandbox's master-network
-        // inflows, which would answer for another world.
-        renderer.waterSystem().setSimSources({});
+        sandboxWorld.restoreAuthoredWorld(makeSandboxContext());
     }
-    if (!enable) {
-        // The story-world half of the swap (the sandbox half lives in
-        // applyMapWorld).
-        params.snowLine = activeSnowLine;
-        params.contentEvents.push(params.contentStamp + 1, -1.0e9f,
-                                  -1.0e9f, 1.0e9f, 1.0e9f);
-        ++params.contentStamp;
-        renderer.requestRegenerate();
-        renderer.invalidateOcclusion();
-        if (physics && terrainCollision) {
-            terrainCollision = std::make_unique<TerrainCollision>(
-                *physics, params, &engine->getJobSystem());
-            vegCollision = std::make_unique<VegetationCollision>(
-                *physics, params, &engine->getJobSystem());
-        }
-    }
-    sandboxKeepHeading = false;
+    sandboxWorld.setKeepHeading(false);
     placeStartCamera();
     streaming.snapCellEntities(makeStreamingContext());
 }
 
-void LandscapeScene::publishWaterBodies() {
-    auto next = std::make_shared<render::WaterBodies>(
-        *world::buildWaterBodies(forms, tuning.seaLevel));
-    // Baked lakes + river ribbons are the OUTSIDE-WINDOW water (and
-    // the fallback while the sim spins up): the real-time windowed
-    // sim (option C, docs/PAYSAGE.md §2.3) owns everything near the
-    // camera and replaces these per fragment inside its trusted rect.
-    for (const render::terraingen::Lake& lake : sandboxLakes) {
-        render::LakeSurface surface;
-        surface.level = lake.level;
-        surface.minX = lake.minX;
-        surface.minZ = lake.minZ;
-        surface.maxX = lake.maxX;
-        surface.maxZ = lake.maxZ;
-        surface.maskWidth = lake.maskWidth;
-        surface.maskHeight = lake.maskHeight;
-        surface.maskTexel = lake.maskTexel;
-        surface.mask = lake.mask;
-        next->lakes.push_back(std::move(surface));
-    }
-    for (const render::terraingen::River& river : sandboxRivers) {
-        render::RiverSurface surface;
-        surface.headType = river.headType;
-        surface.headIsSource = river.headIsSource;
-        surface.flowSpeed =
-            render::terraingen::riverFlowSpeedForTier(river.tier);
-        surface.minX = surface.minZ = 1.0e30f;
-        surface.maxX = surface.maxZ = -1.0e30f;
-        for (const render::terraingen::RiverPoint& pt : river.points) {
-            render::RiverNode node;
-            node.x = pt.x;
-            node.z = pt.z;
-            node.surface = pt.surface;
-            node.halfWidth = pt.halfWidth;
-            node.area = pt.area;
-            surface.nodes.push_back(node);
-            surface.minX = glm::min(surface.minX, pt.x - pt.halfWidth);
-            surface.maxX = glm::max(surface.maxX, pt.x + pt.halfWidth);
-            surface.minZ = glm::min(surface.minZ, pt.z - pt.halfWidth);
-            surface.maxZ = glm::max(surface.maxZ, pt.z + pt.halfWidth);
-        }
-        if (surface.nodes.size() >= 2) {
-            next->rivers.push_back(std::move(surface));
-        }
-    }
-    waterBodies = next;
-    renderer.waterSystem().setBodies(waterBodies);
-    // The scatter rules read the same set (underLocalWater): no trees
-    // or grass under altitude lakes/rivers. Same immutable-publish
-    // contract as base/patches.
-    renderer.terrainParams().water = waterBodies;
-    if (!next->lakes.empty() || !next->rivers.empty()) {
-        LOG_INFO("Water: {} lake(s), {} river(s)", next->lakes.size(),
-                 next->rivers.size());
-    }
+// Bundle the bounded-map world's systems for SandboxWorldController this
+// call — references into the scene, the shared publish layers, and the
+// scene actions it fires as closures. Rebuilt each call (cheap: refs +
+// scalars). See SandboxContext.
+SandboxContext LandscapeScene::makeSandboxContext() {
+    return SandboxContext {
+        renderer,
+        forms,
+        assetDb,
+        tuning,
+        engine->getJobSystem(),
+        physics.get(),
+        terrainCollision,
+        vegCollision,
+        terrainBase,
+        waterBodies,
+        activeSnowLine,
+        sandboxActive,
+        [this] { return makeMapBakeParams(); },
+        // The map changed under the world: the gestures die with it, the
+        // escapes and the fx too; this map's springs enter the sim.
+        [this] {
+            interiorEscapes.clear();
+            spiritDirector.resetGestures(makeSpiritContext(),
+                                         SpiritDirector::ResetReason::MapChanged);
+            resetWorldFx();
+        },
+        [this] { placeStartCamera(); },
+        [this] { streaming.snapCellEntities(makeStreamingContext()); },
+        // Same mechanism as performTravel: respawn the capsule, bring
+        // the party along.
+        [this](const Vec3& spawn) {
+            if (playerController.body()) {
+                playerController.spawnBody(
+                    *physics, spawn + Vec3 { 0.0f, 0.25f, 0.0f });
+                followerController.repositionActiveFollowers(
+                    makeFollowerContext(), spawn);
+            }
+        },
+        [this](const Vec3& target, f32 minSeconds, f32 spawnSearchRadius) {
+            warmup.arm(makeWarmupContext(), target, true, false, minSeconds,
+                       spawnSearchRadius);
+        },
+    };
 }
 
-bool LandscapeScene::refreshSandboxLakes(const Vec3& focus) {
-    if (!mapLakesValid || !bakeStreamer) {
-        return false;
-    }
-    const f32 evict = bakeStreamer->tileSize() * 2.5f;
-    // Chebyshev distance from the focus to the lake's BBOX, not its
-    // center: a lake spanning kilometres must stay resident while the
-    // player stands on an arm far from its middle.
-    const auto bboxDist = [&](const render::terraingen::Lake& lake) {
-        const f32 dx = glm::max(
-            glm::max(lake.minX - focus.x, focus.x - lake.maxX), 0.0f);
-        const f32 dz = glm::max(
-            glm::max(lake.minZ - focus.z, focus.z - lake.maxZ), 0.0f);
-        return glm::max(dx, dz);
-    };
-    // Identity = the exact header fields both copies read from the
-    // same .twb bytes (one hydrology per map: one level per basin).
-    const auto sameLake = [](const render::terraingen::Lake& a,
-                             const render::terraingen::Lake& b) {
-        return a.level == b.level && a.minX == b.minX &&
-               a.minZ == b.minZ && a.maxX == b.maxX && a.maxZ == b.maxZ;
-    };
-    vector<render::terraingen::Lake> next;
-    // Residents of a PREVIOUS map kept across a crossing are not in
-    // this map's registry: they stay, under the same bbox eviction.
-    for (const render::terraingen::Lake& lake : sandboxLakes) {
-        bool governed = false;
-        for (const render::terraingen::Lake& reg : mapLakes) {
-            if (sameLake(lake, reg)) {
-                governed = true;
-                break;
-            }
-        }
-        if (!governed && bboxDist(lake) <= evict) {
-            next.push_back(lake);
-        }
-    }
-    for (const render::terraingen::Lake& lake : mapLakes) {
-        if (bboxDist(lake) <= evict) {
-            next.push_back(lake);
-        }
-    }
-    bool changed = next.size() != sandboxLakes.size();
-    if (!changed) {
-        for (size_t i = 0; i < next.size(); ++i) {
-            if (!sameLake(next[i], sandboxLakes[i])) {
-                changed = true;
-                break;
-            }
-        }
-    }
-    if (changed) {
-        sandboxLakes = std::move(next);
-    }
-    lastLakeRefreshFocus = focus;
-    lakeRefreshFocusValid = true;
-    return changed;
-}
-
-void LandscapeScene::publishBakedTiles(
-    vector<TerrainBakeStreamer::PublishedTile>&& tiles,
-    const Vec3& focus) {
-    // Section marks for the publish-spike breakdown logged at the end —
-    // the numbers that order the incremental-invalidation work
-    // (docs/CPU-PERF.md).
-    const core::TimePoint publishStart = core::clockNow();
-    core::TimePoint mark = publishStart;
-    const auto sectionMs = [&mark] {
-        const f64 ms = core::millisecondsSince(mark);
-        mark = core::clockNow();
-        return ms;
-    };
-    auto next = std::make_shared<render::TerrainBase>();
-    if (terrainBase) {
-        next->regions = terrainBase->regions;
-    }
-    // Changed rects (published AND evicted) feed the content-event ring
-    // and the intersection gates below.
-    struct Rect {
-        f32 minX, minZ, maxX, maxZ;
-    };
-    vector<Rect> changedRects;
-    // Bounded residency (sandbox streaming only): drop far-behind tiles;
-    // the streamer re-requests them on the way back. Editor previews
-    // (no streamer) keep every published region.
-    if (bakeStreamer) {
-        const f32 tileSize = bakeStreamer->tileSize();
-        const f32 evict = tileSize * 2.5f;
-        std::erase_if(next->regions, [&](const sptr<
-                                         const render::TerrainRegion>&
-                                             rp) {
-            const render::TerrainRegion& r = *rp;
-            const f32 cx = r.originX + r.spanX() * 0.5f;
-            const f32 cz = r.originZ + r.spanZ() * 0.5f;
-            const bool out = std::abs(cx - focus.x) > evict ||
-                             std::abs(cz - focus.z) > evict;
-            if (out) {
-                bakeStreamer->forgetTile(
-                    static_cast<i32>(std::floor(cx / tileSize)),
-                    static_cast<i32>(std::floor(cz / tileSize)));
-                changedRects.push_back({ r.originX, r.originZ,
-                                         r.originX + r.spanX(),
-                                         r.originZ + r.spanZ() });
-            }
-            return out;
-        });
-        // The water follows the regions out: the flat lake/river
-        // arrays used to grow forever, and every swim query and
-        // reconcile scanned them all. Lakes: registry-driven selection
-        // once the map scan landed (bbox distance — a big lake stays
-        // while the player is anywhere ON it); the bbox fallback below
-        // covers the frames before the scan.
-        if (mapLakesValid) {
-            refreshSandboxLakes(focus);
-        } else {
-            std::erase_if(
-                sandboxLakes,
-                [&](const render::terraingen::Lake& lake) {
-                    const f32 dx = glm::max(
-                        glm::max(lake.minX - focus.x,
-                                 focus.x - lake.maxX),
-                        0.0f);
-                    const f32 dz = glm::max(
-                        glm::max(lake.minZ - focus.z,
-                                 focus.z - lake.maxZ),
-                        0.0f);
-                    return glm::max(dx, dz) > evict;
-                });
-        }
-        std::erase_if(
-            sandboxRivers, [&](const render::terraingen::River& river) {
-                if (river.points.empty()) {
-                    return true;
-                }
-                f32 minX = 1.0e30f, maxX = -1.0e30f;
-                f32 minZ = 1.0e30f, maxZ = -1.0e30f;
-                for (const render::terraingen::RiverPoint& pt :
-                     river.points) {
-                    minX = glm::min(minX, pt.x);
-                    maxX = glm::max(maxX, pt.x);
-                    minZ = glm::min(minZ, pt.z);
-                    maxZ = glm::max(maxZ, pt.z);
-                }
-                return std::abs((minX + maxX) * 0.5f - focus.x) >
-                           evict ||
-                       std::abs((minZ + maxZ) * 0.5f - focus.z) > evict;
-            });
-    }
-    const f64 evictMs = sectionMs();
-    const size_t firstNew = next->regions.size();
-    for (TerrainBakeStreamer::PublishedTile& tile : tiles) {
-        next->regions.emplace_back(
-            std::make_shared<render::TerrainRegion>(
-                std::move(tile.region)));
-        if (!mapLakesValid) {
-            // Pre-registry fallback only: once the map scan landed,
-            // refreshSandboxLakes owns lake membership (a tile's lakes
-            // are a subset of the registry — inserting them here would
-            // duplicate the sheets).
-            sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
-                                tile.lakes.end());
-        }
-        sandboxRivers.insert(sandboxRivers.end(),
-                             std::make_move_iterator(tile.rivers.begin()),
-                             std::make_move_iterator(tile.rivers.end()));
-    }
-    for (size_t r = firstNew; r < next->regions.size(); ++r) {
-        const render::TerrainRegion& region = *next->regions[r];
-        changedRects.push_back({ region.originX, region.originZ,
-                                 region.originX + region.spanX(),
-                                 region.originZ + region.spanZ() });
-    }
-    next->buildIndex(); // regions final: per-sample scans go O(bucket)
-    terrainBase = next;
-    renderer.terrainParams().base = next;
-    // The stamp bump + its scoped events (contentTouchedSince contract:
-    // every bump records its rects).
-    {
-        render::TerrainParams& params = renderer.terrainParams();
-        const u64 stamp = params.contentStamp + 1;
-        for (const Rect& rect : changedRects) {
-            params.contentEvents.push(stamp, rect.minX, rect.minZ,
-                                      rect.maxX, rect.maxZ);
-        }
-        ++params.contentStamp; // FarTerrain/far-water rebake (unscoped)
-    }
-    renderer.setStreamingHold(false); // base regions exist: rings may stream
-    // Remesh AND re-scatter the resident chunks the new regions cover
-    // within the view ring (the deferred queues skip chunks that are
-    // not resident). Both queues, like the sculpt commit:
-    // grass/vegetation baked before the tile landed sit on the OLD
-    // heights — without the scatter pass they float over the new ground.
-    const f32 reach =
-        static_cast<f32>(tuning.terrainViewRadius + 1) * 64.0f;
-    for (size_t r = firstNew; r < next->regions.size(); ++r) {
-        const render::TerrainRegion& region = *next->regions[r];
-        const f32 minX = glm::max(region.originX, focus.x - reach);
-        const f32 maxX =
-            glm::min(region.originX + region.spanX(), focus.x + reach);
-        const f32 minZ = glm::max(region.originZ, focus.z - reach);
-        const f32 maxZ =
-            glm::min(region.originZ + region.spanZ(), focus.z + reach);
-        for (i32 cz = static_cast<i32>(std::floor(minZ / 64.0f));
-             cz <= static_cast<i32>(std::floor(maxZ / 64.0f)) &&
-             minZ <= maxZ;
-             ++cz) {
-            for (i32 cx = static_cast<i32>(std::floor(minX / 64.0f));
-                 cx <= static_cast<i32>(std::floor(maxX / 64.0f)) &&
-                 minX <= maxX;
-                 ++cx) {
-                const u64 key = render::HeightPatches::keyOf(cx, cz);
-                renderer.sculptRemeshQueue().push_back(key);
-                renderer.sculptScatterQueue().push_back(key);
-            }
-        }
-    }
-    // Horizon table: only when a changed region reaches the occlusion
-    // rays (camera square of the view reach).
-    const auto anyRectIntersects = [&](f32 minX, f32 minZ, f32 maxX,
-                                       f32 maxZ) {
-        for (const Rect& rect : changedRects) {
-            if (rect.maxX >= minX && rect.minX <= maxX &&
-                rect.maxZ >= minZ && rect.minZ <= maxZ) {
-                return true;
-            }
-        }
-        return false;
-    };
-    if (anyRectIntersects(focus.x - reach, focus.z - reach,
-                          focus.x + reach, focus.z + reach)) {
-        renderer.invalidateOcclusion();
-    }
-    const f64 regionsMs = sectionMs();
-    if (physics && terrainCollision) {
-        terrainCollision = std::make_unique<TerrainCollision>(
-            *physics, renderer.terrainParams(), &engine->getJobSystem());
-        vegCollision = std::make_unique<VegetationCollision>(
-            *physics, renderer.terrainParams(), &engine->getJobSystem());
-    }
-    streaming.snapCellEntities(makeStreamingContext());
-    const f64 collisionMs = sectionMs();
-    // (The cross-tile duplicate-lake suppression lived here: one
-    // hydrology per MAP gives every basin a single identity — there is
-    // nothing left to dedupe. Chantier CARTES M1.5.)
-    const f64 dedupeMs = sectionMs();
-    // (The runtime lake re-validation lived here: the in-bake
-    // reconcile now sees past a slice's rect through the map fallback,
-    // and slices of one map are carve-coherent — the belt is gone with
-    // the divergence it guarded. Chantier CARTES M1.5.)
-    const f64 reconcileMs = sectionMs();
-    publishWaterBodies();
-    // Fresh regions changed the ground under the sim window — it
-    // re-samples on its next step job. Scoped: a publish that never
-    // reaches the 512 m window keeps the sim (and its breadcrumb cache)
-    // untouched.
-    bool simTouched = false;
-    for (const Rect& rect : changedRects) {
-        if (renderer.waterSystem().simWindowIntersects(
-                rect.minX, rect.minZ, rect.maxX, rect.maxZ)) {
-            simTouched = true;
-            break;
-        }
-    }
-    if (simTouched) {
-        renderer.waterSystem().notifySimGroundChanged();
-    }
-    const f64 republishMs = sectionMs();
-    LOG_INFO("Sandbox terrain: {} tile(s) published ({} lakes, {} "
-             "rivers resident)",
-             tiles.size(), sandboxLakes.size(), sandboxRivers.size());
-    LOG_INFO("publish breakdown: {:.1f} ms total — evict {:.1f} | "
-             "regions {:.1f} | collision {:.1f} | dedupe {:.1f} | "
-             "reconcile {:.1f} | republish {:.1f}",
-             core::millisecondsSince(publishStart), evictMs, regionsMs,
-             collisionMs, dedupeMs, reconcileMs, republishMs);
-}
-
-// The single-shot spawn validation — the warmup machine calls this ONCE,
-// after the whole spawn ring (terrain AND water) is published: no more
-// per-publish re-checks, no ordering races with neighbour-owned lakes.
-void LandscapeScene::finalizeSandboxSpawn() {
-    if (!sandboxActive || !sandboxSpawnValid) {
-        return;
-    }
-    const render::TerrainParams& params = renderer.terrainParams();
-    // The search must stay INSIDE the active map's rect: a crossing
-    // arrival sits meters from the line, the previous map's kept
-    // slices make the far side look dry and trustworthy, and a spawn
-    // relocated across the line is immediately bounced back by the
-    // crossing detector (travel ping-pong, measured on a west line).
-    // Inset past the detector's 8 m hysteresis.
-    const auto& sandboxParams = params.sandbox;
-    const bool bounded = sandboxParams && sandboxParams->grid.valid;
-    const f32 mapSize = bounded ? sandboxParams->grid.mapSize : 0.0f;
-    const f32 rectMinX = static_cast<f32>(activeMapX) * mapSize;
-    const f32 rectMinZ = static_cast<f32>(activeMapZ) * mapSize;
-    constexpr f32 kRectInset = 16.0f;
-    const auto inActiveMap = [&](f32 x, f32 z) {
-        return !bounded ||
-               (x >= rectMinX + kRectInset &&
-                x <= rectMinX + mapSize - kRectInset &&
-                z >= rectMinZ + kRectInset &&
-                z <= rectMinZ + mapSize - kRectInset);
-    };
-    const auto wetAt = [&](f32 x, f32 z, f32& outH) {
-        outH = render::terrain::height(params, x, z);
-        if (!terrainBase || !terrainBase->regionAt(x, z)) {
-            return true; // unbaked ground is not a trustworthy spot
-        }
-        if (outH < params.seaLevel + 2.0f) {
-            return true;
-        }
-        return waterBodies &&
-               render::terrain::waterSurfaceAt(*waterBodies, x, z,
-                                               outH + 1.0f)
-                   .has_value();
-    };
-    f32 ground = 0.0f;
-    if (wetAt(sandboxSpawn.x, sandboxSpawn.z, ground)) {
-        // Reach past the largest flood basins (they span kilometers in
-        // the compressed world) — a failed search keeps the old spot
-        // and logs, never silently.
-        bool relocated = false;
-        for (f32 radius = 60.0f;
-             radius <= warmupSpawnRadius && !relocated;
-             radius += 60.0f) {
-            for (u32 k = 0; k < 12 && !relocated; ++k) {
-                const f32 angle =
-                    static_cast<f32>(k) * (6.2831853f / 12.0f);
-                const f32 x = sandboxSpawn.x + std::cos(angle) * radius;
-                const f32 z = sandboxSpawn.z + std::sin(angle) * radius;
-                if (inActiveMap(x, z) && !wetAt(x, z, ground)) {
-                    sandboxSpawn = { x, ground, z };
-                    relocated = true;
-                }
-            }
-        }
-        if (relocated) {
-            LOG_INFO("Sandbox spawn was wet on the baked terrain: "
-                     "moved to ({:.0f}, {:.0f})",
-                     sandboxSpawn.x, sandboxSpawn.z);
-        } else {
-            LOG_WARN("Sandbox spawn: no dry baked ground within 6 km — "
-                     "keeping the probed spot");
-        }
-    } else {
-        // Dry — re-seat on the exact baked ground level (the analytic
-        // probe guessed it).
-        sandboxSpawn.y = ground;
-    }
-    placeStartCamera();
-}
-
-void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
-                               bool soft, f32 minSeconds,
-                               f32 spawnSearchRadius) {
-    warmupPhase = WarmupPhase::BakeRing;
-    warmupTarget = target;
-    warmupPlaceSpawn = placeSpawn;
-    warmupSoft = soft;
-    warmupFrames = 0;
-    warmupPeakPending = 0;
-    warmupProgress = 0.0f;
-    warmupElapsed = 0.0f;
-    warmupMinSeconds = minSeconds;
-    warmupSpawnRadius = spawnSearchRadius;
-    loadingGateShown = 0.0f;
-    if (uiCreated && screenStack.find("loading")) {
-        screenStack.show("loading");
-    }
-}
-
-void LandscapeScene::updateWarmup(f32 rawDt) {
-    const f32 dt = glm::max(rawDt, 1.0e-4f);
-    // Spectator catch-up: flying faster than the bake wavefront leaves
-    // analytic macro around; when the camera STOPS over an incomplete
-    // ring, a light veil shows the ring completing.
-    const Vec3 camPos = flyCamera.camera.position;
-    const f32 camSpeed = glm::length(camPos - warmupLastCamPos) / dt;
-    warmupLastCamPos = camPos;
-    if (warmupPhase == WarmupPhase::Idle) {
-        softVeilCooldown = glm::max(0.0f, softVeilCooldown - dt);
-        const bool menuOpen = uiCreated && screenStack.modalOpen();
-        // No terrain exists in interiors: the camera sits in the interior
-        // frame, so the ring probe would ask for overworld tiles around a
-        // meaningless position and the veil would never complete.
-        if (bakeStreamer && mode == SceneMode::Spectator && !interiorMode &&
-            !menuOpen && camSpeed < 6.0f && softVeilCooldown <= 0.0f) {
-            const auto ring = bakeStreamer->ringStatus(camPos);
-            // >= 2 missing: near the map rim the clamped ring drops to
-            // a couple of tiles and completes within frames — arming
-            // there strobes the veil (the border flicker); a real hole
-            // in the world is several tiles deep.
-            if (ring.needed > ring.published &&
-                ring.needed - ring.published >= 2) {
-                armWarmup(camPos, false, true);
-            }
-        }
-        if (warmupPhase == WarmupPhase::Idle) {
-            renderer.setStreamingBoost(false);
-            return;
-        }
-    }
-    ++warmupFrames;
-    warmupElapsed += dt;
-    // A soft veil cancels itself when the camera speeds off again.
-    if (warmupSoft && warmupPhase != WarmupPhase::Reveal &&
-        camSpeed > 20.0f) {
-        warmupPhase = WarmupPhase::Reveal;
-    }
-
-    f32 progress = warmupProgress;
-    switch (warmupPhase) {
-    case WarmupPhase::BakeRing: {
-        // Weight 0.7 of the bar: published slices over needed (the map
-        // bake's own slice progress rides bakeMap's log; here the ring
-        // completes slice by slice off the cache).
-        bool complete = true;
-        f32 ringFrac = 1.0f;
-        if (bakeStreamer) {
-            const auto ring = bakeStreamer->ringStatus(warmupTarget);
-            complete = ring.published >= ring.needed;
-            if (!complete) {
-                ringFrac = glm::min(
-                    static_cast<f32>(ring.published) /
-                        static_cast<f32>(ring.needed),
-                    0.97f);
-            }
-        }
-        progress = ringFrac * 0.7f;
-        if (complete) {
-            warmupPhase = WarmupPhase::PlaceSpawn;
-        }
-        break;
-    }
-    case WarmupPhase::PlaceSpawn: {
-        if (warmupPlaceSpawn) {
-            finalizeSandboxSpawn();
-            warmupPlaceSpawn = false;
-            warmupTarget = sandboxSpawn;
+// Bundle the warmup's systems for WarmupController this call — references
+// into the scene, the camera/mode scalars, and the scene actions it fires
+// as closures. Rebuilt each call (cheap: refs + scalars). See
+// WarmupContext.
+WarmupContext LandscapeScene::makeWarmupContext() {
+    return WarmupContext {
+        sandboxWorld.streamer(),
+        renderer,
+        meshCache.get(),
+        materialTextures.get(),
+        screenStack,
+        uiSystem,
+        uiCreated,
+        flyCamera.camera.position,
+        /*spectatorMode=*/mode == SceneMode::Spectator,
+        policy(),
+        // PlaceSpawn: validate the spawn ONCE on the final baked ground.
+        [this](f32 spawnSearchRadius) -> Vec3 {
+            sandboxWorld.finalizeSpawn(makeSandboxContext(),
+                                       spawnSearchRadius);
             // A traveler's capsule was spawned on the FALLBACK height
             // (the slices were not published yet): re-seat it on the
             // baked ground — the 64 m fallback's error on a slope left
             // it under the real terrain (the fall-through on arrival).
+            const Vec3 spawn = sandboxWorld.spawn();
             if (mode == SceneMode::Play && playerController.body()) {
                 playerController.spawnBody(
-                    *physics,
-                    sandboxSpawn + Vec3 { 0.0f, 0.25f, 0.0f });
+                    *physics, spawn + Vec3 { 0.0f, 0.25f, 0.0f });
                 followerController.repositionActiveFollowers(
-                    makeFollowerContext(), sandboxSpawn);
+                    makeFollowerContext(), spawn);
             }
-            // The relocation may have crossed toward lesser-baked
-            // ground: bake THAT ring before building the scene.
-            if (bakeStreamer) {
-                const auto ring = bakeStreamer->ringStatus(warmupTarget);
-                if (ring.published < ring.needed) {
-                    warmupPhase = WarmupPhase::BakeRing;
-                    break;
+            return spawn;
+        },
+        // The deferred main-menu "Play" click, once the spawn is final.
+        [this] { restoreMode(SceneMode::Play); },
+        // The veil is gone: the scripted "Enter the world" click — the
+        // same body as the main menu's play-story / play-sandbox.
+        [this] {
+            if (bootPlayPending) {
+                bootPlayPending = false;
+                beginPlay(bootMode);
+                if (bootQuitSeconds > 0.0f) {
+                    bootQuitClock = bootQuitSeconds;
                 }
             }
-        }
-        warmupPeakPending = 0;
-        warmupPhase = WarmupPhase::BuildScene;
-        // A deferred "Play" click (main menu) fires now — the spawn is
-        // final; the veil still covers the scene convergence. Dropped
-        // if the player re-opened a menu meanwhile.
-        if (pendingPlayEntry) {
-            pendingPlayEntry = false;
-            if (!(uiCreated && screenStack.modalOpen())) {
-                enterPlayMode();
-            }
-        }
-        break;
-    }
-    case WarmupPhase::BuildScene: {
-        // Weight 0.3: meshes/scatter/caches converge on the FINAL
-        // world — nothing left to invalidate afterwards.
-        const u32 pending =
-            renderer.terrainSystem().pendingCount() +
-            (meshCache ? meshCache->pendingCount() : 0u) +
-            (materialTextures ? materialTextures->pendingCount() : 0u) +
-            static_cast<u32>(renderer.sculptRemeshQueue().size() +
-                             renderer.sculptScatterQueue().size());
-        warmupPeakPending = glm::max(warmupPeakPending, pending);
-        const f32 buildFrac =
-            warmupPeakPending == 0u
-                ? 1.0f
-                : 1.0f - static_cast<f32>(pending) /
-                             static_cast<f32>(warmupPeakPending);
-        progress = 0.7f + 0.3f * buildFrac;
-        // Grace: the first frames are still announcing work — and the
-        // veil holds its caller's minimum (map travel asks ~1 s so a
-        // warm-cache crossing still READS as a transition).
-        if (warmupFrames > 30 && pending == 0 &&
-            warmupElapsed >= warmupMinSeconds) {
-            progress = 1.0f;
-            warmupPhase = WarmupPhase::Reveal;
-        }
-        break;
-    }
-    case WarmupPhase::Reveal:
-    case WarmupPhase::Idle:
-        progress = 1.0f;
-        break;
-    }
-    // Failsafe: nothing (missing asset, dead worker) may lock the
-    // player out — after two minutes the veil opens on what is there.
-    if (warmupFrames > 7200) {
-        warmupPhase = WarmupPhase::Reveal;
-        progress = 1.0f;
-    }
-    warmupProgress = glm::max(warmupProgress, progress);
-    // Behind the opaque boot veil, stream flat-out: the anti-stutter
-    // budgets protect a frame nobody sees. The soft (spectator) veil
-    // keeps them — the scene stays visible there.
-    renderer.setStreamingBoost(!warmupSoft &&
-                               warmupPhase != WarmupPhase::Reveal &&
-                               warmupPhase != WarmupPhase::Idle);
-    // The DISPLAYED bar chases the truth at a capped rate: discrete
-    // completions become a glide, and it never overtakes reality.
-    loadingGateShown =
-        glm::min(warmupProgress, loadingGateShown + dt * 0.35f);
-
-    // Veil: black shroud for full warmups, a light one for the
-    // spectator catch-up. The bar visually finishes before the fade.
-    if (warmupPhase == WarmupPhase::Reveal) {
-        if (loadingGateShown >= 0.999f || warmupSoft) {
-            loadingGateAlpha =
-                glm::max(0.0f, loadingGateAlpha - dt / 0.8f);
-            if (loadingGateAlpha <= 0.0f) {
-                warmupPhase = WarmupPhase::Idle;
-                if (warmupSoft) {
-                    softVeilCooldown = 3.0f; // no border strobing
-                }
-                if (bootPlayPending && !warmupSoft) {
-                    // The scripted "Enter the world" click (UiRouter's
-                    // play-story / play-sandbox, verbatim).
-                    bootPlayPending = false;
-                    setSandboxMode(bootSandbox);
-                    screenStack.closeAll();
-                    if (mode != SceneMode::Play) {
-                        enterPlayMode();
-                    }
-                    if (bootQuitSeconds > 0.0f) {
-                        bootQuitClock = bootQuitSeconds;
-                    }
-                }
-            }
-        }
-    } else {
-        loadingGateAlpha =
-            glm::min(warmupSoft ? 0.55f : 1.0f,
-                     loadingGateAlpha + dt * 3.0f);
-    }
-    // Feed the RmlUi loading screen (loading.rml).
-    if (uiCreated && screenStack.find("loading")) {
-        char label[32];
-        std::snprintf(label, sizeof(label), "%.0f%%",
-                      static_cast<f64>(loadingGateShown) * 100.0);
-        uiSystem.setNumber("loading", "loadingAlpha", loadingGateAlpha);
-        uiSystem.setNumber(
-            "loading", "loadingBarAlpha",
-            glm::clamp((loadingGateAlpha - (warmupSoft ? 0.1f : 0.6f)) /
-                           0.4f,
-                       0.0f, 1.0f));
-        uiSystem.setNumber("loading", "loadingPct",
-                           static_cast<f64>(loadingGateShown) * 100.0);
-        uiSystem.setString("loading", "loadingText", label);
-        if (warmupPhase == WarmupPhase::Idle &&
-            loadingGateAlpha <= 0.0f) {
-            screenStack.close("loading");
-            syncScreens();
-        }
-    }
+        },
+        [this] { syncScreens(); },
+    };
 }
 
 SculptContext LandscapeScene::makeSculptContext() {
@@ -3245,11 +2255,8 @@ SculptContext LandscapeScene::makeSculptContext() {
             renderer.sculptScatterQueue().insert(renderer.sculptScatterQueue().end(),
                                        changed.begin(), changed.end());
             renderer.invalidateOcclusion();
-            terrainCollision = std::make_unique<TerrainCollision>(
-                *physics, renderer.terrainParams(), &engine->getJobSystem());
-            vegCollision = std::make_unique<VegetationCollision>(
-                *physics, renderer.terrainParams(),
-                &engine->getJobSystem());
+            SandboxWorldController::rebuildCollision(makeSandboxContext(),
+                                                     /*onlyIfBuilt=*/false);
             streaming.snapCellEntities(makeStreamingContext());
         }
     };
@@ -3260,7 +2267,8 @@ SculptContext LandscapeScene::makeSculptContext() {
 // closure). SceneEditor owns the editor state and the interaction/UI.
 EditorContext LandscapeScene::makeEditorContext() {
     return EditorContext {
-        flyCamera,       world,           *meshCache,      interiorMode,
+        flyCamera,       world,           *meshCache,
+        worldKind() == WorldKind::Interior,
         renderer.terrainParams(),  forms,           *levelEditor,    activeWorldspace,
         worldModel,      categories,      *cellLoader,     *cellStreamer,
         spawner,         makeSculptContext(),
@@ -3273,8 +2281,7 @@ EditorContext LandscapeScene::makeEditorContext() {
             // The map section only makes sense over the sandbox map
             // world (the streamer's cache is the shared ground truth).
             renderer.terrainParams().sandbox
-                ? platform::executableDir() / "terrain-cache" /
-                      std::to_string(tuning.terrainSeed)
+                ? SandboxWorldController::cacheRoot(tuning.terrainSeed)
                 : std::filesystem::path {},
             &genTuning,
             [this] { genTuningApplyRequested = true; },
@@ -3563,17 +2570,19 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     cellStreamer->unloadAll();
     activeWorldspace = space;
     interiorMode = cellForm->interior;
+    decideWorldKind(); // the travel path's verdict
     interiorArrival = marker->position;
     // A terrain warmup caught mid-travel would wait forever on tiles the
     // interior frame can never publish — let the veil fade out instead.
-    if (interiorMode && warmupPhase != WarmupPhase::Idle) {
-        warmupPhase = WarmupPhase::Reveal;
+    if (worldKind() == WorldKind::Interior &&
+        warmup.phase() != WarmupPhase::Idle) {
+        warmup.reveal();
     }
     // Interior navigation: NPCs cannot follow the terrain height under a
     // dungeon — swap in the baked multi-level grid when the destination
     // worldspace has one (NavGridForm -> .nvg asset -> InteriorNavigator).
     interiorNavigator.reset();
-    if (interiorMode) {
+    if (worldKind() == WorldKind::Interior) {
         data::forEach<world::NavGridForm>(
             forms, [&](const world::NavGridForm& navForm) {
                 if (interiorNavigator ||
@@ -3598,7 +2607,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     // the player follows within 20 s; any longer, clean getaway. The
     // spawn is transient (no cell): it despawns with the next travel.
     vector<std::pair<ecs::Entity, f32>> fugitiveWounds;
-    if (!interiorMode) {
+    if (worldKind() != WorldKind::Interior) {
         for (const InteriorEscape& escape : interiorEscapes) {
             if (timeSeconds - escape.at > 20.0f) {
                 continue;
@@ -3664,11 +2673,8 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     streaming.refreshNavObstacles(sctx);
 
     // Fresh terrain tiles for the new space (none are built in interiors).
-    terrainCollision = std::make_unique<TerrainCollision>(
-        *physics, renderer.terrainParams(), &engine->getJobSystem());
-    vegCollision =
-        std::make_unique<VegetationCollision>(
-            *physics, renderer.terrainParams(), &engine->getJobSystem());
+    SandboxWorldController::rebuildCollision(makeSandboxContext(),
+                                             /*onlyIfBuilt=*/false);
 
     // Teleport the capsule to the marker, facing its authored yaw. The
     // fade-in (0.3 s) covers the async floor-collider cook — the player
@@ -3690,7 +2696,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
                                                  marker->position);
     LOG_INFO("traveled to {} ({}), interior = {}",
              cellForm->editorId,
-             marker->position.x, interiorMode);
+             marker->position.x, worldKind() == WorldKind::Interior);
 }
 
 // --- The RmlUi game UI --------------------------------------------------
@@ -4183,10 +3189,8 @@ HudContext LandscapeScene::makeHudContext() {
         screenStack,
         playerController.bowCharge(), // The draw gauge
         statsTuning.hudStatPointsScale, // vitals-bar scale
-        currentSpellName(), // the spell line over the vitals
-        spiritReadingSeconds > 0.0f || spiritReadingLive
-            ? spiritReading
-            : vector<str> {},
+        spiritDirector.currentSpellName(forms, texts), // the spell line over the vitals
+        spiritDirector.readingLines(),
     };
 }
 
@@ -4236,9 +3240,9 @@ SaveContext LandscapeScene::makeSaveContext() {
         mode == SceneMode::Play,
         mode == SceneMode::Edit,
         weather.selected(),
-        sandboxActive, // the active bounded map (M4.4)
-        activeMapX,
-        activeMapZ,
+        sandboxActive, // the active bounded map
+        sandboxWorld.mapX(),
+        sandboxWorld.mapZ(),
         // Inline capture is safe: captureEntity reads components and writes
         // into the pending layer's own map — it mutates no ECS structure
         // (SaveGame.cpp), so no iterator invalidation during each.
@@ -4472,18 +3476,15 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
             interaction.wait(hours, makeInteractionContext());
         },
         // Menu resume/leave go through THE transition (restoreMode owns
-        // every mode side effect). restoreMode
-        // no-ops when already in the mode, so resume-from-menu (mode
-        // still Play) keeps its old direct-call behaviour via the else.
-        [this] {
-            if (mode == SceneMode::Play) {
-                enterPlayMode(); // re-grab mouse/HUD after a modal menu
-            } else {
-                restoreMode(SceneMode::Play);
-            }
-        },
+        // every mode side effect and no-ops when already in the mode; the
+        // router only calls this one outside Play).
+        [this] { restoreMode(SceneMode::Play); },
         [this] { restoreMode(SceneMode::Spectator); },
-        [this](bool sandbox) { setSandboxMode(sandbox); },
+        // The main menu's world pick IS the game entry: one body with
+        // the boot override (beginPlay).
+        [this](bool sandbox) {
+            beginPlay(sandbox ? BootMode::Sandbox : BootMode::Story);
+        },
         [this] { engine->requestQuit(); },
         // MenuAction("options") — fresh values, then the screen.
         [this] { optionsController.open(makeOptionsContext()); },
@@ -4520,11 +3521,11 @@ MapContext LandscapeScene::makeMapContext() {
                         screenStack,
                         activeWorldspace,
                         overworldHandle,
-                        interiorMode,
+                        worldKind() == WorldKind::Interior,
                         playerPos,
                         sandboxMap,
-                        activeMapX,
-                        activeMapZ,
+                        sandboxWorld.mapX(),
+                        sandboxWorld.mapZ(),
                         sandboxMap ? sandbox->grid.mapSize : 0.0f };
 }
 
@@ -4561,17 +3562,16 @@ void LandscapeScene::createConsole() {
     // commands are registered by the scene that owns a world; reflection
     // stays the backbone for get/set).
     ConsolePanel& panel = sceneConsole.create(forms, formTypes);
-    // Pass triggers: a TriggerVolume snippet calls travelToMap(mx, mz)
-    // to start a map crossing (chantier CARTES M4.2). Deferred to the
-    // end of frame: the trigger fires mid-ECS-iteration and the swap
-    // tears the world down (the flecs locked-storage rule).
+    // Pass triggers: a TriggerVolume snippet asks for a map crossing,
+    // queued on the sandbox world. Deferred to the end of frame: the
+    // trigger fires mid-ECS-iteration and the swap tears the world down
+    // (the flecs locked-storage rule).
     sceneConsole.vm()->bindMapTravel(
         [this](i32 mx, i32 mz, f32 x, f32 z, bool hasArrival) {
             if (!sandboxActive) {
                 return;
             }
-            pendingMapTravel =
-                PendingMapTravel { mx, mz, hasArrival, Vec2 { x, z } };
+            sandboxWorld.requestTravel(mx, mz, hasArrival, Vec2 { x, z });
         });
     // Ability scripts act on the world through these (chantier
     // ESPRITS): aim() reads the eye ray now, spirit.spawn queues.
@@ -4584,8 +3584,7 @@ void LandscapeScene::createConsole() {
                 LOG_WARN("spirit.spawn: unknown spirit '{}'", kindName);
                 return;
             }
-            pendingSpiritActions.push_back(
-                PendingSpiritAction { kind, x, z, rate, radius, seconds });
+            spiritDirector.queueSource(kind, x, z, rate, radius, seconds);
         },
         [this](const std::string& kindName, f32 speed, f32 rate, f32 radius,
                f32 seconds) {
@@ -4594,11 +3593,7 @@ void LandscapeScene::createConsole() {
                 LOG_WARN("spirit.jet: unknown spirit '{}'", kindName);
                 return;
             }
-            PendingSpiritAction action { kind, 0.0f, 0.0f, rate, radius,
-                                         seconds };
-            action.mode = PendingSpiritAction::Mode::Jet;
-            action.speed = speed;
-            pendingSpiritActions.push_back(action);
+            spiritDirector.queueJet(kind, speed, rate, radius, seconds);
         },
         nullptr, // push_terrain arrives with the earth brick
     });
@@ -4630,14 +3625,9 @@ void LandscapeScene::createConsole() {
             return out.empty() ? str { "no spirit source" } : out;
         }
         if (verb == "clear") {
-            spiritDirector.clear();
-            stopSpiritEmitters(spiritDirector.jetList().clear());
-            releaseSpiritHold(false);
-            finishSpiritEarth(true);
-            resetSpiritFire();
-            resetFxSources();
-    resetSpiritWind();
-            pushRuntimeWaterSources();
+            spiritDirector.resetGestures(makeSpiritContext(),
+                                         SpiritDirector::ResetReason::ConsoleClear);
+            resetWorldFx();
             return "spirit sources cleared";
         }
         if (verb == "cast") {
@@ -4648,8 +3638,9 @@ void LandscapeScene::createConsole() {
             if (!ability) {
                 return "no AbilityForm named '" + editorId + "'";
             }
-            spiritAbility = ability;
-            return "Q now casts " + editorId + " (" + currentSpellName() + ")";
+            spiritDirector.selectSpell(ability);
+            return "Q now casts " + editorId + " (" +
+                   spiritDirector.currentSpellName(forms, texts) + ")";
         }
         if (verb != "spawn") {
             return "usage: spirit spawn <Water|...> <x> <z> [rate] "
@@ -4727,11 +3718,11 @@ void LandscapeScene::createConsole() {
         if (std::istringstream { args } >> word; word == "start") {
             // Back to the session's start point (the validated sandbox
             // spawn — stable per seed).
-            if (!sandboxActive || !sandboxSpawnValid) {
+            if (!sandboxActive || !sandboxWorld.spawnValid()) {
                 return "no start point in this mode";
             }
-            x = sandboxSpawn.x;
-            z = sandboxSpawn.z;
+            x = sandboxWorld.spawn().x;
+            z = sandboxWorld.spawn().z;
         } else if (!(in >> x >> z)) {
             return "usage: tp <x> <z> | tp start";
         }
@@ -4836,10 +3827,9 @@ void LandscapeScene::createConsole() {
         return questName + " -> " + stateName;
     });
     panel.addCommand("map", [this](const str& args) -> str {
-        // Dev travel between bounded maps (chantier CARTES M4.1):
-        // map <mx> <mz> swaps the whole world through applyMapWorld,
-        // probes a spawn on the target map and re-arms the warmup (a
-        // cold map bakes in the background behind the veil).
+        // Dev travel between bounded maps: map <mx> <mz> swaps the
+        // whole world, probes a spawn on the target map and re-arms the
+        // warmup (a cold map bakes in the background behind the veil).
         std::istringstream in { args };
         i32 mx = 0;
         i32 mz = 0;
@@ -4849,7 +3839,7 @@ void LandscapeScene::createConsole() {
         if (!sandboxActive) {
             return "map travel needs the sandbox world";
         }
-        travelToMap(mx, mz);
+        sandboxWorld.travelTo(makeSandboxContext(), mx, mz);
         return "traveling to map (" + std::to_string(mx) + ", " +
                std::to_string(mz) + ")";
     });
@@ -5043,7 +4033,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         // copies, fresh this frame).
         [this](const Vec3& at) -> std::optional<f32> {
             std::optional<f32> best;
-            if (!interiorMode) {
+            if (policy().hasWaterBodies) {
                 // R3: sim water counts, sim dryness counts, sea belt
                 // built in (covers the pre-bodies early frames too).
                 best = render::terrain::waterSurfaceQuery(
@@ -5073,7 +4063,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         // unified query the surface reads: the sim's live current
         // inside the rect, the baked river blend outside.
         [this](const Vec3& at) -> Vec2 {
-            if (interiorMode) {
+            if (!policy().hasWaterBodies) {
                 return Vec2 { 0.0f };
             }
             Vec2 flow = render::terrain::waterFlowQuery(
@@ -5081,20 +4071,20 @@ PlayerContext LandscapeScene::makePlayerContext() {
             // Bounded-map guard: past the rim the ocean turns the
             // swimmer back (world/scene/MapBounds).
             const auto& sandbox = renderer.terrainParams().sandbox;
-            if (sandbox && sandbox->grid.valid) {
+            if (policy().hasBoundedMap && sandbox) {
                 const f32 size = sandbox->grid.mapSize;
                 flow += world::mapBoundsCurrent(
-                    at.x, at.z, static_cast<f32>(activeMapX) * size,
-                    static_cast<f32>(activeMapZ) * size, size, 256.0f,
-                    6.0f);
+                    at.x, at.z, static_cast<f32>(sandboxWorld.mapX()) * size,
+                    static_cast<f32>(sandboxWorld.mapZ()) * size, size,
+                    256.0f, 6.0f);
             }
             return flow;
         },
-        [this] { castSpirit(); },
+        [this] { spiritDirector.cast(makeSpiritContext()); },
     };
 }
 
-// --- Spirits: the ability -> world seam (chantier ESPRITS) ------------
+// --- Spirits: what the scene lends the SpiritDirector (docs/SPELLS.md) ---
 
 std::optional<Vec3> LandscapeScene::aimGround() const {
     if (!physics) {
@@ -5133,905 +4123,6 @@ script::ScriptContext LandscapeScene::playerScriptContext() {
     return ctx;
 }
 
-void LandscapeScene::castSpirit() {
-    if (mode != SceneMode::Play || !spiritAbility ||
-        !playerEntity.is_alive() ||
-        !playerEntity.has<gameplay::AbilitySystem>()) {
-        return;
-    }
-    // The ability's spell (docs/SPELLS.md): its first SpellForm child.
-    // No child = a scripted ability (the escape hatch).
-    const data::SpellForm* spellForm = nullptr;
-    data::childrenOf<data::SpellForm>(
-        forms, spiritAbility->id, [&](const data::SpellForm& s) {
-            if (!spellForm) {
-                spellForm = &s;
-            }
-        });
-    std::optional<world::SpellSpec> spell;
-    if (spellForm) {
-        str error;
-        spell = world::compileSpell(*spellForm, &error);
-        if (!spell) {
-            LOG_WARN("Spell: {}", error);
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            return;
-        }
-        if (!world::spellSupported(*spell)) {
-            LOG_WARN("Spell '{}': (form, element, trajectory) not implemented "
-                     "by the generic caster yet — give the ability a script",
-                     spellForm->editorId);
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            return;
-        }
-    }
-    // Water pours into the LIVE water sim (runtime sources): without a
-    // valid sim here the spirit stays silent. The other elements need
-    // only the ground, in every world (story or sandbox).
-    const bool waterCast =
-        spell ? spell->element == render::terrain::SpiritKind::Water
-              : spiritAbility->script.find("\"Water\"") != str::npos;
-    if (waterCast && !renderer.waterSystem().simIsValid()) {
-        interaction.say(texts.get("spirit.refused"), 1.5f);
-        return;
-    }
-    // Geometry first, before any cost is paid: tryActivate has no
-    // position. Only AIMED casts (a point spell, a script calling aim()):
-    // water onto water would pour into a pinned lake (the pin swallows
-    // it) — refused rather than silently lost. A stream arcs from the
-    // hand and lands wherever it lands; nothing to pre-check.
-    const bool aimed =
-        spell ? spell->trajectory == world::SpellTrajectory::Point ||
-                    spell->trajectory == world::SpellTrajectory::Line
-              : spiritAbility->script.find("aim(") != str::npos;
-    std::optional<Vec3> at;
-    if (aimed) {
-        at = aimGround();
-        if (!at) {
-            interaction.say(texts.get("spirit.noGround"), 1.5f);
-            return;
-        }
-        if (spell &&
-            glm::distance(*at, flyCamera.camera.position) > spell->range) {
-            interaction.say(texts.get("spirit.tooFar"), 1.5f);
-            return;
-        }
-        // Only a CREATE pours: destroy/control want the water there.
-        const bool creates = (!spell || spell->verb == world::SpellVerb::Create) &&
-                             (!spell || spell->element != render::terrain::SpiritKind::Wind);
-        if (creates && render::terrain::waterSurfaceQuery(makeWaterQuery(),
-                                                          at->x, at->z, at->y)) {
-            interaction.say(texts.get("spirit.wetGround"), 1.5f);
-            return;
-        }
-    }
-    if (spell && spell->verb == world::SpellVerb::Control && spiritHold) {
-        return; // one held volume at a time
-    }
-    gameplay::AbilityContext ability { forms, gameTags };
-    ability.events = &eventBus;
-    ability.caster = playerEntity;
-    ability.scriptRunner = [this](const gameplay::AbilityForm& form) {
-        if (script::Vm* vm = sceneConsole.vm()) {
-            vm->startCoroutine(form.script, playerScriptContext(),
-                               playerScriptContext());
-        }
-    };
-    auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-    if (!gameplay::tryActivate(*spiritAbility, set, system, set, system,
-                               ability)) {
-        interaction.say(texts.get("spirit.refused"), 1.5f);
-        return;
-    }
-    if (spell) {
-        executeSpell(*spell, at);
-    }
-}
-
-void LandscapeScene::executeSpell(const world::SpellSpec& spell,
-                                  const std::optional<Vec3>& aimedAt) {
-    // Create + <element>: the effect is a placed source (point) or a
-    // streamed jet (stream). The area shape picks the kernel footprint:
-    // a disc is the kernel's own ~4 m disc, a ring the wide seven-tap
-    // spring (world/spirit/SpiritSources).
-    const f32 radius = spell.area == world::SpellArea::Ring
-                           ? glm::max(spell.areaRadius,
-                                      world::kSpellDiscMaxRadius + 0.01f)
-                           : glm::min(spell.areaRadius,
-                                      world::kSpellDiscMaxRadius);
-    const f32 seconds = spell.duration < 0.0f ? 1.0e9f : spell.duration;
-    PendingSpiritAction action;
-    action.kind = spell.element;
-    // Destroy = the same source, draining (the kernel bounds at dry and
-    // releases the lake pin under it).
-    action.rate = spell.verb == world::SpellVerb::Destroy ? -spell.intensity
-                                                          : spell.intensity;
-    action.radius = radius;
-    action.seconds = spell.duration < 0.0f && !spell.channeled
-                         ? -1.0f // a permanent placed source
-                         : seconds;
-    action.channeled = spell.channeled;
-    action.costPeriod = spell.costPeriod;
-    action.upkeepScale = spell.upkeepScale;
-    switch (spell.trajectory) {
-    case world::SpellTrajectory::Point:
-        if (!aimedAt) {
-            return;
-        }
-        action.x = aimedAt->x;
-        action.z = aimedAt->z;
-        if (spell.element == render::terrain::SpiritKind::Earth) {
-            if (spell.verb == world::SpellVerb::Understand) {
-                castGroundReading(*aimedAt, spell.duration, spell.channeled);
-                return;
-            }
-            if (spell.verb == world::SpellVerb::Control) {
-                action.rate = spell.intensity; // the largest rock it lifts
-                action.radius = spell.areaRadius; // the reach around the aim
-                action.mode = PendingSpiritAction::Mode::EarthSeize;
-                break;
-            }
-            action.rate = spell.intensity; // the sign lives in the mode
-            action.mode = spell.verb == world::SpellVerb::Create
-                              ? (spell.channeled
-                                     ? PendingSpiritAction::Mode::EarthBrush
-                                     : PendingSpiritAction::Mode::EarthBump)
-                              : PendingSpiritAction::Mode::EarthDig;
-            break;
-        }
-        if (spell.element == render::terrain::SpiritKind::Wind) {
-            // A gust placed at the aim, blowing where the caster faces.
-            const Vec3 forward = flyCamera.camera.forward();
-            const Vec2 flat = glm::length(Vec2 { forward.x, forward.z }) > 1e-3f
-                                  ? glm::normalize(Vec2 { forward.x, forward.z })
-                                  : Vec2 { 1.0f, 0.0f };
-            action.dirX = flat.x;
-            action.dirZ = flat.y;
-            action.rate = spell.intensity; // m/s at the centre
-            action.radius = spell.areaRadius;
-            action.mode = PendingSpiritAction::Mode::Source;
-            break;
-        }
-        if (spell.element == render::terrain::SpiritKind::Fire) {
-            if (spell.verb == world::SpellVerb::Understand) {
-                castFireReading(*aimedAt, spell.duration, spell.channeled);
-                return;
-            }
-            action.rate = spell.intensity; // heat dealt to each cell
-            action.radius = spell.areaRadius;
-            action.mode = spell.verb == world::SpellVerb::Destroy
-                              ? PendingSpiritAction::Mode::FireDouse
-                          : spell.verb == world::SpellVerb::Control
-                              ? PendingSpiritAction::Mode::FireBrand
-                              : PendingSpiritAction::Mode::FireIgnite;
-            break;
-        }
-        if (spell.verb == world::SpellVerb::Understand) {
-            castWaterReading(*aimedAt, spell.duration,
-                             spell.channeled); // no world action
-            return;
-        }
-        if (spell.verb == world::SpellVerb::Control) {
-            action.mode = PendingSpiritAction::Mode::Hold;
-        }
-        break;
-    case world::SpellTrajectory::Stream:
-        if (spell.element == render::terrain::SpiritKind::Wind) {
-            action.mode = PendingSpiritAction::Mode::WindBlow;
-            action.rate = spell.intensity;
-            action.radius = spell.areaRadius;
-            action.range = spell.range;
-            break;
-        }
-        if (spell.element == render::terrain::SpiritKind::Fire) {
-            action.mode = PendingSpiritAction::Mode::FireStream;
-            action.rate = spell.intensity;
-            action.radius = spell.areaRadius;
-            action.range = spell.range;
-            break;
-        }
-        action.mode = PendingSpiritAction::Mode::Jet;
-        action.speed = world::launchSpeedForRange(
-            spell.range, world::SpiritJetList::kGravity);
-        break;
-    case world::SpellTrajectory::Line:
-        if (!aimedAt) {
-            return;
-        }
-        // The press spot; the release builds the wall (updateSpiritLine).
-        spiritLine = SpiritLine { *aimedAt, spell.intensity, spell.areaRadius };
-        return;
-    case world::SpellTrajectory::Self:
-        if (spell.element == render::terrain::SpiritKind::Fire &&
-            spell.verb == world::SpellVerb::Destroy && spell.channeled) {
-            action.radius = spell.areaRadius;
-            action.mode = PendingSpiritAction::Mode::FireGlobe;
-            break;
-        }
-        if (spell.element == render::terrain::SpiritKind::Wind && spell.channeled &&
-            (spell.verb == world::SpellVerb::Destroy ||
-             spell.verb == world::SpellVerb::Control)) {
-            action.mode = spell.verb == world::SpellVerb::Destroy
-                              ? PendingSpiritAction::Mode::WindCalm
-                              : PendingSpiritAction::Mode::WindDirect;
-            break;
-        }
-        return;
-    case world::SpellTrajectory::Projectile:
-        return; // not in the matrix yet (spellSupported gates the cast)
-    }
-    pendingSpiritActions.push_back(action);
-}
-
-void LandscapeScene::applyPendingSpiritActions() {
-    if (pendingSpiritActions.empty()) {
-        return;
-    }
-    bool changed = false;
-    while (!pendingSpiritActions.empty()) {
-        const PendingSpiritAction action = pendingSpiritActions.front();
-        pendingSpiritActions.pop_front();
-        if (action.kind == render::terrain::SpiritKind::Water &&
-            !renderer.waterSystem().simIsValid()) {
-            continue; // no live sim to pour into (a script's cast)
-        }
-        if (action.mode == PendingSpiritAction::Mode::FireDouse) {
-            spiritDirector.douse(action.x, action.z, action.radius);
-            waterEvents.push_back({ { action.x, action.z }, action.radius });
-            const Vec3 at { action.x,
-                            render::terrain::height(renderer.terrainParams(),
-                                                    action.x, action.z),
-                            action.z };
-            fxDirector.cues().emit({ "Cue.Spirit.Fire.Douse", at, action.radius });
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::FireBrand) {
-            endSpiritBrand();
-            SpiritBrand brand;
-            brand.heat = action.rate;
-            brand.radius = action.radius;
-            brand.costPeriod = action.costPeriod;
-            brand.upkeepScale = action.upkeepScale;
-            brand.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            const core::Guid& fxId =
-                spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire);
-            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f; // until the key lets go
-                params.shapeRadius = glm::min(params.shapeRadius, action.radius);
-                const Vec3 at { action.x,
-                                render::terrain::height(renderer.terrainParams(),
-                                                        action.x, action.z),
-                                action.z };
-                brand.emitter = fxSim.spawn(params, at, 0x6b7a9du ^ fxSim.count());
-            }
-            spiritBrand = brand;
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::WindBlow) {
-            endSpiritBlow();
-            SpiritBlow blow;
-            blow.speed = action.rate;
-            blow.radius = action.radius;
-            blow.range = action.range;
-            blow.costPeriod = action.costPeriod;
-            blow.upkeepScale = action.upkeepScale;
-            blow.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            const core::Guid& fxId =
-                spiritDirector.jetParticles(render::terrain::SpiritKind::Wind);
-            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f;
-                params.velocity = flyCamera.camera.forward() * action.rate;
-                params.lifetime = action.range / glm::max(action.rate, 1.0f);
-                blow.emitter = fxSim.spawn(params, spiritNozzle(), 0x91d0u ^ fxSim.count());
-            }
-            spiritBlow = blow;
-            fxDirector.cues().emit({ "Cue.Spirit.Wind.Spawn", spiritNozzle(), blow.speed });
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::WindCalm ||
-            action.mode == PendingSpiritAction::Mode::WindDirect) {
-            if (!spiritWindHold) {
-                spiritWindHold = SpiritWindHold {};
-                windBaseStrength = atmos.windStrength;
-                windBaseDirectionDeg = atmos.windDirectionDeg;
-                spiritWindHold->currentDeg = atmos.windDirectionDeg;
-            }
-            spiritWindHold->releasing = false;
-            spiritWindHold->calm = action.mode == PendingSpiritAction::Mode::WindCalm;
-            spiritWindHold->direct = action.mode == PendingSpiritAction::Mode::WindDirect;
-            spiritWindHold->costPeriod = action.costPeriod;
-            spiritWindHold->upkeepScale = action.upkeepScale;
-            spiritWindHold->costClock = 0.0f;
-            spiritWindHold->ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::FireStream) {
-            endSpiritFlameJet();
-            SpiritFlameJet jet;
-            jet.heat = action.rate;
-            jet.radius = action.radius;
-            jet.range = action.range;
-            jet.costPeriod = action.costPeriod;
-            jet.upkeepScale = action.upkeepScale;
-            jet.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            const core::Guid& fxId =
-                spiritDirector.jetParticles(render::terrain::SpiritKind::Fire);
-            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f; // until the key lets go
-                params.velocity = flyCamera.camera.forward() * kFlameJetSpeed;
-                params.lifetime = action.range / kFlameJetSpeed;
-                jet.emitter = fxSim.spawn(params, spiritNozzle(), 0x5e7f1a3u ^ fxSim.count());
-            }
-            spiritFlameJet = jet;
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::FireGlobe) {
-            endSpiritGlobe();
-            SpiritGlobe globe;
-            globe.radius = action.radius;
-            globe.costPeriod = action.costPeriod;
-            globe.upkeepScale = action.upkeepScale;
-            globe.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            const auto* form = forms.find<data::ParticleForm>(
-                spiritDirector.holdParticles(render::terrain::SpiritKind::Fire));
-            if (form && playerController.body()) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f;
-                params.shapeRadius = action.radius * 0.5f;
-                const Vec3 at = playerController.body()->position() + Vec3 { 0.0f, 1.0f, 0.0f };
-                globe.emitter = fxSim.spawn(params, at, 0x4a11e5u ^ fxSim.count());
-            }
-            spiritGlobe = globe;
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::FireIgnite) {
-            igniteGround(action.x, action.z, action.radius, action.rate);
-            const Vec3 at { action.x,
-                            render::terrain::height(renderer.terrainParams(),
-                                                    action.x, action.z),
-                            action.z };
-            fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, action.rate });
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::EarthBump) {
-            applyEarthBump(action);
-            continue; // no water source involved
-        }
-        if (action.mode == PendingSpiritAction::Mode::EarthSeize) {
-            seizeRock(action);
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::EarthDig ||
-            action.mode == PendingSpiritAction::Mode::EarthBrush) {
-            finishSpiritEarth(true); // one stroke at a time
-            SpiritEarth dig;
-            dig.raise = action.mode == PendingSpiritAction::Mode::EarthBrush;
-            dig.rate = action.rate;
-            dig.radius = action.radius;
-            dig.remaining = action.seconds;
-            dig.costPeriod = action.costPeriod;
-            dig.upkeepScale = action.upkeepScale;
-            dig.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            spiritEarth = std::move(dig);
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::Hold) {
-            world::SpiritHold hold;
-            hold.kind = action.kind;
-            hold.rate = action.rate;
-            hold.radius = action.radius;
-            hold.maxVolume = action.rate * action.seconds;
-            hold.costPeriod = action.costPeriod;
-            hold.upkeepScale = action.upkeepScale;
-            hold.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            hold.aim = Vec3 { action.x,
-                              render::terrain::height(renderer.terrainParams(),
-                                                      action.x, action.z),
-                              action.z };
-            const core::Guid& fxId = spiritDirector.holdParticles(action.kind);
-            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f; // stopped by the release
-                const Vec3 blob = *hold.aim + Vec3 { 0.0f, 2.5f, 0.0f };
-                const u32 seed =
-                    static_cast<u32>(static_cast<i32>(blob.x * 73.0f)) ^
-                    (static_cast<u32>(static_cast<i32>(blob.z * 179.0f)) << 8) ^
-                    fxSim.count();
-                hold.emitter = fxSim.spawn(params, blob, seed);
-            }
-            releaseSpiritHold(false);
-            spiritHold = hold;
-            changed = true;
-            continue;
-        }
-        if (action.mode == PendingSpiritAction::Mode::Jet) {
-            world::SpiritJet jet;
-            jet.kind = action.kind;
-            jet.origin = spiritNozzle();
-            jet.velocity = flyCamera.camera.forward() * action.speed;
-            jet.rate = action.rate;
-            jet.radius = action.radius;
-            jet.remaining = action.seconds;
-            jet.channeled = action.channeled;
-            jet.costPeriod = action.costPeriod;
-            jet.upkeepScale = action.upkeepScale;
-            jet.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-            // The visible stream: the spirit's jet ParticleForm, its
-            // duration bound to the gesture; the per-frame steer keeps
-            // the arc true to the aim.
-            const core::Guid& fxId = spiritDirector.jetParticles(action.kind);
-            if (const auto* form = forms.find<data::ParticleForm>(fxId)) {
-                fx::EmitterParams params = gameplay::toEmitterParams(*form);
-                params.velocity = jet.velocity;
-                params.gravity = { 0.0f, -world::SpiritJetList::kGravity,
-                                   0.0f };
-                params.duration = action.seconds;
-                const u32 seed =
-                    static_cast<u32>(static_cast<i32>(jet.origin.x * 73.0f)) ^
-                    (static_cast<u32>(static_cast<i32>(jet.origin.z * 179.0f))
-                     << 8) ^
-                    fxSim.count();
-                jet.emitter = fxSim.spawn(params, jet.origin, seed);
-            }
-            if (const u32 evicted = spiritDirector.jetList().start(jet)) {
-                fxSim.stopEmitter(evicted);
-            }
-            changed = true;
-            continue;
-        }
-        spiritDirector.spawn(action.kind, action.x, action.z, action.rate,
-                             action.radius, action.seconds,
-                             activeWorldspaceGuid(), action.dirX, action.dirZ);
-        if (action.kind == render::terrain::SpiritKind::Water) {
-            waterEvents.push_back({ { action.x, action.z }, action.radius });
-        }
-        changed = true;
-        const Vec3 at { action.x,
-                        render::terrain::height(renderer.terrainParams(),
-                                                action.x, action.z),
-                        action.z };
-        fxDirector.cues().emit(
-            { "Cue.Spirit." +
-                  str { render::terrain::spiritName(action.kind) } +
-                  ".Spawn",
-              at, action.rate });
-    }
-    if (changed) {
-        updateSpiritJets(0.0f);
-        pushRuntimeWaterSources();
-    }
-}
-
-void LandscapeScene::updateSpiritHold(f32 dt) {
-    if (!spiritHold) {
-        return;
-    }
-    world::SpiritHold& hold = *spiritHold;
-    const bool held =
-        actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive()) {
-        releaseSpiritHold(true); // dropped where the aim is
-        return;
-    }
-    // Upkeep: the ability's cost again every costPeriod (§2.9).
-    hold.costClock += dt;
-    if (hold.costClock >= hold.costPeriod) {
-        hold.costClock -= hold.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(hold.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 hold.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            releaseSpiritHold(true);
-            return;
-        }
-    }
-    // Draw where the aim rests: water present there = the hold fills
-    // and a draining source works the kernel (the pin lets go under it).
-    hold.aim = aimGround();
-    std::optional<render::terraingen::WaterSource> draw;
-    if (hold.aim) {
-        const std::optional<f32> surface = render::terrain::waterSurfaceQuery(
-            makeWaterQuery(), hold.aim->x, hold.aim->z, hold.aim->y);
-        const bool present = surface && *surface - hold.aim->y > 0.02f;
-        if (hold.absorb(dt, present) && present) {
-            draw = render::terraingen::WaterSource { hold.aim->x, hold.aim->z,
-                                                     -hold.rate };
-        }
-        if (hold.emitter != 0) {
-            fxSim.moveEmitter(hold.emitter,
-                              *hold.aim + Vec3 { 0.0f, 2.5f, 0.0f });
-        }
-    }
-    spiritDirector.setHoldSource(draw);
-    pushRuntimeWaterSources();
-}
-
-void LandscapeScene::releaseSpiritHold(bool drop) {
-    if (!spiritHold) {
-        return;
-    }
-    world::SpiritHold hold = *spiritHold;
-    spiritHold.reset();
-    if (hold.emitter != 0) {
-        fxSim.stopEmitter(hold.emitter);
-    }
-    spiritDirector.setHoldSource(std::nullopt);
-    // The carried volume falls where the aim is: a one-second source
-    // (the same placed-source path, cue included).
-    constexpr f32 kDropSeconds = 1.0f;
-    if (drop && hold.volume > 0.0f && hold.aim) {
-        PendingSpiritAction action;
-        action.kind = hold.kind;
-        action.x = hold.aim->x;
-        action.z = hold.aim->z;
-        action.rate = hold.dropDischarge(kDropSeconds);
-        action.radius = hold.radius;
-        action.seconds = kDropSeconds;
-        pendingSpiritActions.push_back(action);
-    }
-    pushRuntimeWaterSources();
-}
-
-void LandscapeScene::buildSpellBook() {
-    spellBook.clear();
-    data::forEach<data::SpellForm>(forms, [&](const data::SpellForm& spell) {
-        const auto* ability =
-            forms.find<gameplay::AbilityForm>(spell.parent);
-        if (ability && std::find(spellBook.begin(), spellBook.end(),
-                                 ability) == spellBook.end()) {
-            spellBook.push_back(ability);
-        }
-    });
-    std::sort(spellBook.begin(), spellBook.end(),
-              [](const gameplay::AbilityForm* a,
-                 const gameplay::AbilityForm* b) {
-                  return a->editorId < b->editorId;
-              });
-    spiritAbility = nullptr;
-    for (const gameplay::AbilityForm* ability : spellBook) {
-        if (ability->editorId == "SpiritWaterJet") {
-            spiritAbility = ability;
-        }
-    }
-    if (!spiritAbility && !spellBook.empty()) {
-        spiritAbility = spellBook.front();
-    }
-}
-
-void LandscapeScene::cycleSpell(i32 direction) {
-    if (spellBook.empty()) {
-        return;
-    }
-    const auto it = std::find(spellBook.begin(), spellBook.end(), spiritAbility);
-    const i32 count = static_cast<i32>(spellBook.size());
-    const i32 current =
-        it == spellBook.end() ? 0 : static_cast<i32>(it - spellBook.begin());
-    spiritAbility = spellBook[static_cast<size_t>(
-        ((current + direction) % count + count) % count)];
-}
-
-str LandscapeScene::currentSpellName() const {
-    if (!spiritAbility) {
-        return {};
-    }
-    str name;
-    data::childrenOf<data::SpellForm>(
-        forms, spiritAbility->id, [&](const data::SpellForm& spell) {
-            if (name.empty()) {
-                name = spell.name.empty() ? spell.editorId
-                                          : texts.get(spell.name);
-            }
-        });
-    return name.empty() ? spiritAbility->editorId : name;
-}
-
-void LandscapeScene::extractSpiritWater(render::RenderSnapshot& out) const {
-    // Jets: the lumps in flight, one low-poly sphere each (a jet's
-    // spheres share one mesh instance).
-    u64 id = 1;
-    for (const world::SpiritJet& jet : spiritDirector.jetList().entries()) {
-        if (jet.kind != render::terrain::SpiritKind::Water ||
-            jet.spheres.empty()) {
-            continue;
-        }
-        render::RenderSnapshot::WaterMeshInstance mesh;
-        mesh.id = 0x5b1e0000u + id++;
-        for (const world::JetSphere& sphere : jet.spheres) {
-            world::appendBlob(mesh.triangles,
-                              sphere.at(world::SpiritJetList::kGravity),
-                              sphere.radius, 5, 8, 0.9f);
-        }
-        out.waterMeshes.push_back(std::move(mesh));
-    }
-    // The carried volume: a blob whose size IS the volume, floating over
-    // the aim with a slow bob.
-    if (spiritHold && spiritHold->aim &&
-        spiritHold->kind == render::terrain::SpiritKind::Water) {
-        render::RenderSnapshot::WaterMeshInstance mesh;
-        mesh.id = 0x5b1e0000u + 0x100u;
-        const f32 radius = world::blobRadius(spiritHold->volume);
-        const Vec3 center = *spiritHold->aim +
-                            Vec3 { 0.0f, 2.5f + radius * 0.5f +
-                                             0.15f * std::sin(timeSeconds * 2.0f),
-                                   0.0f };
-        world::appendBlob(mesh.triangles, center, radius);
-        out.waterMeshes.push_back(std::move(mesh));
-    }
-}
-
-f32 LandscapeScene::groundHardnessAt(f32 x, f32 z) const {
-    // The dominant splat names the material class; the compiled rule
-    // table carries its hardness (SurfaceMaterialForm, data).
-    const auto& params = renderer.terrainParams();
-    const f32 h = render::terrain::height(params, x, z);
-    const render::terrain::MaterialWeights w = render::terrain::materialWeightsAt(
-        params, x, z, h, render::terrain::normal(params, x, z));
-    const char* cls = "grass";
-    f32 best = w.grass;
-    if (w.rock > best) { best = w.rock; cls = "rock"; }
-    if (w.cliff > best) { best = w.cliff; cls = "cliff"; }
-    if (w.snow > best) { best = w.snow; cls = "snow"; }
-    if (w.sand > best) { best = w.sand; cls = "sand"; }
-    const world::SpiritRuleTable& rules = spiritDirector.rules();
-    const i32 index = rules.classIndex(cls);
-    if (index < 0 || static_cast<size_t>(index) >= rules.props.size()) {
-        return 1.0f;
-    }
-    return glm::max(rules.props[static_cast<size_t>(index)].hardness, 0.1f);
-}
-
-void LandscapeScene::applyEarthBump(const PendingSpiritAction& action) {
-    // The mound: one instant raise of `rate` metres (divided by the
-    // ground's hardness) over the spell's radius, published committed.
-    const f32 height = action.rate / groundHardnessAt(action.x, action.z);
-    if (height <= 0.0f) {
-        return;
-    }
-    // What stands on it is thrown by the republish funnel
-    // (throwActorsOnGroundRise), like any rising ground.
-    const Vec2 center { action.x, action.z };
-    world::BrushGrids grids;
-    world::BrushParams brush;
-    brush.kind = world::BrushKind::Raise;
-    brush.radius = action.radius;
-    brush.strength = height;
-    world::applyTerrainBrush(grids, heightPatches.get(),
-                             render::TerrainSystem::kChunkSize, brush, center,
-                             1.0f);
-    vector<u64> changed;
-    auto next = world::publishBrushGrids(grids, heightPatches.get(),
-                                         render::TerrainSystem::kChunkSize,
-                                         changed);
-    makeSculptContext().republishTerrain(std::move(next), changed, true);
-    const Vec3 at { action.x,
-                    render::terrain::height(renderer.terrainParams(), action.x,
-                                            action.z),
-                    action.z };
-    fxDirector.cues().emit({ "Cue.Spirit.Earth.Spawn", at, height });
-}
-
-void LandscapeScene::updateSpiritEarth(f32 dt) {
-    if (!spiritEarth) {
-        return;
-    }
-    SpiritEarth& dig = *spiritEarth;
-    const bool held =
-        actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    dig.remaining -= dt;
-    if (!held || dig.remaining <= 0.0f || !playerEntity.is_alive()) {
-        finishSpiritEarth(true);
-        return;
-    }
-    dig.costClock += dt;
-    if (dig.costClock >= dig.costPeriod) {
-        dig.costClock -= dig.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(dig.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 dig.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            finishSpiritEarth(true);
-            return;
-        }
-    }
-    const std::optional<Vec3> at = aimGround();
-    if (!at) {
-        return;
-    }
-    world::BrushParams brush;
-    brush.kind = dig.raise ? world::BrushKind::Raise : world::BrushKind::Lower;
-    brush.radius = dig.radius;
-    brush.strength = dig.rate / groundHardnessAt(at->x, at->z);
-    world::applyTerrainBrush(dig.grids, heightPatches.get(),
-                             render::TerrainSystem::kChunkSize, brush,
-                             { at->x, at->z }, dt);
-    // Live preview at ~20 Hz (terrain only, the water reacts); the heavy
-    // commit waits for the release.
-    dig.previewTimer += dt;
-    if (dig.previewTimer >= 0.05f) {
-        dig.previewTimer = 0.0f;
-        vector<u64> changed;
-        auto next = world::publishBrushGrids(dig.grids, heightPatches.get(),
-                                             render::TerrainSystem::kChunkSize,
-                                             changed);
-        makeSculptContext().republishTerrain(std::move(next), changed, false);
-    }
-    dig.cueTimer += dt;
-    if (dig.cueTimer >= 0.3f) {
-        dig.cueTimer = 0.0f;
-        fxDirector.cues().emit(
-            { dig.raise ? "Cue.Spirit.Earth.Spawn" : "Cue.Spirit.Earth.Dig",
-              *at, dig.rate });
-    }
-}
-
-void LandscapeScene::finishSpiritEarth(bool commit) {
-    if (!spiritEarth) {
-        return;
-    }
-    SpiritEarth dig = std::move(*spiritEarth);
-    spiritEarth.reset();
-    if (!commit || dig.grids.empty()) {
-        if (!commit && !dig.grids.empty()) {
-            // Abandoned mid-stroke: the preview overlay goes back to the
-            // committed one.
-            renderer.terrainParams().patches = heightPatches;
-        }
-        return;
-    }
-    vector<u64> changed;
-    auto next = world::publishBrushGrids(dig.grids, heightPatches.get(),
-                                         render::TerrainSystem::kChunkSize,
-                                         changed);
-    makeSculptContext().republishTerrain(std::move(next), changed, true);
-}
-
-void LandscapeScene::seizeRock(const PendingSpiritAction& action) {
-    // The nearest rock prop (StaticForm.surfaceMaterial "rock") within
-    // reach of the aim, no larger than the spell's intensity in metres
-    // (its bounding radius) — a static body handed to the spirit and
-    // re-created as a dynamic convex hull.
-    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
-    const Vec2 aim { action.x, action.z };
-    ecs::Entity best;
-    f32 bestDist = action.radius;
-    f32 bestRadius = 0.0f;
-    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           const world::RefId& ref) {
-        const reflect::TypeInfo* type = forms.typeOf(ref.base);
-        if (!type || !type->isA(staticType.id) ||
-            !e.has<world::MeshRender>()) {
-            return;
-        }
-        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
-        if (!form || form->surfaceMaterial != "rock") {
-            return;
-        }
-        for (const SpiritRock& rock : spiritRocks) {
-            if (rock.entity == ecs::Entity { e }) {
-                return; // already ours (free or held)
-            }
-        }
-        const render::MeshCache::CpuMesh* cpu =
-            meshCache->cpuMesh(e.get<world::MeshRender>().model);
-        if (!cpu) {
-            return;
-        }
-        const Vec3 half = (cpu->boundsMax - cpu->boundsMin) * 0.5f *
-                          transform.scale;
-        const f32 radius = glm::max(half.x, glm::max(half.y, half.z));
-        if (radius > action.rate) {
-            return; // too big for this spell
-        }
-        const f32 dist = glm::distance(
-            Vec2 { transform.position.x, transform.position.z }, aim);
-        if (dist < bestDist) {
-            bestDist = dist;
-            best = ecs::Entity { e };
-            bestRadius = radius;
-        }
-    });
-    if (!best.is_alive()) {
-        interaction.say(texts.get("spirit.noRock"), 1.5f);
-        return;
-    }
-    const auto& transform = best.get<world::Transform>();
-    const render::MeshCache::CpuMesh* cpu =
-        meshCache->cpuMesh(best.get<world::MeshRender>().model);
-    const Vec3 extent = (cpu->boundsMax - cpu->boundsMin) * transform.scale;
-    const f32 mass = glm::max(extent.x * extent.y * extent.z, 0.05f) * 2000.0f;
-    const phys::BodyId body = physics->addDynamicConvex(
-        cpu->positions.data(), static_cast<u32>(cpu->positions.size()),
-        transform.position, transform.rotation, transform.scale, mass);
-    if (body == 0) {
-        return;
-    }
-    if (const phys::BodyId old = streaming.takeStaticCollider(best.id())) {
-        physics->removeBody(old);
-    }
-    physics->setKinematic(body, true);
-    best.set<world::Displaced>({ transform.position.y -
-                                 render::terrain::height(renderer.terrainParams(),
-                                                         transform.position.x,
-                                                         transform.position.z) });
-    SpiritRock rock;
-    rock.entity = best;
-    rock.body = body;
-    rock.held = true;
-    rock.radius = bestRadius;
-    rock.lastTarget = transform.position;
-    rock.costPeriod = action.costPeriod;
-    rock.upkeepScale = action.upkeepScale;
-    rock.ability = spiritAbility ? spiritAbility->id : core::Guid {};
-    spiritRocks.push_back(rock);
-    fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig", transform.position, 1.0f });
-}
-
-void LandscapeScene::updateSpiritRocks(f32 dt) {
-    const bool held =
-        actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    for (SpiritRock& rock : spiritRocks) {
-        if (!rock.held || !rock.entity.is_alive()) {
-            continue;
-        }
-        bool release = !held || !playerEntity.is_alive();
-        if (!release) {
-            rock.costClock += dt;
-            if (rock.costClock >= rock.costPeriod) {
-                rock.costClock -= rock.costPeriod;
-                const auto* ability = forms.find<gameplay::AbilityForm>(rock.ability);
-                auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-                auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-                if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                         { forms, gameTags },
-                                                         rock.upkeepScale)) {
-                    interaction.say(texts.get("spirit.refused"), 1.5f);
-                    release = true;
-                }
-            }
-        }
-        if (release) {
-            // Let go: dynamic again, thrown with the carry velocity.
-            rock.held = false;
-            physics->setKinematic(rock.body, false);
-            const Vec3 velocity =
-                dt > 1e-4f ? (rock.lastTarget - rock.entity.get<world::Transform>().position) / dt
-                           : Vec3 { 0.0f };
-            physics->setLinearVelocity(rock.body, velocity);
-            continue;
-        }
-        // Carried over the aim (or ahead of the eye when nothing is aimed):
-        // the body is driven kinematically so it shoves what it meets.
-        const std::optional<Vec3> at = aimGround();
-        Vec3 target = at ? *at + Vec3 { 0.0f, 2.5f + rock.radius, 0.0f }
-                         : flyCamera.camera.position +
-                               flyCamera.camera.forward() * (6.0f + rock.radius);
-        const Vec3 previous = rock.lastTarget;
-        rock.lastTarget = target;
-        const Quat rotation = rock.entity.get<world::Transform>().rotation;
-        physics->moveKinematic(rock.body, target, rotation, dt);
-        (void)previous;
-    }
-}
-
-void LandscapeScene::releaseSpiritRocks() {
-    if (physics) {
-        for (const SpiritRock& rock : spiritRocks) {
-            physics->removeBody(rock.body);
-        }
-    }
-    spiritRocks.clear();
-}
-
 void LandscapeScene::throwActorsOnGroundRise(
     const std::function<void()>& swapOverlay,
     const std::vector<u64>& changedChunks) {
@@ -6046,8 +4137,9 @@ void LandscapeScene::throwActorsOnGroundRise(
     };
     // Sample the ground under every actor of the changed chunks BEFORE.
     phys::CharacterBody* body =
-        (mode == SceneMode::Play && !interiorMode) ? playerController.body()
-                                                   : nullptr;
+        (mode == SceneMode::Play && policy().snapsToTerrain)
+            ? playerController.body()
+            : nullptr;
     f32 playerBefore = 0.0f;
     if (body) {
         const Vec3 feet = body->position();
@@ -6058,7 +4150,7 @@ void LandscapeScene::throwActorsOnGroundRise(
         }
     }
     vector<std::pair<Npc*, f32>> npcsBefore;
-    if (!interiorMode) {
+    if (policy().snapsToTerrain) {
         for (const auto& npc : npcDirector.npcs()) {
             if (!npc->entity.is_alive() || npc->dead ||
                 !npc->entity.has<world::Transform>()) {
@@ -6101,1822 +4193,133 @@ void LandscapeScene::throwActorsOnGroundRise(
     }
 }
 
-void LandscapeScene::updateSpiritFire(f32 simSeconds) {
-    if (spiritDirector.fireIdle()) {
-        return;
-    }
-    applyFireContact(simSeconds);
-    // Burning props: they light the ground around them once, burn their
-    // fuel, then are gone for good.
-    for (size_t i = 0; i < burningProps.size();) {
-        BurningProp& burning = burningProps[i];
-        if (!burning.entity.is_alive()) {
-            burningProps.erase(burningProps.begin() + static_cast<std::ptrdiff_t>(i));
-            continue;
-        }
-        const Vec3 at = burning.entity.get<world::Transform>().position;
-        if (!burning.lit) {
-            spiritDirector.ignite(at.x, at.z, 2.0f, 1.5f);
-            burning.lit = true;
-        }
-        burning.remaining -= simSeconds;
-        if (burning.remaining > 0.0f) {
-            ++i;
-            continue;
-        }
-        for (const u32 emitter : { burning.flames, burning.sparks, burning.smoke }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
+// The spirit gestures live in SpiritDirector; the scene lends it the
+// sinks, the actors, the camera, the world's terrain and the actions that
+// stay scene territory as closures. Rebuilt each call (cheap: refs +
+// scalars + a few closures). See SpiritContext.
+SpiritContext LandscapeScene::makeSpiritContext() {
+    return SpiritContext {
+        forms,
+        texts,
+        gameTags,
+        eventBus,
+        fxSim,
+        fxDirector.cues(),
+        ambientFx,
+        renderer,
+        physics.get(),
+        meshCache.get(),
+        interactQuery,
+        npcDirector.npcs(),
+        playerEntity,
+        playerController.body(),
+        flyCamera.camera.position,
+        flyCamera.camera.forward(),
+        mode == SceneMode::Play,
+        actionMap.down(engine->getInput(), InputAction::SpiritCast),
+        policy(),
+        heightPatches,
+        atmos,
+        weather.transitioning(),
+        activeWorldspaceGuid(),
+        [this] { return makeWaterQuery(); },
+        [this] { return aimGround(); },
+        [this](const str& line, f32 seconds) { interaction.say(line, seconds); },
+        // The one terrain republish funnel (the sculpt tool's): the
+        // ground-rise throw, the re-mesh, the commit's collision rebuild.
+        [this](std::shared_ptr<render::HeightPatches> next,
+               const std::vector<u64>& changed, bool commit) {
+            makeSculptContext().republishTerrain(std::move(next), changed, commit);
+        },
+        [this] { pushRuntimeWaterSources(); },
+        // The ability's script as a coroutine over the player (the
+        // trigger idiom, with the liveness handle so it survives
+        // archetype moves).
+        [this](const gameplay::AbilityForm& form) {
+            if (script::Vm* vm = sceneConsole.vm()) {
+                vm->startCoroutine(form.script, playerScriptContext(),
+                                   playerScriptContext());
             }
-        }
-        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 0.5f });
-        if (const phys::BodyId old = streaming.takeStaticCollider(burning.entity.id())) {
-            physics->removeBody(old);
-        }
-        if (burning.entity.has<world::RefId>()) {
-            saveController.pending().disableReference(
-                burning.entity.get<world::RefId>().referenceId, forms, burning.entity);
-        }
-        propFireHeat.erase(burning.entity.id());
-        const ecs::Entity gone = burning.entity;
-        burningProps.erase(burningProps.begin() + static_cast<std::ptrdiff_t>(i));
-        gone.destruct();
-    }
-    const render::WaterSystem& water = renderer.waterSystem();
-    SpiritDirector::FireFrame frame;
-    frame.params = &renderer.terrainParams();
-    frame.water = (water.simIsValid() && !water.simIsSettling())
-                      ? water.simSnapshot()
-                      : nullptr;
-    frame.bodies = waterBodies;
-    frame.seaLevel = renderer.terrainParams().seaLevel;
-    frame.rain = atmos.rainIntensity; // the rain soaks the fuel and the flames
-    const Vec3 cam = flyCamera.camera.position;
-    frame.focus = { cam.x, cam.z };
-    fireLandClock += simSeconds;
-    spiritDirector.setWindField(windField); // the job copies it
-    if (!spiritDirector.updateFire(engine->getJobSystem(), frame, simSeconds)) {
-        return;
-    }
-    const f32 landDt = fireLandClock;
-    fireLandClock = 0.0f;
-    // A job landed: the mask, the props, the trees and the flames follow it.
-    updateSpiritFireProps();
-    updateSpiritFireTrees(landDt);
-    const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
-    renderer.fireScorchMap().upload(engine->getDevice(),
-                                    spiritDirector.fireScorch(),
-                                    spiritDirector.fireGlow(), fireCanopy, spec.n,
-                                    { spec.originX, spec.originZ },
-                                    spec.texelSize);
-    // Wanted flames: the burning cells the camera can SEE, nearest and
-    // most in view first, under budget — emitters behind the camera are
-    // wasted (beyond a small radius, so turning around never shows a
-    // gap: the set is re-placed every landed job, flames burst in).
-    const Vec3 forward3 = flyCamera.camera.forward();
-    const Vec2 forward = glm::length(Vec2 { forward3.x, forward3.z }) > 1e-3f
-                             ? glm::normalize(Vec2 { forward3.x, forward3.z })
-                             : Vec2 { 0.0f, 1.0f };
-    struct Candidate {
-        Vec2 at;
-        f32 score;
+        },
+        // A seized rock: its static collider leaves the world (the body
+        // the spirit made stands in for it).
+        [this](ecs::Entity prop) {
+            if (const phys::BodyId old = streaming.takeStaticCollider(prop.id())) {
+                physics->removeBody(old);
+            }
+        },
     };
-    vector<Candidate> candidates;
-    std::unordered_set<u64> farBlocks; // 2x2 blocks already represented
-    for (const Vec2& cell : spiritDirector.fireBurning()) {
-        const Vec2 to { cell.x - cam.x, cell.y - cam.z };
-        const f32 d2 = glm::dot(to, to);
-        if (d2 > kFlameReach * kFlameReach) {
-            continue;
-        }
-        const f32 dist = std::sqrt(d2);
-        const f32 facing = dist > 1e-3f ? glm::dot(to / dist, forward) : 1.0f;
-        if (facing < -0.2f && dist > kFlameBehindRadius) {
-            continue; // behind the camera
-        }
-        Vec2 at = cell;
-        if (dist > kFlameLodNear) {
-            // LOD: the cell's 2x2 block centre, once per block.
-            const i32 bx = static_cast<i32>(std::floor(cell.x / 4.0f));
-            const i32 bz = static_cast<i32>(std::floor(cell.y / 4.0f));
-            const u64 key = (static_cast<u64>(static_cast<u32>(bx)) << 32) ^
-                            static_cast<u32>(bz);
-            if (!farBlocks.insert(key).second) {
-                continue;
-            }
-            at = { (static_cast<f32>(bx) + 0.5f) * 4.0f, (static_cast<f32>(bz) + 0.5f) * 4.0f };
-        }
-        // In the axis of view: preferred at equal distance.
-        candidates.push_back({ at, dist * (1.6f - 0.6f * facing) });
-    }
-    std::stable_sort(candidates.begin(), candidates.end(),
-                     [](const Candidate& a, const Candidate& b) {
-                         return a.score < b.score;
-                     });
-    if (candidates.size() > kMaxFlames) {
-        candidates.resize(kMaxFlames);
-    }
-    vector<Vec2> wanted;
-    wanted.reserve(candidates.size());
-    for (const Candidate& c : candidates) {
-        wanted.push_back(c.at);
-    }
-    updateSpiritFireSound(cam);
-    // Keep the emitters still wanted, stop the others, light the new.
-    vector<FlameEmitter> kept;
-    for (const FlameEmitter& flame : flameEmitters) {
-        const auto it = std::find_if(wanted.begin(), wanted.end(),
-                                     [&](const Vec2& at) {
-                                         return std::abs(at.x - flame.at.x) < 0.01f &&
-                                                std::abs(at.y - flame.at.y) < 0.01f;
-                                     });
-        if (it != wanted.end()) {
-            kept.push_back(flame);
-            wanted.erase(it);
-        } else {
-            for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke, flame.haze }) {
-                if (emitter != 0) {
-                    fxSim.stopEmitter(emitter);
-                }
-            }
-        }
-    }
-    const auto* flameForm = forms.find<data::ParticleForm>(
-        spiritDirector.fieldParticles(render::terrain::SpiritKind::Fire));
-    const auto* sparkForm = forms.find<data::ParticleForm>(
-        spiritDirector.sparkParticles(render::terrain::SpiritKind::Fire));
-    const auto* smokeForm = forms.find<data::ParticleForm>(
-        spiritDirector.smokeParticles(render::terrain::SpiritKind::Fire));
-    const auto* hazeForm = forms.find<data::ParticleForm>(
-        spiritDirector.hazeParticles(render::terrain::SpiritKind::Fire));
-    for (const Vec2& at : wanted) {
-        FlameEmitter flame { at, 0, 0, 0, 0 };
-        const Vec3 pos { at.x,
-                         render::terrain::height(renderer.terrainParams(),
-                                                 at.x, at.y) +
-                             0.15f,
-                         at.y };
-        const u32 seed =
-            static_cast<u32>(static_cast<i32>(pos.x * 73.0f)) ^
-            (static_cast<u32>(static_cast<i32>(pos.z * 179.0f)) << 8) ^
-            fxSim.count();
-        const f32 dist = glm::distance(Vec2 { pos.x, pos.z }, Vec2 { cam.x, cam.z });
-        const bool far = dist > kFlameLodNear;
-        if (flameForm) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
-            params.duration = 1.0e9f; // stopped when the cell stops burning
-            if (far) {
-                // One flame for four cells: taller, wider, a little sparser.
-                params.sizeStart *= 1.8f;
-                params.sizeEnd *= 1.8f;
-                params.shapeRadius *= 2.0f;
-                params.rate *= 0.7f;
-            }
-            flame.emitter = fxSim.spawn(params, pos, seed);
-        }
-        if (sparkForm) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
-            params.duration = 1.0e9f;
-            flame.sparks = fxSim.spawn(params, pos, seed ^ 0x9e3779b9u);
-        }
-        // Discreet smoke: one cell in four (by its cell parity), rising
-        // from above the flames and carried by the wind.
-        const i32 cellX = static_cast<i32>(std::lround(at.x * 0.5f));
-        const i32 cellZ = static_cast<i32>(std::lround(at.y * 0.5f));
-        if (smokeForm && ((cellX + cellZ * 3) & 3) == 0) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*smokeForm);
-            params.duration = 1.0e9f;
-            flame.smoke = fxSim.spawn(params, pos + Vec3 { 0.0f, 1.2f, 0.0f },
-                                      seed ^ 0x2545f491u);
-        }
-        // The heat shimmer above the near flames (a screen refraction:
-        // pointless far away).
-        if (hazeForm && dist < kFlameHazeNear) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*hazeForm);
-            params.duration = 1.0e9f;
-            flame.haze = fxSim.spawn(params, pos + Vec3 { 0.0f, 0.9f, 0.0f },
-                                     seed ^ 0x7f4a7c15u);
-        }
-        kept.push_back(flame);
-    }
-    flameEmitters = std::move(kept);
 }
 
-void LandscapeScene::extractFireLights(render::RenderSnapshot& out) {
-    const render::FireLook& look = renderer.fireScorchMap().look;
-    if (look.lightIntensity <= 0.0f || look.lightCount <= 0 ||
-        spiritDirector.fireIdle()) {
-        return;
-    }
-    // One tile = the cells of the front it holds (their centroid).
-    struct Tile {
-        Vec2 sum { 0.0f };
-        u32 count { 0 };
-        f32 glow { 0.0f }; // summed ember levels: the tile's freshness
+// The fire's bite on the world and its presentation live in
+// FireDirector; the scene lends it the lane, the sinks, the actors and
+// what the gestures share with it. Rebuilt each call (cheap: refs +
+// scalars). See FireContext.
+FireContext LandscapeScene::makeFireContext() {
+    return FireContext {
+        spiritDirector,
+        forms,
+        fxSim,
+        fxDirector.cues(),
+        audioSystem,
+        soundResolver,
+        renderer,
+        engine->getDevice(),
+        engine->getJobSystem(),
+        interactQuery,
+        npcDirector.npcs(),
+        playerEntity,
+        playerController.body(),
+        mode == SceneMode::Play,
+        spiritDirector.warded(),
+        spiritDirector.jetTouched(),
+        ambientFx.igniters(),
+        spiritDirector.wind(),
+        waterBodies,
+        atmos.rainIntensity,
+        flyCamera.camera.position,
+        flyCamera.camera.forward(),
+        policy(),
+        gameTags,
+        derivedStats,
+        statsTuning,
+        // A burnt prop leaves the world: its static body, and its
+        // reference through the pending save layer (disabled for good,
+        // like a picked-up item).
+        [this](ecs::Entity prop) {
+            if (const phys::BodyId old = streaming.takeStaticCollider(prop.id())) {
+                physics->removeBody(old);
+            }
+            if (prop.has<world::RefId>()) {
+                saveController.pending().disableReference(
+                    prop.get<world::RefId>().referenceId, forms, prop);
+            }
+        },
     };
-    std::map<std::pair<i32, i32>, Tile> tiles;
-    for (const Vec2& at : spiritDirector.fireBurning()) {
-        const std::pair<i32, i32> key {
-            static_cast<i32>(std::floor(at.x / kFireLightTile)),
-            static_cast<i32>(std::floor(at.y / kFireLightTile))
-        };
-        Tile& tile = tiles[key];
-        tile.sum += at;
-        tile.glow += spiritDirector.fireGlowAt(at.x, at.y);
-        ++tile.count;
-    }
-    if (tiles.empty()) {
-        return;
-    }
-    const Vec3 cam = flyCamera.camera.position;
-    struct Candidate {
-        render::SceneLight light;
-        f32 dist2;
+}
+
+// The ambient dressing (torches, river heads, falls) lives in
+// AmbientFxController. Rebuilt each call. See AmbientFxContext.
+AmbientFxContext LandscapeScene::makeAmbientFxContext() {
+    return AmbientFxContext {
+        forms,
+        fxSim,
+        audioSystem,
+        soundResolver,
+        fxSourceQuery,
+        spiritDirector,
+        spiritDirector.wind(),
+        renderer.terrainParams(),
+        waterBodies.get(),
+        policy(),
+        flyCamera.camera.position,
+        atmos.rainIntensity,
     };
-    vector<Candidate> candidates;
-    candidates.reserve(tiles.size());
-    for (const auto& [key, tile] : tiles) {
-        const Vec2 center = tile.sum / static_cast<f32>(tile.count);
-        const f32 y =
-            render::terrain::height(renderer.terrainParams(), center.x, center.y) +
-            0.8f;
-        render::SceneLight light;
-        light.position = { center.x, y, center.y };
-        // Temperature: fresh flames burn the hot colour, a tile of dying
-        // embers the cold one (the same ramp as the coal bed).
-        const f32 freshness = glm::clamp(tile.glow / static_cast<f32>(tile.count), 0.0f, 1.0f);
-        light.color = glm::mix(look.emberCold, look.lightColor, freshness);
-        light.intensity = glm::min(look.lightIntensity * static_cast<f32>(tile.count),
-                                   look.lightMaxIntensity);
-        light.radius = look.lightRadius +
-                       2.0f * std::sqrt(static_cast<f32>(tile.count));
-        light.flicker = look.lightFlicker;
-        const Vec3 to = light.position - cam;
-        candidates.push_back({ light, glm::dot(to, to) });
-    }
-    std::stable_sort(candidates.begin(), candidates.end(),
-                     [](const Candidate& a, const Candidate& b) {
-                         return a.dist2 < b.dist2;
-                     });
-    const size_t keep =
-        glm::min(candidates.size(), static_cast<size_t>(look.lightCount));
-    // Ahead of the world's lights: the fire is the brightest thing
-    // around; the budget's tail is what drops.
-    vector<render::SceneLight> merged;
-    merged.reserve(keep + out.lights.size());
-    for (size_t i = 0; i < keep; ++i) {
-        merged.push_back(candidates[i].light);
-    }
-    merged.insert(merged.end(), out.lights.begin(), out.lights.end());
-    if (merged.size() > render::WorldRenderer::kMaxLights) {
-        merged.resize(render::WorldRenderer::kMaxLights);
-    }
-    out.lights = std::move(merged);
 }
 
-void LandscapeScene::fireTouch(ecs::Entity entity, f32& clock, f32 dt,
-                               bool inFire) {
-    using render::terrain::SpiritKind;
-    if (!inFire || !entity.has<gameplay::AttributeSet>() ||
-        !entity.has<gameplay::AbilitySystem>() ||
-        !entity.has<gameplay::StatusBuildup>()) {
-        clock = 0.0f;
-        return;
-    }
-    clock += dt;
-    if (clock < spiritDirector.contactPeriod(SpiritKind::Fire)) {
-        return;
-    }
-    clock = 0.0f;
-    // The buildup (Status.Ignited in time) ...
-    if (const auto* effect = forms.find<gameplay::EffectForm>(
-            spiritDirector.contactEffect(SpiritKind::Fire))) {
-        gameplay::applyEffect(entity.get_mut<gameplay::AttributeSet>(),
-                              entity.get_mut<gameplay::AbilitySystem>(), *effect,
-                              gameTags, &entity.get_mut<gameplay::StatusBuildup>());
-    }
-    // ... and the flames' own typed damage through the pipeline (fire
-    // resistance mitigates; §2.9's sanctioned terminal write).
-    const f32 damage = spiritDirector.contactDamage(SpiritKind::Fire);
-    if (damage > 0.0f && entity.has<gameplay::CoreAttributes>() &&
-        entity.has<gameplay::CombatState>()) {
-        gameplay::StatBlock block {
-            entity.get_mut<gameplay::CoreAttributes>(),
-            entity.get_mut<gameplay::AttributeSet>(),
-            entity.get_mut<gameplay::AbilitySystem>(),
-            entity.get_mut<gameplay::CombatState>()
-        };
-        gameplay::DamageEvent burn;
-        burn.channels = { { gameplay::DamageType::Fire, damage } };
-        gameplay::applyDamage(block, burn, gameTags, derivedStats, nullptr,
-                              statsTuning);
-    }
-}
-
-void LandscapeScene::applyFireContact(f32 dt) {
-    if (mode == SceneMode::Play && !interiorMode && playerEntity.is_alive() &&
-        !spiritGlobe) { // the fire ward: no flame reaches the caster
-        if (phys::CharacterBody* body = playerController.body()) {
-            const Vec3 feet = body->position();
-            fireTouch(playerEntity, playerFireClock, dt,
-                      spiritDirector.fireBurningAt(feet.x, feet.z));
-        }
-    }
-    if (!interiorMode) {
-        for (const auto& npc : npcDirector.npcs()) {
-            if (!npc->entity.is_alive() || npc->dead ||
-                !npc->entity.has<world::Transform>()) {
-                continue;
-            }
-            const Vec3& at = npc->entity.get<world::Transform>().position;
-            fireTouch(npc->entity, npcFireClocks[npc->entity.id()], dt,
-                      spiritDirector.fireBurningAt(at.x, at.z) ||
-                          flameJetTouched.contains(npc->entity.id()));
-        }
-    }
-}
-
-void LandscapeScene::updateSpiritFlameJet(f32 dt) {
-    if (!spiritFlameJet) {
-        return;
-    }
-    SpiritFlameJet& jet = *spiritFlameJet;
-    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive()) {
-        endSpiritFlameJet();
-        return;
-    }
-    jet.costClock += dt;
-    if (jet.costClock >= jet.costPeriod) {
-        jet.costClock -= jet.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(jet.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 jet.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            endSpiritFlameJet();
-            return;
-        }
-    }
-    const Vec3 origin = spiritNozzle();
-    const Vec3 forward = flyCamera.camera.forward();
-    if (jet.emitter != 0) {
-        fxSim.moveEmitter(jet.emitter, origin);
-        fxSim.steerEmitter(jet.emitter, forward * kFlameJetSpeed,
-                           jet.range / kFlameJetSpeed);
-    }
-    // Whoever stands in the cone burns (the same contact as the field,
-    // applied by applyFireContact with the ground's fire).
-    flameJetTouched.clear();
-    if (!interiorMode) {
-        const f32 cosHalf = std::cos(kFlameJetHalfAngle);
-        for (const auto& npc : npcDirector.npcs()) {
-            if (!npc->entity.is_alive() || npc->dead ||
-                !npc->entity.has<world::Transform>()) {
-                continue;
-            }
-            const Vec3 to = npc->entity.get<world::Transform>().position +
-                            Vec3 { 0.0f, 0.9f, 0.0f } - origin;
-            const f32 dist = glm::length(to);
-            const bool inCone = dist > 0.2f && dist <= jet.range &&
-                                glm::dot(to / dist, forward) >= cosHalf;
-            if (inCone) {
-                flameJetTouched.insert(npc->entity.id());
-            }
-        }
-    }
-    // The ground under the cone catches, every pulse, out to the range
-    // or the first hillside the flames hit.
-    jet.pulseClock += dt;
-    if (jet.pulseClock < kFlameJetPulse) {
-        return;
-    }
-    jet.pulseClock -= kFlameJetPulse;
-    const auto& params = renderer.terrainParams();
-    for (f32 t = 1.5f; t <= jet.range; t += 1.5f) {
-        const Vec3 p = origin + forward * t;
-        const f32 ground = render::terrain::height(params, p.x, p.z);
-        if (p.y < ground) {
-            igniteGround(p.x, p.z, jet.radius, jet.heat); // the hillside
-            break;
-        }
-        if (p.y - ground < 2.5f &&
-            !render::terrain::waterSurfaceQuery(makeWaterQuery(), p.x, p.z, ground)) {
-            igniteGround(p.x, p.z, jet.radius, jet.heat);
-        }
-    }
-}
-
-void LandscapeScene::endSpiritFlameJet() {
-    if (!spiritFlameJet) {
-        return;
-    }
-    if (spiritFlameJet->emitter != 0) {
-        fxSim.stopEmitter(spiritFlameJet->emitter);
-    }
-    spiritFlameJet.reset();
-    flameJetTouched.clear();
-}
-
-void LandscapeScene::updateSpiritFireProps() {
-    using render::terrain::SpiritKind;
-    // Heat every wooden prop standing in the glow (10 Hz: per landed job).
-    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
-    const world::SpiritRuleTable& rules = spiritDirector.rules();
-    const i32 woodIndex = rules.classIndex("wood");
-    const f32 fuel = woodIndex >= 0 && static_cast<size_t>(woodIndex) < rules.props.size()
-                         ? glm::max(rules.props[static_cast<size_t>(woodIndex)].fuel, 1.0f)
-                         : 8.0f;
-    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           const world::RefId& ref) {
-        const reflect::TypeInfo* type = forms.typeOf(ref.base);
-        if (!type || !type->isA(staticType.id)) {
-            return;
-        }
-        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
-        if (!form || form->surfaceMaterial != "wood") {
-            return;
-        }
-        for (const BurningProp& burning : burningProps) {
-            if (burning.entity == ecs::Entity { e }) {
-                return; // already alight
-            }
-        }
-        const bool inFlames = spiritDirector.fireBurningAt(transform.position.x,
-                                                           transform.position.z);
-        f32& heat = propFireHeat[e.id()];
-        if (!inFlames) {
-            heat = glm::max(0.0f, heat - 0.1f * kPropHeatRate);
-            return;
-        }
-        heat += 0.1f * kPropHeatRate;
-        if (heat < 1.0f) {
-            return;
-        }
-        lightProp(ecs::Entity { e }, transform.position, fuel);
-    });
-}
-
-void LandscapeScene::lightProp(ecs::Entity entity, const Vec3& position, f32 fuel) {
-    using render::terrain::SpiritKind;
-    const auto* flameForm = forms.find<data::ParticleForm>(
-        spiritDirector.fieldParticles(SpiritKind::Fire));
-    const auto* sparkForm = forms.find<data::ParticleForm>(
-        spiritDirector.sparkParticles(SpiritKind::Fire));
-    const auto* smokeForm = forms.find<data::ParticleForm>(
-        spiritDirector.smokeParticles(SpiritKind::Fire));
-    BurningProp burning;
-    burning.entity = entity;
-    burning.remaining = fuel;
-    const Vec3 at = position + Vec3 { 0.0f, 0.4f, 0.0f };
-    const u32 seed = static_cast<u32>(entity.id() & 0xffffffffu) ^ 0x7a11beefu;
-    if (flameForm) {
-        fx::EmitterParams params = gameplay::toEmitterParams(*flameForm);
-        params.duration = fuel;
-        burning.flames = fxSim.spawn(params, at, seed);
-    }
-    if (sparkForm) {
-        fx::EmitterParams params = gameplay::toEmitterParams(*sparkForm);
-        params.duration = fuel;
-        burning.sparks = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
-    }
-    if (smokeForm) {
-        fx::EmitterParams params = gameplay::toEmitterParams(*smokeForm);
-        params.duration = fuel;
-        burning.smoke = fxSim.spawn(params, at + Vec3 { 0.0f, 1.0f, 0.0f },
-                                    seed ^ 0x2545f491u);
-    }
-    fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 1.0f });
-    burningProps.push_back(burning);
-}
-
-void LandscapeScene::updateSpiritFireTrees(f32 landDt) {
-    using render::terrain::SpiritKind;
-    const world::TreeFireParams& params = spiritDirector.treeFire();
-    const Vec3 cam = flyCamera.camera.position;
-    // The trees near the camera (the vegetation's CPU copy), matched to
-    // their state by their base.
-    vector<render::VegetationSystem::GiProp> props;
-    renderer.collectProps(cam, kTreeFireReach, props, 6000);
-    const auto* flameForm = forms.find<data::ParticleForm>(
-        spiritDirector.fieldParticles(SpiritKind::Fire));
-    const auto* sparkForm = forms.find<data::ParticleForm>(
-        spiritDirector.sparkParticles(SpiritKind::Fire));
-    const auto* smokeForm = forms.find<data::ParticleForm>(
-        spiritDirector.smokeParticles(SpiritKind::Fire));
-    for (const render::VegetationSystem::GiProp& prop : props) {
-        if (prop.kind != 0) {
-            continue; // trees only
-        }
-        // Exposure: the share of the 3x3 cells around the trunk that burn.
-        u32 burning = 0;
-        for (i32 dz = -1; dz <= 1; ++dz) {
-            for (i32 dx = -1; dx <= 1; ++dx) {
-                if (spiritDirector.fireBurningAt(prop.position.x + 2.0f * dx,
-                                                 prop.position.z + 2.0f * dz)) {
-                    ++burning;
-                }
-            }
-        }
-        const f32 exposure = nearFxIgniter(prop.position)
-                                 ? 1.0f
-                                 : static_cast<f32>(burning) / 9.0f;
-        const u64 key = treeKey(prop.position);
-        auto it = treeFires.find(key);
-        if (it == treeFires.end()) {
-            if (exposure <= 0.0f) {
-                continue; // cold and untouched: no state
-            }
-            it = treeFires.emplace(key, TreeFireEntry { prop.position, prop.scale }).first;
-        }
-        TreeFireEntry& tree = it->second;
-        tree.at = prop.position;
-        tree.scale = prop.scale;
-        const bool caught = world::advanceTreeFire(tree.state, exposure, landDt, params);
-        // Trunk and branches burn, and the crown with them: the scatter's
-        // mean silhouette (~2.1 m of height per scale unit, the crown's
-        // centre at 70 % of it, its radius ~40 % of it) places the
-        // canopy's flames.
-        const f32 height = 2.12f * tree.scale;
-        const Vec3 trunk = tree.at + Vec3 { 0.0f, 2.0f * tree.scale, 0.0f };
-        const Vec3 crown = tree.at + Vec3 { 0.0f, 0.7f * height, 0.0f };
-        if (caught) {
-            const u32 seed = static_cast<u32>(key ^ (key >> 32)) ^ 0x7ee5u;
-            if (flameForm) {
-                fx::EmitterParams p = gameplay::toEmitterParams(*flameForm);
-                p.duration = params.burnSeconds;
-                p.shapeRadius = 1.2f * tree.scale;
-                p.sizeStart *= 1.6f * tree.scale;
-                p.sizeEnd *= 1.6f * tree.scale;
-                p.rate *= 1.5f;
-                tree.flames = fxSim.spawn(p, trunk, seed);
-                fx::EmitterParams c = gameplay::toEmitterParams(*flameForm);
-                c.duration = params.burnSeconds;
-                c.shape = fx::EmitterShape::Sphere;
-                c.shapeRadius = 0.4f * height;
-                c.sizeStart *= 1.4f;
-                c.sizeEnd *= 1.4f;
-                c.rate *= 3.0f;
-                tree.crownFlames = fxSim.spawn(c, crown, seed ^ 0x51ed270bu);
-            }
-            if (sparkForm) {
-                fx::EmitterParams p = gameplay::toEmitterParams(*sparkForm);
-                p.duration = params.burnSeconds;
-                p.shape = fx::EmitterShape::Sphere;
-                p.shapeRadius = 0.45f * height;
-                p.rate *= 3.0f;
-                tree.sparks = fxSim.spawn(p, crown + Vec3 { 0.0f, 0.15f * height, 0.0f },
-                                          seed ^ 0x9e3779b9u);
-            }
-            if (smokeForm) {
-                fx::EmitterParams p = gameplay::toEmitterParams(*smokeForm);
-                p.duration = params.burnSeconds;
-                p.rate *= 2.0f;
-                p.sizeStart *= 1.5f;
-                p.sizeEnd *= 1.5f;
-                tree.smoke = fxSim.spawn(p, crown + Vec3 { 0.0f, 0.3f * height, 0.0f },
-                                         seed ^ 0x2545f491u);
-            }
-            fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", crown, 1.0f });
-        }
-        if (tree.state.phase == world::TreeFirePhase::Burning) {
-            // A burning tree sheds embers on the ground around it.
-            tree.emberClock += landDt;
-            if (tree.emberClock >= 3.0f) {
-                tree.emberClock = 0.0f;
-                spiritDirector.ignite(tree.at.x, tree.at.z, 3.0f * tree.scale, 1.0f);
-            }
-        } else if (tree.flames != 0 || tree.crownFlames != 0 || tree.sparks != 0 ||
-                   tree.smoke != 0) {
-            for (u32* emitter : { &tree.flames, &tree.crownFlames, &tree.sparks, &tree.smoke }) {
-                if (*emitter != 0) {
-                    fxSim.stopEmitter(*emitter);
-                    *emitter = 0;
-                }
-            }
-        }
-    }
-    // Drop the states that went cold and whole; compose the canopy mask.
-    const render::terraingen::GridSpec& spec = spiritDirector.fireSpec();
-    fireCanopy.assign(spec.cells(), 0);
-    const i32 n = static_cast<i32>(spec.n);
-    for (auto it = treeFires.begin(); it != treeFires.end();) {
-        TreeFireEntry& tree = it->second;
-        if (tree.state.idle()) {
-            it = treeFires.erase(it);
-            continue;
-        }
-        if (n > 0 && tree.state.burn > 0.0f) {
-            const i32 col = static_cast<i32>(std::lround((tree.at.x - spec.originX) / spec.texelSize));
-            const i32 row = static_cast<i32>(std::lround((tree.at.z - spec.originZ) / spec.texelSize));
-            if (col >= 0 && row >= 0 && col < n && row < n) {
-                u8& cell = fireCanopy[static_cast<size_t>(row) * n + col];
-                cell = glm::max(cell, static_cast<u8>(tree.state.burn * 255.0f + 0.5f));
-            }
-        }
-        ++it;
-    }
-}
-
-void LandscapeScene::updateSpiritWind(f32 dt) {
-    // The field this frame: the weather's global wind + the placed gusts
-    // (Wind sources, in SIM seconds like every source) + the breath.
-    const Vec2 dir = render::terrain::windDirectionFromDegrees(atmos.windDirectionDeg);
-    windField.globalDir = dir;
-    windField.globalSpeed = glm::max(atmos.windStrength, 0.0f) * kWindSpeedPerStrength;
-    windField.gusts.clear();
-    const core::Guid here = activeWorldspaceGuid();
-    for (const world::SpiritSourceList::Entry& entry : spiritDirector.list().entries()) {
-        const render::terrain::SpiritSource& source = entry.source;
-        if (source.kind != render::terrain::SpiritKind::Wind || entry.worldspace != here) {
-            continue;
-        }
-        windField.gusts.push_back({ source.x, source.z, source.dirX, source.dirZ,
-                                    source.rate, glm::max(source.radius, 1.0f),
-                                    source.remaining < 0.0f ? 1.0e9f : source.remaining });
-    }
-    if (spiritBlow) {
-        const Vec3 forward = flyCamera.camera.forward();
-        const Vec3 at = spiritNozzle() + forward * (spiritBlow->range * 0.5f);
-        const Vec2 flat = glm::length(Vec2 { forward.x, forward.z }) > 1e-3f
-                              ? glm::normalize(Vec2 { forward.x, forward.z })
-                              : Vec2 { 1.0f, 0.0f };
-        windField.gusts.push_back({ at.x, at.z, flat.x, flat.y, spiritBlow->speed,
-                                    glm::max(spiritBlow->range * 0.5f, spiritBlow->radius),
-                                    1.0f });
-    }
-    // Consumers: the particles sample it per particle, the player's body
-    // is pushed by the GUSTS (never by the ambient wind).
-    fxSim.setWindSampler([this](const Vec3& p) {
-        const Vec2 w = windField.windAt(p.x, p.z);
-        return Vec3 { w.x, 0.0f, w.y };
-    });
-    if (phys::CharacterBody* body = playerController.body()) {
-        const Vec3 feet = body->position();
-        const Vec2 gusts = windField.windAt(feet.x, feet.z) -
-                           windField.globalDir * windField.globalSpeed;
-        body->setExternalVelocity(Vec3 { gusts.x, 0.0f, gusts.y } * kPlayerWindPush);
-    }
-    (void)dt;
-}
-
-void LandscapeScene::updateSpiritBlow(f32 dt) {
-    if (!spiritBlow) {
-        return;
-    }
-    SpiritBlow& blow = *spiritBlow;
-    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive()) {
-        endSpiritBlow();
-        return;
-    }
-    blow.costClock += dt;
-    if (blow.costClock >= blow.costPeriod) {
-        blow.costClock -= blow.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(blow.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 blow.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            endSpiritBlow();
-            return;
-        }
-    }
-    if (blow.emitter != 0) {
-        const Vec3 forward = flyCamera.camera.forward();
-        fxSim.moveEmitter(blow.emitter, spiritNozzle());
-        fxSim.steerEmitter(blow.emitter, forward * blow.speed,
-                           blow.range / glm::max(blow.speed, 1.0f));
-    }
-}
-
-void LandscapeScene::endSpiritBlow() {
-    if (!spiritBlow) {
-        return;
-    }
-    if (spiritBlow->emitter != 0) {
-        fxSim.stopEmitter(spiritBlow->emitter);
-    }
-    spiritBlow.reset();
-}
-
-void LandscapeScene::updateSpiritWindHold(f32 dt) {
-    if (!spiritWindHold) {
-        return;
-    }
-    SpiritWindHold& hold = *spiritWindHold;
-    // The base: what the weather sets. Refreshed while a crossfade runs
-    // (it rewrites the atmosphere each frame ahead of this).
-    if (weather.transitioning()) {
-        windBaseStrength = atmos.windStrength;
-        windBaseDirectionDeg = atmos.windDirectionDeg;
-    }
-    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive()) {
-        hold.releasing = true; // the wind eases back before the hold ends
-    }
-    hold.costClock += hold.releasing ? 0.0f : dt;
-    if (!hold.releasing && hold.costClock >= hold.costPeriod) {
-        hold.costClock -= hold.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(hold.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 hold.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            endSpiritWindHold();
-            return;
-        }
-    }
-    // Both effects ease toward their target (the spell's while held, the
-    // weather's while releasing): the wind turns and dies over about a
-    // second, never snaps.
-    const f32 ease = 1.0f - std::exp(-dt / kWindHoldEase);
-    if (hold.calm) {
-        const f32 target = hold.releasing ? 1.0f : 0.0f;
-        hold.calmFactor += (target - hold.calmFactor) * ease;
-        atmos.windStrength = windBaseStrength * hold.calmFactor;
-    }
-    if (hold.direct) {
-        f32 targetDeg = windBaseDirectionDeg;
-        const Vec3 forward = flyCamera.camera.forward();
-        if (!hold.releasing && glm::length(Vec2 { forward.x, forward.z }) > 1e-3f) {
-            // The compass of windDirectionFromDegrees: dir = (cos, -sin).
-            targetDeg = glm::degrees(std::atan2(-forward.z, forward.x));
-        }
-        // Along the short arc (350 -> 10 turns +20, never -340).
-        const f32 delta =
-            std::fmod(targetDeg - hold.currentDeg + 540.0f, 360.0f) - 180.0f;
-        hold.currentDeg += delta * ease;
-        atmos.windDirectionDeg = hold.currentDeg;
-    }
-    if (hold.releasing) {
-        const bool calmDone = !hold.calm || hold.calmFactor > 0.99f;
-        const f32 left =
-            std::fmod(windBaseDirectionDeg - hold.currentDeg + 540.0f, 360.0f) - 180.0f;
-        const bool directDone = !hold.direct || std::abs(left) < 0.5f;
-        if (calmDone && directDone) {
-            endSpiritWindHold(); // snaps the last fraction of a degree
-        }
-    }
-}
-
-void LandscapeScene::endSpiritWindHold() {
-    if (!spiritWindHold) {
-        return;
-    }
-    atmos.windStrength = windBaseStrength;
-    atmos.windDirectionDeg = windBaseDirectionDeg;
-    spiritWindHold.reset();
-}
-
-void LandscapeScene::resetSpiritWind() {
-    endSpiritBlow();
-    endSpiritWindHold();
-    windField.gusts.clear();
-    fxSim.setWindSampler({});
-    if (phys::CharacterBody* body = playerController.body()) {
-        body->setExternalVelocity(Vec3 { 0.0f });
-    }
-}
-
-void LandscapeScene::updateSpiritFireSound(const Vec3& cam) {
-    // The nearest burning cell within reach carries the loop.
-    const Vec2* nearest = nullptr;
-    f32 best = kFireSoundReach * kFireSoundReach;
-    for (const Vec2& at : spiritDirector.fireBurning()) {
-        const f32 dx = at.x - cam.x;
-        const f32 dz = at.y - cam.z;
-        const f32 d2 = dx * dx + dz * dz;
-        if (d2 < best) {
-            best = d2;
-            nearest = &at;
-        }
-    }
-    if (!nearest) {
-        if (fireLoop != 0) {
-            audioSystem.stop(fireLoop, 0.8f);
-            fireLoop = 0;
-        }
-        return;
-    }
-    const Vec3 at { nearest->x,
-                    render::terrain::height(renderer.terrainParams(), nearest->x,
-                                            nearest->y) +
-                        0.5f,
-                    nearest->y };
-    if (fireLoop == 0) {
-        const core::Guid& sound =
-            spiritDirector.fieldSound(render::terrain::SpiritKind::Fire);
-        if (const auto params = soundResolver.resolve(sound, at, 0x5f1e5u)) {
-            fireLoop = audioSystem.play(*params);
-        }
-        return;
-    }
-    audioSystem.setPosition(fireLoop, at);
-}
-
-void LandscapeScene::igniteGround(f32 x, f32 z, f32 radius, f32 heat) {
-    spiritDirector.ignite(x, z, radius, heat);
-    fireEvents.push_back({ { x, z }, glm::max(radius, 0.5f) });
-}
-
-void LandscapeScene::snuffFxSource(ecs::Entity entity, world::FxSource& source,
-                                   const Vec3& at) {
-    source.lit = false;
-    if (auto it = fxSourceEmitters.find(entity.id()); it != fxSourceEmitters.end()) {
-        for (const u32 emitter : { it->second.flame, it->second.haze }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-        if (it->second.sound != 0) {
-            audioSystem.stop(it->second.sound, 0.3f);
-        }
-        if (it->second.smoke != 0) {
-            fxSim.stopEmitter(it->second.smoke);
-        }
-        fxSourceEmitters.erase(it);
-    }
-    // The last breath: a short, thicker puff of its own smoke.
-    if (const auto* form = forms.find<data::ParticleForm>(source.smoke)) {
-        fx::EmitterParams params = gameplay::toEmitterParams(*form);
-        params.duration = 1.5f;
-        params.rate *= 4.0f;
-        fxSim.spawn(params, at, static_cast<u32>(entity.id() & 0xffffffffu) ^ 0x51u);
-    }
-    if (entity.has<world::LightSource>()) {
-        entity.get_mut<world::LightSource>().litScale = 0.0f;
-    }
-}
-
-void LandscapeScene::updateRiverSourceFx() {
-    // Mist (and an optional loop) at the TRUE head of each published
-    // course, by its source typology — same reach/diff pattern as the
-    // fire FxSources. Skipped indoors (the heads are outdoor data).
-    const auto sweep = [&](const std::unordered_set<u64>& seen) {
-        for (auto it = riverSourceEmitters.begin();
-             it != riverSourceEmitters.end();) {
-            if (seen.contains(it->first)) {
-                ++it;
-                continue;
-            }
-            if (it->second.haze != 0) {
-                fxSim.stopEmitter(it->second.haze);
-            }
-            if (it->second.sound != 0) {
-                audioSystem.stop(it->second.sound, 0.5f);
-            }
-            it = riverSourceEmitters.erase(it);
-        }
-    };
-    std::unordered_set<u64> seen;
-    if (!waterBodies || interiorMode) {
-        sweep(seen);
-        return;
-    }
-    const data::RiverSourceFxForm* dress = nullptr;
-    data::forEach<data::RiverSourceFxForm>(
-        forms, [&](const data::RiverSourceFxForm& f) {
-            if (!dress) {
-                dress = &f;
-            }
-        });
-    if (!dress) {
-        sweep(seen);
-        return;
-    }
-    const Vec3 cam = flyCamera.camera.position;
-    using render::terraingen::RiverHeadType;
-    for (const render::RiverSurface& river : waterBodies->rivers) {
-        if (!river.headIsSource || river.nodes.empty() ||
-            river.headType ==
-                static_cast<u32>(RiverHeadType::LakeOutlet)) {
-            continue;
-        }
-        const render::RiverNode& head = river.nodes.front();
-        const Vec3 at { head.x, head.surface + 0.2f, head.z };
-        if (glm::distance(at, cam) > kFxSourceReach) {
-            continue;
-        }
-        const u64 key =
-            (static_cast<u64>(static_cast<u32>(
-                 static_cast<i32>(head.x * 4.0f)))
-             << 32) |
-            static_cast<u64>(
-                static_cast<u32>(static_cast<i32>(head.z * 4.0f)));
-        seen.insert(key);
-        if (riverSourceEmitters.contains(key)) {
-            continue;
-        }
-        core::Guid mist;
-        core::Guid sound;
-        switch (static_cast<RiverHeadType>(river.headType)) {
-        case RiverHeadType::Neve:
-            mist = dress->mistNeve;
-            sound = dress->soundNeve;
-            break;
-        case RiverHeadType::Glacier:
-            mist = dress->mistGlacier;
-            sound = dress->soundGlacier;
-            break;
-        default:
-            mist = dress->mistSpring;
-            sound = dress->soundSpring;
-            break;
-        }
-        FxSourceEmitters emitters;
-        const u32 seed = static_cast<u32>(key & 0xffffffffu) ^
-                         0x5ee0f1a3u;
-        if (const auto* form = forms.find<data::ParticleForm>(mist)) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*form);
-            params.duration = 1.0e9f; // for the source's life
-            emitters.haze = fxSim.spawn(params, at, seed);
-        }
-        if (sound.isValid()) {
-            if (const auto params =
-                    soundResolver.resolve(sound, at, seed)) {
-                emitters.sound = audioSystem.play(*params);
-            }
-        }
-        if (emitters.haze != 0 || emitters.sound != 0) {
-            riverSourceEmitters.emplace(key, emitters);
-        }
-    }
-    sweep(seen);
-}
-
-void LandscapeScene::updateRiverCascadeFx() {
-    // Impact spray (and an optional roar) at the FOOT of each fall:
-    // a run of steep ribbon segments is a cascade — detected from the
-    // published nodes, no baked marker needed. Same reach/diff/sweep
-    // pattern as updateRiverSourceFx; a missing cascade record falls
-    // back to the spring dressing so the falls read even before the
-    // dedicated particles are authored.
-    const auto sweep = [&](const std::unordered_set<u64>& seen) {
-        for (auto it = riverCascadeEmitters.begin();
-             it != riverCascadeEmitters.end();) {
-            if (seen.contains(it->first)) {
-                ++it;
-                continue;
-            }
-            if (it->second.haze != 0) {
-                fxSim.stopEmitter(it->second.haze);
-            }
-            if (it->second.sound != 0) {
-                audioSystem.stop(it->second.sound, 0.5f);
-            }
-            it = riverCascadeEmitters.erase(it);
-        }
-    };
-    std::unordered_set<u64> seen;
-    if (!waterBodies || interiorMode) {
-        sweep(seen);
-        return;
-    }
-    const data::RiverSourceFxForm* dress = nullptr;
-    data::forEach<data::RiverSourceFxForm>(
-        forms, [&](const data::RiverSourceFxForm& f) {
-            if (!dress) {
-                dress = &f;
-            }
-        });
-    if (!dress) {
-        sweep(seen);
-        return;
-    }
-    const core::Guid mist = dress->mistCascade.isValid()
-                                ? dress->mistCascade
-                                : dress->mistSpring;
-    const core::Guid sound = dress->soundCascade.isValid()
-                                 ? dress->soundCascade
-                                 : dress->soundSpring;
-    const Vec3 cam = flyCamera.camera.position;
-    constexpr f32 kFallSlope = 0.25f; // rise/run along the ribbon
-    constexpr f32 kFallDropMin = 3.0f;
-    // A waterfall reads much further than a spring wisp.
-    constexpr f32 kFxCascadeReach = 250.0f;
-    for (const render::RiverSurface& river : waterBodies->rivers) {
-        const auto& nodes = river.nodes;
-        size_t i = 0;
-        while (i + 1 < nodes.size()) {
-            // Chain the steep segments of one fall.
-            f32 drop = 0.0f;
-            size_t foot = i;
-            size_t k = i;
-            while (k + 1 < nodes.size()) {
-                const f32 d = nodes[k].surface - nodes[k + 1].surface;
-                const f32 run = glm::max(
-                    std::hypot(nodes[k + 1].x - nodes[k].x,
-                               nodes[k + 1].z - nodes[k].z),
-                    0.001f);
-                if (d / run < kFallSlope) {
-                    break;
-                }
-                drop += d;
-                foot = k + 1;
-                ++k;
-            }
-            if (drop < kFallDropMin) {
-                ++i;
-                continue;
-            }
-            const render::RiverNode& fn = nodes[foot];
-            const Vec3 at { fn.x, fn.surface + 0.5f, fn.z };
-            const size_t lip = i;
-            i = foot + 1;
-            if (glm::distance(at, cam) > kFxCascadeReach) {
-                continue;
-            }
-            // A steep profile whose water the fine ground CONTRADICTS
-            // is a buried wall reach, not a visible fall (the
-            // re-route backlog owns those): no spray on dry rock.
-            if (render::terrain::height(renderer.terrainParams(),
-                                        fn.x, fn.z) >
-                    fn.surface + 2.0f ||
-                render::terrain::height(renderer.terrainParams(),
-                                        nodes[lip].x,
-                                        nodes[lip].z) >
-                    nodes[lip].surface + 2.0f) {
-                continue;
-            }
-            const u64 key =
-                (static_cast<u64>(static_cast<u32>(
-                     static_cast<i32>(fn.x * 4.0f)))
-                 << 32) |
-                static_cast<u64>(
-                    static_cast<u32>(static_cast<i32>(fn.z * 4.0f)));
-            seen.insert(key);
-            if (riverCascadeEmitters.contains(key)) {
-                continue;
-            }
-            FxSourceEmitters emitters;
-            const u32 seed =
-                static_cast<u32>(key & 0xffffffffu) ^ 0xca5cade5u;
-            if (const auto* form =
-                    forms.find<data::ParticleForm>(mist)) {
-                fx::EmitterParams params =
-                    gameplay::toEmitterParams(*form);
-                params.duration = 1.0e9f; // for the fall's life
-                // Spray scales with the fall: a 12 m cascade throws
-                // more water than a spring wisp.
-                const f32 boost =
-                    glm::clamp(drop / 4.0f, 1.0f, 3.0f);
-                params.rate *= boost;
-                params.burst = static_cast<i32>(
-                    static_cast<f32>(params.burst) * boost);
-                params.shapeRadius =
-                    glm::max(params.shapeRadius,
-                             0.25f * fn.halfWidth);
-                params.sizeStart *= 0.5f * (1.0f + boost);
-                params.sizeEnd *= 0.5f * (1.0f + boost);
-                emitters.haze = fxSim.spawn(params, at, seed);
-            }
-            if (sound.isValid()) {
-                if (const auto params =
-                        soundResolver.resolve(sound, at, seed)) {
-                    emitters.sound = audioSystem.play(*params);
-                }
-            }
-            if (emitters.haze != 0 || emitters.sound != 0) {
-                LOG_INFO("cascade fx: spray at ({:.0f}, {:.0f}) "
-                         "drop {:.1f} m",
-                         fn.x, fn.z, drop);
-                riverCascadeEmitters.emplace(key, emitters);
-            }
-        }
-    }
-    sweep(seen);
-}
-
-void LandscapeScene::updateFxSources() {
-    const Vec3 cam = flyCamera.camera.position;
-    const auto within = [](const vector<GroundEvent>& events, const Vec3& at,
-                           f32 extra) {
-        for (const GroundEvent& e : events) {
-            const f32 dx = at.x - e.at.x;
-            const f32 dz = at.z - e.at.y;
-            const f32 reach = e.radius + extra;
-            if (dx * dx + dz * dz <= reach * reach) {
-                return true;
-            }
-        }
-        return false;
-    };
-    std::unordered_set<u64> seen;
-    fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           world::FxSource& source) {
-        const Vec3 at = transform.position + transform.rotation * source.offset;
-        const ecs::Entity entity { e };
-        // The elements decide first: water, a strong wind or a downpour
-        // put it out; fire (the ground alight under it, a spark or a
-        // brand on it) lights it again.
-        if (source.lit) {
-            const bool water = source.douseByWater && within(waterEvents, at, 0.3f);
-            const bool wind =
-                source.snuffWind > 0.0f && !interiorMode &&
-                glm::length(windField.windAt(at.x, at.z)) > source.snuffWind;
-            const bool rain = source.snuffRain > 0.0f && !interiorMode &&
-                              atmos.rainIntensity >= source.snuffRain;
-            if (water || wind || rain) {
-                snuffFxSource(entity, source, at);
-            }
-        } else if (spiritDirector.fireBurningAt(at.x, at.z) ||
-                   within(fireEvents, at, 0.3f)) {
-            source.lit = true;
-            if (entity.has<world::LightSource>()) {
-                entity.get_mut<world::LightSource>().litScale = 1.0f;
-            }
-        }
-        if (!source.lit || glm::distance(at, cam) > kFxSourceReach) {
-            return; // out, or out of reach: swept below if it was alight
-        }
-        seen.insert(e.id());
-        if (fxSourceEmitters.contains(e.id())) {
-            return;
-        }
-        FxSourceEmitters emitters;
-        const u32 seed = static_cast<u32>(e.id() & 0xffffffffu) ^ 0x5eedf1a3u;
-        if (const auto* form = forms.find<data::ParticleForm>(source.flame)) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*form);
-            params.duration = 1.0e9f; // for the prop's life
-            emitters.flame = fxSim.spawn(params, at, seed);
-        }
-        if (const auto* form = forms.find<data::ParticleForm>(source.smoke)) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*form);
-            params.duration = 1.0e9f;
-            emitters.smoke = fxSim.spawn(params, at, seed ^ 0x9e3779b9u);
-        }
-        if (const auto* form = forms.find<data::ParticleForm>(source.haze)) {
-            fx::EmitterParams params = gameplay::toEmitterParams(*form);
-            params.duration = 1.0e9f;
-            emitters.haze = fxSim.spawn(params, at + Vec3 { 0.0f, 0.5f, 0.0f },
-                                        seed ^ 0x7f4a7c15u);
-        }
-        if (source.sound.isValid()) {
-            if (const auto params = soundResolver.resolve(source.sound, at, seed)) {
-                emitters.sound = audioSystem.play(*params);
-            }
-        }
-        fxSourceEmitters.emplace(e.id(), emitters);
-    });
-    waterEvents.clear();
-    fireEvents.clear();
-    // Gone (despawned, disabled, snuffed) or out of reach: the emitters stop.
-    for (auto it = fxSourceEmitters.begin(); it != fxSourceEmitters.end();) {
-        if (seen.contains(it->first)) {
-            ++it;
-            continue;
-        }
-        for (const u32 emitter : { it->second.flame, it->second.smoke, it->second.haze }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-        if (it->second.sound != 0) {
-            audioSystem.stop(it->second.sound, 0.5f);
-        }
-        it = fxSourceEmitters.erase(it);
-    }
-    // The igniters among the LIT sources in reach, then their heat.
-    fxIgniters.clear();
-    fxSourceQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           const world::FxSource& source) {
-        if (source.igniteHeat <= 0.0f || !source.lit || !seen.contains(e.id())) {
-            return;
-        }
-        const Vec3 at = transform.position + transform.rotation * source.offset;
-        fxIgniters.push_back({ at, glm::max(source.igniteRadius, 0.3f),
-                               source.igniteHeat, source.offset.y < 1.0f });
-    });
-}
-
-void LandscapeScene::resetFxSources() {
-    for (const auto& [id, emitters] : fxSourceEmitters) {
-        for (const u32 emitter : { emitters.flame, emitters.smoke, emitters.haze }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-        if (emitters.sound != 0) {
-            audioSystem.stop(emitters.sound, 0.3f);
-        }
-    }
-    fxSourceEmitters.clear();
-    fxIgniters.clear();
-    waterEvents.clear();
-    fireEvents.clear();
-    fxIgniterNearTree = false;
-    fxIgniterTreeClock = 0.0f;
-}
-
-bool LandscapeScene::nearFxIgniter(const Vec3& at) const {
-    for (const FxIgniter& igniter : fxIgniters) {
-        const f32 dx = at.x - igniter.at.x;
-        const f32 dz = at.z - igniter.at.z;
-        const f32 reach = igniter.radius + 0.5f;
-        if (dx * dx + dz * dz <= reach * reach) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void LandscapeScene::applyFxIgniters(f32 dt) {
-    if (fxIgniters.empty() || interiorMode) {
-        return;
-    }
-    // The ground under a low flame: heat for the next job.
-    for (const FxIgniter& igniter : fxIgniters) {
-        if (igniter.ground) {
-            spiritDirector.ignite(igniter.at.x, igniter.at.z, igniter.radius,
-                                  igniter.heat * dt);
-        }
-    }
-    // Wooden props in a flame heat up as if in the fire.
-    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
-    const world::SpiritRuleTable& rules = spiritDirector.rules();
-    const i32 woodIndex = rules.classIndex("wood");
-    const f32 fuel = woodIndex >= 0 && static_cast<size_t>(woodIndex) < rules.props.size()
-                         ? glm::max(rules.props[static_cast<size_t>(woodIndex)].fuel, 1.0f)
-                         : 8.0f;
-    bool lit = false;
-    interactQuery.each([&](flecs::entity e, const world::Transform& transform,
-                           const world::RefId& ref) {
-        if (!nearFxIgniter(transform.position)) {
-            return;
-        }
-        const reflect::TypeInfo* type = forms.typeOf(ref.base);
-        if (!type || !type->isA(staticType.id)) {
-            return;
-        }
-        const auto* form = static_cast<const data::StaticForm*>(forms.get(ref.base));
-        if (!form || form->surfaceMaterial != "wood") {
-            return;
-        }
-        for (const BurningProp& burning : burningProps) {
-            if (burning.entity == ecs::Entity { e }) {
-                return;
-            }
-        }
-        f32& heat = propFireHeat[e.id()];
-        heat += kPropHeatRate * dt;
-        if (heat >= 1.0f) {
-            lightProp(ecs::Entity { e }, transform.position, fuel);
-            lit = true;
-        }
-    });
-    // Trees in a flame: the lane's job ticks them (updateSpiritFireTrees
-    // reads nearFxIgniter), so it must run — checked once a second.
-    fxIgniterTreeClock -= dt;
-    if (fxIgniterTreeClock <= 0.0f) {
-        fxIgniterTreeClock = 1.0f;
-        fxIgniterNearTree = false;
-        vector<render::VegetationSystem::GiProp> props;
-        renderer.collectProps(flyCamera.camera.position, kFxSourceReach, props, 6000);
-        for (const auto& prop : props) {
-            if (prop.kind == 0 && nearFxIgniter(prop.position)) {
-                fxIgniterNearTree = true;
-                break;
-            }
-        }
-    }
-    if (lit || fxIgniterNearTree || !burningProps.empty()) {
-        spiritDirector.wakeFire();
-    }
-}
-
-void LandscapeScene::resetSpiritFire() {
-    endSpiritBrand();
-    endSpiritGlobe();
-    endSpiritFlameJet();
-    if (fireLoop != 0) {
-        audioSystem.stop(fireLoop, 0.3f);
-        fireLoop = 0;
-    }
-    for (const BurningProp& burning : burningProps) {
-        for (const u32 emitter : { burning.flames, burning.sparks, burning.smoke }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-    }
-    burningProps.clear();
-    propFireHeat.clear();
-    for (auto& [key, tree] : treeFires) {
-        for (const u32 emitter : { tree.flames, tree.crownFlames, tree.sparks, tree.smoke }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-    }
-    treeFires.clear();
-    fireCanopy.clear();
-    fireLandClock = 0.0f;
-    npcFireClocks.clear();
-    playerFireClock = 0.0f;
-    for (const FlameEmitter& flame : flameEmitters) {
-        for (const u32 emitter : { flame.emitter, flame.sparks, flame.smoke, flame.haze }) {
-            if (emitter != 0) {
-                fxSim.stopEmitter(emitter);
-            }
-        }
-    }
-    flameEmitters.clear();
-    spiritDirector.resetFire();
-    renderer.fireScorchMap().clear(engine->getDevice());
-}
-
-void LandscapeScene::updateSpiritLine() {
-    if (!spiritLine) {
-        return;
-    }
-    if (actionMap.down(engine->getInput(), InputAction::SpiritCast) &&
-        playerEntity.is_alive()) {
-        return; // still drawing
-    }
-    const SpiritLine line = *spiritLine;
-    spiritLine.reset();
-    const std::optional<Vec3> end = aimGround();
-    if (!end) {
-        return;
-    }
-    // The wall: `height` metres over the hardness of the ground at its
-    // middle, from the press spot to the release spot.
-    const Vec2 a { line.start.x, line.start.z };
-    const Vec2 b { end->x, end->z };
-    const Vec2 mid = (a + b) * 0.5f;
-    const f32 height = line.height / groundHardnessAt(mid.x, mid.y);
-    world::BrushGrids grids;
-    world::applyTerrainWall(grids, heightPatches.get(),
-                            render::TerrainSystem::kChunkSize, a, b,
-                            line.halfWidth, height);
-    vector<u64> changed;
-    auto next = world::publishBrushGrids(grids, heightPatches.get(),
-                                         render::TerrainSystem::kChunkSize,
-                                         changed);
-    makeSculptContext().republishTerrain(std::move(next), changed, true);
-    const Vec3 at { mid.x,
-                    render::terrain::height(renderer.terrainParams(), mid.x,
-                                            mid.y),
-                    mid.y };
-    fxDirector.cues().emit({ "Cue.Spirit.Earth.Spawn", at, height });
-}
-
-void LandscapeScene::castGroundReading(const Vec3& at, f32 seconds, bool live) {
-    const auto& params = renderer.terrainParams();
-    const f32 h = render::terrain::height(params, at.x, at.z);
-    const Vec3 n = render::terrain::normal(params, at.x, at.z);
-    const render::terrain::MaterialWeights w =
-        render::terrain::materialWeightsAt(params, at.x, at.z, h, n);
-    const render::terrain::RegionFields fields =
-        render::terrain::regionFieldsAt(params, at.x, at.z);
-    const char* cls = "grass";
-    f32 best = w.grass;
-    if (w.rock > best) { best = w.rock; cls = "rock"; }
-    if (w.cliff > best) { best = w.cliff; cls = "cliff"; }
-    if (w.snow > best) { best = w.snow; cls = "snow"; }
-    if (w.sand > best) { best = w.sand; cls = "sand"; }
-    const world::SpiritRuleTable& rules = spiritDirector.rules();
-    world::MaterialProps props;
-    if (const i32 index = rules.classIndex(cls);
-        index >= 0 && static_cast<size_t>(index) < rules.props.size()) {
-        props = rules.props[static_cast<size_t>(index)];
-    }
-    const f32 slopeDeg =
-        glm::degrees(std::acos(glm::clamp(n.y, -1.0f, 1.0f)));
-    const auto num = [](f32 v, i32 decimals) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
-                      static_cast<f64>(v));
-        return str { buf };
-    };
-    vector<str> lines;
-    lines.push_back(texts.get("ground.title"));
-    lines.push_back(texts.format("ground.material",
-                                 { texts.get(str { "material." } + cls),
-                                   num(props.hardness, 1) }));
-    lines.push_back(texts.format("ground.relief",
-                                 { num(slopeDeg, 0), num(h, 0) }));
-    lines.push_back(texts.format(
-        "ground.climate",
-        { num(glm::clamp(fields.biomeWetness, 0.0f, 1.0f) * 100.0f, 0),
-          num(fields.temperature, 1) }));
-    lines.push_back(texts.format(
-        "ground.fire", { num(props.flammability * 100.0f, 0),
-                         num(props.moisture * 100.0f, 0) }));
-    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
-    spiritReadingKind = ReadingKind::Ground;
-    spiritReading = std::move(lines);
-    spiritReading.resize(kReadingLines);
-    spiritReadingLive = live;
-    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
-    if (opening) {
-        fxDirector.cues().emit({ "Cue.Spirit.Earth.Dig", at, 1.0f });
-    }
-}
-
-void LandscapeScene::castFireReading(const Vec3& at, f32 seconds, bool live) {
-    const auto num = [](f32 v, i32 decimals) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
-                      static_cast<f64>(v));
-        return str { buf };
-    };
-    vector<str> lines;
-    lines.push_back(texts.get("fire.title"));
-    // The cell: what the last landed job published.
-    const f32 glow = spiritDirector.fireGlowAt(at.x, at.z);
-    const f32 scorch = spiritDirector.fireScorchAt(at.x, at.z);
-    if (glow >= 0.25f) {
-        lines.push_back(texts.format("fire.burning", { num(glow * 100.0f, 0) }));
-    } else if (scorch > 0.05f) {
-        lines.push_back(texts.format("fire.burnt", { num((1.0f - scorch) * 100.0f, 0) }));
-    } else {
-        lines.push_back(texts.get("fire.cold"));
-    }
-    // The fuel the ground holds (the same blend the kernel samples).
-    const auto& params = renderer.terrainParams();
-    const f32 h = render::terrain::height(params, at.x, at.z);
-    const Vec3 n = render::terrain::normal(params, at.x, at.z);
-    const render::terrain::RegionFields fields =
-        render::terrain::regionFieldsAt(params, at.x, at.z);
-    const render::terrain::MaterialWeights w =
-        render::terrain::materialWeightsAt(params, at.x, at.z, h, n, fields);
-    const render::terrain::FireCellFuel fuel = world::fuelFromWeights(
-        world::groundPropsFrom(spiritDirector.rules()),
-        { w.grass, w.rock, w.cliff, w.snow, w.sand }, fields.wetness);
-    lines.push_back(texts.format("fire.fuel",
-                                 { num(fuel.fuel, 0), num(fuel.flammability * 100.0f, 0),
-                                   num(fuel.moisture * 100.0f, 0) }));
-    // The nearest front.
-    f32 best = 1.0e9f;
-    Vec2 front { 0.0f };
-    for (const Vec2& cell : spiritDirector.fireBurning()) {
-        const Vec2 to { cell.x - at.x, cell.y - at.z };
-        const f32 d2 = glm::dot(to, to);
-        if (d2 < best) {
-            best = d2;
-            front = to;
-        }
-    }
-    if (best < 1.0e9f && best > 4.0f) {
-        lines.push_back(texts.format(
-            "fire.front", { num(std::sqrt(best), 0), texts.get(str { "dir." } + world::compassCode(front)) }));
-    } else if (best <= 4.0f) {
-        lines.push_back(texts.get("fire.frontHere"));
-    } else {
-        lines.push_back(texts.get("fire.noFront"));
-    }
-    // The wind the front will follow (the field at the aim; the
-    // reading's compass, like the front's bearing).
-    const Vec2 wind = windField.windAt(at.x, at.z);
-    const f32 windSpeed = glm::length(wind);
-    if (windSpeed < 0.3f) {
-        lines.push_back(texts.get("fire.stillAir"));
-    } else {
-        lines.push_back(texts.format(
-            "fire.wind", { num(windSpeed, 0), texts.get(str { "dir." } + world::compassCode(wind)) }));
-    }
-    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
-    spiritReadingKind = ReadingKind::Fire;
-    spiritReading = std::move(lines);
-    spiritReading.resize(kReadingLines);
-    spiritReadingLive = live;
-    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
-    if (opening) {
-        fxDirector.cues().emit({ "Cue.Spirit.Fire.Spawn", at, 0.3f });
-    }
-}
-
-void LandscapeScene::updateSpiritBrand(f32 dt) {
-    if (!spiritBrand) {
-        return;
-    }
-    SpiritBrand& brand = *spiritBrand;
-    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive()) {
-        endSpiritBrand();
-        return;
-    }
-    brand.costClock += dt;
-    if (brand.costClock >= brand.costPeriod) {
-        brand.costClock -= brand.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(brand.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 brand.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            endSpiritBrand();
-            return;
-        }
-    }
-    const std::optional<Vec3> aim = aimGround();
-    if (!aim) {
-        return;
-    }
-    if (brand.emitter != 0) {
-        fxSim.moveEmitter(brand.emitter, *aim);
-    }
-    brand.pulseClock += dt;
-    if (brand.pulseClock >= kBrandPulse) {
-        brand.pulseClock -= kBrandPulse;
-        // Never into water: the flame just hovers over it.
-        if (!render::terrain::waterSurfaceQuery(makeWaterQuery(), aim->x, aim->z, aim->y)) {
-            igniteGround(aim->x, aim->z, brand.radius, brand.heat);
-        }
-    }
-}
-
-void LandscapeScene::endSpiritBrand() {
-    if (!spiritBrand) {
-        return;
-    }
-    if (spiritBrand->emitter != 0) {
-        fxSim.stopEmitter(spiritBrand->emitter);
-    }
-    spiritBrand.reset();
-}
-
-void LandscapeScene::updateSpiritGlobe(f32 dt) {
-    if (!spiritGlobe) {
-        return;
-    }
-    SpiritGlobe& globe = *spiritGlobe;
-    const bool held = actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    if (!held || !playerEntity.is_alive() || !playerController.body()) {
-        endSpiritGlobe();
-        return;
-    }
-    globe.costClock += dt;
-    if (globe.costClock >= globe.costPeriod) {
-        globe.costClock -= globe.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(globe.ability);
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (ability && !gameplay::payAbilityCost(*ability, set, system,
-                                                 { forms, gameTags },
-                                                 globe.upkeepScale)) {
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-            endSpiritGlobe();
-            return;
-        }
-    }
-    const Vec3 at = playerController.body()->position();
-    spiritDirector.setWard(world::FireDouse { at.x, at.z, globe.radius });
-    if (globe.emitter != 0) {
-        fxSim.moveEmitter(globe.emitter, at + Vec3 { 0.0f, 1.0f, 0.0f });
-    }
-}
-
-void LandscapeScene::endSpiritGlobe() {
-    if (!spiritGlobe) {
-        return;
-    }
-    if (spiritGlobe->emitter != 0) {
-        fxSim.stopEmitter(spiritGlobe->emitter);
-    }
-    spiritGlobe.reset();
-    spiritDirector.setWard(std::nullopt);
-}
-
-void LandscapeScene::updateSpiritReading(f32 dt) {
-    if (spiritReadingLive) {
-        // Held: re-read where the aim rests now (live current, volume);
-        // released: gone.
-        if (!actionMap.down(engine->getInput(), InputAction::SpiritCast) ||
-            !playerEntity.is_alive()) {
-            spiritReadingLive = false;
-            spiritReadingSeconds = 0.0f;
-            spiritReading.clear();
-            return;
-        }
-        if (const std::optional<Vec3> at = aimGround()) {
-            switch (spiritReadingKind) {
-            case ReadingKind::Ground:
-                castGroundReading(*at, 0.0f, true);
-                break;
-            case ReadingKind::Fire:
-                castFireReading(*at, 0.0f, true);
-                break;
-            case ReadingKind::Water:
-                castWaterReading(*at, 0.0f, true);
-                break;
-            }
-        }
-        return;
-    }
-    spiritReadingSeconds = glm::max(0.0f, spiritReadingSeconds - dt);
-    if (spiritReadingSeconds <= 0.0f) {
-        spiritReading.clear();
-    }
-}
-
-void LandscapeScene::castWaterReading(const Vec3& at, f32 seconds, bool live) {
-    const render::terrain::WaterQuery query = makeWaterQuery();
-    world::WaterReadingInputs in;
-    in.query = &query;
-    in.sources = &spiritDirector.list();
-    in.worldspace = activeWorldspaceGuid();
-    const auto& params = renderer.terrainParams();
-    in.ground = [&params](f32 x, f32 z) {
-        return render::terrain::height(params, x, z);
-    };
-    const world::WaterReading r = world::readWater(in, at.x, at.z, at.y);
-
-    const auto num = [](f32 v, i32 decimals) {
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), decimals == 0 ? "%.0f" : "%.1f",
-                      static_cast<f64>(v));
-        return str { buf };
-    };
-    const auto dir = [&](const Vec2& d) {
-        return texts.get(str { "dir." } + world::compassCode(d));
-    };
-    vector<str> lines;
-    lines.push_back(texts.get("reading.title"));
-    if (!r.water) {
-        lines.push_back(texts.get("reading.dry"));
-        if (r.nearestFound) {
-            lines.push_back(texts.format(
-                "reading.nearest",
-                { num(r.nearestDistance, 0), dir(r.nearestDir) }));
-        } else {
-            lines.push_back(
-                texts.format("reading.noNearest", num(in.searchRadius, 0)));
-        }
-    } else {
-        switch (r.body) {
-        case world::WaterReading::Body::Sea:
-            lines.push_back(texts.get("reading.body.sea"));
-            break;
-        case world::WaterReading::Body::Lake:
-            lines.push_back(texts.format(
-                "reading.body.lake",
-                { num(r.lakeLevel, 0), num(r.lakeArea / 10000.0f, 1) }));
-            break;
-        case world::WaterReading::Body::River:
-            lines.push_back(texts.format(
-                "reading.body.river",
-                { num(r.riverWidth, 0), num(r.riverDischarge, 1) }));
-            break;
-        case world::WaterReading::Body::Spirit:
-            lines.push_back(r.spiritRemaining < 0.0f
-                                ? texts.get("reading.body.spiritPermanent")
-                                : texts.format("reading.body.spirit",
-                                               num(r.spiritRemaining, 0)));
-            break;
-        case world::WaterReading::Body::Pool:
-        case world::WaterReading::Body::None:
-            lines.push_back(texts.get("reading.body.pool"));
-            break;
-        }
-        lines.push_back(texts.format("reading.depth", num(r.depth, 1)));
-        const f32 speed = glm::length(r.flow);
-        if (speed > 0.05f) {
-            lines.push_back(texts.format("reading.flow",
-                                         { num(speed, 1), dir(r.flow) }));
-        } else {
-            lines.push_back(texts.get("reading.still"));
-        }
-        if (r.volumeKnown) {
-            lines.push_back(texts.format(
-                r.volumeExact ? "reading.volume" : "reading.volumeApprox",
-                num(r.volume, 0)));
-        }
-    }
-    // The cue only when the reading opens, not on every live refresh.
-    const bool opening = !spiritReadingLive && spiritReadingSeconds <= 0.0f;
-    spiritReadingKind = ReadingKind::Water;
-    spiritReading = std::move(lines);
-    spiritReading.resize(kReadingLines);
-    spiritReadingLive = live;
-    spiritReadingSeconds = live ? 0.0f : glm::max(seconds, 1.0f);
-    if (opening) {
-        fxDirector.cues().emit({ "Cue.Spirit.Water.Read", at, 1.0f });
-    }
-}
-
-Vec3 LandscapeScene::spiritNozzle() const {
-    // Below and ahead of the eye: the stream leaves a hand, not the
-    // lens, so it reads in first person without covering the view.
-    return flyCamera.camera.position + flyCamera.camera.forward() * 0.45f +
-           Vec3 { 0.0f, -0.35f, 0.0f };
-}
-
-void LandscapeScene::stopSpiritEmitters(const vector<u32>& emitters) {
-    for (const u32 id : emitters) {
-        if (id != 0) {
-            fxSim.stopEmitter(id);
-        }
-    }
-}
-
-void LandscapeScene::updateSpiritJets(f32 dt) {
-    world::SpiritJetList& jets = spiritDirector.jetList();
-    if (jets.empty()) {
-        return;
-    }
-    // Channeled jets live while the key is held and re-pay their
-    // ability's cost every costPeriod (§2.9: through the cost effect);
-    // release or an unaffordable upkeep ends them (the tick expires
-    // remaining == 0 and hands the emitter back).
-    const bool held =
-        actionMap.down(engine->getInput(), InputAction::SpiritCast);
-    for (world::SpiritJet& jet : jets.entriesMut()) {
-        if (!jet.channeled || jet.remaining <= 0.0f) {
-            continue;
-        }
-        if (!held || !playerEntity.is_alive()) {
-            jet.remaining = 0.0f;
-            continue;
-        }
-        jet.costClock += dt;
-        if (jet.costClock < jet.costPeriod) {
-            continue;
-        }
-        jet.costClock -= jet.costPeriod;
-        const auto* ability = forms.find<gameplay::AbilityForm>(jet.ability);
-        if (!ability) {
-            continue;
-        }
-        auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-        auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (!gameplay::payAbilityCost(*ability, set, system,
-                                      { forms, gameTags }, jet.upkeepScale)) {
-            jet.remaining = 0.0f;
-            interaction.say(texts.get("spirit.refused"), 1.5f);
-        }
-    }
-    jets.aim(spiritNozzle(), flyCamera.camera.forward());
-    const auto& params = renderer.terrainParams();
-    jets.resolveLandings([&params](f32 x, f32 z) {
-        return render::terrain::height(params, x, z);
-    });
-    for (const world::SpiritJet& jet : jets.entries()) {
-        if (jet.emitter != 0) {
-            fxSim.moveEmitter(jet.emitter, jet.origin);
-            // Particles die where the arc lands: the stream ends at the
-            // ground instead of sinking through it.
-            fxSim.steerEmitter(jet.emitter, jet.velocity,
-                               jet.landing ? jet.landing->flightSeconds
-                                           : 2.0f);
-        }
-    }
-    // The stream's lumps: every landing is a splash where THAT lump
-    // fell — the arrival reads as water hitting ground, not as a rate.
-    vector<Vec3> landed;
-    jets.advanceSpheres(dt, kJetSphereInterval, world::SpiritJetList::kGravity,
-                        &landed);
-    for (const Vec3& at : landed) {
-        fxDirector.cues().emit({ "Cue.Spirit.Water.Jet", at, 1.0f });
-        waterEvents.push_back({ { at.x, at.z }, 1.5f });
-    }
-    // A lump flying through an actor shoves him along its flight (the
-    // shove rides Npc::shove, applied and decayed by the NPC director).
-    if (!interiorMode) {
-        for (const world::SpiritJet& jet : jets.entries()) {
-            if (jet.kind != render::terrain::SpiritKind::Water) {
-                continue;
-            }
-            for (const world::JetSphere& sphere : jet.spheres) {
-                const Vec3 at = sphere.at(world::SpiritJetList::kGravity);
-                const Vec2 flat { sphere.velocity.x, sphere.velocity.z };
-                const f32 speed = glm::length(flat);
-                if (speed < 1e-3f) {
-                    continue;
-                }
-                const f32 reach = sphere.radius + 0.6f;
-                waterEvents.push_back({ { at.x, at.z }, reach }); // snuffs a torch it crosses
-                for (const auto& npc : npcDirector.npcs()) {
-                    if (!npc->entity.is_alive() || npc->dead ||
-                        !npc->entity.has<world::Transform>()) {
-                        continue;
-                    }
-                    const Vec3 chest = npc->entity.get<world::Transform>().position +
-                                       Vec3 { 0.0f, 0.9f, 0.0f };
-                    if (glm::distance(chest, at) > reach) {
-                        continue;
-                    }
-                    npc->shove += flat / speed * (kWaterJetShoveRate * dt);
-                    const f32 shove = glm::length(npc->shove);
-                    if (shove > kWaterJetShoveMax) {
-                        npc->shove *= kWaterJetShoveMax / shove;
-                    }
-                }
-            }
-        }
-    }
-    // The landing spots move with the aim: the kernel gets them fresh
-    // every frame (a value copy of a handful of discs).
-    pushRuntimeWaterSources();
+void LandscapeScene::resetWorldFx() {
+    fire.reset(makeFireContext());
+    ambientFx.reset(makeAmbientFxContext());
 }
 
 render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {
@@ -7949,7 +4352,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         eventBus,
         gameClock,
         furnitureOccupancy,
-        interiorMode && interiorNavigator
+        worldKind() == WorldKind::Interior && interiorNavigator
             ? static_cast<nav::Navigator*>(interiorNavigator.get())
             : navigator.get(),
         physics.get(),
@@ -7972,10 +4375,10 @@ NpcContext LandscapeScene::makeNpcContext() {
                 questDirector.dialogueRunner()->active()
             ? questDirector.dialoguePartner()
             : ecs::Entity {},
-        interiorMode,
+        worldKind() == WorldKind::Interior,
         interiorArrival,
-        &spiritDirector, // the fire the NPCs flee
-        &windField,      // the gusts that shove them
+        &spiritDirector,        // the fire the NPCs flee
+        &spiritDirector.wind(), // the gusts that shove them
     };
 }
 
@@ -8002,7 +4405,7 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         gameTags,
         statsTuning,
         renderer.terrainParams(),
-        interiorMode,
+        worldKind() == WorldKind::Interior,
         physics.get(),
         cellLoader.get(),
         saveController.pending(),
@@ -8080,6 +4483,8 @@ StreamingContext LandscapeScene::makeStreamingContext() {
         focus,
         /*fastCook=*/interaction.fading() || interaction.fadeAlpha() > 0.0f,
         /*editorOwnsTransforms=*/mode == SceneMode::Edit,
+        worldKind(),
+        policy(),
     };
 }
 
@@ -8100,7 +4505,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     const render::RenderView view {
         .camera = flyCamera.camera,
         .atmos = atmos,
-        .interiorMode = interiorMode,
+        .interiorMode = worldKind() == WorldKind::Interior,
         .timeSeconds = timeSeconds,
         .windTime = windTime,
         .windDrift = windDrift,
@@ -8559,7 +4964,7 @@ void LandscapeScene::drawGameplayUi() {
         // First-person Play mode.
         bool play = (mode == SceneMode::Play);
         if (ImGui::Checkbox("Play mode — F2 Spectator / F3 Editor", &play)) {
-            play ? enterPlayMode() : exitPlayMode();
+            restoreMode(play ? SceneMode::Play : SceneMode::Spectator);
         }
         if (mode == SceneMode::Play) {
             ImGui::TextUnformatted("WASD: move | Shift: sprint | Space: jump | "

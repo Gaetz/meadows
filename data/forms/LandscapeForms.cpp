@@ -42,44 +42,24 @@ void registerLandscapeFormTypes(FormTypeRegistry& registry) {
 }
 
 LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms) {
-    if (const LandscapeTuningForm* tuning =
-            forms.find<LandscapeTuningForm>(kLandscapeTuningGuid)) {
-        return *tuning;
-    }
-    return LandscapeTuningForm {};
+    return resolveSingleton<LandscapeTuningForm>(forms, kLandscapeTuningGuid);
 }
 
 LobeTreeTuningForm resolveLobeTreeTuning(const FormDatabase& forms) {
-    if (const LobeTreeTuningForm* tuning =
-            forms.find<LobeTreeTuningForm>(kLobeTreeTuningGuid)) {
-        return *tuning;
-    }
-    return LobeTreeTuningForm {};
+    return resolveSingleton<LobeTreeTuningForm>(forms, kLobeTreeTuningGuid);
 }
 
 ColonizedTreeTuningForm
 resolveColonizedTreeTuning(const FormDatabase& forms) {
-    if (const ColonizedTreeTuningForm* tuning =
-            forms.find<ColonizedTreeTuningForm>(kColonizedTreeTuningGuid)) {
-        return *tuning;
-    }
-    return ColonizedTreeTuningForm {};
+    return resolveSingleton<ColonizedTreeTuningForm>(forms, kColonizedTreeTuningGuid);
 }
 
 RcTuningForm resolveRcTuning(const FormDatabase& forms) {
-    if (const RcTuningForm* tuning =
-            forms.find<RcTuningForm>(kRcTuningGuid)) {
-        return *tuning;
-    }
-    return RcTuningForm {};
+    return resolveSingleton<RcTuningForm>(forms, kRcTuningGuid);
 }
 
 TerrainGenTuningForm resolveTerrainGenTuning(const FormDatabase& forms) {
-    if (const TerrainGenTuningForm* tuning =
-            forms.find<TerrainGenTuningForm>(kTerrainGenTuningGuid)) {
-        return *tuning;
-    }
-    return TerrainGenTuningForm {};
+    return resolveSingleton<TerrainGenTuningForm>(forms, kTerrainGenTuningGuid);
 }
 
 vector<WeatherForm> resolveWeatherForms(const FormDatabase& forms) {

@@ -16,7 +16,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
 #include "game/MapBaker.hpp"
-#include "engine/reflect/Visit.hpp"
+#include "engine/reflect/Fields.hpp"
 
 namespace game {
 
@@ -413,39 +413,10 @@ resolveZoneArchetypes(const data::FormDatabase& forms) {
 
 u64 hashTerrainGenTuning(const TileBakeParams& params) {
     const data::TerrainGenTuningForm form = captureTerrainGenTuning(params);
-    u64 h = 1469598103934665603ull; // FNV-1a
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= 1099511628211ull;
-        }
-    };
-    reflect::forEachField(
-        data::TerrainGenTuningForm::staticTypeInfo(),
-        [&](const reflect::FieldInfo& field) {
-            if ((field.flags & reflect::Transient) != 0) {
-                return;
-            }
-            mix(&field.id, sizeof(field.id));
-            reflect::visit(field.get(&form), reflect::overloaded {
-                [&](bool v) { const u8 b = v ? 1 : 0; mix(&b, 1); },
-                [&](i32 v) { mix(&v, sizeof(v)); },
-                [&](u32 v) { mix(&v, sizeof(v)); },
-                [&](f32 v) { mix(&v, sizeof(v)); },
-                [&](f64 v) { mix(&v, sizeof(v)); },
-                [&](Vec2 v) { mix(&v, sizeof(v)); },
-                [&](Vec3 v) { mix(&v, sizeof(v)); },
-                [&](Vec4 v) { mix(&v, sizeof(v)); },
-                [&](Quat v) { mix(&v, sizeof(v)); },
-                [&](const str& v) { mix(v.data(), v.size()); },
-                [&](const core::Guid& v) {
-                    const str text = v.toString();
-                    mix(text.data(), text.size());
-                },
-            });
-        });
-    return h;
+    core::Fnv64 h;
+    reflect::hashReflected(data::TerrainGenTuningForm::staticTypeInfo(),
+                           &form, h);
+    return h.value;
 }
 
 TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,

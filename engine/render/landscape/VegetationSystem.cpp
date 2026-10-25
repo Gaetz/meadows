@@ -17,6 +17,7 @@
 #include "engine/render/landscape/TreeGenerator.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 
 namespace render {
@@ -34,80 +35,80 @@ struct BarkPush {
 
 const ColonizedTreeParams&
 VegetationSystem::barkParamsFor(u32 variant) const {
-    if (variant < kTreeVariants && treeSpecies[variant]) {
-        return treeSpecies[variant]->params;
-    }
-    if (variant >= kFirstBush && variant < kFirstBush + kBushVariants &&
-        bushSpecies) {
-        return bushSpecies->params;
+    switch (familyOf(variant)) {
+    case PropFamily::Tree:
+        if (treeSpecies[variant]) {
+            return treeSpecies[variant]->params;
+        }
+        break;
+    case PropFamily::Bush:
+        if (bushSpecies) {
+            return bushSpecies->params;
+        }
+        break;
+    default:
+        break;
     }
     return colonizedTreeParams;
 }
 
 void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
-    shaders.beginWatch();
-    pipeline = { device, device.createPipeline( // U3-7: frees the old one
-        { .shader = shaders.get(kTreeShader),
-          .vertexBuffers =
-              { meshVertexLayout(), // U3-5 (the caster keeps its own
-                                    // position+uv layout — sway weights)
-                { .stride = sizeof(Instance),
-                  .stepMode = rhi::VertexStepMode::Instance,
-                  .attributes = { { .location = 4,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = offsetof(Instance,
-                                                       positionScale) },
-                                  { .location = 5,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = offsetof(Instance, params) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back,
-          .pushConstantSize = sizeof(BarkPush) }) };
-    shaderWatch = shaders.endWatch();
+    pipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kTreeShader),
+              .vertexBuffers =
+                  { meshVertexLayout(), // the caster keeps its own
+                                        // position+uv layout — sway weights
+                    { .stride = sizeof(Instance),
+                      .stepMode = rhi::VertexStepMode::Instance,
+                      .attributes =
+                          { { .location = 4,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(Instance, positionScale) },
+                            { .location = 5,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(Instance, params) } } } },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::Back,
+              .pushConstantSize = sizeof(BarkPush) });
+    });
 }
 
 void VegetationSystem::buildCasterPipeline(rhi::Device& device,
                                            ShaderLibrary& shaders) {
-    shaders.beginWatch();
-    casterPipeline = { device, device.createPipeline( // U3-7
-        { .shader = shaders.get(kPropCasterShader),
-          .vertexBuffers =
-              { { .stride = sizeof(MeshVertex),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, position) },
-                                  { .location = 2,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = offsetof(MeshVertex, uv) } } },
-                { .stride = sizeof(Instance),
-                  .stepMode = rhi::VertexStepMode::Instance,
-                  .attributes = { { .location = 4,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = offsetof(Instance,
-                                                       positionScale) },
-                                  { .location = 5,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = offsetof(Instance, params) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back,
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f }) };
-    casterShaderWatch = shaders.endWatch();
+    casterPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kPropCasterShader),
+              .vertexBuffers =
+                  { { .stride = sizeof(MeshVertex),
+                      .attributes =
+                          { { .location = 0,
+                              .format = rhi::VertexFormat::F32x3,
+                              .offset = offsetof(MeshVertex, position) },
+                            { .location = 2,
+                              .format = rhi::VertexFormat::F32x2,
+                              .offset = offsetof(MeshVertex, uv) } } },
+                    { .stride = sizeof(Instance),
+                      .stepMode = rhi::VertexStepMode::Instance,
+                      .attributes =
+                          { { .location = 4,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(Instance, positionScale) },
+                            { .location = 5,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(Instance, params) } } } },
+              .depth = render::kDepthCaster,
+              .cull = rhi::CullMode::Back,
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
 }
 
 void VegetationSystem::refreshPipeline(rhi::Device& device,
                                        ShaderLibrary& shaders) {
-    if (shaderWatch.changed(shaders)) {
-        buildPipeline(device, shaders);
-    }
-    if (casterShaderWatch.changed(shaders)) {
-        buildCasterPipeline(device, shaders);
-    }
+    buildPipeline(device, shaders);
+    buildCasterPipeline(device, shaders);
 }
 
 // True when the camera stands within kNearDetailDistance of the
@@ -139,10 +140,11 @@ u32 VegetationSystem::canopyLevel(const VariantMesh& mesh, u32 variant,
     if (mesh.nearIndexCount != 0 && nearChunk) {
         return 3u;
     }
-    // Plants fade at ~60 m: the tree radii (2/4 chunks) would keep them
-    // full-detail everywhere they are visible. Hero mesh in the camera
-    // chunk ring only; twins carry the rest.
-    const i32 highRadius = variant >= kFirstPlant ? 0 : highDetailRadius;
+    // Short-reach families (plants fade at ~60 m): the tree radii (2/4
+    // chunks) would keep them full-detail everywhere they are visible.
+    // Hero mesh in the camera chunk ring only; twins carry the rest.
+    const i32 highRadius =
+        traitsOf(variant).hasHighDetailRadius ? highDetailRadius : 0;
     if (cheb <= highRadius) {
         return 0u;
     }
@@ -187,9 +189,9 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
             return true;
         }
         const f32 x0 =
-            static_cast<f32>(chunkKeyCx(key)) * TerrainSystem::kChunkSize;
+            static_cast<f32>(core::chunkKeyCx(key)) * TerrainSystem::kChunkSize;
         const f32 z0 =
-            static_cast<f32>(chunkKeyCz(key)) * TerrainSystem::kChunkSize;
+            static_cast<f32>(core::chunkKeyCz(key)) * TerrainSystem::kChunkSize;
         return frustum->intersectsAabb(
             { x0 - kPropPadXz, chunk.minY - 1.0f, z0 - kPropPadXz },
             { x0 + TerrainSystem::kChunkSize + kPropPadXz,
@@ -202,16 +204,16 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // below then walk this compact vector instead of re-traversing the
     // map per pair. Chunk pointers stay stable (nothing mutates the map
     // during draw).
-    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
-    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    const i32 camCx = core::chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = core::chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     drawScratch.clear();
     for (const auto& [key, chunk] : streamer.chunks) {
         if (!chunk.resident || chunk.total == 0 ||
             (culling && !chunkVisible(key, chunk))) {
             continue;
         }
-        const i32 cx = chunkKeyCx(key);
-        const i32 cz = chunkKeyCz(key);
+        const i32 cx = core::chunkKeyCx(key);
+        const i32 cz = core::chunkKeyCz(key);
         const i32 cheb =
             std::max(std::abs(cx - camCx), std::abs(cz - camCz));
         drawScratch.push_back(
@@ -329,15 +331,15 @@ void VegetationSystem::collectDrawCandidates(
     if (showcaseCount != 0) {
         return; // showcase renders through the legacy path only
     }
-    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
-    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    const i32 camCx = core::chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = core::chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     for (const auto& [key, chunk] : streamer.chunks) {
         if (!chunk.resident || chunk.total == 0 ||
             chunk.poolOffset == kNoOffset) {
             continue;
         }
-        const i32 cx = chunkKeyCx(key);
-        const i32 cz = chunkKeyCz(key);
+        const i32 cx = core::chunkKeyCx(key);
+        const i32 cz = core::chunkKeyCz(key);
         const i32 cheb =
             std::max(std::abs(cx - camCx), std::abs(cz - camCz));
         // Same padded AABB as draw()'s chunkVisible.
@@ -432,8 +434,8 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                  const Vec3& cameraPos,
                                  i32 maxChunkDistance,
                                  const Frustum* frustum, bool ultraDetail) {
-    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
-    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    const i32 camCx = core::chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = core::chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, frameBindGroup);
     cmd.setBindGroup(1, casterBindGroup);
@@ -450,17 +452,18 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
         return;
     }
     for (u32 v = 0; v < kVariantCount; ++v) {
-        if (v >= kFirstPlant) {
-            continue; // plants cast no shadows (cutout accents — GoT
-                      // model; their fill-rate stays out of the cascades)
+        if (!traitsOf(v).castsShadow) {
+            continue; // cutout accents and clutter: their fill-rate stays
+                      // out of the cascades (shadow_prop.vert keeps the
+                      // pebble-scale guard for explicit instances)
         }
         bool meshBound = false;
         for (const auto& [key, chunk] : streamer.chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {
                 continue;
             }
-            const i32 cx = chunkKeyCx(key);
-            const i32 cz = chunkKeyCz(key);
+            const i32 cx = core::chunkKeyCx(key);
+            const i32 cz = core::chunkKeyCz(key);
             if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                 maxChunkDistance) {
                 continue; // beyond the last shadow cascade
@@ -532,9 +535,9 @@ void VegetationSystem::collectGiProps(const Vec3& center, f32 halfSpan,
         if (!chunk.resident || chunk.giProps.empty()) {
             continue;
         }
-        const f32 cx = (static_cast<f32>(chunkKeyCx(key)) + 0.5f) *
+        const f32 cx = (static_cast<f32>(core::chunkKeyCx(key)) + 0.5f) *
                        TerrainSystem::kChunkSize;
-        const f32 cz = (static_cast<f32>(chunkKeyCz(key)) + 0.5f) *
+        const f32 cz = (static_cast<f32>(core::chunkKeyCz(key)) + 0.5f) *
                        TerrainSystem::kChunkSize;
         const f32 distance = glm::max(glm::abs(cx - center.x),
                                       glm::abs(cz - center.z));

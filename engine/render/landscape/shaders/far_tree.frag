@@ -3,6 +3,7 @@
 #include "sky.glsl"
 #include "clouds.glsl"
 #include "view_util.glsl"
+#include "prop_encoding.glsl"
 
 // Far-tree impostor silhouette: an ANALYTIC stylized tree in the quad —
 // a few hash-jittered crown discs over a thin trunk (the lobe-tree
@@ -33,8 +34,8 @@ void main() {
     float crownMid = trunkFrac + (1.0 - trunkFrac) * 0.55;
     float crownHalf = (1.0 - trunkFrac) * 0.55;
     float inside = 0.0;
-    if (vParams.z < 0.0) {
-        // CONIFER (negative width flag): a ragged cone from a low crown
+    if (isConiferImpostor(vParams)) {
+        // CONIFER (prop_encoding.glsl): a ragged cone from a low crown
         // base to the apex — the whorl shelves read as edge steps.
         float base = trunkFrac * 0.55;
         float t = clamp((vUv.y - base) / max(1.0 - base, 1e-3), 0.0, 1.0);

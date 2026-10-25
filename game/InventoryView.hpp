@@ -1,7 +1,11 @@
 #pragma once
 
+#include <iterator>
+#include <string_view>
+
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
+#include "engine/reflect/Reflect.hpp"
 
 namespace data {
 class FormDatabase;
@@ -75,5 +79,20 @@ private:
     f32 total { 0.0f };
     u32 unresolved { 0 };
 };
+
+// The names the .rml documents emit (tab('weapons'), sortCol('weight')),
+// in enum order — parse through reflect::parseEnum.
+inline constexpr std::string_view kInventoryCategoryNames[] = {
+    "all", "weapons", "armor", "consumables", "misc" };
+inline constexpr reflect::EnumTable kInventoryCategories {
+    kInventoryCategoryNames };
+static_assert(std::size(kInventoryCategoryNames) ==
+              static_cast<size_t>(InventoryView::Category::Misc) + 1);
+
+inline constexpr std::string_view kInventoryColumnNames[] = { "name", "weight",
+                                                              "value", "power" };
+inline constexpr reflect::EnumTable kInventoryColumns { kInventoryColumnNames };
+static_assert(std::size(kInventoryColumnNames) ==
+              static_cast<size_t>(InventoryView::Column::Power) + 1);
 
 } // namespace game

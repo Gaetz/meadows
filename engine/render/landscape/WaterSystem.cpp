@@ -12,6 +12,7 @@
 #include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -211,34 +212,37 @@ constexpr u16 kQuadIndices[] = { 0, 2, 1, 0, 3, 2 };
 
 void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                          core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    shared = std::make_shared<Shared>();
+    poolBakes.create(jobSystem, "waterPoolMap");
+    localBuilds.create(jobSystem, "waterLocalMesh");
+    farBuilds.create(jobSystem, "farWater");
+    simJobs.create(jobSystem, "waterSim");
 
-    vertexBuffer = device.createBuffer(
+    vertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kQuadVertices) },
-        kQuadVertices);
-    indexBuffer = device.createBuffer(
+        kQuadVertices) };
+    indexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index, .size = sizeof(kQuadIndices) },
-        kQuadIndices);
+        kQuadIndices) };
 
-    poolMapSampler = device.createSampler({}); // linear clamp
+    poolMapSampler = { device, device.createSampler({}) }; // linear clamp
     // 1x1 "deep everywhere" placeholder until the first bake lands: foam
     // behaves as before for a second.
     const f32 kDeep = 10.0f;
-    poolMap = device.createTexture({ .width = 1,
-                                     .height = 1,
-                                     .format = rhi::TextureFormat::R16F,
-                                     .usage = rhi::TextureUsage_Sampled },
-                                   &kDeep);
+    poolMap = { device, device.createTexture(
+        { .width = 1,
+          .height = 1,
+          .format = rhi::TextureFormat::R16F,
+          .usage = rhi::TextureUsage_Sampled },
+        &kDeep) };
     const f32 kZeros[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     // Sim placeholder: dry everywhere until the first pre-roll lands
     // (created before the first bind-group build below).
-    simMapB =
-        device.createTexture({ .width = 1,
-                               .height = 1,
-                               .format = rhi::TextureFormat::RGBA16F,
-                               .usage = rhi::TextureUsage_Sampled },
-                             kZeros);
+    simMapB = { device, device.createTexture(
+        { .width = 1,
+          .height = 1,
+          .format = rhi::TextureFormat::RGBA16F,
+          .usage = rhi::TextureUsage_Sampled },
+        kZeros) };
     // Unit cube for the debug volume boxes (8 verts, 12 tris).
     constexpr f32 kCubeVerts[] = {
         0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,
@@ -248,129 +252,77 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
         0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
         3, 6, 2, 3, 7, 6, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5,
     };
-    simBoxVertexBuffer = device.createBuffer(
+    simBoxVertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kCubeVerts) },
-        kCubeVerts);
-    simBoxIndexBuffer = device.createBuffer(
+        kCubeVerts) };
+    simBoxIndexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index,
           .size = sizeof(kCubeIndices) },
-        kCubeIndices);
+        kCubeIndices) };
     rebuildMaterials(device); // also builds the map bind group
 
-    shaders.load(kWaterShader, { { "FrameUbo", 0 } },
+    shaders.load(kWaterShader, { render::kFrameUbo },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterLocalShader,
-                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { render::kFrameUbo, { "WaterMaterialsUbo", 1 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimShader,
-                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { render::kFrameUbo, { "WaterMaterialsUbo", 1 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterSimB", 8 } });
     shaders.load(kWaterSimFrozenShader,
-                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
+                 { render::kFrameUbo, { "WaterMaterialsUbo", 1 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
                    { "uSkyClouds", 4 },
                    { "uWaterSimB", 8 } });
-    shaders.load(kWaterSimBoxShader, { { "FrameUbo", 0 } }, {});
-    buildPipeline(device, shaders);
+    shaders.load(kWaterSimBoxShader, { render::kFrameUbo }, {});
+    refreshPipeline(device, shaders);
 }
 
 void WaterSystem::destroy(rhi::Device& device) {
-    ++generation; // in-flight bakes die on arrival (shared queue outlives us)
-    device.destroyBindGroup(poolMapGroup);
-    device.destroyTexture(poolMap);
-    device.destroyBuffer(materialsUbo);
-    materialsUbo = {};
-    device.destroySampler(poolMapSampler);
-    device.destroyPipeline(pipeline);
-    device.destroyBuffer(indexBuffer);
-    device.destroyBuffer(vertexBuffer);
-    device.destroyPipeline(localPipeline);
-    device.destroyBuffer(localIndexBuffer);
-    device.destroyBuffer(localVertexBuffer);
-    device.destroyBuffer(farIndexBuffer);
-    device.destroyBuffer(farVertexBuffer);
-    farIndexBuffer = {};
-    farVertexBuffer = {};
-    farIndexCount = 0;
-    farFn = nullptr;
-    farDirty = false;
-    farBuildInFlight = false;
-    farCenter = { 1.0e9f, 1.0e9f };
-    farStamp = ~0ull;
-    poolMapGroup = {};
-    poolMap = {};
-    poolMapSampler = {};
-    pipeline = {};
-    indexBuffer = {};
-    vertexBuffer = {};
-    localPipeline = {};
-    localIndexBuffer = {};
-    localVertexBuffer = {};
-    localIndexCount = 0;
-    // Freshness state, so a destroy()+create() cycle re-bakes instead of
-    // trusting a pool map that no longer exists.
-    bakeInFlight = false;
-    mapCenter = { 1e9f, 1e9f };
-    bakedSeed = 0;
-    bakedSeaLevel = -1e9f;
-    bakedBodiesStamp = ~0ull;
-    bakedContentStamp = 0;
-    bodies.reset();
-    bodiesStamp = 0;
-    bodiesDirty = false;
-    // Sim window teardown (in-flight jobs die on arrival by generation).
-    device.destroyTexture(simMapB);
-    device.destroyBuffer(simVertexBuffer);
-    device.destroyBuffer(simIndexBuffer);
-    device.destroyPipeline(simPipeline);
-    device.destroyPipeline(simPipelineOverlay);
-    device.destroyPipeline(simFrozenPipeline);
-    simFrozenPipeline = {};
-    simFrozenClearNow(device);
-    device.destroyPipeline(simBoxPipeline);
-    device.destroyBuffer(simBoxVertexBuffer);
-    device.destroyBuffer(simBoxIndexBuffer);
-    device.destroyBuffer(simBoxInstanceBuffer);
-    simMapB = {};
-    simVertexBuffer = {};
-    simIndexBuffer = {};
-    simPipeline = {};
-    simPipelineOverlay = {};
-    simBoxPipeline = {};
-    simBoxVertexBuffer = {};
-    simBoxIndexBuffer = {};
-    simBoxInstanceBuffer = {};
-    simBoxInstances = 0;
-    simWetCells = 0;
-    simIndexCount = 0;
-    simState.reset();
-    simSnap.reset();
-    simSrcCache.clear();
-    simRuntimeSources.clear();
-    simCache.clear();
-    simSettling = false;
-    simHasLastCrumb = false;
-    simInFlight = false;
-    simGroundDirty = false;
-    simValid = false;
-    ++simEpoch;
-    simAccum = 0.0f;
-    simHasLastCam = false;
-    simLastMs = 0.0f;
+    (void)device;
+    // The bind group goes first, before the textures and buffers it
+    // references (the reset below destroys in declaration order).
+    poolMapGroup.reset();
+    // Identity survives the reset: the four lanes (their generation
+    // keeps moving ACROSS the reset so every in-flight bake, mesh build
+    // and sim job dies on arrival — a fresh zero would let them land as
+    // if current), `simEpoch` likewise, the sim config and the source
+    // provider. Everything else, GPU handles included, returns to the
+    // default-constructed state, so a destroy()+create() cycle re-bakes
+    // instead of trusting a pool map that no longer exists.
+    core::BakeMailbox<BakedMap> savedPool = std::move(poolBakes);
+    core::BakeMailbox<LocalMesh> savedLocal = std::move(localBuilds);
+    core::BakeMailbox<FarMesh> savedFar = std::move(farBuilds);
+    core::BakeMailbox<SimResult> savedSim = std::move(simJobs);
+    savedPool.reset();
+    savedLocal.reset();
+    savedFar.reset();
+    savedSim.reset();
+    const u32 savedSimEpoch = simEpoch + 1;
+    SimConfig savedSimCfg = std::move(simCfg);
+    SimSourcesFn savedSimSourcesFn = std::move(simSourcesFn);
+    *this = WaterSystem {};
+    poolBakes = std::move(savedPool);
+    localBuilds = std::move(savedLocal);
+    farBuilds = std::move(savedFar);
+    simJobs = std::move(savedSim);
+    simEpoch = savedSimEpoch;
+    simCfg = std::move(savedSimCfg);
+    simSourcesFn = std::move(savedSimSourcesFn);
 }
 
 void WaterSystem::setBodies(sptr<const WaterBodies> next) {
@@ -864,21 +816,14 @@ void WaterSystem::buildFarGeometry(const FarWaterSet& set,
 }
 
 void WaterSystem::kickLocalGeometry(const TerrainParams& params) {
-    localBuildInFlight = true;
-    jobs->enqueue([sharedRef = shared, bodiesRef = bodies, params,
-                   gen = generation, stamp = bodiesStamp,
-                   jobsRef = jobs] {
-        core::JobProbe::Scope probe { &jobsRef->probe(),
-                                      "waterLocalMesh" };
-        LocalMesh out;
-        out.generation = gen;
+    localBuilds.kick([bodiesRef = bodies, params, stamp = bodiesStamp](
+                         LocalMesh& out, const std::atomic<bool>& stop) {
         out.stamp = stamp;
-        if (!jobsRef->isStopping() && bodiesRef &&
+        if (!stop.load(std::memory_order_relaxed) && bodiesRef &&
             !(bodiesRef->lakes.empty() && bodiesRef->rivers.empty())) {
             buildLocalGeometry(*bodiesRef, params, out.verts,
                                out.indices);
         }
-        sharedRef->localMesh.push(std::move(out));
     });
 }
 
@@ -887,60 +832,47 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
                          sptr<const HeightField::Snapshot> field) {
     // Apply a finished bake: new texture + bind group (rebakes are rare —
     // every ~500 m of travel or on a settings change).
-    BakedMap baked;
-    while (shared->baked.tryPop(baked)) {
-        if (baked.generation != generation) {
-            continue;
-        }
-        device.destroyTexture(poolMap);
-        poolMap = device.createTexture(
+    poolBakes.drain([&](BakedMap& baked) {
+        poolMap = { device, device.createTexture(
             { .width = kPoolMapSize,
               .height = kPoolMapSize,
               .format = rhi::TextureFormat::R16F,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled },
-            baked.texels.data());
+            baked.texels.data()) };
         rebuildMapGroup(device);
         mapCenter = baked.center;
         bakedSeed = baked.seed;
         bakedSeaLevel = baked.seaLevel;
         bakedBodiesStamp = baked.bodiesStamp;
         bakedContentStamp = baked.contentStamp;
-        bakeInFlight = false;
-    }
+    });
 
     // Local geometry: WORKER-built (the synchronous build stuttered
     // the frame on every streamed tile — see LocalMesh); main uploads
     // the finished buffers and re-kicks if the bodies moved on.
     {
-        LocalMesh lm;
-        while (shared->localMesh.tryPop(lm)) {
-            localBuildInFlight = false;
-            if (lm.generation != generation) {
-                continue;
-            }
-            device.destroyBuffer(localIndexBuffer);
-            device.destroyBuffer(localVertexBuffer);
-            localIndexBuffer = {};
-            localVertexBuffer = {};
+        localBuilds.drain([&](LocalMesh& lm) {
+            localIndexBuffer.reset();
+            localVertexBuffer.reset();
             localIndexCount = 0;
             if (!lm.verts.empty() && !lm.indices.empty()) {
-                localVertexBuffer = device.createBuffer(
+                localVertexBuffer = { device, device.createBuffer(
                     { .usage = rhi::BufferUsage::Vertex,
                       .size = lm.verts.size() * sizeof(f32) },
-                    lm.verts.data());
-                localIndexBuffer = device.createBuffer(
+                    lm.verts.data()) };
+                localIndexBuffer = { device, device.createBuffer(
                     { .usage = rhi::BufferUsage::Index,
                       .size = lm.indices.size() * sizeof(u32) },
-                    lm.indices.data());
+                    lm.indices.data()) };
                 localIndexCount = static_cast<u32>(lm.indices.size());
             }
             if (lm.stamp != bodiesStamp) {
                 bodiesDirty = true; // superseded mid-build: go again
             }
-        }
+        });
     }
-    if (bodiesDirty && !localBuildInFlight) {
+    if (bodiesDirty && !localBuilds.busy()) {
         rebuildMaterials(device);
         kickLocalGeometry(params);
         bodiesDirty = false;
@@ -950,64 +882,44 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
     // the camera strays ~2 km or a tile publish bumped contentStamp
     // (a fresh .twb may have replaced a master-network course).
     {
-        FarMesh fm;
-        while (shared->farMesh.tryPop(fm)) {
-            farBuildInFlight = false;
-            if (fm.generation != generation) {
-                continue;
-            }
-            device.destroyBuffer(farIndexBuffer);
-            device.destroyBuffer(farVertexBuffer);
-            farIndexBuffer = {};
-            farVertexBuffer = {};
+        farBuilds.drain([&](FarMesh& fm) {
+            farIndexBuffer.reset();
+            farVertexBuffer.reset();
             farIndexCount = 0;
             if (!fm.verts.empty() && !fm.indices.empty()) {
-                farVertexBuffer = device.createBuffer(
+                farVertexBuffer = { device, device.createBuffer(
                     { .usage = rhi::BufferUsage::Vertex,
                       .size = fm.verts.size() * sizeof(f32) },
-                    fm.verts.data());
-                farIndexBuffer = device.createBuffer(
+                    fm.verts.data()) };
+                farIndexBuffer = { device, device.createBuffer(
                     { .usage = rhi::BufferUsage::Index,
                       .size = fm.indices.size() * sizeof(u32) },
-                    fm.indices.data());
+                    fm.indices.data()) };
                 farIndexCount = static_cast<u32>(fm.indices.size());
             }
             farCenter = fm.center;
             farStamp = fm.stamp;
-        }
+        });
         const Vec2 farCam { cameraPos.x, cameraPos.z };
-        // Content-stamp coalescing (FarTerrain pattern): the 18 km
-        // collect rescans the tile cache on disk — once per publish
-        // BURST, after a second of stamp quiet, not once per tile.
-        if (params.contentStamp != farLastSeenStamp) {
-            farLastSeenStamp = params.contentStamp;
-            farQuietSince = core::clockNow();
-        }
+        // The 18 km collect rescans the tile cache on disk — once per
+        // publish BURST, after a second of stamp quiet, not once per tile.
         const bool farContentSettled =
-            core::secondsSince(farQuietSince) > 1.0;
-        if (farFn && !farBuildInFlight &&
+            farContent.settled(params.contentStamp, 1.0);
+        if (farFn && !farBuilds.busy() &&
             (farDirty || glm::distance(farCam, farCenter) > 2048.0f ||
              (farStamp != static_cast<u64>(params.contentStamp) &&
               farContentSettled))) {
             farDirty = false;
-            farBuildInFlight = true;
-            jobs->enqueue([sharedRef = shared, fn = farFn, farCam,
-                           gen = generation,
-                           stamp =
-                               static_cast<u64>(params.contentStamp),
-                           jobsRef = jobs] {
-                core::JobProbe::Scope probe { &jobsRef->probe(),
-                                              "farWater" };
-                FarMesh out;
-                out.generation = gen;
+            farBuilds.kick([fn = farFn, farCam,
+                            stamp = static_cast<u64>(params.contentStamp)](
+                               FarMesh& out, const std::atomic<bool>& stop) {
                 out.stamp = stamp;
                 out.center = farCam;
-                if (!jobsRef->isStopping()) {
+                if (!stop.load(std::memory_order_relaxed)) {
                     const FarWaterSet set =
                         fn(farCam.x, farCam.y, 9000.0f);
                     buildFarGeometry(set, out.verts, out.indices);
                 }
-                sharedRef->farMesh.push(std::move(out));
             });
         }
     }
@@ -1025,24 +937,19 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
                                      mapCenter.y - kPoolMapSpan * 0.5f,
                                      mapCenter.x + kPoolMapSpan * 0.5f,
                                      mapCenter.y + kPoolMapSpan * 0.5f);
-    if (stale && !bakeInFlight) {
-        bakeInFlight = true;
+    if (stale && !poolBakes.busy()) {
         constexpr f32 kTexel = kPoolMapSpan / kPoolMapSize;
         const Vec2 center = glm::floor(camXz / kTexel) * kTexel;
-        jobs->enqueue([sharedRef = shared, params, center,
-                       gen = generation, bodiesRef = bodies,
-                       stamp = bodiesStamp,
-                       content = params.contentStamp,
-                       fieldRef = field, jobsRef = jobs] {
-            if (jobsRef->isStopping()) {
-                return; // abandonable at shutdown
-            }
-            core::JobProbe::Scope probe { &jobsRef->probe(),
-                                          "waterPoolMap" };
-            sharedRef->baked.push({ center, gen, params.seed,
-                                    params.seaLevel, stamp, content,
-                                    bakePoolDepth(params, bodiesRef,
-                                                  center, fieldRef) });
+        poolBakes.kick([params, center, bodiesRef = bodies,
+                        stamp = bodiesStamp, content = params.contentStamp,
+                        fieldRef = field](BakedMap& out,
+                                          const std::atomic<bool>&) {
+            out.center = center;
+            out.seed = params.seed;
+            out.seaLevel = params.seaLevel;
+            out.bodiesStamp = stamp;
+            out.contentStamp = content;
+            out.texels = bakePoolDepth(params, bodiesRef, center, fieldRef);
         });
     }
 
@@ -1071,7 +978,6 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
         wet += d > 0.0f ? 1u : 0u;
     }
     simWetCells = wet;
-    device.destroyTexture(simMapB);
     vector<f32> extras(static_cast<size_t>(n) * n * 4);
     for (size_t i = 0; i < snap.depth.size(); ++i) {
         extras[i * 4 + 0] = snap.depth[i];
@@ -1079,37 +985,34 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
         extras[i * 4 + 2] = snap.velZ[i];
         extras[i * 4 + 3] = 0.0f;
     }
-    simMapB = device.createTexture(
+    simMapB = { device, device.createTexture(
         { .width = n,
           .height = n,
           .format = rhi::TextureFormat::RGBA16F,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled },
-        extras.data());
+        extras.data()) };
     rebuildMapGroup(device);
 
     // --- The ONE closed mesh, built worker-side in extractSnapshot
     // (docs/PAYSAGE.md §1.5): upload verbatim.
-    device.destroyBuffer(simVertexBuffer);
-    device.destroyBuffer(simIndexBuffer);
-    simVertexBuffer = {};
-    simIndexBuffer = {};
+    simVertexBuffer.reset();
+    simIndexBuffer.reset();
     simIndexCount = 0;
     if (!snap.meshIndices.empty()) {
-        simVertexBuffer = device.createBuffer(
+        simVertexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
               .size = snap.meshVerts.size() * sizeof(f32) },
-            snap.meshVerts.data());
-        simIndexBuffer = device.createBuffer(
+            snap.meshVerts.data()) };
+        simIndexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Index,
               .size = snap.meshIndices.size() * sizeof(u32) },
-            snap.meshIndices.data());
+            snap.meshIndices.data()) };
         simIndexCount = static_cast<u32>(snap.meshIndices.size());
     }
 
     // --- Debug volume boxes: only while the mode shows them.
-    device.destroyBuffer(simBoxInstanceBuffer);
-    simBoxInstanceBuffer = {};
+    simBoxInstanceBuffer.reset();
     simBoxInstances = 0;
     if (simCfg.debugMode == 3) {
         const auto& spec = snap.spec;
@@ -1135,10 +1038,10 @@ void WaterSystem::uploadSimTextures(rhi::Device& device,
             }
         }
         if (!cells.empty()) {
-            simBoxInstanceBuffer = device.createBuffer(
+            simBoxInstanceBuffer = { device, device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = cells.size() * sizeof(f32) },
-                cells.data());
+                cells.data()) };
             simBoxInstances = static_cast<u32>(cells.size() / 4);
         }
     }
@@ -1191,8 +1094,7 @@ void WaterSystem::simFreeze(rhi::Device& device,
                 replaceRadius &&
             std::abs(simFrozen[i].originZ - snap.spec.originZ) <
                 replaceRadius) {
-            device.destroyBuffer(simFrozen[i].vertexBuffer);
-            device.destroyBuffer(simFrozen[i].indexBuffer);
+            // Erasing the entry destroys its buffers.
             simFrozen.erase(simFrozen.begin() + static_cast<i32>(i));
             matched = true;
             break;
@@ -1202,32 +1104,26 @@ void WaterSystem::simFreeze(rhi::Device& device,
         return; // refresh-only call: never grow, never evict the trail
     }
     if (simFrozen.size() >= kSimCacheCap) {
-        device.destroyBuffer(simFrozen.front().vertexBuffer);
-        device.destroyBuffer(simFrozen.front().indexBuffer);
         simFrozen.erase(simFrozen.begin());
     }
     FrozenWindow fz;
-    fz.vertexBuffer = device.createBuffer(
+    fz.vertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,
           .size = snap.meshVerts.size() * sizeof(f32) },
-        snap.meshVerts.data());
-    fz.indexBuffer = device.createBuffer(
+        snap.meshVerts.data()) };
+    fz.indexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index,
           .size = snap.meshIndices.size() * sizeof(u32) },
-        snap.meshIndices.data());
+        snap.meshIndices.data()) };
     fz.indexCount = static_cast<u32>(snap.meshIndices.size());
     fz.originX = snap.spec.originX;
     fz.originZ = snap.spec.originZ;
     fz.span = span;
-    simFrozen.push_back(fz);
+    simFrozen.push_back(std::move(fz));
 }
 
-void WaterSystem::simFrozenClearNow(rhi::Device& device) {
-    for (FrozenWindow& fz : simFrozen) {
-        device.destroyBuffer(fz.vertexBuffer);
-        device.destroyBuffer(fz.indexBuffer);
-    }
-    simFrozen.clear();
+void WaterSystem::simFrozenClearNow() {
+    simFrozen.clear(); // destroys every frozen mesh's buffers
     simFrozenClearPending = false;
 }
 
@@ -1250,15 +1146,10 @@ void WaterSystem::updateSim(rhi::Device& device,
                             const Vec3& cameraPos, f32 dt) {
     using terrain::WaterSimState;
     if (simFrozenClearPending) {
-        simFrozenClearNow(device);
+        simFrozenClearNow();
     }
     // Apply finished jobs (newest wins; at most one is ever in flight).
-    SimResult res;
-    while (shared->simDone.tryPop(res)) {
-        if (res.generation != generation) {
-            continue;
-        }
-        simInFlight = false;
+    simJobs.drain([&](SimResult& res) {
         if (res.epoch != simEpoch) {
             // Invalidated while the job ran (teleport): the state is
             // still a perfectly settled window — cache it for the
@@ -1269,7 +1160,7 @@ void WaterSystem::updateSim(rhi::Device& device,
             }
             simCachePush(std::move(res.state), simCfg.span * 0.5f,
                          true);
-            continue;
+            return;
         }
         simState = res.state;
         simLastMs = res.millis;
@@ -1304,7 +1195,7 @@ void WaterSystem::updateSim(rhi::Device& device,
                 }
             }
         }
-    }
+    });
     // The reveal never blocks: a window that keeps sloshing (heavy
     // inflow) shows after the cap regardless. Toggling the gate off
     // reveals immediately.
@@ -1363,7 +1254,7 @@ void WaterSystem::updateSim(rhi::Device& device,
         simAccum = 0.0f;
         simHasLastCrumb = false;
     }
-    if (simInFlight) {
+    if (simJobs.busy()) {
         return;
     }
     // Main owns the state here: honor a pending dump request.
@@ -1452,24 +1343,15 @@ void WaterSystem::updateSim(rhi::Device& device,
         simCalmTicks = 0;
         simLastVolume = -1.0;
         simSettleTimer = 0.0f;
-        simInFlight = true;
         const f32 maxX =
             spec.originX + static_cast<f32>(spec.n - 1) * texel;
         const f32 maxZ =
             spec.originZ + static_cast<f32>(spec.n - 1) * texel;
-        jobs->enqueue([sharedRef = shared, params, spec,
-                       simParams = simCfg.params, fn = simSourcesFn,
-                       bodiesRef = bodies, gen = generation,
-                       epoch = simEpoch, maxX, maxZ,
-                       pinHw = simCfg.pinRiverHalfWidth,
-                       jobsRef = jobs] {
-            if (jobsRef->isStopping()) {
-                return; // abandonable at shutdown (seconds of pre-roll)
-            }
-            core::JobProbe::Scope probe { &jobsRef->probe(),
-                                          "waterSimPreRoll" };
-            SimResult out;
-            out.generation = gen;
+        simJobs.kick([params, spec, simParams = simCfg.params,
+                      fn = simSourcesFn, bodiesRef = bodies,
+                      epoch = simEpoch, maxX, maxZ,
+                      pinHw = simCfg.pinRiverHalfWidth](
+                         SimResult& out, const std::atomic<bool>&) {
             out.epoch = epoch;
             const core::TimePoint start = core::clockNow();
             if (fn) {
@@ -1512,7 +1394,6 @@ void WaterSystem::updateSim(rhi::Device& device,
             out.snap = std::move(snap);
             out.millis =
                 static_cast<f32>(core::secondsSince(start) * 1000.0);
-            sharedRef->simDone.push(std::move(out));
         });
         return;
     }
@@ -1598,26 +1479,16 @@ void WaterSystem::updateSim(rhi::Device& device,
             crumbs.push_back(c);
         }
     }
-    simInFlight = true;
     const bool refreshGround = simGroundDirty;
     simGroundDirty = false;
-    jobs->enqueue([sharedRef = shared, params, state = simState,
-                   simParams = simCfg.params, fn = simSourcesFn,
-                   bodiesRef = bodies, sources = simSrcCache,
-                   runtime = simRuntimeSources,
-                   gen = generation, epoch = simEpoch, dCol, dRow,
-                   substeps, refreshGround,
-                   crumbs = std::move(crumbs),
-                   pinHw = simCfg.pinRiverHalfWidth,
-                   rain = simRainIntensity,
-                   puddles = simCfg.rainPuddles,
-                   jobsRef = jobs]() mutable {
-        if (jobsRef->isStopping()) {
-            return; // abandonable at shutdown
-        }
-        core::JobProbe::Scope probe { &jobsRef->probe(), "waterSim" };
-        SimResult out;
-        out.generation = gen;
+    simJobs.kick([params, state = simState, simParams = simCfg.params,
+                  fn = simSourcesFn, bodiesRef = bodies,
+                  sources = simSrcCache, runtime = simRuntimeSources,
+                  epoch = simEpoch, dCol, dRow, substeps, refreshGround,
+                  crumbs = std::move(crumbs),
+                  pinHw = simCfg.pinRiverHalfWidth,
+                  rain = simRainIntensity, puddles = simCfg.rainPuddles](
+                     SimResult& out, const std::atomic<bool>&) mutable {
         out.epoch = epoch;
         const core::TimePoint start = core::clockNow();
         const auto heightFn = [&params](f32 x, f32 z) {
@@ -1681,13 +1552,11 @@ void WaterSystem::updateSim(rhi::Device& device,
         out.sources = std::move(sources);
         out.millis =
             static_cast<f32>(core::secondsSince(start) * 1000.0);
-        sharedRef->simDone.push(std::move(out));
     });
 }
 
 void WaterSystem::rebuildMapGroup(rhi::Device& device) {
-    device.destroyBindGroup(poolMapGroup);
-    poolMapGroup = device.createBindGroup(
+    poolMapGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 1, .buffer = materialsUbo },
                        { .binding = 3,
                          .texture = poolMap,
@@ -1697,7 +1566,7 @@ void WaterSystem::rebuildMapGroup(rhi::Device& device) {
                        // frozen, never renumbered.
                        { .binding = 8,
                          .texture = simMapB,
-                         .sampler = poolMapSampler } } });
+                         .sampler = poolMapSampler } } }) };
 }
 
 void WaterSystem::rebuildMaterials(rhi::Device& device) {
@@ -1724,157 +1593,122 @@ void WaterSystem::rebuildMaterials(rhi::Device& device) {
                      Vec4 { m.emissiveColor, m.viscosity },
                      Vec4 { m.foamGain, 0.0f, 0.0f, 0.0f } };
     }
-    device.destroyBuffer(materialsUbo);
-    materialsUbo = device.createBuffer(
+    materialsUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
           .size = table.size() * sizeof(GpuWaterMaterial) },
-        table.data());
+        table.data()) };
     rebuildMapGroup(device);
-}
-
-void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    if (pipeline.id != 0) {
-    shaders.beginWatch();
-        device.destroyPipeline(pipeline);
-    }
-    pipeline = device.createPipeline(
-        { .shader = shaders.get(kWaterShader),
-          .vertexBuffers =
-              { { .stride = 2 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 0 } } } },
-          // Opaque (refraction is composed manually from the scene
-          // snapshot); depth-tested against the opaque pass, and written so
-          // fog-of-depth effects later stay consistent. Two-sided: the
-          // shader renders a distinct underside when seen from below.
-          // Toward-camera bias (positive under reversed-Z + Greater):
-          // where the sheet lies centimetres over the ground (shallow
-          // shelves, flooded meadow dips) the two planes can sit inside
-          // the depth-quantization noise and the surface flickered pixel
-          // by pixel — contour-line moiré fringes. The bias rides the
-          // depth format's local precision, so it stays microscopic
-          // everywhere reversed-Z keeps precision healthy.
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::None,
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
-    // Local surfaces: same states, world-space F32x3 vertices.
-    if (localPipeline.id != 0) {
-        device.destroyPipeline(localPipeline);
-    }
-    localPipeline = device.createPipeline(
-        { .shader = shaders.get(kWaterLocalShader),
-          .vertexBuffers =
-              { { .stride = 10 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 3 * sizeof(f32) },
-                                  { .location = 2,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = 5 * sizeof(f32) },
-                                  { .location = 3,
-                                    .format = rhi::VertexFormat::F32x1,
-                                    .offset = 9 * sizeof(f32) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater },
-          .cull = rhi::CullMode::None,
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
-    // Sim window: node-uv grid displaced by the display texture in the
-    // vertex shader, same states and shared shading.
-    if (simPipeline.id != 0) {
-        device.destroyPipeline(simPipeline);
-    }
-    simPipeline = device.createPipeline(
-        { .shader = shaders.get(kWaterSimShader),
-          .vertexBuffers =
-              { { .stride = 5 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 3 * sizeof(f32) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater },
-          .cull = rhi::CullMode::None,
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
-    if (simFrozenPipeline.id != 0) {
-        device.destroyPipeline(simFrozenPipeline);
-    }
-    // Frozen windows: same mesh layout and states, frozen shading.
-    simFrozenPipeline = device.createPipeline(
-        { .shader = shaders.get(kWaterSimFrozenShader),
-          .vertexBuffers =
-              { { .stride = 5 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 3 * sizeof(f32) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater },
-          .cull = rhi::CullMode::None,
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
-    if (simPipelineOverlay.id != 0) {
-        device.destroyPipeline(simPipelineOverlay);
-    }
-    // Seam overlay: depth test OFF — the diagnosis view.
-    simPipelineOverlay = device.createPipeline(
-        { .shader = shaders.get(kWaterSimShader),
-          .vertexBuffers =
-              { { .stride = 5 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 3 * sizeof(f32) } } } },
-          .depth = { .testEnable = false, .writeEnable = false },
-          .cull = rhi::CullMode::None });
-    if (simBoxPipeline.id != 0) {
-        device.destroyPipeline(simBoxPipeline);
-    }
-    // Debug volume boxes: instanced translucent columns.
-    simBoxPipeline = device.createPipeline(
-        { .shader = shaders.get(kWaterSimBoxShader),
-          .vertexBuffers =
-              { { .stride = 3 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 } } },
-                { .stride = 4 * sizeof(f32),
-                  .stepMode = rhi::VertexStepMode::Instance,
-                  .attributes = { { .location = 1,
-                                    .format = rhi::VertexFormat::F32x4,
-                                    .offset = 0 } } } },
-          .blend = rhi::BlendMode::Alpha,
-          .depth = { .testEnable = true,
-                     .writeEnable = false,
-                     .compare = rhi::CompareFunc::Greater },
-          .cull = rhi::CullMode::None });
-    // The watch recorded every shader the build consumed: a reload of
-    // any of them rebuilds the pipelines.
-    shaderWatch = shaders.endWatch();
 }
 
 void WaterSystem::refreshPipeline(rhi::Device& device,
                                   ShaderLibrary& shaders) {
-    if (shaderWatch.changed(shaders)) {
-        buildPipeline(device, shaders);
-    }
+    // One recipe per pipeline: each names the shader it consumes, so a
+    // reload of that shader rebuilds exactly the pipelines built on it.
+    // The sim mesh layout (pos F32x3 + node uv F32x2) is shared by the
+    // live, frozen and overlay pipelines.
+    const rhi::VertexBufferLayout kSimMeshLayout {
+        .stride = 5 * sizeof(f32),
+        .attributes = { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = 0 },
+                        { .location = 1,
+                          .format = rhi::VertexFormat::F32x2,
+                          .offset = 3 * sizeof(f32) } } };
+    pipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterShader),
+              .vertexBuffers =
+                  { { .stride = 2 * sizeof(f32),
+                      .attributes = { { .location = 0,
+                                        .format = rhi::VertexFormat::F32x2,
+                                        .offset = 0 } } } },
+              // Opaque (refraction is composed manually from the scene
+              // snapshot); depth-tested against the opaque pass, and
+              // written so fog-of-depth effects later stay consistent.
+              // Two-sided: the shader renders a distinct underside when
+              // seen from below. Toward-camera bias (positive under
+              // reversed-Z + Greater): where the sheet lies centimetres
+              // over the ground (shallow shelves, flooded meadow dips)
+              // the two planes can sit inside the depth-quantization
+              // noise and the surface flickered pixel by pixel —
+              // contour-line moiré fringes. The bias rides the depth
+              // format's local precision, so it stays microscopic
+              // everywhere reversed-Z keeps precision healthy.
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::None,
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
+    // Local surfaces: same states, world-space F32x3 vertices.
+    localPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterLocalShader),
+              .vertexBuffers =
+                  { { .stride = 10 * sizeof(f32),
+                      .attributes = { { .location = 0,
+                                        .format = rhi::VertexFormat::F32x3,
+                                        .offset = 0 },
+                                      { .location = 1,
+                                        .format = rhi::VertexFormat::F32x2,
+                                        .offset = 3 * sizeof(f32) },
+                                      { .location = 2,
+                                        .format = rhi::VertexFormat::F32x4,
+                                        .offset = 5 * sizeof(f32) },
+                                      { .location = 3,
+                                        .format = rhi::VertexFormat::F32x1,
+                                        .offset = 9 * sizeof(f32) } } } },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::None,
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
+    // Sim window: node-uv grid displaced by the display texture in the
+    // vertex shader, same states and shared shading.
+    simPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterSimShader),
+              .vertexBuffers = { kSimMeshLayout },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::None,
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
+    // Frozen windows: same mesh layout and states, frozen shading.
+    simFrozenPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterSimFrozenShader),
+              .vertexBuffers = { kSimMeshLayout },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::None,
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
+    // Seam overlay: depth test OFF — the diagnosis view.
+    simPipelineOverlay.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterSimShader),
+              .vertexBuffers = { kSimMeshLayout },
+              .depth = render::kDepthOff,
+              .cull = rhi::CullMode::None });
+    });
+    // Debug volume boxes: instanced translucent columns.
+    simBoxPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kWaterSimBoxShader),
+              .vertexBuffers =
+                  { { .stride = 3 * sizeof(f32),
+                      .attributes = { { .location = 0,
+                                        .format = rhi::VertexFormat::F32x3,
+                                        .offset = 0 } } },
+                    { .stride = 4 * sizeof(f32),
+                      .stepMode = rhi::VertexStepMode::Instance,
+                      .attributes = { { .location = 1,
+                                        .format = rhi::VertexFormat::F32x4,
+                                        .offset = 0 } } } },
+              .blend = rhi::BlendMode::Alpha,
+              .depth = render::kDepthReadOnly,
+              .cull = rhi::CullMode::None });
+    });
 }
 
 void WaterSystem::draw(rhi::CommandBuffer& cmd,

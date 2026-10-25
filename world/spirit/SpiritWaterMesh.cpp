@@ -4,21 +4,17 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Math.hpp"
+
 namespace world {
-
-namespace {
-
-constexpr f32 kTwoPi = 6.2831853f;
-
-} // namespace
 
 f32 jetRadius(f32 intensity, f32 speed) {
     const f32 area = glm::max(intensity, 0.0f) / glm::max(speed, 0.1f);
-    return glm::clamp(std::sqrt(area / 3.1415927f), 0.08f, 1.5f);
+    return glm::clamp(std::sqrt(area / core::kPi), 0.08f, 1.5f);
 }
 
 f32 blobRadius(f32 volume) {
-    const f32 r = std::cbrt(3.0f * glm::max(volume, 0.0f) / (4.0f * 3.1415927f));
+    const f32 r = std::cbrt(3.0f * glm::max(volume, 0.0f) / (4.0f * core::kPi));
     return glm::clamp(r, 0.25f, 8.0f);
 }
 
@@ -55,7 +51,7 @@ void appendJetTube(vector<Vec3>& out, const Vec3& origin,
         const Vec3 norm = glm::cross(side, tangent);
         const f32 r = radius * (1.0f + (flare - 1.0f) * u);
         for (u32 k = 0; k < sides; ++k) {
-            const f32 a = kTwoPi * static_cast<f32>(k) / static_cast<f32>(sides);
+            const f32 a = core::kTau * static_cast<f32>(k) / static_cast<f32>(sides);
             rings.push_back(c + (side * std::cos(a) + norm * std::sin(a)) * r);
         }
     }
@@ -84,8 +80,8 @@ void appendBlob(vector<Vec3>& out, const Vec3& center, f32 radius,
         return;
     }
     const auto point = [&](u32 i, u32 k) {
-        const f32 v = 3.1415927f * static_cast<f32>(i) / static_cast<f32>(rings);
-        const f32 u = kTwoPi * static_cast<f32>(k % sectors) /
+        const f32 v = core::kPi * static_cast<f32>(i) / static_cast<f32>(rings);
+        const f32 u = core::kTau * static_cast<f32>(k % sectors) /
                       static_cast<f32>(sectors);
         return center + Vec3 { std::sin(v) * std::cos(u) * radius,
                                std::cos(v) * radius * squash,

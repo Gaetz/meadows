@@ -10,6 +10,7 @@
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -27,15 +28,11 @@ void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
                         core::JobSystem& jobSystem, const Config& cfg) {
     config = cfg;
     mailbox.create(jobSystem, config.probeName);
-    // Two rings share the shaders — a second load() would DESTROY the
-    // first ring's modules under its live pipeline (hot-reload
-    // semantics): load once, get thereafter.
-    if (shaders.get(kFarTerrainShader).id == 0) {
-        shaders.load(kFarTerrainShader, { { "FrameUbo", 0 } },
-                     { { "uCloudMap", 2 } });
-        shaders.load(kFarTreeShader, { { "FrameUbo", 0 } },
-                     { { "uCloudMap", 2 } });
-    }
+    // Two rings share the shaders; load() is idempotent on a live program.
+    shaders.load(kFarTerrainShader, { render::kFrameUbo },
+                 { { "uCloudMap", 2 } });
+    shaders.load(kFarTreeShader, { render::kFrameUbo },
+                 { { "uCloudMap", 2 } });
     // The grid topology never changes — one static index buffer.
     const u32 gridN = config.gridN;
     vector<u32> indices;
@@ -62,7 +59,7 @@ void FarTerrain::destroy(rhi::Device& device) {
     // Orphan in-flight bakes: the mailbox generation must keep moving
     // ACROSS the reset (a fresh mailbox would restart it at zero). The
     // config survives too — it is identity, not state.
-    BakeMailbox<Baked> saved = std::move(mailbox);
+    core::BakeMailbox<Baked> saved = std::move(mailbox);
     saved.reset();
     const Config savedConfig = config;
     *this = FarTerrain {};
@@ -72,37 +69,33 @@ void FarTerrain::destroy(rhi::Device& device) {
 
 void FarTerrain::refreshPipeline(rhi::Device& device,
                                  ShaderLibrary& shaders) {
-    if (pipeline.id() != 0 && !shaderWatch.changed(shaders)) {
-        return;
-    }
-    shaders.beginWatch();
-    pipeline = { device, device.createPipeline(
-        { .shader = shaders.get(kFarTerrainShader),
-          .vertexBuffers = { meshVertexLayout() },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back }) };
+    pipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kFarTerrainShader),
+              .vertexBuffers = { meshVertexLayout() },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::Back });
+    });
     // Impostor quads: corners from the vertex index, one instance
     // stream (the vegetation Instance layout) — no cull, a cylindrical
     // billboard's winding flips with the view side.
-    treePipeline = { device, device.createPipeline(
-        { .shader = shaders.get(kFarTreeShader),
-          .vertexBuffers =
-              { { .stride = sizeof(TreeInstance),
-                  .stepMode = rhi::VertexStepMode::Instance,
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = offsetof(TreeInstance, positionScale) },
-                        { .location = 1,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = offsetof(TreeInstance, params) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::None }) };
-    shaderWatch = shaders.endWatch();
+    treePipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kFarTreeShader),
+              .vertexBuffers =
+                  { { .stride = sizeof(TreeInstance),
+                      .stepMode = rhi::VertexStepMode::Instance,
+                      .attributes =
+                          { { .location = 0,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset =
+                                  offsetof(TreeInstance, positionScale) },
+                            { .location = 1,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(TreeInstance, params) } } } },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::None });
+    });
 }
 
 void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
@@ -132,15 +125,8 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         return;
     }
     const Vec2 camXz { focus.x, focus.z };
-    if (params.contentStamp != lastSeenContentStamp) {
-        lastSeenContentStamp = params.contentStamp;
-        contentQuietSince = core::clockNow();
-    }
-    const bool contentSettled =
-        core::secondsSince(contentQuietSince) > 1.0;
-    const bool stale = !mailbox.ready() ||
-                       glm::distance(camXz, center) >
-                           config.span * 0.08f ||
+    const bool contentSettled = content.settled(params.contentStamp, 1.0);
+    const bool stale = mailbox.strayed(center, camXz, config.span * 0.08f) ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel ||
                        (bakedContentStamp != params.contentStamp &&

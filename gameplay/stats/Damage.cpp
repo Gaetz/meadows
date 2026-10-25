@@ -8,21 +8,26 @@
 namespace gameplay {
 
 const char* damageTypeName(DamageType type) {
-    switch (type) {
-    case DamageType::Slash:     return "Slash";
-    case DamageType::Pierce:    return "Pierce";
-    case DamageType::Blunt:     return "Blunt";
-    case DamageType::Fire:      return "Fire";
-    case DamageType::Cold:      return "Cold";
-    case DamageType::Lightning: return "Lightning";
-    case DamageType::Sonic:     return "Sonic";
-    case DamageType::Chemical:  return "Chemical";
-    case DamageType::Psychic:   return "Psychic";
-    case DamageType::Holy:      return "Holy";
-    case DamageType::Dark:      return "Dark";
-    case DamageType::Ether:     return "Ether";
+    if (static_cast<size_t>(type) >= std::size(kDamageTypes)) {
+        return "Unknown";
     }
-    return "Unknown";
+    return damageTraits(type).name;
+}
+
+DamageType dominantDamageType(const DamageEvent& event) {
+    f32 summed[std::size(kDamageTypes)] = {};
+    for (const DamageChannel& channel : event.channels) {
+        summed[static_cast<size_t>(channel.type)] += channel.amount;
+    }
+    DamageType dominant = DamageType::Slash;
+    f32 best = 0.0f;
+    for (size_t i = 0; i < std::size(kDamageTypes); ++i) {
+        if (summed[i] > best) { // strict: the first type keeps a tie
+            best = summed[i];
+            dominant = static_cast<DamageType>(i);
+        }
+    }
+    return dominant;
 }
 
 void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
@@ -46,30 +51,10 @@ f32 fallDamage(f32 fallHeight, const StatsTuningForm& tuning) {
 }
 
 namespace {
-bool isPhysical(DamageType type) {
-    return type == DamageType::Slash || type == DamageType::Pierce ||
-           type == DamageType::Blunt;
-}
-
 // The percentage mitigation (armor for physical, resistance for elemental) for a
 // channel, read from the recomputed overlay.
 f32 mitigationPercent(const AbilitySystem& system, DamageType type) {
-    const char* field = "";
-    switch (type) {
-    case DamageType::Slash:     field = "armorSlash"; break;
-    case DamageType::Pierce:    field = "armorPierce"; break;
-    case DamageType::Blunt:     field = "armorBlunt"; break;
-    case DamageType::Fire:      field = "resistFire"; break;
-    case DamageType::Cold:      field = "resistCold"; break;
-    case DamageType::Lightning: field = "resistLightning"; break;
-    case DamageType::Sonic:     field = "resistSonic"; break;
-    case DamageType::Chemical:  field = "resistChemical"; break;
-    case DamageType::Psychic:   field = "resistPsychic"; break;
-    case DamageType::Holy:      field = "resistHoly"; break;
-    case DamageType::Dark:      field = "resistDark"; break;
-    case DamageType::Ether:     field = "resistEther"; break;
-    }
-    return currentValueOf(system, attr(field));
+    return currentValueOf(system, attr(damageTraits(type).mitigationAttr));
 }
 } // namespace
 
@@ -84,7 +69,7 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     // raw amount) then percentage reduction (armor / resistance, 0..100%).
     f32 totalHealth = 0.0f;
     for (const DamageChannel& ch : event.channels) {
-        const bool physical = isPhysical(ch.type);
+        const bool physical = damageTraits(ch.type).physical;
         const f32 flatStat = physical ? cur("defense") : cur("will");
         const f32 capAttr = physical ? cur("constitution") : cur("ego");
         const f32 flatCap =
@@ -137,78 +122,92 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     // expiry) and the target is open to the critical execution.
     if (target.combat.posture <= 0.0f && event.postureAmount > 0.0f) {
         result.staggered = true;
-        target.combat.staggerSeconds = tuning.staggerSeconds;
-        target.combat.critWindowSeconds = tuning.critWindowSeconds;
-        if (const auto tag = tags.find("State.Staggered")) {
-            target.system.tags.add(*tag, tags);
-        }
-        if (const auto tag = tags.find("State.CriticalWeakness")) {
-            target.system.tags.add(*tag, tags);
-        }
+        grantTimedState(target.combat, target.system, tags, TimedState::Staggered,
+                        tuning.staggerSeconds, Grant::Overwrite);
+        grantTimedState(target.combat, target.system, tags, TimedState::CriticalWindow,
+                        tuning.critWindowSeconds, Grant::Overwrite);
     } else if (event.postureAmount >
                (tuning.shakenThresholdBase + cur("constitution")) / 100.0f *
                    currentValueOf(target.system, attr("maxPosture"))) {
         // A heavy posture hit that does NOT break still rattles: brief
         // State.Shaken debuff (the break is strictly worse, so no stack).
-        target.combat.shakenSeconds = tuning.shakenSeconds;
-        if (const auto tag = tags.find("State.Shaken")) {
-            target.system.tags.add(*tag, tags);
-        }
+        grantTimedState(target.combat, target.system, tags, TimedState::Shaken,
+                        tuning.shakenSeconds, Grant::Overwrite);
     }
 
     updateLifeState(target.system, tags); // health 0 → State.Dead
     return result;
 }
 
-void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,
-                   const GameplayTagRegistry& tags) {
-    if (combat.staggerSeconds <= 0.0f) {
+void grantTimedState(CombatState& combat, AbilitySystem& system,
+                     const GameplayTagRegistry& tags, TimedState state,
+                     f32 seconds, Grant grant) {
+    const TimedStateTraits& row = kTimedStates[static_cast<size_t>(state)];
+    f32& timer = combat.*row.timer;
+    timer = grant == Grant::Extend ? std::max(timer, seconds) : seconds;
+    if (const auto tag = tags.find(row.tag)) {
+        system.tags.add(*tag, tags);
+    }
+}
+
+namespace {
+void tickTimedState(CombatState& combat, AbilitySystem& system, f32 dt,
+                    const GameplayTagRegistry& tags, const TimedStateTraits& row) {
+    f32& timer = combat.*row.timer;
+    if (timer <= 0.0f) {
         return;
     }
-    combat.staggerSeconds -= dt;
-    if (combat.staggerSeconds <= 0.0f) {
-        combat.staggerSeconds = 0.0f;
-        if (const auto tag = tags.find("State.Staggered")) {
+    timer -= dt;
+    if (timer <= 0.0f) {
+        timer = 0.0f;
+        if (row.onExpire == OnExpire::RefillPosture) {
+            combat.posture = currentValueOf(system, attr("maxPosture"));
+        }
+        if (const auto tag = tags.find(row.tag)) {
             system.tags.remove(*tag, tags);
         }
     }
+}
+} // namespace
+
+void tickTimedStates(CombatState& combat, AbilitySystem& system, f32 dt,
+                     const GameplayTagRegistry& tags) {
+    for (const TimedStateTraits& row : kTimedStates) {
+        tickTimedState(combat, system, dt, tags, row);
+    }
+}
+
+void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,
+                   const GameplayTagRegistry& tags) {
+    tickTimedState(combat, system, dt, tags,
+                   kTimedStates[static_cast<size_t>(TimedState::Staggered)]);
 }
 
 void updateParalysis(CombatState& combat, AbilitySystem& system, f32 dt,
                      const GameplayTagRegistry& tags) {
-    if (combat.paralysisSeconds <= 0.0f) {
-        return;
-    }
-    combat.paralysisSeconds -= dt;
-    if (combat.paralysisSeconds <= 0.0f) {
-        combat.paralysisSeconds = 0.0f;
-        if (const auto tag = tags.find("State.Paralyzed")) {
-            system.tags.remove(*tag, tags);
-        }
-    }
+    tickTimedState(combat, system, dt, tags,
+                   kTimedStates[static_cast<size_t>(TimedState::Paralyzed)]);
 }
 
 void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
                       const GameplayTagRegistry& tags) {
-    if (combat.critWindowSeconds <= 0.0f) {
-        return;
-    }
-    combat.critWindowSeconds -= dt;
-    if (combat.critWindowSeconds <= 0.0f) {
-        combat.critWindowSeconds = 0.0f;
-        combat.posture = currentValueOf(system, attr("maxPosture"));
-        if (const auto tag = tags.find("State.CriticalWeakness")) {
-            system.tags.remove(*tag, tags);
-        }
-    }
+    tickTimedState(combat, system, dt, tags,
+                   kTimedStates[static_cast<size_t>(TimedState::CriticalWindow)]);
+}
+
+void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
+                  const GameplayTagRegistry& tags) {
+    tickTimedState(combat, system, dt, tags,
+                   kTimedStates[static_cast<size_t>(TimedState::Shaken)]);
 }
 
 bool updateDowned(CombatState& combat, AbilitySystem& system, f32 dt,
                   const GameplayTagRegistry& tags) {
     // Only ticks while the actor is actually down — the tag is the state
     // (granted by updateLifeState under Follower.Protected), the timer is
-    // only its bleedout clock.
-    const auto downed = tags.find("State.Downed");
+    // only its bleedout clock. Not a kTimedStates row: gated by the tag and
+    // the CALLER resolves the expiry.
+    const auto downed = tags.find(tags::Downed);
     if (!downed || !system.tags.has(*downed) || combat.downedSeconds <= 0.0f) {
         return false;
     }
@@ -218,20 +217,6 @@ bool updateDowned(CombatState& combat, AbilitySystem& system, f32 dt,
         return true; // bleedout due — the caller rolls the outcome
     }
     return false;
-}
-
-void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
-                  const GameplayTagRegistry& tags) {
-    if (combat.shakenSeconds <= 0.0f) {
-        return;
-    }
-    combat.shakenSeconds -= dt;
-    if (combat.shakenSeconds <= 0.0f) {
-        combat.shakenSeconds = 0.0f;
-        if (const auto tag = tags.find("State.Shaken")) {
-            system.tags.remove(*tag, tags);
-        }
-    }
 }
 
 } // namespace gameplay

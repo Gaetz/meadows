@@ -37,9 +37,13 @@ TEST_CASE("fire lane: the window centers on the focus and scrolls by whole cells
 }
 
 TEST_CASE("fire lane: fuel blends the splat classes, marsh wetness damps") {
-    GroundProps props {};
-    props[static_cast<size_t>(GroundClass::Grass)] = { 1.0f, 8.0f, 0.2f, 0.0f, 1.0f };
-    props[static_cast<size_t>(GroundClass::Rock)] = { 0.0f, 0.0f, 0.0f, 0.0f, 3.0f };
+    // Two material classes in table order; grass and rock feed them, the
+    // other families have no record.
+    GroundProps props;
+    props.classes.push_back({ 1.0f, 8.0f, 0.2f, 0.0f, 1.0f });
+    props.classes.push_back({ 0.0f, 0.0f, 0.0f, 0.0f, 3.0f });
+    props.classOf[static_cast<size_t>(SplatFamily::Grass)] = 0;
+    props.classOf[static_cast<size_t>(SplatFamily::Rock)] = 1;
     const FireCellFuel pure = fuelFromWeights(props, { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f }, 0.0f);
     CHECK(pure.fuel == doctest::Approx(8.0f));
     CHECK(pure.flammability == doctest::Approx(1.0f));

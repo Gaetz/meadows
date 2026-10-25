@@ -21,7 +21,7 @@
 
 namespace phys {
 
-using BodyId = u64; // opaque; 0 = invalid
+using BodyId = u64; // opaque (never a raw Jolt id); 0 = invalid
 
 struct RayHit {
     bool hit { false };

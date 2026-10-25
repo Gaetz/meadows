@@ -1,6 +1,7 @@
 #include "engine/render/SpriteRenderer.hpp"
 
 #include <cstddef>
+#include <utility>
 
 #include "engine/core/Log.hpp"
 
@@ -84,41 +85,41 @@ SpriteRenderer::SpriteRenderer(rhi::Device& device) : device { device } {
 }
 
 uptr<SpriteRenderer> SpriteRenderer::create(rhi::Device& device) {
-    const rhi::ShaderHandle shader = device.createShader({
+    rhi::UniqueShader shader { device, device.createShader({
         .debugName = "sprite",
         .vertexSource = kVertexShader,
         .fragmentSource = kFragmentShader,
         .uniformBlocks = { { "Camera", 0 } },
         .samplers      = { { "uTexture", 0 } },
-    });
-    if (shader.id == 0) {
+    }) };
+    if (shader.id() == 0) {
         return nullptr;
     }
 
     auto renderer = uptr<SpriteRenderer> { new SpriteRenderer(device) };
-    renderer->shader = shader;
+    renderer->shader = std::move(shader);
 
-    renderer->quadVertices = device.createBuffer(
+    renderer->quadVertices = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kQuadVertices) },
-        kQuadVertices);
-    renderer->quadIndices = device.createBuffer(
+        kQuadVertices) };
+    renderer->quadIndices = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index, .size = sizeof(kQuadIndices) },
-        kQuadIndices);
-    renderer->instanceBuffer = device.createBuffer(
+        kQuadIndices) };
+    renderer->instanceBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,
           .size = kMaxSprites * sizeof(Instance),
-          .dynamic = true });
-    renderer->cameraUbo = device.createBuffer(
+          .dynamic = true }) };
+    renderer->cameraUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
           .size = sizeof(Mat4),
-          .dynamic = true });
+          .dynamic = true }) };
 
     const u32 white = 0xFFFFFFFF;
-    renderer->whiteTexture =
-        device.createTexture({ .width = 1, .height = 1 }, &white);
+    renderer->whiteTexture = { device,
+        device.createTexture({ .width = 1, .height = 1 }, &white) };
 
-    renderer->pipeline = device.createPipeline({
-        .shader = shader,
+    renderer->pipeline = { device, device.createPipeline({
+        .shader = renderer->shader.get(),
         .vertexBuffers = {
             // slot 0: quad geometry, per vertex
             { .stride = 4 * sizeof(f32),
@@ -144,8 +145,8 @@ uptr<SpriteRenderer> SpriteRenderer::create(rhi::Device& device) {
               } },
         },
         .blend = rhi::BlendMode::Alpha,
-    });
-    if (renderer->pipeline.id == 0) {
+    }) };
+    if (renderer->pipeline.id() == 0) {
         return nullptr;
     }
 
@@ -153,18 +154,8 @@ uptr<SpriteRenderer> SpriteRenderer::create(rhi::Device& device) {
     return renderer;
 }
 
-SpriteRenderer::~SpriteRenderer() {
-    for (auto& [textureId, group] : bindGroups) {
-        device.destroyBindGroup(group);
-    }
-    device.destroyPipeline(pipeline);
-    device.destroyShader(shader);
-    device.destroyTexture(whiteTexture);
-    device.destroyBuffer(cameraUbo);
-    device.destroyBuffer(instanceBuffer);
-    device.destroyBuffer(quadIndices);
-    device.destroyBuffer(quadVertices);
-}
+// The owning handles release themselves (reverse declaration order).
+SpriteRenderer::~SpriteRenderer() = default;
 
 void SpriteRenderer::begin(const Camera2D& camera, f32 aspect) {
     // Pure collection reset — the GPU writes happen in upload(), which the
@@ -198,7 +189,7 @@ void SpriteRenderer::draw(const Sprite& sprite) {
     }
 
     const u32 textureId =
-        sprite.texture.id != 0 ? sprite.texture.id : whiteTexture.id;
+        sprite.texture.id != 0 ? sprite.texture.id : whiteTexture.id();
     if (batches.empty() || batches.back().textureId != textureId) {
         batches.push_back({ .textureId = textureId,
                             .firstInstance = static_cast<u32>(instances.size()),
@@ -240,14 +231,13 @@ rhi::BindGroupHandle SpriteRenderer::bindGroupFor(rhi::TextureHandle texture) {
     if (auto it = bindGroups.find(texture.id); it != bindGroups.end()) {
         return it->second;
     }
-    const rhi::BindGroupHandle group = device.createBindGroup({
+    rhi::UniqueBindGroup group { device, device.createBindGroup({
         .entries = {
             { .binding = 0, .buffer = cameraUbo },
             { .binding = 0, .texture = texture },
         },
-    });
-    bindGroups.emplace(texture.id, group);
-    return group;
+    }) };
+    return bindGroups.emplace(texture.id, std::move(group)).first->second;
 }
 
 } // namespace render

@@ -225,21 +225,13 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
         }
         for (const PoiSite& s :
              poiSitesNear(world, plan, minX, minZ, maxX, maxZ)) {
-            // Family colours: relief red, water blue, coast cyan,
-            // vegetation green, sites white.
             Rgb c { 0.9f, 0.2f, 0.2f };
-            const u8 t = static_cast<u8>(s.type);
-            if (t >= static_cast<u8>(PoiType::Waterfall) &&
-                t <= static_cast<u8>(PoiType::Confluence)) {
-                c = { 0.2f, 0.4f, 1.0f };
-            } else if (t >= static_cast<u8>(PoiType::Headland) &&
-                       t <= static_cast<u8>(PoiType::Islet)) {
-                c = { 0.2f, 0.9f, 0.9f };
-            } else if (s.type == PoiType::LoneTree ||
-                       s.type == PoiType::Grove) {
-                c = { 0.2f, 0.9f, 0.3f };
-            } else if (s.type == PoiType::CityPad) {
-                c = { 1.0f, 1.0f, 1.0f };
+            switch (poiTraits(s.type).family) {
+            case PoiFamily::Relief: break;
+            case PoiFamily::Water: c = { 0.2f, 0.4f, 1.0f }; break;
+            case PoiFamily::Coast: c = { 0.2f, 0.9f, 0.9f }; break;
+            case PoiFamily::Vegetation: c = { 0.2f, 0.9f, 0.3f }; break;
+            case PoiFamily::Site: c = { 1.0f, 1.0f, 1.0f }; break;
             }
             const i32 r = s.tier == PoiTier::Grand   ? 6
                           : s.tier == PoiTier::Moyen ? 3

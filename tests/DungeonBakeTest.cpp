@@ -91,20 +91,24 @@ TEST_CASE("dungeon bake: lock-and-key missions anchor paired barriers and levers
     const DungeonBakeResult r = bakeDungeon(p);
     REQUIRE_FALSE(r.empty());
 
-    REQUIRE_FALSE(r.barriers.empty());
-    REQUIRE(r.levers.size() == r.barriers.size());
-    for (const auto& barrier : r.barriers) {
+    const auto barriers = r.anchorsOf(AnchorKind::Barrier);
+    const auto levers = r.anchorsOf(AnchorKind::Lever);
+    REQUIRE_FALSE(barriers.empty());
+    REQUIRE(levers.size() == barriers.size());
+    for (const auto& barrier : barriers) {
         CHECK(barrier.lockId != 0);
         bool paired = false;
-        for (const auto& lever : r.levers) {
+        for (const auto& lever : levers) {
             paired = paired || lever.lockId == barrier.lockId;
         }
         CHECK(paired);
     }
-    REQUIRE(r.chests.size() == 1);
+    const auto chests = r.anchorsOf(AnchorKind::Chest);
+    REQUIRE(chests.size() == 1);
     const Vec3 goalFloor = roomCenter(r.space, r.space.goal);
-    CHECK(glm::length(r.chests[0].position - goalFloor) < 0.01f);
-    CHECK_FALSE(r.enemySpawns.empty()); // at least the goal guardian
+    CHECK(glm::length(chests[0].position - goalFloor) < 0.01f);
+    // At least the goal guardian.
+    CHECK(r.countOf(AnchorKind::EnemySpawn) > 0);
 }
 
 TEST_CASE("dungeon bake: the exit door hugs the entrance room's outer wall") {

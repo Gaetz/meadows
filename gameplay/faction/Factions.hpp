@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iterator>
 #include <unordered_map>
 
 #include "data/forms/Form.hpp"
@@ -13,6 +14,13 @@ class FormTypeRegistry;
 namespace gameplay {
 
 enum class FactionStanding { Enemy, Neutral, Ally };
+inline constexpr std::string_view kFactionStandingNames[] = { "enemy",
+                                                              "neutral",
+                                                              "ally" };
+inline constexpr reflect::EnumTable kFactionStandings {
+    kFactionStandingNames };
+static_assert(std::size(kFactionStandingNames) ==
+              static_cast<size_t>(FactionStanding::Ally) + 1);
 
 // One faction-to-faction relation (a Form, moddable). The relations "table" is
 // simply the set of these records; `FactionRelations` aggregates them. Faction
@@ -22,12 +30,12 @@ enum class FactionStanding { Enemy, Neutral, Ally };
 struct FactionRelationForm : data::Form {
     str factionA;
     str factionB;
-    str relation { "neutral" };
+    str relation { "neutral" }; // kFactionStandings
 
     REFLECT_BEGIN(FactionRelationForm, data::Form)
         REFLECT_FIELD(factionA)
         REFLECT_FIELD(factionB)
-        REFLECT_FIELD(relation)
+        REFLECT_FIELD_ENUM(relation, kFactionStandings)
     REFLECT_END()
 };
 

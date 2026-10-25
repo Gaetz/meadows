@@ -109,6 +109,9 @@ sptr<const render::WaterBodies> buildWaterBodies(
         render::RiverSurface river;
         river.tint = course.river->tint;
         river.flowSpeed = course.river->flowSpeed;
+        river.tier = course.river->tier < 0
+                         ? 0u
+                         : static_cast<u32>(course.river->tier);
         river.materialIndex = resolveMaterial(course.river->material);
         river.minX = river.minZ = 1.0e30f;
         river.maxX = river.maxZ = -1.0e30f;

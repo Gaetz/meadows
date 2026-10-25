@@ -9,42 +9,31 @@ constexpr u32 kScorchBinding = 10; // firescorch.glsl
 } // namespace
 
 void FireScorchMap::create(rhi::Device& device) {
-    sampler = device.createSampler({}); // linear clamp: soft cell edges
+    sampler = { device, device.createSampler({}) }; // linear clamp: soft cell edges
     const u8 kNone[4] = { 0, 0, 0, 255 };
-    texture = device.createTexture({ .width = 1,
-                                     .height = 1,
-                                     .format = rhi::TextureFormat::RGBA8,
-                                     .usage = rhi::TextureUsage_Sampled },
-                                   kNone);
+    texture = { device,
+                device.createTexture({ .width = 1,
+                                       .height = 1,
+                                       .format = rhi::TextureFormat::RGBA8,
+                                       .usage = rhi::TextureUsage_Sampled },
+                                     kNone) };
     rebuildGroup(device);
 }
 
 void FireScorchMap::destroy(rhi::Device& device) {
-    if (group.id != 0) {
-        device.destroyBindGroup(group);
-    }
-    if (texture.id != 0) {
-        device.destroyTexture(texture);
-    }
-    if (sampler.id != 0) {
-        device.destroySampler(sampler);
-    }
-    group = {};
-    texture = {};
-    sampler = {};
-    cells = 0;
-    texel = 0.0f;
-    staging.clear();
+    (void)device;
+    // The look is the panel's tuning, not GPU state: it survives the reset.
+    const FireLook savedLook = look;
+    *this = FireScorchMap {}; // the owning handles release themselves
+    look = savedLook;
 }
 
 void FireScorchMap::rebuildGroup(rhi::Device& device) {
-    if (group.id != 0) {
-        device.destroyBindGroup(group);
-    }
-    group = device.createBindGroup(
-        { .entries = { { .binding = kScorchBinding,
-                         .texture = texture,
-                         .sampler = sampler } } });
+    group = { device,
+              device.createBindGroup(
+                  { .entries = { { .binding = kScorchBinding,
+                                   .texture = texture,
+                                   .sampler = sampler } } }) };
 }
 
 void FireScorchMap::upload(rhi::Device& device, const vector<u8>& scorch,
@@ -64,15 +53,13 @@ void FireScorchMap::upload(rhi::Device& device, const vector<u8>& scorch,
         staging[i * 4 + 2] = hasCanopy ? canopy[i] : 0;
         staging[i * 4 + 3] = 255;
     }
-    if (texture.id != 0) {
-        device.destroyTexture(texture);
-    }
-    texture = device.createTexture({ .width = n,
-                                     .height = n,
-                                     .format = rhi::TextureFormat::RGBA8,
-                                     .filter = rhi::FilterMode::Linear,
-                                     .usage = rhi::TextureUsage_Sampled },
-                                   staging.data());
+    texture = { device,
+                device.createTexture({ .width = n,
+                                       .height = n,
+                                       .format = rhi::TextureFormat::RGBA8,
+                                       .filter = rhi::FilterMode::Linear,
+                                       .usage = rhi::TextureUsage_Sampled },
+                                     staging.data()) };
     origin = at;
     texel = cellSize;
     cells = n;
@@ -83,15 +70,13 @@ void FireScorchMap::clear(rhi::Device& device) {
     if (cells == 0) {
         return;
     }
-    if (texture.id != 0) {
-        device.destroyTexture(texture);
-    }
     const u8 kNone[4] = { 0, 0, 0, 255 };
-    texture = device.createTexture({ .width = 1,
-                                     .height = 1,
-                                     .format = rhi::TextureFormat::RGBA8,
-                                     .usage = rhi::TextureUsage_Sampled },
-                                   kNone);
+    texture = { device,
+                device.createTexture({ .width = 1,
+                                       .height = 1,
+                                       .format = rhi::TextureFormat::RGBA8,
+                                       .usage = rhi::TextureUsage_Sampled },
+                                     kNone) };
     cells = 0;
     texel = 0.0f;
     rebuildGroup(device);

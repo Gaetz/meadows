@@ -7,18 +7,10 @@
 namespace gameplay {
 
 void armorModifiers(const data::ArmorForm& armor, StatModifiers& mods) {
-    mods.add[attr("armorSlash")] += armor.armorSlash;
-    mods.add[attr("armorBlunt")] += armor.armorBlunt;
-    mods.add[attr("armorPierce")] += armor.armorPierce;
-    mods.add[attr("resistFire")] += armor.resistFire;
-    mods.add[attr("resistCold")] += armor.resistCold;
-    mods.add[attr("resistLightning")] += armor.resistLightning;
-    mods.add[attr("resistSonic")] += armor.resistSonic;
-    mods.add[attr("resistChemical")] += armor.resistChemical;
-    mods.add[attr("resistPsychic")] += armor.resistPsychic;
-    mods.add[attr("resistHoly")] += armor.resistHoly;
-    mods.add[attr("resistDark")] += armor.resistDark;
-    mods.add[attr("resistEther")] += armor.resistEther;
+    // One add per damage type (the map accumulation is order-independent).
+    for (const DamageTypeTraits& row : kDamageTypes) {
+        mods.add[attr(row.mitigationAttr)] += armor.*row.mitigation;
+    }
     // Status-buildup endurances (ignition/glaciation/electrocution follow the
     // resist* fields above via the derived-stat formulas — not folded here).
     mods.add[attr("endurancePoison")] += armor.endurancePoison;
@@ -49,16 +41,17 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
                                  currentValueOf(attacker, attr(weapon.scalingAttribute)) /
                                  100.0f;
     DamageEvent event;
-    const auto add = [&](DamageType type, f32 base) {
-        if (base > 0.0f) {
-            event.channels.push_back({ type, base * scale });
+    // Channels come out in enum order — the weapon's physical type first.
+    for (size_t i = 0; i < std::size(kDamageTypes); ++i) {
+        const DamageTypeTraits& row = kDamageTypes[i];
+        if (row.attack == nullptr) {
+            continue; // no weapon channel for this type
         }
-    };
-    add(DamageType::Slash, weapon.slashAttack);
-    add(DamageType::Pierce, weapon.pierceAttack);
-    add(DamageType::Blunt, weapon.bluntAttack);
-    add(DamageType::Fire, weapon.fireAttack);
-    add(DamageType::Lightning, weapon.lightningAttack);
+        const f32 base = weapon.*row.attack;
+        if (base > 0.0f) {
+            event.channels.push_back({ static_cast<DamageType>(i), base * scale });
+        }
+    }
     event.postureAmount = weapon.postureDamage * scale;
     if (!weapon.buildupType.empty() && weapon.buildupAmount > 0.0f) {
         event.buildupType = weapon.buildupType;
@@ -74,9 +67,7 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
     if (attack > 0.0f) {
         DamageChannel* strongest = nullptr;
         for (DamageChannel& channel : event.channels) {
-            const bool physical = channel.type == DamageType::Slash ||
-                                  channel.type == DamageType::Pierce ||
-                                  channel.type == DamageType::Blunt;
+            const bool physical = damageTraits(channel.type).physical;
             if (physical && (!strongest || channel.amount > strongest->amount)) {
                 strongest = &channel;
             }
@@ -101,19 +92,9 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
 }
 
 f32 itemWeight(const data::FormDatabase& forms, const core::Guid& item) {
-    if (const auto* weapon = forms.find<data::WeaponForm>(item)) {
-        return weapon->weight;
-    }
-    if (const auto* armor = forms.find<data::ArmorForm>(item)) {
-        return armor->weight;
-    }
-    if (const auto* consumable = forms.find<data::ConsumableForm>(item)) {
-        return consumable->weight;
-    }
-    if (const auto* misc = forms.find<data::MiscItemForm>(item)) {
-        return misc->weight;
-    }
-    return 0.0f;
+    // Every carryable derives from ItemForm; find<> checks isA.
+    const auto* form = forms.find<data::ItemForm>(item);
+    return form ? form->weight : 0.0f;
 }
 
 f32 inventoryWeight(const data::FormDatabase& forms, const Inventory& inventory) {
@@ -170,19 +151,8 @@ void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods) {
 // ---- Follower base-kit lock + auto-equip ------------------------------------
 
 bool itemUnremovable(const data::FormDatabase& forms, const core::Guid& item) {
-    if (const auto* weapon = forms.find<data::WeaponForm>(item)) {
-        return weapon->unremovable;
-    }
-    if (const auto* armor = forms.find<data::ArmorForm>(item)) {
-        return armor->unremovable;
-    }
-    if (const auto* consumable = forms.find<data::ConsumableForm>(item)) {
-        return consumable->unremovable;
-    }
-    if (const auto* misc = forms.find<data::MiscItemForm>(item)) {
-        return misc->unremovable;
-    }
-    return false;
+    const auto* form = forms.find<data::ItemForm>(item);
+    return form ? form->unremovable : false;
 }
 
 f32 gearPower(const data::FormDatabase& forms, const core::Guid& item) {

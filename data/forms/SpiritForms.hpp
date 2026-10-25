@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "data/forms/Vocabularies.hpp"
 
 // Chantier ESPRITS — the DATA side of the spirit framework (§5: every
 // definition below is an ordinary Form, layered by load order, patched
@@ -140,13 +141,13 @@ struct SpellForm : Form {
     REFLECT_BEGIN(SpellForm, Form)
         REFLECT_FIELD(parent)
         REFLECT_FIELD(name)
-        REFLECT_FIELD(form)
+        REFLECT_FIELD_ENUM(form, vocab::kSpellForms)
         REFLECT_FIELD(element)
-        REFLECT_FIELD(trajectory)
+        REFLECT_FIELD_ENUM(trajectory, vocab::kSpellTrajectories)
         REFLECT_FIELD(range)
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(duration)
-        REFLECT_FIELD(areaShape)
+        REFLECT_FIELD_ENUM(areaShape, vocab::kSpellAreas)
         REFLECT_FIELD(areaRadius)
         REFLECT_FIELD(channeled)
         REFLECT_FIELD(costPeriod)

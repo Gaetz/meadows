@@ -21,9 +21,8 @@
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
 #include "gameplay/actors/FollowerForms.hpp" // FollowerClassForm,
                                              // AffinityRuleForm
-#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit,
-                                          // resolveBleedout,
-                                          // affinityDelta
+#include "gameplay/actors/FollowerFollow.hpp" // AggroRoles, adoptOnHit, disengageOnDeath
+#include "gameplay/actors/FollowerParty.hpp"  // followerStance
 #include "gameplay/combat/Combat.hpp"     // updateLifeState (revive)
 #include "gameplay/event/EventBus.hpp"    // gameplay::Event (aggro)
 #include "gameplay/interaction/FurnitureForms.hpp" // the grave form

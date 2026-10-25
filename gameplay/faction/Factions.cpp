@@ -10,13 +10,8 @@ namespace gameplay {
 namespace {
 
 FactionStanding parseStanding(const str& relation) {
-    if (relation == "enemy") {
-        return FactionStanding::Enemy;
-    }
-    if (relation == "ally") {
-        return FactionStanding::Ally;
-    }
-    return FactionStanding::Neutral;
+    return reflect::parseEnum<FactionStanding>(kFactionStandings, relation)
+        .value_or(FactionStanding::Neutral);
 }
 
 u64 pairKey(GameplayTag a, GameplayTag b) {

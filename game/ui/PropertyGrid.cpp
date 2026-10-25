@@ -39,7 +39,7 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
         return false;
     }
     reflect::forEachField(*type, [&](const reflect::FieldInfo& field) {
-        if (field.flags & reflect::Transient) {
+        if (field.flags & (reflect::Transient | reflect::Deprecated)) {
             return;
         }
         ImGui::TableNextRow();
@@ -84,6 +84,19 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 if (ImGui::Checkbox("##v", &b)) commit(reflect::Value { b });
             },
             [&](i32 v) {
+                if (field.enumeration) { // an enum stored as its ordinal
+                    const str current { field.enumeration->name(
+                        v < 0 ? 0u : static_cast<u32>(v)) };
+                    str picked;
+                    if (drawKeywordCombo("##v", *field.enumeration, current,
+                                         picked)) {
+                        if (const auto index =
+                                field.enumeration->indexOf(picked)) {
+                            commit(reflect::Value { static_cast<i32>(*index) });
+                        }
+                    }
+                    return;
+                }
                 ImGui::InputInt("##v", &v);
                 commitOnDeactivate(reflect::Value { v });
             },
@@ -125,10 +138,10 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 // the CANONICAL value is what commits. Event-name fields
                 // get the scanned event vocabulary instead — an
                 // OPEN list with inline creation.
-                if (const auto* options =
-                        keywordsFor(type->name, field.name)) {
+                if (field.enumeration) {
                     str picked;
-                    if (drawKeywordCombo("##v", *options, s, picked)) {
+                    if (drawKeywordCombo("##v", *field.enumeration, s,
+                                         picked)) {
                         commit(reflect::Value { picked });
                     }
                 } else if (isEventField(type->name, field.name)) {

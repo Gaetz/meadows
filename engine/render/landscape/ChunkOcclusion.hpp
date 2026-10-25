@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "engine/core/ConcurrentQueue.hpp"
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
@@ -48,7 +48,6 @@ public:
         TerrainParams params;
         Vec3 cameraPos {};
         std::unordered_map<u64, f32> chunkTops;
-        u64 generation { 0 };
         u32 rings { kRingCount };
         u32 rays { kRayCount };
         // Shared height pyramid (E3): rays read it at a 16 m footprint
@@ -59,7 +58,7 @@ public:
         sptr<const HeightField::Snapshot> field;
     };
     struct Result {
-        u64 generation { 0 };
+        u64 gen { 0 }; // BakeMailbox stamp
         std::unordered_set<u64> occluded;
     };
 
@@ -91,15 +90,8 @@ public:
     u32 occludedCount() const { return static_cast<u32>(occluded.size()); }
 
 private:
-    struct Shared {
-        core::ConcurrentQueue<Result> results;
-    };
-
-    sptr<Shared> shared;
-    core::JobSystem* jobs { nullptr };
+    core::BakeMailbox<Result> mailbox;
     std::unordered_set<u64> occluded;
-    u64 generation { 0 };
-    bool inFlight { false };
     Vec3 lastRebuildPos { 1e9f, 1e9f, 1e9f };
     u32 rings { kRingCount };
     u32 rays { kRayCount };

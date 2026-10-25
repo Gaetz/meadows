@@ -1,18 +1,20 @@
 #include "game/scenes/NpcScheduleController.hpp"
 
 #include <cmath>
+#include <unordered_set>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp> // angleAxis (the face-the-player)
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"       // data::childrenOf
+#include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "game/scenes/FollowerController.hpp" // teleportNear
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "game/scenes/NpcMovement.hpp"    // moveNpcAlongPath/Direct, steerBlocked
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/actors/Followers.hpp"  // decideFollow
+#include "gameplay/actors/FollowerFollow.hpp"  // decideFollow
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect/removeById (D1)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -24,6 +26,22 @@
 #include "world/worldspace/WorldForms.hpp"
 
 namespace game {
+
+namespace {
+
+// A kind outside kAiPackageKinds (cooked data that bypassed the loader's
+// check) must not fall silently into the travel default: log once per
+// distinct value. The executor then treats it as travel.
+void warnUnknownPackageKind(const gameplay::AiPackageForm& package) {
+    static std::unordered_set<str> warned;
+    if (warned.insert(package.kind).second) {
+        LOG_WARN("AiPackageForm '{}' has unknown kind '{}' — executed as "
+                 "travel",
+                 package.editorId, package.kind);
+    }
+}
+
+} // namespace
 
 // Re-evaluate the schedule every 10 game minutes; execute the
 // active package (travel / wander / useFurniture / guard...).
@@ -43,6 +61,9 @@ void NpcScheduleController::updateNpcSchedule(const NpcContext& ctx, Npc& npc,
         // Package change: stand up, drop the path, release furniture.
         npc.activePackage = next;
         npc.activeLocation = nextLocation;
+        if (next && !gameplay::parsePackageKind(next->kind)) {
+            warnUnknownPackageKind(*next);
+        }
         npc.intentReason = intent ? intent->reason : "(no schedule entry)";
         npc.path.clear();
         npc.pathIndex = 0;
@@ -106,8 +127,14 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
         npc.pathIndex = 0;
         npc.repathTimer = 2.0f; // budget: no repath storm
     };
-    const str kind = package ? package->kind : str { "guard" };
-    if (kind == "wander") {
+    // No package = stand guard where you are. An unknown kind (warned at
+    // the package change) walks the travel path, the historical default.
+    const gameplay::PackageKind kind =
+        package ? gameplay::parsePackageKind(package->kind)
+                      .value_or(gameplay::PackageKind::Travel)
+                : gameplay::PackageKind::Guard;
+    switch (kind) {
+    case gameplay::PackageKind::Wander: {
         const f32 radius = package ? package->radius : 4.0f;
         if (npc.pathIndex >= npc.path.size() &&
             npc.wanderTimer <= 0.0f) {
@@ -132,8 +159,12 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
             }
             idleDecay = 6.0f;
         }
-    } else if (kind == "useFurniture" || kind == "sleep" ||
-               kind == "eat" || kind == "work") {
+        break;
+    }
+    case gameplay::PackageKind::UseFurniture:
+    case gameplay::PackageKind::Sleep:
+    case gameplay::PackageKind::Eat:
+    case gameplay::PackageKind::Work: {
         goTo(anchor);
         const bool pathDone = moveNpcAlongPath(
             ctx, npc, dt, package ? package->speed : 1.0f);
@@ -214,9 +245,15 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
             }
             npc.sitting = true;
         }
-    } else { // travel / guard / unknown: reach the spot and stand
+        break;
+    }
+    case gameplay::PackageKind::Travel:
+    case gameplay::PackageKind::Guard:
+    case gameplay::PackageKind::Count: // sentinel, never parsed
+        // Reach the spot and stand.
         goTo(anchor);
         moveNpcAlongPath(ctx, npc, dt, package ? package->speed : 1.0f);
+        break;
     }
 }
 

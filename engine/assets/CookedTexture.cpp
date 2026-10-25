@@ -12,32 +12,6 @@ namespace {
 constexpr u32 kMagic = 0x5845544Du; // 'MTEX' little-endian
 constexpr u32 kVersion = 2; // v2: per-layer average colors after the header
 
-// Stable on-disk codes: never renumber, only append. Decoupled from the
-// rhi::TextureFormat enum so reordering it cannot corrupt cooked files.
-constexpr u32 formatCode(rhi::TextureFormat f) {
-    switch (f) {
-    case rhi::TextureFormat::RGBA8:     return 1;
-    case rhi::TextureFormat::SRGBA8:    return 2;
-    case rhi::TextureFormat::BC7_SRGB:  return 3;
-    case rhi::TextureFormat::BC7_UNORM: return 4;
-    case rhi::TextureFormat::BC5_UNORM: return 5;
-    case rhi::TextureFormat::R16_UNORM: return 6;
-    default:                            return 0; // not a cookable format
-    }
-}
-
-std::optional<rhi::TextureFormat> formatFromCode(u32 code) {
-    switch (code) {
-    case 1: return rhi::TextureFormat::RGBA8;
-    case 2: return rhi::TextureFormat::SRGBA8;
-    case 3: return rhi::TextureFormat::BC7_SRGB;
-    case 4: return rhi::TextureFormat::BC7_UNORM;
-    case 5: return rhi::TextureFormat::BC5_UNORM;
-    case 6: return rhi::TextureFormat::R16_UNORM;
-    default: return std::nullopt;
-    }
-}
-
 struct Header {
     u32 magic { 0 };
     u32 version { 0 };
@@ -68,7 +42,7 @@ std::optional<CookedTexture> loadCookedTexture(
                   path.string(), header.version, kVersion);
         return std::nullopt;
     }
-    const auto format = formatFromCode(header.format);
+    const auto format = rhi::formatFromCookCode(header.format);
     if (!format || header.width == 0 || header.height == 0 ||
         header.arrayLayers == 0 || header.mipLevels == 0) {
         LOG_ERROR("CookedTexture: '{}' has an invalid header", path.string());
@@ -104,7 +78,7 @@ std::optional<CookedTexture> loadCookedTexture(
 
 bool saveCookedTexture(const std::filesystem::path& path,
                        const CookedTexture& texture) {
-    const u32 code = formatCode(texture.format);
+    const u32 code = rhi::formatCookCode(texture.format);
     if (code == 0) {
         LOG_ERROR("CookedTexture: format not cookable for '{}'",
                   path.string());

@@ -295,14 +295,10 @@ str toDot(const MissionGraph& g) {
         if (!e.oneWay) {
             attrs += " dir=both";
         }
-        switch (e.kind) {
-        case EdgeKind::Passage: break;
-        case EdgeKind::Locked:
-            attrs += " color=red label=\"lock " + std::to_string(e.lockId) +
-                     "\"";
-            break;
-        case EdgeKind::Hidden: attrs += " style=dashed"; break;
-        case EdgeKind::Dangerous: attrs += " color=orange"; break;
+        const EdgeKindTraits& traits = edgeTraits(e.kind);
+        attrs += traits.dotStyle;
+        if (traits.barred) {
+            attrs += " label=\"lock " + std::to_string(e.lockId) + "\"";
         }
         if (!attrs.empty()) {
             out += " [" + attrs.substr(1) + "]";

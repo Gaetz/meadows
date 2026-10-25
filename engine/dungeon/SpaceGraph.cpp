@@ -346,8 +346,7 @@ bool tryEmbed(const MissionGraph& mission, const SpaceParams& params,
         edge.oneWay = e.oneWay;
         edge.lockId = e.lockId;
         const bool shareable =
-            !e.oneWay && e.lockId == 0 &&
-            (e.kind == EdgeKind::Passage || e.kind == EdgeKind::Dangerous);
+            !e.oneWay && e.lockId == 0 && edgeTraits(e.kind).shareable;
         if (!routeCorridor(grid, static_cast<i32>(edge.a),
                            static_cast<i32>(edge.b), e.oneWay, shareable,
                            edge.path)) {

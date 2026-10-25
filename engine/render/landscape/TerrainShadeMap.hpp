@@ -1,9 +1,10 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
-#include "engine/render/landscape/BakeMailbox.hpp"
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class Device;
@@ -52,11 +53,13 @@ private:
         u64 gen { 0 };
     };
 
-    BakeMailbox<Baked> mailbox;
-    rhi::TextureHandle texture0 {};
-    rhi::TextureHandle texture1 {};
-    rhi::SamplerHandle sampler {};
-    rhi::BindGroupHandle group {};
+    core::BakeMailbox<Baked> mailbox;
+    // Owning handles; the group is declared last so it releases before
+    // the textures/sampler it references.
+    rhi::UniqueTexture texture0;
+    rhi::UniqueTexture texture1;
+    rhi::UniqueSampler sampler;
+    rhi::UniqueBindGroup group;
     Vec2 center {};
     u64 bakedStamp { 0 };
 };

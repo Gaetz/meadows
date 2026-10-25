@@ -12,8 +12,10 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "game/LevelEditor.hpp"
 #include "world/terrain/TerrainPatches.hpp" // world::writeTerFile
 #include "world/worldspace/WorldForms.hpp"  // world::TerrainPatchForm
@@ -103,8 +105,8 @@ void TerrainSculptTool::saveToMod(const SculptContext& ctx) {
     std::filesystem::create_directories(dir, errc);
     const reflect::TypeInfo& type = world::TerrainPatchForm::staticTypeInfo();
     for (const auto& [key, grid] : grids) {
-        const i32 cx = static_cast<i32>(key >> 32);
-        const i32 cz = static_cast<i32>(key & 0xffffffffu);
+        const i32 cx = core::chunkKeyCx(key);
+        const i32 cz = core::chunkKeyCz(key);
         char name[64];
         std::snprintf(name, sizeof(name), "patch_%d_%d.ter", cx, cz);
         if (!world::writeTerFile(dir / name, grid)) {
@@ -132,12 +134,12 @@ void TerrainSculptTool::saveToMod(const SculptContext& ctx) {
             std::snprintf(editorId, sizeof(editorId), "SculptPatch_%d_%d", cx,
                           cz);
             recordGuid = session.createForm(type.id, editorId);
-            session.setField(recordGuid, type.findField("chunkX")->id,
+            session.setField(recordGuid, reflect::fieldId(type, "chunkX"),
                              reflect::Value { cx });
-            session.setField(recordGuid, type.findField("chunkZ")->id,
+            session.setField(recordGuid, reflect::fieldId(type, "chunkZ"),
                              reflect::Value { cz });
         }
-        session.setField(recordGuid, type.findField("asset")->id,
+        session.setField(recordGuid, reflect::fieldId(type, "asset"),
                          reflect::Value { assetGuid });
     }
     LOG_INFO("{} sculpted chunk(s) staged — Export writes the mod",

@@ -49,7 +49,8 @@ void drawConditionList(data::EditSession& session, const core::Guid& parent,
         if (selected == id) {
             // Contextual editors: only what this kind actually reads.
             ImGui::Indent();
-            const auto* kinds = keywordsFor("ConditionForm", "kind");
+            const auto* kinds =
+                keywordsFor(gameplay::ConditionForm::staticTypeInfo(), "kind");
             str pickedKind;
             if (kinds && drawKeywordCombo("kind", *kinds, clause->kind,
                                           pickedKind)) {
@@ -76,7 +77,11 @@ void drawConditionList(data::EditSession& session, const core::Guid& parent,
             } else if (clause->kind == "Lua") {
                 textField(session, id, "expression", core::fnv1a("lua"),
                           clause->lua);
+            } else if (clause->kind == "FollowerAffinityAtLeast") {
+                floatField(session, id, "affinity", core::fnv1a("value"),
+                           clause->value);
             }
+            // FollowerActive / FollowerConvalescent read no field.
             bool negate = clause->negate;
             if (ImGui::Checkbox("negate", &negate)) {
                 session.setField(id, core::fnv1a("negate"),

@@ -1,5 +1,7 @@
 #include <chrono>
 
+#include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
@@ -123,7 +125,7 @@ PieceSample pieceLayer(const ProceduralControlParams& p, f32 x, f32 z,
             const bool ridge = !clearing && variant >= 0.4f && !mesa;
             const f32 aspect = ridge ? glm::mix(2.8f, 4.5f, jitter(5))
                                      : 1.0f + 0.4f * jitter(5);
-            const f32 theta = jitter(6) * 3.14159265f;
+            const f32 theta = jitter(6) * core::kPi;
             const f32 ct = std::cos(theta);
             const f32 st = std::sin(theta);
             const f32 rx = x - px;
@@ -482,16 +484,10 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         // A walk's corridor or a zone gate (a notch, a breach, a col):
         // the same ramp through the wall.
         corridor = glm::max(ps.corridor, zs.gate);
-        // The storey: the zone's floor lift, stepped at the walls,
-        // ramped along a corridor (a pass, not a wall), crested on a
-        // ridge border.
-        const f32 zoneLift =
-            (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
-                               corridor),
-                      zs.gateFloor, zs.gate) +
-             zs.ridge) *
-            shoreGate;
-        s.base = glm::max(w.base + zoneLift, 0.0f);
+        // The storey: the zone's floor lift (zoneFloorLift — the one
+        // formula refineFloor and biomeIdAt read too).
+        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate),
+                          0.0f);
         s.tier = etageIndexFor(p.world, s.base);
         s.corridor = corridor;
         s.scarp = zs.wall * (1.0f - corridor);
@@ -649,13 +645,8 @@ void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
         const f32 shoreGate =
             noise::smoothstep01(2.0f, 12.0f, glm::max(w.base, 0.0f));
         const f32 corridor = glm::max(s.corridor, zs.gate);
-        const f32 zoneLift =
-            (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
-                               corridor),
-                      zs.gateFloor, zs.gate) +
-             zs.ridge) *
-            shoreGate;
-        s.base = glm::max(w.base + zoneLift, 0.0f);
+        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate),
+                          0.0f);
         s.tier = etageIndexFor(p.world, s.base);
         s.corridor = corridor;
         s.scarp = zs.wall * (1.0f - corridor);
@@ -666,11 +657,10 @@ void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
     s.scarp = w.scarp * (1.0f - s.corridor);
 }
 
-u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
+u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 corridor) const {
     // The climate and the floor come from the world layer — the same
     // sample `at` derives the id from, so the per-texel id and the
     // lattice sample never disagree.
-    (void)tier;
     const WorldSample w = worldSampleAt(p.world, x, z);
     f32 coverBias = 0.0f;
     u8 namedPalette = 0;
@@ -685,12 +675,12 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 tier) const {
             namedPalette = 8;
         }
         // The floor the palette's altitude rules read: the zone's
-        // storey on the world's base (the lattice sample's).
-        base = glm::max(w.base + (glm::mix(zs.storeyHeight, zs.gateFloor,
-                                           zs.gate) +
-                                  zs.ridge) *
-                                     noise::smoothstep01(2.0f, 12.0f, base),
-                        0.0f);
+        // storey on the world's base, ramped along the corridor the
+        // texel's refined floor used (zoneFloorLift, as refineFloor).
+        const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, base);
+        base = glm::max(
+            w.base + zoneFloorLift(zs, glm::max(corridor, zs.gate), shoreGate),
+            0.0f);
     } else if (p.rhythm.plan) {
         const PlanCharacter pc = planCharacterAt(p.world, p.poi, x, z);
         coverBias = pc.coverBias;
@@ -842,12 +832,12 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             const size_t i = static_cast<size_t>(row) * spec.n + col;
             ControlSample s = lerpSample(col, row);
             // Biome id PER TEXEL (nearest-sampling an id on the coarse
-            // lattice drew 64 m axis-aligned biome stairs); the tier the
-            // alpine rule needs interpolates fine.
+            // lattice drew 64 m axis-aligned biome stairs), reading the
+            // floor refineFloor just settled through the same corridor.
             if (step > 1) {
                 controls.refineFloor(spec.x(col), spec.z(row), s);
                 s.biome = controls.biomeIdAt(spec.x(col), spec.z(row),
-                                             s.tier);
+                                             s.corridor);
             }
             samples[i] = s;
             seaMask[i] = s.sea ? 1 : 0;
@@ -1034,96 +1024,80 @@ BorderSample sampleBorders(const ProceduralControls& controls,
 
 } // namespace
 
-namespace {
-struct Fnv {
-    u64 h { 1469598103934665603ull };
-    void mix(const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= 1099511628211ull;
-        }
-    }
-    void f(f32 v) { mix(&v, sizeof(v)); }
-    void i(i32 v) { mix(&v, sizeof(v)); }
-    void b(bool v) { const u8 x = v ? 1 : 0; mix(&x, 1); }
-};
-} // namespace
-
 u64 hashParams(const RhythmParams& p) {
-    Fnv h;
-    h.f(p.pieceCellSize);
-    h.f(p.pieceChance);
-    h.f(p.pieceRadiusMin);
-    h.f(p.pieceRadiusMax);
+    core::Fnv64 h;
+    h.mix(p.pieceCellSize);
+    h.mix(p.pieceChance);
+    h.mix(p.pieceRadiusMin);
+    h.mix(p.pieceRadiusMax);
     for (const auto& row : p.pieceHeightByEtage) {
-        h.f(row[0]);
-        h.f(row[1]);
+        h.mix(row[0]);
+        h.mix(row[1]);
     }
-    h.f(p.ridgeColWavelength);
-    h.f(p.crestWavelength);
+    h.mix(p.ridgeColWavelength);
+    h.mix(p.crestWavelength);
     for (const f32 a : p.crestAmplitudeByEtage) {
-        h.f(a);
+        h.mix(a);
     }
-    h.f(p.bedWavelength);
+    h.mix(p.bedWavelength);
     for (const f32 d : p.bedDepthByEtage) {
-        h.f(d);
+        h.mix(d);
     }
-    h.f(p.colSpacing);
-    h.f(p.hardnessWavelength);
-    h.f(p.storyMountainWavelength);
-    h.f(p.storyMountainAmplitude);
-    h.f(p.storyMountainMaskLow);
-    h.f(p.storyMountainMaskHigh);
-    h.b(p.plan);
-    h.f(p.planStoryScale);
-    h.f(p.regimeWavelength);
-    h.f(p.regimeHillAmplitude);
-    h.f(p.regimeMassifHeight);
-    h.f(p.calmBandWavelength);
-    h.f(p.intimateCellSize);
-    h.f(p.intimateChance);
-    h.f(p.intimateHeightMin);
-    h.f(p.intimateHeightMax);
-    h.f(p.intimateRadiusMin);
-    h.f(p.intimateRadiusMax);
-    return h.h;
+    h.mix(p.colSpacing);
+    h.mix(p.hardnessWavelength);
+    h.mix(p.storyMountainWavelength);
+    h.mix(p.storyMountainAmplitude);
+    h.mix(p.storyMountainMaskLow);
+    h.mix(p.storyMountainMaskHigh);
+    h.mix(p.plan);
+    h.mix(p.planStoryScale);
+    h.mix(p.regimeWavelength);
+    h.mix(p.regimeHillAmplitude);
+    h.mix(p.regimeMassifHeight);
+    h.mix(p.calmBandWavelength);
+    h.mix(p.intimateCellSize);
+    h.mix(p.intimateChance);
+    h.mix(p.intimateHeightMin);
+    h.mix(p.intimateHeightMax);
+    h.mix(p.intimateRadiusMin);
+    h.mix(p.intimateRadiusMax);
+    return h.value;
 }
 
 u64 hashParams(const MacroParams& p) {
-    Fnv h;
+    core::Fnv64 h;
     for (const TierLevel& t : p.tiers) {
-        h.f(t.altitude);
-        h.f(t.reliefAmplitude);
-        h.f(t.reliefWavelength);
-        h.f(t.terrace);
+        h.mix(t.altitude);
+        h.mix(t.reliefAmplitude);
+        h.mix(t.reliefWavelength);
+        h.mix(t.terrace);
     }
-    h.i(p.reliefOctaves);
-    h.f(p.seaLevel);
-    h.f(p.seaFloor);
-    h.f(p.shallowDepth);
-    h.f(p.shelfWidth);
-    h.f(p.shelfDepth);
-    h.f(p.shelfEnd);
-    h.f(p.seaFalloff);
-    h.f(p.shoreWidth);
-    h.f(p.shoreHeight);
-    h.f(p.cliffTierStart);
-    h.f(p.cliffTierEnd);
-    h.f(p.hillChainWavelength);
-    h.f(p.valleyStretch);
-    h.f(p.bedWavelength);
-    h.f(p.terraceStep);
-    h.f(p.terraceEdge);
-    h.f(p.cliffStep);
-    h.f(p.cliffEdge);
-    h.f(p.warpWavelength);
-    h.f(p.warpStrength);
-    h.f(p.recurveLow);
-    h.f(p.recurveMid);
-    h.f(p.recurveHigh);
-    h.f(p.recurveSpan);
-    return h.h;
+    h.mix(p.reliefOctaves);
+    h.mix(p.seaLevel);
+    h.mix(p.seaFloor);
+    h.mix(p.shallowDepth);
+    h.mix(p.shelfWidth);
+    h.mix(p.shelfDepth);
+    h.mix(p.shelfEnd);
+    h.mix(p.seaFalloff);
+    h.mix(p.shoreWidth);
+    h.mix(p.shoreHeight);
+    h.mix(p.cliffTierStart);
+    h.mix(p.cliffTierEnd);
+    h.mix(p.hillChainWavelength);
+    h.mix(p.valleyStretch);
+    h.mix(p.bedWavelength);
+    h.mix(p.terraceStep);
+    h.mix(p.terraceEdge);
+    h.mix(p.cliffStep);
+    h.mix(p.cliffEdge);
+    h.mix(p.warpWavelength);
+    h.mix(p.warpStrength);
+    h.mix(p.recurveLow);
+    h.mix(p.recurveMid);
+    h.mix(p.recurveHigh);
+    h.mix(p.recurveSpan);
+    return h.value;
 }
 
 MapEdgeStyle mapBorderStyleResolved(const ProceduralControls& controls,

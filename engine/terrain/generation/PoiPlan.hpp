@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
@@ -50,7 +52,67 @@ enum class PoiType : u8 {
     Count
 };
 
-const char* poiTypeName(PoiType type);
+// The map-legend family of a type (MapExport colours by it).
+enum class PoiFamily : u8 { Relief, Water, Coast, Vegetation, Site };
+
+// The relief kernel a type is sculpted with: eleven shapes for 28 types
+// (kernelAt switches on the shape; the per-type numbers are columns of
+// PoiTypeTraits).
+enum class KernelShape : u8 {
+    Cone,   // rounded tip, linear flank (Needle: slope-bound radius)
+    Crater, // truncated cone with a bowl in the top
+    Mesa,   // flat top, steep rim
+    Ridge,  // elongated crest (Col: the saddle variant)
+    Step,   // half-plane rise across the footprint
+    Trench, // elongated dig
+    Cirque, // rim on three sides, open along +u
+    Basin,  // negative kernel, depth drawn instead of height
+    Field,  // jittered lattice of small cones
+    Mound,  // low rounded lift (or a shallow dish)
+    Pad,    // flat pad, no relief
+};
+
+struct PoiRange {
+    f32 lo;
+    f32 hi;
+};
+
+// Everything that is "per type" in the POI plan, one row per PoiType in
+// enum order (pinned by static_assert): the legend family, the kernel
+// shape and its numbers, the size rules sizeSite applies over the tier
+// draw, and the course snapping. Adding a type = one enum value + one
+// row; the chains of `if (type == …)` this replaced cannot come back.
+struct PoiTypeTraits {
+    const char* name;
+    PoiFamily family;
+    KernelShape shape;
+    // Course snapping: the site slides onto the nearest master course,
+    // or degrades to `dryFallback` when none is in reach. `alongCourse`
+    // aligns the frame's u axis with the flow (across it otherwise).
+    bool waterCourse { false };
+    bool alongCourse { false };
+    PoiType dryFallback { PoiType::LoneTree };
+    // Size rules (sizeSite): `depth` marks a basin (height drawn
+    // negative); `height`/`radius` override the tier draw; the caps clamp
+    // whatever was drawn (0 = none).
+    std::optional<PoiRange> depth;
+    std::optional<PoiRange> height;
+    std::optional<PoiRange> radius;
+    f32 heightCap { 0.0f };
+    f32 radiusCap { 0.0f };
+    // Kernel numbers, read by the shape that uses them.
+    bool needleCone { false };    // Cone: radius from the slope, no height scale
+    f32 coneAspect { 1.0f };      // Cone: frame aspect
+    bool saddle { false };        // Ridge: the col variant
+    f32 stepHeightCap { 0.0f };   // Step: min(h, cap)
+    f32 fieldCell { 0.0f };       // Field: lattice cell (m)
+    f32 fieldHeight { 0.0f };     // Field: cone height (m)
+    bool moundLift { false };     // Mound: lifts min(h, 12)
+    f32 moundBasin { 0.0f };      // Mound: dish depth instead (0 = none)
+};
+
+const PoiTypeTraits& poiTraits(PoiType type);
+inline const char* poiTypeName(PoiType type) { return poiTraits(type).name; }
 
 struct PoiSite {
     f32 x { 0.0f };

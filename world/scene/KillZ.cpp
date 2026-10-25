@@ -1,6 +1,7 @@
 #include "world/scene/KillZ.hpp"
 
 #include "engine/core/Log.hpp"
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/stats/Damage.hpp" // StatBlock, killOutright
 #include "world/scene/Components.hpp"
 
@@ -11,7 +12,7 @@ void enforceKillZ(ecs::World& world, f32 killZ,
                   const gameplay::DerivedStatRegistry& derived,
                   const gameplay::StatsTuningForm& tuning,
                   ecs::Entity exempt) {
-    const auto dead = tags.find("State.Dead");
+    const auto dead = tags.find(gameplay::tags::Dead);
 
     // Snapshot DURING the query, act AFTER it (the TriggerSystem
     // discipline): killOutright only mutates existing components today,

@@ -36,7 +36,8 @@ void EffectPanel::drawEditor(const core::Guid& effectId) {
 
     const auto keywordCombo = [&](const char* label, const char* fieldName,
                                   const str& current) {
-        const auto* options = keywordsFor("EffectForm", fieldName);
+        const auto* options =
+            keywordsFor(gameplay::EffectForm::staticTypeInfo(), fieldName);
         str picked;
         if (options &&
             drawKeywordCombo(label, *options, current, picked)) {

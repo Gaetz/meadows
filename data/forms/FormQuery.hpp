@@ -86,6 +86,17 @@ inline vector<FormReferenceHit> referencesTo(const FormDatabase& database,
     return hits;
 }
 
+// A tuning singleton: the one record of type T under a fixed guid, or
+// the type's C++ defaults when no plugin ships it. The pattern behind
+// every *TuningForm resolver (landscape, trees, RC, terrain gen, stats).
+template<typename T>
+T resolveSingleton(const FormDatabase& database, const core::Guid& id) {
+    if (const T* form = database.find<T>(id)) {
+        return *form;
+    }
+    return T {};
+}
+
 // First form of type T with the given editorId (tool/console lookups; the
 // runtime resolves by guid, editorIds are an authoring convenience).
 template<typename T>

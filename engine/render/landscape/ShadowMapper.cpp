@@ -19,45 +19,38 @@ constexpr f32 kCasterReach = 350.0f;
 
 void ShadowMapper::create(rhi::Device& device, u32 resolution) {
     resolution_ = glm::clamp(resolution, 512u, 8192u);
-    shadowMap = device.createTexture(
+    shadowMap = { device, device.createTexture(
         { .width = resolution_,
           .height = resolution_,
           .arrayLayers = kCascadeCount,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    compareSampler = device.createSampler(
+        nullptr) };
+    compareSampler = { device, device.createSampler(
         { .minFilter = rhi::FilterMode::Linear,
           .magFilter = rhi::FilterMode::Linear,
-          .compare = rhi::CompareFunc::LessEqual }); // hardware PCF fetches
+          .compare = rhi::CompareFunc::LessEqual }) }; // hardware PCF fetches
     for (u32 i = 0; i < kCascadeCount; ++i) {
-        framebuffers_[i] = device.createFramebuffer(
-            { .depthAttachment = { .texture = shadowMap, .arrayLayer = i } });
-        cascadeUbos[i] =
-            device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
-                                  .size = sizeof(Mat4),
-                                  .dynamic = true },
-                                nullptr);
-        casterGroups[i] = device.createBindGroup(
-            { .entries = { { .binding = 1, .buffer = cascadeUbos[i] } } });
+        framebuffers_[i] = { device, device.createFramebuffer(
+            { .depthAttachment = { .texture = shadowMap, .arrayLayer = i } }) };
+        cascadeUbos[i] = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Uniform,
+              .size = sizeof(Mat4),
+              .dynamic = true },
+            nullptr) };
+        casterGroups[i] = { device, device.createBindGroup(
+            { .entries = { { .binding = 1, .buffer = cascadeUbos[i] } } }) };
     }
-    receiverGroup = device.createBindGroup(
+    receiverGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 1,
                          .texture = shadowMap,
-                         .sampler = compareSampler } } });
+                         .sampler = compareSampler } } }) };
 }
 
 void ShadowMapper::destroy(rhi::Device& device) {
-    device.destroyBindGroup(receiverGroup);
-    for (u32 i = 0; i < kCascadeCount; ++i) {
-        device.destroyBindGroup(casterGroups[i]);
-        device.destroyBuffer(cascadeUbos[i]);
-        device.destroyFramebuffer(framebuffers_[i]);
-    }
-    device.destroySampler(compareSampler);
-    device.destroyTexture(shadowMap);
-    *this = ShadowMapper {};
+    (void)device;
+    *this = ShadowMapper {}; // the owning handles release themselves
 }
 
 ShadowMapper::Cascades

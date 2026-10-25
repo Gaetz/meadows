@@ -4,20 +4,20 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/core/Jobs.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 
 namespace render {
 
 namespace {
 
-constexpr f32 kTau = 6.2831853f;
 
 } // namespace
 
 ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
     ChunkOcclusion::Result result;
-    result.generation = input.generation;
 
     const Vec3 cam = input.cameraPos;
 
@@ -30,7 +30,7 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
     vector<f32> horizon(static_cast<size_t>(kRays) * kRings);
     for (u32 ray = 0; ray < kRays; ++ray) {
         const f32 azimuth = (static_cast<f32>(ray) + 0.5f) *
-                            (kTau / static_cast<f32>(kRays));
+                            (core::kTau / static_cast<f32>(kRays));
         const f32 dirX = std::cos(azimuth);
         const f32 dirZ = std::sin(azimuth);
         f32 maxSlope = -1e9f;
@@ -51,8 +51,8 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
 
     // Judge every chunk we know the top of.
     for (const auto& [key, maxY] : input.chunkTops) {
-        const i32 cx = static_cast<i32>(key >> 32);
-        const i32 cz = static_cast<i32>(static_cast<u32>(key));
+        const i32 cx = core::chunkKeyCx(key);
+        const i32 cz = core::chunkKeyCz(key);
         const f32 x0 = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
         const f32 z0 = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
         const f32 x1 = x0 + TerrainSystem::kChunkSize;
@@ -98,15 +98,15 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
         for (u32 i = 0; i < 4; ++i) {
             f32 delta = std::atan2(cornersZ[i] - cam.z, cornersX[i] - cam.x) -
                         centerAz;
-            if (delta > kTau * 0.5f) { delta -= kTau; }
-            if (delta < -kTau * 0.5f) { delta += kTau; }
+            if (delta > core::kTau * 0.5f) { delta -= core::kTau; }
+            if (delta < -core::kTau * 0.5f) { delta += core::kTau; }
             maxDelta = glm::max(maxDelta, std::abs(delta));
         }
 
         // Min horizon over the covered rays, one ray of margin each side.
-        const f32 rayWidth = kTau / static_cast<f32>(kRays);
+        const f32 rayWidth = core::kTau / static_cast<f32>(kRays);
         const i32 rayCenter = static_cast<i32>(
-            std::floor((centerAz < 0.0f ? centerAz + kTau : centerAz) /
+            std::floor((centerAz < 0.0f ? centerAz + core::kTau : centerAz) /
                        rayWidth));
         const i32 raySpan = static_cast<i32>(maxDelta / rayWidth) + 1;
         f32 minHorizon = 1e9f;
@@ -136,23 +136,17 @@ void ChunkOcclusion::configure(f32 reachMeters) {
 }
 
 void ChunkOcclusion::create(core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    shared = std::make_shared<Shared>();
+    mailbox.create(jobSystem, "occlusionHorizon");
 }
 
 void ChunkOcclusion::pump() {
-    Result result;
-    while (shared->results.tryPop(result)) {
-        inFlight = false;
-        if (result.generation != generation) {
-            continue; // invalidated while the worker ran
-        }
+    mailbox.drain([&](Result& result) {
         occluded = std::move(result.occluded);
-    }
+    });
 }
 
 bool ChunkOcclusion::wantsRebuild(const Vec3& cameraPos) const {
-    return !inFlight &&
+    return !mailbox.busy() &&
            glm::distance(cameraPos, lastRebuildPos) > rebuildDistance;
 }
 
@@ -160,20 +154,17 @@ void ChunkOcclusion::rebuild(const TerrainParams& params,
                              const Vec3& cameraPos,
                              std::unordered_map<u64, f32> chunkTops,
                              sptr<const HeightField::Snapshot> field) {
-    inFlight = true;
     lastRebuildPos = cameraPos;
-    Input input { params, cameraPos,  std::move(chunkTops), generation,
-                  rings,  rays,       std::move(field) };
-    jobs->enqueue([sharedRef = shared, in = std::move(input),
-                   jobsRef = jobs] {
-        core::JobProbe::Scope probe { &jobsRef->probe(),
-                                      "occlusionHorizon" };
-        sharedRef->results.push(computeOcclusion(in));
+    Input input { params, cameraPos, std::move(chunkTops), rings, rays,
+                  std::move(field) };
+    mailbox.kick([in = std::move(input)](Result& out,
+                                         const std::atomic<bool>&) {
+        out.occluded = std::move(computeOcclusion(in).occluded);
     });
 }
 
 void ChunkOcclusion::invalidate() {
-    ++generation;
+    mailbox.reset();
     occluded.clear();
     lastRebuildPos = { 1e9f, 1e9f, 1e9f };
 }

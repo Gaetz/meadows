@@ -1,6 +1,7 @@
 #include "game/scenes/OptionsController.hpp"
 
 #include <cstdio>
+#include <string_view>
 
 #include <glm/glm.hpp>
 
@@ -43,15 +44,32 @@ str nextLanguage(std::string_view code) {
     return kLanguages[0][0]; // unknown code: back to the base language
 }
 
-str fmt1(f32 value) {
-    char text[16];
-    std::snprintf(text, sizeof(text), "%.1f", value);
-    return text;
-}
+// The +/- steppers of the options screen: one row per f32 setting —
+// the id adjust('<id>', '+'|'-') emits, the field, the step and its
+// clamp, the model string that shows it and that string's precision.
+struct Stepper {
+    std::string_view id;
+    f32 Settings::* field;
+    f32 step;
+    f32 min;
+    f32 max;
+    const char* textId;
+    int decimals;
+};
+constexpr Stepper kSteppers[] = {
+    { "mouse", &Settings::mouseSensitivity, 0.1f, 0.1f, 5.0f,
+      "mouseSensText", 1 },
+    { "stick", &Settings::stickSensitivity, 0.2f, 0.5f, 8.0f,
+      "stickSensText", 1 },
+    { "deadzone", &Settings::stickDeadzone, 0.05f, 0.0f, 0.5f,
+      "deadzoneText", 2 },
+    { "volume", &Settings::masterVolume, 0.1f, 0.0f, 1.0f, "volumeText",
+      1 },
+};
 
-str fmt2(f32 value) {
+str formatFixed(f32 value, int decimals) {
     char text[16];
-    std::snprintf(text, sizeof(text), "%.2f", value);
+    std::snprintf(text, sizeof(text), "%.*f", decimals, value);
     return text;
 }
 
@@ -75,10 +93,10 @@ void OptionsController::open(const OptionsContext& ctx) {
 
 void OptionsController::pushModel(const OptionsContext& ctx) {
     const Settings& s = ctx.settings;
-    ctx.ui.setString("options", "mouseSensText", fmt1(s.mouseSensitivity));
-    ctx.ui.setString("options", "stickSensText", fmt1(s.stickSensitivity));
-    ctx.ui.setString("options", "deadzoneText", fmt2(s.stickDeadzone));
-    ctx.ui.setString("options", "volumeText", fmt1(s.masterVolume));
+    for (const Stepper& stepper : kSteppers) {
+        ctx.ui.setString("options", stepper.textId,
+                         formatFixed(s.*stepper.field, stepper.decimals));
+    }
     ctx.ui.setString("options", "invertText",
                      ctx.texts.get(s.invertLookY ? "ui.options.on"
                                                  : "ui.options.off"));
@@ -125,18 +143,13 @@ void OptionsController::handleEvent(const OptionsContext& ctx,
     if (event == "adjust" && args.size() >= 2) {
         Settings& s = ctx.settings;
         const f32 dir = args[1] == "+" ? 1.0f : -1.0f;
-        if (args[0] == "mouse") {
-            s.mouseSensitivity =
-                glm::clamp(s.mouseSensitivity + dir * 0.1f, 0.1f, 5.0f);
-        } else if (args[0] == "stick") {
-            s.stickSensitivity =
-                glm::clamp(s.stickSensitivity + dir * 0.2f, 0.5f, 8.0f);
-        } else if (args[0] == "deadzone") {
-            s.stickDeadzone =
-                glm::clamp(s.stickDeadzone + dir * 0.05f, 0.0f, 0.5f);
-        } else if (args[0] == "volume") {
-            s.masterVolume =
-                glm::clamp(s.masterVolume + dir * 0.1f, 0.0f, 1.0f);
+        for (const Stepper& stepper : kSteppers) {
+            if (args[0] == stepper.id) {
+                f32& value = s.*stepper.field;
+                value = glm::clamp(value + dir * stepper.step, stepper.min,
+                                   stepper.max);
+                break;
+            }
         }
         applyAndSave(ctx);
     } else if (event == "toggleInvert") {

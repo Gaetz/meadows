@@ -3,6 +3,7 @@
 #include "engine/FrameContext.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -14,10 +15,10 @@ constexpr u32 kMinCapacity = 1024;
 } // namespace
 
 void FxRenderer::create(rhi::Device& device, ShaderLibrary& shaders) {
-    shaders.load(kShader, { { "FrameUbo", 0 } });
-    shaders.load(kFlameShader, { { "FrameUbo", 0 } },
+    shaders.load(kShader, { render::kFrameUbo });
+    shaders.load(kFlameShader, { render::kFrameUbo },
                  { { "uFlameSheet", 3 }, { "uSceneDepth", 1 } });
-    shaders.load(kHazeShader, { { "FrameUbo", 0 } }, { { "uSceneColor", 0 } });
+    shaders.load(kHazeShader, { render::kFrameUbo }, { { "uSceneColor", 0 } });
     sheetSampler = { device, device.createSampler({}) }; // linear clamp
     ensurePipelines(device, shaders);
 }
@@ -33,32 +34,32 @@ void FxRenderer::destroy(rhi::Device&) {
     group.reset();
     instances.reset();
     capacity = 0;
-    shaderWatch = {};
 }
 
 void FxRenderer::ensurePipelines(rhi::Device& device,
                                  ShaderLibrary& shaders) {
-    if (!shaderWatch.changed(shaders) && alphaPipeline.id() != 0) {
-        return;
-    }
-    shaders.beginWatch();
     const auto make = [&](rhi::BlendMode blend, const char* shader) {
-        return rhi::UniquePipeline { device, device.createPipeline(
+        return device.createPipeline(
             { .shader = shaders.get(shader),
               .blend = blend,
               // Transparents: tested against the opaques, never writing.
-              .depth = { .testEnable = true,
-                         .writeEnable = false,
-                         .compare = rhi::CompareFunc::Greater }, // reversed-Z
+              .depth = render::kDepthReadOnly,
               .cull = rhi::CullMode::None,
               // ivec4 uFxBase: this batch's first particle in the shared SSBO.
-              .pushConstantSize = 16 }) };
+              .pushConstantSize = 16 });
     };
-    alphaPipeline = make(rhi::BlendMode::Alpha, kShader);
-    additivePipeline = make(rhi::BlendMode::Additive, kShader);
-    flamePipeline = make(rhi::BlendMode::Alpha, kFlameShader);
-    hazePipeline = make(rhi::BlendMode::Alpha, kHazeShader);
-    shaderWatch = shaders.endWatch();
+    alphaPipeline.ensure(device, shaders, [&] {
+        return make(rhi::BlendMode::Alpha, kShader);
+    });
+    additivePipeline.ensure(device, shaders, [&] {
+        return make(rhi::BlendMode::Additive, kShader);
+    });
+    flamePipeline.ensure(device, shaders, [&] {
+        return make(rhi::BlendMode::Alpha, kFlameShader);
+    });
+    hazePipeline.ensure(device, shaders, [&] {
+        return make(rhi::BlendMode::Alpha, kHazeShader);
+    });
 }
 
 void FxRenderer::drawBatch(engine::FrameContext& frame,

@@ -1,5 +1,7 @@
 #include "world/spirit/SpiritJets.hpp"
 
+#include "engine/core/Math.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -147,7 +149,7 @@ void SpiritJetList::advanceSpheres(f32 dt, f32 interval, f32 gravity,
                 jet.landing ? jet.landing->flightSeconds : 2.0f;
             const f32 volume = glm::max(jet.rate, 0.0f) * interval;
             sphere.radius = glm::clamp(
-                std::cbrt(3.0f * volume / (4.0f * 3.1415927f)), 0.15f, 2.0f);
+                std::cbrt(3.0f * volume / (4.0f * core::kPi)), 0.15f, 2.0f);
             jet.spheres.push_back(sphere);
         }
     }

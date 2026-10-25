@@ -145,6 +145,7 @@
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
     VegetationScatterTest.cpp
+    GrassScatterTest.cpp
     VertexAoTest.cpp
     WeaponMeshesTest.cpp
     WorldLayerTest.cpp

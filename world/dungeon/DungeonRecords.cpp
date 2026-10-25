@@ -6,12 +6,16 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "data/forms/VisualForms.hpp"
+#include "data/plugins/RecordStager.hpp"
 #include "engine/core/Log.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
 namespace world {
 
 namespace {
+
+using dungeon::AnchorKind;
+using BakeAnchor = dungeon::DungeonBakeResult::Anchor;
 
 // Derived-identity family for one dungeon: every record hangs off the
 // dungeon guid through the same combine the cell/prefab contracts use.
@@ -42,84 +46,495 @@ constexpr u64 kNpcRefBase = 0x5400;
 constexpr u64 kPatrolMarker = 0x06;    // the shared "patrol" MarkerForm
 constexpr u64 kPatrolRefBase = 0x5500; // NPC wander anchors, per room
 
-// Records are staged twice on purpose: LIVE in the resolved database (so
-// this session can stream and travel into the dungeon right away — the
-// materializeCell precedent) and as SESSION drafts (so the export ships
-// them). Same guid on both sides; the next full resolve unifies them.
-struct Stager {
-    data::EditSession& session;
-    data::FormDatabase& forms;
-    WorldModel& model;
-
-    template <typename T>
-    void live(const T& form) {
-        const data::FormHandle handle = forms.handleOf(form.id);
-        if (!handle.isValid()) {
-            const data::FormHandle added =
-                forms.add(std::make_unique<T>(form), T::staticTypeInfo());
-            if constexpr (std::is_same_v<T, ReferenceForm>) {
-                model.indexReference(forms, added);
-            }
-            return;
-        }
-        // The record was shipped by a plugin (a previous session's export):
-        // update the live copy in place so the running session plays the
-        // new bake — the session drafts only reach the world via Export.
-        // The generator owns every field of its records; hand retouches
-        // belong in additions or a later plugin layer (docs/DUNGEON-GEN.md).
-        data::Form* target = forms.getMutable(handle);
-        if (!target) {
-            return;
-        }
-        core::Guid previousCell;
-        if constexpr (std::is_same_v<T, ReferenceForm>) {
-            previousCell = static_cast<ReferenceForm*>(target)->cell;
-        }
-        reflect::forEachField(T::staticTypeInfo(),
-                              [&](const reflect::FieldInfo& field) {
-                                  field.set(target, field.get(&form));
-                              });
-        if constexpr (std::is_same_v<T, ReferenceForm>) {
-            if (previousCell != form.cell) {
-                model.unindexReference(forms.handleOf(previousCell), handle);
-                model.indexReference(forms, handle);
-            }
-        }
-    }
-
-    void ensure(const reflect::TypeInfo& type, const core::Guid& guid,
-                const str& editorId) {
-        if (!forms.find(guid) && !session.isCreated(guid)) {
-            session.createForm(type.id, editorId, guid);
-        }
-    }
-
-    template <typename T>
-    void set(const reflect::TypeInfo& type, const core::Guid& guid,
-             const char* field, const T& value) {
-        session.setField(guid, type.findField(field)->id,
-                         reflect::Value { value });
-    }
-
-    // Session staging of a fully-built reference (the only record kind we
-    // emit in numbers — worth the dedicated helper). ensure() runs BEFORE
-    // live(): once the live copy exists, forms.find() can no longer tell
-    // "shipped by a plugin" (patch it) from "live-added by this pass"
-    // (the export must CREATE it — the ensureCell shadowing rule).
-    void stageReference(const ReferenceForm& ref, const str& editorId) {
-        const reflect::TypeInfo& type = ReferenceForm::staticTypeInfo();
-        ensure(type, ref.id, editorId);
-        live(ref);
-        set(type, ref.id, "baseForm", ref.baseForm);
-        set(type, ref.id, "cell", ref.cell);
-        set(type, ref.id, "position", ref.position);
-        set(type, ref.id, "rotation", ref.rotation);
-        set(type, ref.id, "scale", ref.scale);
-    }
+// How each anchor family becomes references, one row per AnchorKind in
+// enum order (pinned by static_assert) — also the STAGING order, which
+// the export's record order follows. `indexed` families key their guid
+// on the anchor's index within its kind (kRefBase + i) and are staged by
+// the generic loop; the lock pair is keyed on the lockId instead
+// (barrierForLever) and keeps its own step. `gate` is the kit slot that
+// must resolve for the family to exist, `base` the kit slot it is
+// instantiated from — null base: the shared patrol MarkerForm.
+struct AnchorEmit {
+    AnchorKind kind;
+    u64 refBase;
+    const char* tag; // editorId suffix: <dungeon>_<tag>_<i>
+    core::Guid DungeonKit::* gate;
+    core::Guid DungeonKit::* base;
+    bool indexed;
 };
+constexpr AnchorEmit kAnchorEmits[] = {
+    { AnchorKind::Barrier, 0, "barrier", &DungeonKit::barrier,
+      &DungeonKit::barrier, false },
+    { AnchorKind::Lever, kLeverRefBase, "lever", &DungeonKit::lever,
+      &DungeonKit::lever, false },
+    { AnchorKind::Chest, kChestRefBase, "chest", &DungeonKit::chest,
+      &DungeonKit::chest, true },
+    { AnchorKind::OreVein, kVeinRefBase, "vein", &DungeonKit::oreItem,
+      &DungeonKit::oreItem, true },
+    { AnchorKind::EnemySpawn, kEnemyRefBase, "enemy", &DungeonKit::enemy,
+      &DungeonKit::enemy, true },
+    { AnchorKind::NpcSpawn, kNpcRefBase, "npc", &DungeonKit::npc,
+      &DungeonKit::npc, true },
+    { AnchorKind::PatrolPoint, kPatrolRefBase, "patrol", &DungeonKit::enemy,
+      nullptr, true },
+};
+static_assert(sizeof(kAnchorEmits) / sizeof(kAnchorEmits[0]) ==
+              static_cast<size_t>(AnchorKind::Count));
+
+constexpr const AnchorEmit& anchorEmit(AnchorKind kind) {
+    return kAnchorEmits[static_cast<size_t>(kind)];
+}
 
 Quat yawRotation(f32 yawDeg) {
     return glm::angleAxis(glm::radians(yawDeg), Vec3 { 0.0f, 1.0f, 0.0f });
+}
+
+// The cell-grid coordinate a world position falls in.
+i32 cellIndex(f32 coord, f32 cellSize) {
+    return static_cast<i32>(std::floor(coord / cellSize));
+}
+
+// The mutable state one Accept threads through its stages, in staging
+// order. Records are staged twice on purpose: LIVE in the resolved
+// database (so this session can stream and travel into the dungeon right
+// away) and as SESSION drafts (so the export ships them) —
+// data::RecordStager. `wsHandle` is set by the worldspace stage and read
+// by every cell materialization after it; `editorId` is the shared
+// scratch buffer every record name is formatted into.
+struct Staging {
+    const DungeonStageInputs& in;
+    data::RecordStager stage;
+    data::FormHandle wsHandle;
+    f32 cell;
+    char editorId[96];
+    u32 leftovers;
+};
+
+// A live reference keeps the world model's cell index in step.
+void liveReference(Staging& st, const ReferenceForm& ref) {
+    data::FormDatabase& forms = st.in.forms;
+    WorldModel& model = st.in.model;
+    st.stage.live(forms, ref,
+                  [&](data::FormHandle handle, const ReferenceForm* before) {
+                      if (!before) {
+                          model.indexReference(forms, handle);
+                      } else if (before->cell != ref.cell) {
+                          model.unindexReference(forms.handleOf(before->cell),
+                                                 handle);
+                          model.indexReference(forms, handle);
+                      }
+                  });
+}
+
+// ensure() runs BEFORE live(): the ensureCell shadowing rule.
+void stageReference(Staging& st, const ReferenceForm& ref) {
+    st.stage.ensure(ReferenceForm::staticTypeInfo(), ref.id, ref.editorId);
+    liveReference(st, ref);
+    st.stage.setAll(ref);
+}
+
+// Cells: live materialization (idempotent, deterministic guid) + the
+// session shadow so the export CREATES them (the ensureCell pattern).
+core::Guid stageCell(Staging& st, i32 cx, i32 cz) {
+    const DungeonStageInputs& in = st.in;
+    in.model.materializeCell(in.forms, st.wsHandle, cx, cz);
+    const core::Guid guid = cellGuidFor(in.dungeonId, cx, cz);
+    std::snprintf(st.editorId, sizeof(st.editorId), "%s_cell_%d_%d",
+                  in.dungeonName.c_str(), cx, cz);
+    const reflect::TypeInfo& cellType = CellForm::staticTypeInfo();
+    if (!in.session.isCreated(guid)) {
+        in.session.createForm(cellType.id, st.editorId, guid);
+    }
+    st.stage.set(cellType, guid, "worldspace", in.dungeonId);
+    st.stage.set(cellType, guid, "gridX", cx);
+    st.stage.set(cellType, guid, "gridY", cz);
+    st.stage.set(cellType, guid, "interior", true);
+    return guid;
+}
+
+// The interior worldspace; the dungeon guid IS the worldspace guid.
+void stageWorldspace(Staging& st, DungeonStageResult& result) {
+    const DungeonStageInputs& in = st.in;
+    WorldspaceForm ws;
+    ws.id = in.dungeonId;
+    ws.editorId = in.dungeonName;
+    ws.cellSize = st.cell;
+    ws.interior = true;
+    ws.killZ = in.bake.boundsMin.y - 50.0f;
+    ws.buriedBelowY = in.bake.boundsMax.y + 10.0f;
+    const reflect::TypeInfo& wsType = WorldspaceForm::staticTypeInfo();
+    st.stage.ensure(wsType, in.dungeonId, in.dungeonName);
+    st.stage.live(in.forms, ws);
+    st.stage.set(wsType, in.dungeonId, "cellSize", ws.cellSize);
+    st.stage.set(wsType, in.dungeonId, "interior", true);
+    st.stage.set(wsType, in.dungeonId, "killZ", ws.killZ);
+    st.stage.set(wsType, in.dungeonId, "buriedBelowY", ws.buriedBelowY);
+    result.worldspace = in.dungeonId;
+    st.wsHandle = in.forms.handleOf(in.dungeonId);
+}
+
+// The cavern rock material, then one StaticForm + one ReferenceForm per
+// cavern chunk (each chunk materializing its cell first).
+void stageCaverns(Staging& st, DungeonStageResult& result) {
+    const DungeonStageInputs& in = st.in;
+
+    // Cavern rock material: white albedo, vertex colors do the talking.
+    data::MaterialForm rock;
+    rock.id = derived(in.dungeonId, kMaterial);
+    rock.editorId = in.dungeonName + "_rock";
+    st.stage.ensure(data::MaterialForm::staticTypeInfo(), rock.id,
+                    rock.editorId);
+    st.stage.live(in.forms, rock);
+
+    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
+    for (size_t i = 0; i < in.bake.cellMeshes.size(); ++i) {
+        const auto& cellMesh = in.bake.cellMeshes[i];
+        const core::Guid cellGuid = stageCell(st, cellMesh.cx, cellMesh.cz);
+
+        data::StaticForm cavern;
+        cavern.id = derived(in.dungeonId, kStaticBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_cavern_%d_%d",
+                      in.dungeonName.c_str(), cellMesh.cx, cellMesh.cz);
+        cavern.editorId = st.editorId;
+        cavern.displayName = st.editorId;
+        cavern.model = in.cellMeshAsset(cellMesh.cx, cellMesh.cz);
+        cavern.material = rock.id;
+        cavern.collides = true;
+        cavern.snapToGround = false;
+        st.stage.ensure(staticType, cavern.id, cavern.editorId);
+        st.stage.live(in.forms, cavern);
+        st.stage.set(staticType, cavern.id, "displayName",
+                     cavern.displayName);
+        st.stage.set(staticType, cavern.id, "model", cavern.model);
+        st.stage.set(staticType, cavern.id, "material", cavern.material);
+        st.stage.set(staticType, cavern.id, "collides", true);
+        st.stage.set(staticType, cavern.id, "snapToGround", false);
+
+        ReferenceForm ref;
+        ref.id = derived(in.dungeonId, kCellRefBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_cavern_ref_%d_%d",
+                      in.dungeonName.c_str(), cellMesh.cx, cellMesh.cz);
+        ref.editorId = st.editorId;
+        ref.baseForm = cavern.id;
+        ref.cell = cellGuid;
+        ref.position = { static_cast<f32>(cellMesh.cx) * st.cell, 0.0f,
+                         static_cast<f32>(cellMesh.cz) * st.cell };
+        stageReference(st, ref);
+        ++result.cellCount;
+    }
+}
+
+// The mine torch: one LightForm, one reference per baked anchor.
+void stageTorches(Staging& st, DungeonStageResult& result) {
+    const DungeonStageInputs& in = st.in;
+    data::LightForm torch;
+    torch.id = derived(in.dungeonId, kTorchLight);
+    torch.editorId = in.dungeonName + "_torch";
+    torch.color = { 1.0f, 0.62f, 0.32f };
+    torch.intensity = 2.9f;
+    torch.radius = 11.0f;
+    torch.flicker = 0.5f;
+    torch.castsShadow = false;
+    const reflect::TypeInfo& lightType = data::LightForm::staticTypeInfo();
+    st.stage.ensure(lightType, torch.id, torch.editorId);
+    st.stage.live(in.forms, torch);
+    st.stage.set(lightType, torch.id, "color", torch.color);
+    st.stage.set(lightType, torch.id, "intensity", torch.intensity);
+    st.stage.set(lightType, torch.id, "radius", torch.radius);
+    st.stage.set(lightType, torch.id, "flicker", torch.flicker);
+    st.stage.set(lightType, torch.id, "castsShadow", false);
+    for (size_t i = 0; i < in.bake.torches.size(); ++i) {
+        const auto& anchor = in.bake.torches[i];
+        const i32 cx = cellIndex(anchor.position.x, st.cell);
+        const i32 cz = cellIndex(anchor.position.z, st.cell);
+        ReferenceForm ref;
+        ref.id = derived(in.dungeonId, kTorchRefBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_torch_%zu",
+                      in.dungeonName.c_str(), i);
+        ref.editorId = st.editorId;
+        ref.baseForm = torch.id;
+        ref.cell = stageCell(st, cx, cz);
+        ref.position = anchor.position + anchor.wallNormal * 0.3f;
+        stageReference(st, ref);
+        ++result.torchCount;
+    }
+}
+
+// Navigation record: the scene resolves it on interior travel.
+void stageNav(Staging& st, DungeonStageResult& result) {
+    const DungeonStageInputs& in = st.in;
+    NavGridForm nav;
+    nav.id = derived(in.dungeonId, kNavGrid);
+    nav.editorId = in.dungeonName + "_nav";
+    nav.worldspace = in.dungeonId;
+    nav.asset = in.navAsset;
+    const reflect::TypeInfo& navType = NavGridForm::staticTypeInfo();
+    st.stage.ensure(navType, nav.id, nav.editorId);
+    st.stage.live(in.forms, nav);
+    st.stage.set(navType, nav.id, "worldspace", in.dungeonId);
+    st.stage.set(navType, nav.id, "asset", in.navAsset);
+    result.navGridRecord = nav.id;
+}
+
+// One door leaf, dressed from the kit's door model/material, leading to the
+// OTHER side's arrival marker reference.
+void stageDoorForm(Staging& st, const core::Guid& guid, const str& name,
+                   const str& display, const core::Guid& target) {
+    const DungeonStageInputs& in = st.in;
+    const reflect::TypeInfo& doorType = DoorForm::staticTypeInfo();
+    DoorForm door;
+    door.id = guid;
+    door.editorId = name;
+    door.displayName = display;
+    door.model = in.doorModel;
+    door.material = in.doorMaterial;
+    door.targetMarker = target;
+    st.stage.ensure(doorType, guid, name);
+    st.stage.live(in.forms, door);
+    st.stage.set(doorType, guid, "displayName", display);
+    st.stage.set(doorType, guid, "model", in.doorModel);
+    st.stage.set(doorType, guid, "material", in.doorMaterial);
+    st.stage.set(doorType, guid, "targetMarker", target);
+}
+
+// Doors, per anchor: arrival markers are ReferenceForms of one shared
+// MarkerForm; each DoorForm targets the OTHER side's marker reference
+// (the transition resolves entirely from records).
+void stageDoors(Staging& st, DungeonStageResult& result) {
+    const DungeonStageInputs& in = st.in;
+    const dungeon::DungeonBakeResult& bake = in.bake;
+
+    MarkerForm marker;
+    marker.id = derived(in.dungeonId, kMarkerKind);
+    marker.editorId = in.dungeonName + "_door_target";
+    st.stage.ensure(MarkerForm::staticTypeInfo(), marker.id,
+                    marker.editorId);
+    st.stage.live(in.forms, marker);
+
+    const i32 entranceCx = cellIndex(bake.entrancePos.x, st.cell);
+    const i32 entranceCz = cellIndex(bake.entrancePos.z, st.cell);
+    const core::Guid entranceCell = stageCell(st, entranceCx, entranceCz);
+    const f32 insideYaw =
+        glm::degrees(std::atan2(bake.entranceDir.x, bake.entranceDir.z));
+
+    for (size_t i = 0; i < in.anchors.size(); ++i) {
+        const DungeonAnchor& anchor = in.anchors[i];
+
+        // Arrival spots: inside (a step into the entrance room) and
+        // outside (a step in front of the outside door).
+        ReferenceForm arriveIn;
+        arriveIn.id = derived(in.dungeonId, kInMarkerBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_arrive_in_%zu",
+                      in.dungeonName.c_str(), i);
+        arriveIn.editorId = st.editorId;
+        arriveIn.baseForm = marker.id;
+        arriveIn.cell = entranceCell;
+        arriveIn.position = bake.entrancePos - bake.entranceDir * 1.5f;
+        arriveIn.rotation = yawRotation(insideYaw + 180.0f);
+        stageReference(st, arriveIn);
+
+        const Vec3 outFacing { std::sin(glm::radians(anchor.yawDeg)), 0.0f,
+                               std::cos(glm::radians(anchor.yawDeg)) };
+        ReferenceForm arriveOut;
+        arriveOut.id = derived(in.dungeonId, kOutMarkerBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_arrive_out_%zu",
+                      in.dungeonName.c_str(), i);
+        arriveOut.editorId = st.editorId;
+        arriveOut.baseForm = marker.id;
+        arriveOut.cell = anchor.cell;
+        arriveOut.position = anchor.doorPos + outFacing * 1.5f;
+        arriveOut.rotation = yawRotation(anchor.yawDeg + 180.0f);
+        stageReference(st, arriveOut);
+
+        // The door pair.
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_entrance_%zu",
+                      in.dungeonName.c_str(), i);
+        stageDoorForm(st, derived(in.dungeonId, kDoorInBase + i), st.editorId,
+                      in.dungeonName + " entrance", arriveIn.id);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_exit_%zu",
+                      in.dungeonName.c_str(), i);
+        stageDoorForm(st, derived(in.dungeonId, kDoorOutBase + i),
+                      st.editorId, in.dungeonName + " exit", arriveOut.id);
+
+        ReferenceForm doorInRef;
+        doorInRef.id = derived(in.dungeonId, kDoorInRefBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_entrance_ref_%zu",
+                      in.dungeonName.c_str(), i);
+        doorInRef.editorId = st.editorId;
+        doorInRef.baseForm = derived(in.dungeonId, kDoorInBase + i);
+        doorInRef.cell = anchor.cell;
+        doorInRef.position = anchor.doorPos;
+        doorInRef.rotation = yawRotation(anchor.yawDeg);
+        stageReference(st, doorInRef);
+        result.outsideDoorRefs.push_back(doorInRef.id);
+
+        ReferenceForm doorOutRef;
+        doorOutRef.id = derived(in.dungeonId, kDoorOutRefBase + i);
+        std::snprintf(st.editorId, sizeof(st.editorId), "%s_exit_ref_%zu",
+                      in.dungeonName.c_str(), i);
+        doorOutRef.editorId = st.editorId;
+        doorOutRef.baseForm = derived(in.dungeonId, kDoorOutBase + i);
+        doorOutRef.cell = entranceCell;
+        doorOutRef.position = bake.entrancePos;
+        doorOutRef.rotation = yawRotation(insideYaw);
+        stageReference(st, doorOutRef);
+    }
+}
+
+// One gameplay anchor as a reference of a kit form, in the cell under it.
+void stageAnchored(Staging& st, const BakeAnchor& anchor,
+                   const core::Guid& refGuid, const core::Guid& baseForm,
+                   const char* tag, size_t i, const Vec3& scale) {
+    const i32 cx = cellIndex(anchor.position.x, st.cell);
+    const i32 cz = cellIndex(anchor.position.z, st.cell);
+    ReferenceForm ref;
+    ref.id = refGuid;
+    std::snprintf(st.editorId, sizeof(st.editorId), "%s_%s_%zu",
+                  st.in.dungeonName.c_str(), tag, i);
+    ref.editorId = st.editorId;
+    ref.baseForm = baseForm;
+    ref.cell = stageCell(st, cx, cz);
+    ref.position = anchor.position;
+    ref.rotation = yawRotation(anchor.yawDeg);
+    ref.scale = scale;
+    stageReference(st, ref);
+}
+
+// The lock pairs from the mission semantics (bake.populateAnchors): the
+// lever's guid is keyed on the lockId; its barrier derives from the lever
+// reference (barrierForLever — the scene inverts the pairing at pull
+// time). Both kit slots must resolve for the family to exist.
+void stageLocks(Staging& st, const vector<BakeAnchor>& levers) {
+    const DungeonStageInputs& in = st.in;
+    const AnchorEmit& leverEmit = anchorEmit(AnchorKind::Lever);
+    const AnchorEmit& barrierEmit = anchorEmit(AnchorKind::Barrier);
+    if (!(in.kit.*leverEmit.gate).isValid() ||
+        !(in.kit.*barrierEmit.gate).isValid()) {
+        return;
+    }
+    const Vec3 unit { 1.0f };
+    const vector<BakeAnchor> barriers = in.bake.anchorsOf(AnchorKind::Barrier);
+    for (size_t i = 0; i < levers.size(); ++i) {
+        const auto& lever = levers[i];
+        const core::Guid leverRef =
+            derived(in.dungeonId, leverEmit.refBase + lever.lockId);
+        stageAnchored(st, lever, leverRef, in.kit.*leverEmit.base,
+                      leverEmit.tag, i, unit);
+        for (const auto& barrier : barriers) {
+            if (barrier.lockId == lever.lockId) {
+                // Stretched across the ~5 m tunnel (wider on a turn,
+                // bake.width); hand-retouchable like any reference.
+                // ONE barrier per lock: barrierForLever(leverRef) is
+                // the whole identity — a second match would silently
+                // overwrite the first and leave its tunnel open.
+                stageAnchored(st, barrier, barrierForLever(leverRef),
+                              in.kit.*barrierEmit.base, barrierEmit.tag, i,
+                              { 3.0f * barrier.width, 2.5f, 1.0f });
+                break;
+            }
+        }
+    }
+}
+
+// Patrol anchors: without loaded "patrol" markers the NPCs never wander —
+// frozen bandits neither look around nor spot the player. The shared
+// MarkerForm is staged with its family.
+core::Guid stagePatrolMarker(Staging& st) {
+    const DungeonStageInputs& in = st.in;
+    MarkerForm patrol;
+    patrol.id = derived(in.dungeonId, kPatrolMarker);
+    patrol.editorId = in.dungeonName + "_patrol";
+    patrol.kind = "patrol";
+    const reflect::TypeInfo& markerType = MarkerForm::staticTypeInfo();
+    st.stage.ensure(markerType, patrol.id, patrol.editorId);
+    st.stage.live(in.forms, patrol);
+    st.stage.set(markerType, patrol.id, "kind", patrol.kind);
+    return patrol.id;
+}
+
+// The indexed anchor families (bake.populateAnchors), instantiated from
+// the mine kit per kAnchorEmits in table (= enum) order; a null kit guid
+// skips its family.
+void stageKitAnchors(Staging& st) {
+    const DungeonStageInputs& in = st.in;
+    const Vec3 unit { 1.0f };
+    for (const AnchorEmit& row : kAnchorEmits) {
+        if (!row.indexed || !(in.kit.*row.gate).isValid()) {
+            continue;
+        }
+        const vector<BakeAnchor> family = in.bake.anchorsOf(row.kind);
+        core::Guid base;
+        if (row.base) {
+            base = in.kit.*row.base;
+        } else if (!family.empty()) {
+            base = stagePatrolMarker(st);
+        }
+        for (size_t i = 0; i < family.size(); ++i) {
+            stageAnchored(st, family[i], derived(in.dungeonId, row.refBase + i),
+                          base, row.tag, i, unit);
+        }
+    }
+}
+
+// Disables one leftover reference, live + session. False when no reference
+// record carries that guid (the end of a contiguous family).
+bool disableReference(Staging& st, const core::Guid& guid) {
+    data::FormDatabase& forms = st.in.forms;
+    const reflect::TypeInfo& refType = ReferenceForm::staticTypeInfo();
+    const data::FormHandle handle = forms.handleOf(guid);
+    if (!handle.isValid() || !forms.typeOf(handle)->isA(refType.id)) {
+        return false;
+    }
+    auto* ref = static_cast<ReferenceForm*>(forms.getMutable(handle));
+    if (ref->enabled) {
+        ref->enabled = false;
+        st.stage.set(refType, guid, "enabled", false);
+        ++st.leftovers;
+    }
+    return true;
+}
+
+// Disables one contiguous guid family past its new end.
+void disablePast(Staging& st, u64 base, size_t from) {
+    for (size_t i = from;
+         disableReference(st, derived(st.in.dungeonId, base + i)); ++i) {
+    }
+}
+
+// A re-Accept can shrink a family (fewer enemies, fewer cells): the
+// shipped records past the new count would linger with their OLD
+// layout's positions. Disable them, live + session, scanning each
+// contiguous guid family past its new end.
+void disableLeftovers(Staging& st, const vector<BakeAnchor>& levers) {
+    const DungeonStageInputs& in = st.in;
+    disablePast(st, kCellRefBase, in.bake.cellMeshes.size());
+    disablePast(st, kTorchRefBase, in.bake.torches.size());
+    for (const AnchorEmit& row : kAnchorEmits) {
+        if (row.indexed) {
+            disablePast(st, row.refBase, in.bake.countOf(row.kind));
+        }
+    }
+    disablePast(st, kInMarkerBase, in.anchors.size());
+    disablePast(st, kOutMarkerBase, in.anchors.size());
+    disablePast(st, kDoorInRefBase, in.anchors.size());
+    disablePast(st, kDoorOutRefBase, in.anchors.size());
+    // Levers are keyed by lockId, not by index: sweep a bounded id range
+    // and disable any lever (and its derived barrier) no current lock owns.
+    const AnchorEmit& leverEmit = anchorEmit(AnchorKind::Lever);
+    for (u64 id = 0; id < 64; ++id) {
+        bool owned = false;
+        for (const auto& lever : levers) {
+            owned = owned || lever.lockId == id;
+        }
+        if (owned) {
+            continue;
+        }
+        const core::Guid leverRef =
+            derived(in.dungeonId, leverEmit.refBase + id);
+        if (disableReference(st, leverRef)) {
+            disableReference(st, barrierForLever(leverRef));
+        }
+    }
 }
 
 } // namespace
@@ -127,6 +542,39 @@ Quat yawRotation(f32 yawDeg) {
 core::Guid barrierForLever(const core::Guid& leverReference) {
     return core::Guid::combine(leverReference,
                                core::Guid { 1, 0x6261727269657231ull });
+}
+
+DungeonStageResult stageDungeonRecords(const DungeonStageInputs& in) {
+    DungeonStageResult result;
+    if (in.bake.empty()) {
+        return result;
+    }
+    Staging st { in, data::RecordStager { in.session, in.forms }, {},
+                 in.bake.cellSize, {}, 0 };
+
+    stageWorldspace(st, result);
+    stageCaverns(st, result);
+    stageTorches(st, result);
+    stageNav(st, result);
+    stageDoors(st, result);
+    const vector<BakeAnchor> levers = in.bake.anchorsOf(AnchorKind::Lever);
+    stageLocks(st, levers);
+    stageKitAnchors(st);
+    disableLeftovers(st, levers);
+
+    const auto stagedCount = [&](AnchorKind kind) {
+        const AnchorEmit& row = anchorEmit(kind);
+        return (in.kit.*row.gate).isValid() ? in.bake.countOf(kind) : 0;
+    };
+    LOG_INFO("Dungeon '{}': staged {} cells, {} torches, {} anchors, "
+             "{} locks, {} enemies, {} veins, {} patrols "
+             "({} leftovers disabled, live + session)",
+             in.dungeonName, result.cellCount, result.torchCount,
+             in.anchors.size(), levers.size(),
+             stagedCount(AnchorKind::EnemySpawn),
+             stagedCount(AnchorKind::OreVein),
+             stagedCount(AnchorKind::PatrolPoint), st.leftovers);
+    return result;
 }
 
 DungeonStageResult stageDungeonRecords(
@@ -137,394 +585,9 @@ DungeonStageResult stageDungeonRecords(
     const core::Guid& navAsset, const vector<DungeonAnchor>& anchors,
     const DungeonKit& kit, const core::Guid& doorModel,
     const core::Guid& doorMaterial) {
-    DungeonStageResult result;
-    if (bake.empty()) {
-        return result;
-    }
-    Stager stage { session, forms, model };
-    const f32 cell = bake.cellSize;
-    char editorId[96];
-
-    // The interior worldspace; the dungeon guid IS the worldspace guid.
-    WorldspaceForm ws;
-    ws.id = dungeonId;
-    ws.editorId = dungeonName;
-    ws.cellSize = cell;
-    ws.interior = true;
-    ws.killZ = bake.boundsMin.y - 50.0f;
-    ws.buriedBelowY = bake.boundsMax.y + 10.0f;
-    const reflect::TypeInfo& wsType = WorldspaceForm::staticTypeInfo();
-    stage.ensure(wsType, dungeonId, dungeonName);
-    stage.live(ws);
-    stage.set(wsType, dungeonId, "cellSize", ws.cellSize);
-    stage.set(wsType, dungeonId, "interior", true);
-    stage.set(wsType, dungeonId, "killZ", ws.killZ);
-    stage.set(wsType, dungeonId, "buriedBelowY", ws.buriedBelowY);
-    result.worldspace = dungeonId;
-    const data::FormHandle wsHandle = forms.handleOf(dungeonId);
-
-    // Cells: live materialization (idempotent, deterministic guid) + the
-    // session shadow so the export CREATES them (the ensureCell pattern).
-    const reflect::TypeInfo& cellType = CellForm::staticTypeInfo();
-    const auto stageCell = [&](i32 cx, i32 cz) {
-        model.materializeCell(forms, wsHandle, cx, cz);
-        const core::Guid guid = cellGuidFor(dungeonId, cx, cz);
-        std::snprintf(editorId, sizeof(editorId), "%s_cell_%d_%d",
-                      dungeonName.c_str(), cx, cz);
-        if (!session.isCreated(guid)) {
-            session.createForm(cellType.id, editorId, guid);
-        }
-        stage.set(cellType, guid, "worldspace", dungeonId);
-        stage.set(cellType, guid, "gridX", cx);
-        stage.set(cellType, guid, "gridY", cz);
-        stage.set(cellType, guid, "interior", true);
-        return guid;
-    };
-
-    // Cavern rock material: white albedo, vertex colors do the talking.
-    data::MaterialForm rock;
-    rock.id = derived(dungeonId, kMaterial);
-    rock.editorId = dungeonName + "_rock";
-    stage.ensure(data::MaterialForm::staticTypeInfo(), rock.id,
-                 rock.editorId);
-    stage.live(rock);
-
-    // One StaticForm + one ReferenceForm per cavern chunk.
-    const reflect::TypeInfo& staticType = data::StaticForm::staticTypeInfo();
-    for (size_t i = 0; i < bake.cellMeshes.size(); ++i) {
-        const auto& cellMesh = bake.cellMeshes[i];
-        const core::Guid cellGuid = stageCell(cellMesh.cx, cellMesh.cz);
-
-        data::StaticForm cavern;
-        cavern.id = derived(dungeonId, kStaticBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_cavern_%d_%d",
-                      dungeonName.c_str(), cellMesh.cx, cellMesh.cz);
-        cavern.editorId = editorId;
-        cavern.displayName = editorId;
-        cavern.model = cellMeshAsset(cellMesh.cx, cellMesh.cz);
-        cavern.material = rock.id;
-        cavern.collides = true;
-        cavern.snapToGround = false;
-        stage.ensure(staticType, cavern.id, cavern.editorId);
-        stage.live(cavern);
-        stage.set(staticType, cavern.id, "displayName", cavern.displayName);
-        stage.set(staticType, cavern.id, "model", cavern.model);
-        stage.set(staticType, cavern.id, "material", cavern.material);
-        stage.set(staticType, cavern.id, "collides", true);
-        stage.set(staticType, cavern.id, "snapToGround", false);
-
-        ReferenceForm ref;
-        ref.id = derived(dungeonId, kCellRefBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_cavern_ref_%d_%d",
-                      dungeonName.c_str(), cellMesh.cx, cellMesh.cz);
-        ref.editorId = editorId;
-        ref.baseForm = cavern.id;
-        ref.cell = cellGuid;
-        ref.position = { static_cast<f32>(cellMesh.cx) * cell, 0.0f,
-                         static_cast<f32>(cellMesh.cz) * cell };
-        stage.stageReference(ref, ref.editorId);
-        ++result.cellCount;
-    }
-
-    // The mine torch: one LightForm, one reference per baked anchor.
-    data::LightForm torch;
-    torch.id = derived(dungeonId, kTorchLight);
-    torch.editorId = dungeonName + "_torch";
-    torch.color = { 1.0f, 0.62f, 0.32f };
-    torch.intensity = 2.9f;
-    torch.radius = 11.0f;
-    torch.flicker = 0.5f;
-    torch.castsShadow = false;
-    const reflect::TypeInfo& lightType = data::LightForm::staticTypeInfo();
-    stage.ensure(lightType, torch.id, torch.editorId);
-    stage.live(torch);
-    stage.set(lightType, torch.id, "color", torch.color);
-    stage.set(lightType, torch.id, "intensity", torch.intensity);
-    stage.set(lightType, torch.id, "radius", torch.radius);
-    stage.set(lightType, torch.id, "flicker", torch.flicker);
-    stage.set(lightType, torch.id, "castsShadow", false);
-    for (size_t i = 0; i < bake.torches.size(); ++i) {
-        const auto& anchor = bake.torches[i];
-        const i32 cx = static_cast<i32>(std::floor(anchor.position.x / cell));
-        const i32 cz = static_cast<i32>(std::floor(anchor.position.z / cell));
-        ReferenceForm ref;
-        ref.id = derived(dungeonId, kTorchRefBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_torch_%zu",
-                      dungeonName.c_str(), i);
-        ref.editorId = editorId;
-        ref.baseForm = torch.id;
-        ref.cell = stageCell(cx, cz);
-        ref.position = anchor.position + anchor.wallNormal * 0.3f;
-        stage.stageReference(ref, ref.editorId);
-        ++result.torchCount;
-    }
-
-    // Navigation record: the scene resolves it on interior travel.
-    NavGridForm nav;
-    nav.id = derived(dungeonId, kNavGrid);
-    nav.editorId = dungeonName + "_nav";
-    nav.worldspace = dungeonId;
-    nav.asset = navAsset;
-    const reflect::TypeInfo& navType = NavGridForm::staticTypeInfo();
-    stage.ensure(navType, nav.id, nav.editorId);
-    stage.live(nav);
-    stage.set(navType, nav.id, "worldspace", dungeonId);
-    stage.set(navType, nav.id, "asset", navAsset);
-    result.navGridRecord = nav.id;
-
-    // Doors, per anchor: arrival markers are ReferenceForms of one shared
-    // MarkerForm; each DoorForm targets the OTHER side's marker reference
-    // (the transition resolves entirely from records).
-    MarkerForm marker;
-    marker.id = derived(dungeonId, kMarkerKind);
-    marker.editorId = dungeonName + "_door_target";
-    stage.ensure(MarkerForm::staticTypeInfo(), marker.id, marker.editorId);
-    stage.live(marker);
-
-    const reflect::TypeInfo& doorType = DoorForm::staticTypeInfo();
-    const i32 entranceCx =
-        static_cast<i32>(std::floor(bake.entrancePos.x / cell));
-    const i32 entranceCz =
-        static_cast<i32>(std::floor(bake.entrancePos.z / cell));
-    const core::Guid entranceCell = stageCell(entranceCx, entranceCz);
-    const f32 insideYaw = glm::degrees(
-        std::atan2(bake.entranceDir.x, bake.entranceDir.z));
-
-    const auto stageDoorForm = [&](const core::Guid& guid, const str& name,
-                                   const str& display,
-                                   const core::Guid& target) {
-        DoorForm door;
-        door.id = guid;
-        door.editorId = name;
-        door.displayName = display;
-        door.model = doorModel;
-        door.material = doorMaterial;
-        door.targetMarker = target;
-        stage.ensure(doorType, guid, name);
-        stage.live(door);
-        stage.set(doorType, guid, "displayName", display);
-        stage.set(doorType, guid, "model", doorModel);
-        stage.set(doorType, guid, "material", doorMaterial);
-        stage.set(doorType, guid, "targetMarker", target);
-    };
-
-    for (size_t i = 0; i < anchors.size(); ++i) {
-        const DungeonAnchor& anchor = anchors[i];
-
-        // Arrival spots: inside (a step into the entrance room) and
-        // outside (a step in front of the outside door).
-        ReferenceForm arriveIn;
-        arriveIn.id = derived(dungeonId, kInMarkerBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_arrive_in_%zu",
-                      dungeonName.c_str(), i);
-        arriveIn.editorId = editorId;
-        arriveIn.baseForm = marker.id;
-        arriveIn.cell = entranceCell;
-        arriveIn.position = bake.entrancePos - bake.entranceDir * 1.5f;
-        arriveIn.rotation = yawRotation(insideYaw + 180.0f);
-        stage.stageReference(arriveIn, arriveIn.editorId);
-
-        const Vec3 outFacing { std::sin(glm::radians(anchor.yawDeg)), 0.0f,
-                               std::cos(glm::radians(anchor.yawDeg)) };
-        ReferenceForm arriveOut;
-        arriveOut.id = derived(dungeonId, kOutMarkerBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_arrive_out_%zu",
-                      dungeonName.c_str(), i);
-        arriveOut.editorId = editorId;
-        arriveOut.baseForm = marker.id;
-        arriveOut.cell = anchor.cell;
-        arriveOut.position = anchor.doorPos + outFacing * 1.5f;
-        arriveOut.rotation = yawRotation(anchor.yawDeg + 180.0f);
-        stage.stageReference(arriveOut, arriveOut.editorId);
-
-        // The door pair.
-        std::snprintf(editorId, sizeof(editorId), "%s_entrance_%zu",
-                      dungeonName.c_str(), i);
-        stageDoorForm(derived(dungeonId, kDoorInBase + i), editorId,
-                      dungeonName + " entrance", arriveIn.id);
-        std::snprintf(editorId, sizeof(editorId), "%s_exit_%zu",
-                      dungeonName.c_str(), i);
-        stageDoorForm(derived(dungeonId, kDoorOutBase + i), editorId,
-                      dungeonName + " exit", arriveOut.id);
-
-        ReferenceForm doorInRef;
-        doorInRef.id = derived(dungeonId, kDoorInRefBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_entrance_ref_%zu",
-                      dungeonName.c_str(), i);
-        doorInRef.editorId = editorId;
-        doorInRef.baseForm = derived(dungeonId, kDoorInBase + i);
-        doorInRef.cell = anchor.cell;
-        doorInRef.position = anchor.doorPos;
-        doorInRef.rotation = yawRotation(anchor.yawDeg);
-        stage.stageReference(doorInRef, doorInRef.editorId);
-        result.outsideDoorRefs.push_back(doorInRef.id);
-
-        ReferenceForm doorOutRef;
-        doorOutRef.id = derived(dungeonId, kDoorOutRefBase + i);
-        std::snprintf(editorId, sizeof(editorId), "%s_exit_ref_%zu",
-                      dungeonName.c_str(), i);
-        doorOutRef.editorId = editorId;
-        doorOutRef.baseForm = derived(dungeonId, kDoorOutBase + i);
-        doorOutRef.cell = entranceCell;
-        doorOutRef.position = bake.entrancePos;
-        doorOutRef.rotation = yawRotation(insideYaw);
-        stage.stageReference(doorOutRef, doorOutRef.editorId);
-    }
-
-    // Gameplay anchors from the mission semantics (bake.populateAnchors),
-    // instantiated from the mine kit. Each family is one loop shaped like
-    // the torches'; a null kit guid skips its family.
-    const auto stageAnchored =
-        [&](const dungeon::DungeonBakeResult::Anchor& anchor,
-            const core::Guid& refGuid, const core::Guid& baseForm,
-            const char* tag, size_t i, const Vec3& scale) {
-            const i32 cx =
-                static_cast<i32>(std::floor(anchor.position.x / cell));
-            const i32 cz =
-                static_cast<i32>(std::floor(anchor.position.z / cell));
-            ReferenceForm ref;
-            ref.id = refGuid;
-            std::snprintf(editorId, sizeof(editorId), "%s_%s_%zu",
-                          dungeonName.c_str(), tag, i);
-            ref.editorId = editorId;
-            ref.baseForm = baseForm;
-            ref.cell = stageCell(cx, cz);
-            ref.position = anchor.position;
-            ref.rotation = yawRotation(anchor.yawDeg);
-            ref.scale = scale;
-            stage.stageReference(ref, ref.editorId);
-        };
-    const Vec3 unit { 1.0f };
-    if (kit.lever.isValid() && kit.barrier.isValid()) {
-        // The lever's guid is keyed on the lockId; its barrier derives
-        // from the lever reference (barrierForLever — the scene inverts
-        // the pairing at pull time).
-        for (size_t i = 0; i < bake.levers.size(); ++i) {
-            const auto& lever = bake.levers[i];
-            const core::Guid leverRef =
-                derived(dungeonId, kLeverRefBase + lever.lockId);
-            stageAnchored(lever, leverRef, kit.lever, "lever", i, unit);
-            for (const auto& barrier : bake.barriers) {
-                if (barrier.lockId == lever.lockId) {
-                    // Stretched across the ~5 m tunnel (wider on a turn,
-                    // bake.width); hand-retouchable like any reference.
-                    // ONE barrier per lock: barrierForLever(leverRef) is
-                    // the whole identity — a second match would silently
-                    // overwrite the first and leave its tunnel open.
-                    stageAnchored(barrier, barrierForLever(leverRef),
-                                  kit.barrier, "barrier", i,
-                                  { 3.0f * barrier.width, 2.5f, 1.0f });
-                    break;
-                }
-            }
-        }
-    }
-    if (kit.chest.isValid()) {
-        for (size_t i = 0; i < bake.chests.size(); ++i) {
-            stageAnchored(bake.chests[i],
-                          derived(dungeonId, kChestRefBase + i), kit.chest,
-                          "chest", i, unit);
-        }
-    }
-    if (kit.oreItem.isValid()) {
-        for (size_t i = 0; i < bake.oreVeins.size(); ++i) {
-            stageAnchored(bake.oreVeins[i],
-                          derived(dungeonId, kVeinRefBase + i), kit.oreItem,
-                          "vein", i, unit);
-        }
-    }
-    if (kit.enemy.isValid()) {
-        for (size_t i = 0; i < bake.enemySpawns.size(); ++i) {
-            stageAnchored(bake.enemySpawns[i],
-                          derived(dungeonId, kEnemyRefBase + i), kit.enemy,
-                          "enemy", i, unit);
-        }
-    }
-    if (kit.npc.isValid()) {
-        for (size_t i = 0; i < bake.npcSpawns.size(); ++i) {
-            stageAnchored(bake.npcSpawns[i],
-                          derived(dungeonId, kNpcRefBase + i), kit.npc,
-                          "npc", i, unit);
-        }
-    }
-    // Patrol anchors: without loaded "patrol" markers the NPCs never
-    // wander — frozen bandits neither look around nor spot the player.
-    if (kit.enemy.isValid() && !bake.patrolPoints.empty()) {
-        MarkerForm patrol;
-        patrol.id = derived(dungeonId, kPatrolMarker);
-        patrol.editorId = dungeonName + "_patrol";
-        patrol.kind = "patrol";
-        const reflect::TypeInfo& markerType = MarkerForm::staticTypeInfo();
-        stage.ensure(markerType, patrol.id, patrol.editorId);
-        stage.live(patrol);
-        stage.set(markerType, patrol.id, "kind", patrol.kind);
-        for (size_t i = 0; i < bake.patrolPoints.size(); ++i) {
-            stageAnchored(bake.patrolPoints[i],
-                          derived(dungeonId, kPatrolRefBase + i), patrol.id,
-                          "patrol", i, unit);
-        }
-    }
-
-    // A re-Accept can shrink a family (fewer enemies, fewer cells): the
-    // shipped records past the new count would linger with their OLD
-    // layout's positions. Disable them, live + session, scanning each
-    // contiguous guid family past its new end.
-    u32 leftovers = 0;
-    const reflect::TypeInfo& refType = ReferenceForm::staticTypeInfo();
-    const auto disable = [&](const core::Guid& guid) {
-        const data::FormHandle handle = forms.handleOf(guid);
-        if (!handle.isValid() ||
-            !forms.typeOf(handle)->isA(refType.id)) {
-            return false;
-        }
-        auto* ref = static_cast<ReferenceForm*>(forms.getMutable(handle));
-        if (ref->enabled) {
-            ref->enabled = false;
-            stage.set(refType, guid, "enabled", false);
-            ++leftovers;
-        }
-        return true;
-    };
-    const auto disablePast = [&](u64 base, size_t from) {
-        for (size_t i = from; disable(derived(dungeonId, base + i)); ++i) {
-        }
-    };
-    disablePast(kCellRefBase, bake.cellMeshes.size());
-    disablePast(kTorchRefBase, bake.torches.size());
-    disablePast(kChestRefBase, bake.chests.size());
-    disablePast(kVeinRefBase, bake.oreVeins.size());
-    disablePast(kEnemyRefBase, bake.enemySpawns.size());
-    disablePast(kNpcRefBase, bake.npcSpawns.size());
-    disablePast(kPatrolRefBase, bake.patrolPoints.size());
-    disablePast(kInMarkerBase, anchors.size());
-    disablePast(kOutMarkerBase, anchors.size());
-    disablePast(kDoorInRefBase, anchors.size());
-    disablePast(kDoorOutRefBase, anchors.size());
-    // Levers are keyed by lockId, not by index: sweep a bounded id range
-    // and disable any lever (and its derived barrier) no current lock owns.
-    for (u64 id = 0; id < 64; ++id) {
-        bool owned = false;
-        for (const auto& lever : bake.levers) {
-            owned = owned || lever.lockId == id;
-        }
-        if (owned) {
-            continue;
-        }
-        const core::Guid leverRef = derived(dungeonId, kLeverRefBase + id);
-        if (disable(leverRef)) {
-            disable(barrierForLever(leverRef));
-        }
-    }
-
-    LOG_INFO("Dungeon '{}': staged {} cells, {} torches, {} anchors, "
-             "{} locks, {} enemies, {} veins, {} patrols "
-             "({} leftovers disabled, live + session)",
-             dungeonName, result.cellCount, result.torchCount,
-             anchors.size(), bake.levers.size(),
-             kit.enemy.isValid() ? bake.enemySpawns.size() : 0,
-             kit.oreItem.isValid() ? bake.oreVeins.size() : 0,
-             kit.enemy.isValid() ? bake.patrolPoints.size() : 0, leftovers);
-    return result;
+    return stageDungeonRecords(DungeonStageInputs {
+        session, forms, model, bake, dungeonId, dungeonName, cellMeshAsset,
+        navAsset, anchors, kit, doorModel, doorMaterial });
 }
 
 } // namespace world

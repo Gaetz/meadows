@@ -46,6 +46,13 @@ void check(bool ok, const char* what) {
     }
 }
 
+// "No validation error" verdicts: the layer's message counter must not have
+// moved since `before` (an unconditional PASS proved nothing).
+void checkValidationClean(const rhi::Device& device, u32 before,
+                          const char* what) {
+    check(device.validationMessageCount() == before, what);
+}
+
 // Round-trips a buffer through the GPU: writes `pattern`, reads it back, and
 // compares. Covers both memory paths — mapped (dynamic/readback) and
 // device-local (staging copy in, staging copy out).
@@ -128,8 +135,10 @@ void testTextures(rhi::Device& device) {
                                .filter = rhi::FilterMode::Linear },
                              pixels.data());
     check(tex2d.id != 0, "createTexture 2D RGBA8 + mips");
+    const u32 beforeMips = device.validationMessageCount();
     device.generateMipmaps(tex2d);
-    check(true, "generateMipmaps (no validation error)");
+    checkValidationClean(device, beforeMips,
+                         "generateMipmaps (no validation error)");
 
     // Array texture (CSM cascades / splat layers).
     vector<u32> layered(kSize * kSize * 4, 0xFF00FF00u);
@@ -208,7 +217,6 @@ void testTextures(rhi::Device& device) {
                  "avg {:.2f} ms, max {:.2f} ms per texture",
                  kBenchCount, kBenchSize, total,
                  total / static_cast<f64>(kBenchCount), worst);
-        check(true, "upload bench ran");
     }
 
     // Samplers, including the comparison sampler shadow PCF needs.
@@ -494,6 +502,7 @@ void testImGui(platform::Window& window, rhi::Device& device) {
     if (!imgui) {
         return;
     }
+    const u32 before = device.validationMessageCount();
     for (u32 i = 0; i < 3; ++i) {
         imgui->beginFrame();
         ImGui::Begin("vksmoke");
@@ -506,7 +515,9 @@ void testImGui(platform::Window& window, rhi::Device& device) {
         cmd.endRenderPass();
         device.endFrame();
     }
-    check(true, "ImGuiLayer::render recorded on Vulkan (no validation error)");
+    checkValidationClean(
+        device, before,
+        "ImGuiLayer::render recorded on Vulkan (no validation error)");
 }
 
 void testInGameUi(rhi::Device& device) {
@@ -537,6 +548,7 @@ void testInGameUi(rhi::Device& device) {
 
     uiSystem.update(1.0f / 60.0f);
     // Draw it for a few frames, inside the backbuffer pass as the contract says.
+    const u32 before = device.validationMessageCount();
     for (u32 i = 0; i < 3; ++i) {
         auto& cmd = device.beginFrame();
         cmd.beginRenderPass({ .clearColor = { 0.05f, 0.06f, 0.09f, 1.0f } });
@@ -544,7 +556,9 @@ void testInGameUi(rhi::Device& device) {
         cmd.endRenderPass();
         device.endFrame();
     }
-    check(true, "UiSystem::render recorded on Vulkan (no validation error)");
+    checkValidationClean(
+        device, before,
+        "UiSystem::render recorded on Vulkan (no validation error)");
     uiSystem.destroy(device);
 }
 

@@ -16,6 +16,7 @@
 #include "engine/render/landscape/TreeGenerator.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 
 namespace render {
@@ -73,7 +74,7 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     instancePool.freeBlocks = { { 0, InstancePool::kCapacity } };
     createVariantMeshes(device, terrainSeed);
     rebuildLeafMask(device);
-    shaders.load(kTreeShader, { { "FrameUbo", 0 } },
+    shaders.load(kTreeShader, { render::kFrameUbo },
                  { { "uLeafMask", 0 },
                    { "uShadowMap", 1 },
                    { "uPropNormal", 12 },
@@ -82,7 +83,7 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uBarkNrm", 14 },
                    { "uFireScorch", 10 } });
     buildPipeline(device, shaders);
-    shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } },
+    shaders.load(kPropCasterShader, { render::kFrameUbo, render::kShadowUbo },
                  { { "uLeafMask", 0 }, { "uFireScorch", 10 } });
     buildCasterPipeline(device, shaders);
 }
@@ -172,7 +173,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     }
     scatteredFadeEnd = fadeNow;
     instancePool.tick(); // two-frame-cooled blocks become reusable
-    // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
+    // Budgeted uploads (U3-1: ring mechanics in core::ChunkStreamer; this lambda
     // is the vegetation-specific accept — variant packing + GPU upload
     // into the pooled instance buffer).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
@@ -194,15 +195,12 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             chunk.counts[v] = static_cast<u32>(built.payload[v].size());
             packed.insert(packed.end(), built.payload[v].begin(),
                           built.payload[v].end());
-            if (v >= kFirstPlant) {
-                continue; // plants: no GI injection boxes (small cutouts)
-            }
             // The compact CPU copy for the GI injection boxes (and the
-            // tree-fire lookup): kind 0 = tree, 1 = rock-like solid
-            // (rocks AND forest-floor debris), 2 = bush.
-            const u8 kind = v < kFirstRock                          ? 0
-                            : (v < kFirstBush || v >= kFirstDebris) ? 1
-                                                                    : 2;
+            // tree-fire lookup), for the families the table injects.
+            const u8 kind = traitsOf(v).giKind;
+            if (kind == kNoGiKind) {
+                continue;
+            }
             for (const Instance& instance : built.payload[v]) {
                 chunk.giProps.push_back(
                     { Vec3 { instance.positionScale },
@@ -239,16 +237,16 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     // Request missing chunks — nearest first, budgeted (the rest is
     // re-detected next frame; the state IS the queue). See TerrainSystem:
     // the unbudgeted ring edge was part of the fast-travel stutter.
-    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
-    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    const i32 camCx = core::chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = core::chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     if (!holdRequests) {
         streamer.requestMissing(
             camCx, camCz, viewRadius, kMaxRequestsPerFrame,
             [&](i32 cx, i32 cz, i32, i32) {
-                return !streamer.chunks.contains(chunkKey(cx, cz));
+                return !streamer.chunks.contains(core::chunkKey(cx, cz));
             },
             [&](i32 cx, i32 cz, i32, i32) {
-                streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
+                streamer.chunks.emplace(core::chunkKey(cx, cz), Chunk {});
                 const f32 fade = treeFadeEnd();
                 streamer.enqueueBuild(cx, cz, [params, cx, cz, fade] {
                     return scatterProps(params, cx, cz, fade);

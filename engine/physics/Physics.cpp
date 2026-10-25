@@ -87,6 +87,16 @@ JPH::Vec3 toJph(const Vec3& v) { return { v.x, v.y, v.z }; }
 JPH::Quat toJph(const Quat& q) { return { q.x, q.y, q.z, q.w }; }
 Vec3 toGlm(JPH::Vec3Arg v) { return { v.GetX(), v.GetY(), v.GetZ() }; }
 
+// BodyId = Jolt's packed id (index | sequence << 24) PLUS ONE, so that 0
+// stays "invalid": the raw packing reaches 0 for slot 0 once its 8-bit
+// sequence wraps, and a live body would then read as a failed add.
+BodyId toBodyId(JPH::BodyID id) {
+    return static_cast<BodyId>(id.GetIndexAndSequenceNumber()) + 1;
+}
+JPH::BodyID toJphBody(BodyId body) {
+    return JPH::BodyID { static_cast<JPH::uint32>(body - 1) };
+}
+
 // Jolt's Factory/type registration is process-global; refcount it so
 // several PhysicsWorlds (tests) coexist.
 u32 gJoltUsers = 0;
@@ -154,7 +164,7 @@ BodyId PhysicsWorld::addStaticBox(const Vec3& halfExtents,
     const JPH::BodyID body =
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::DontActivate);
-    return body.GetIndexAndSequenceNumber();
+    return toBodyId(body);
 }
 
 BodyId PhysicsWorld::addHeightField(const f32* samples, u32 sampleCount,
@@ -177,7 +187,7 @@ BodyId PhysicsWorld::addHeightField(const f32* samples, u32 sampleCount,
     const JPH::BodyID body =
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::DontActivate);
-    return body.GetIndexAndSequenceNumber();
+    return toBodyId(body);
 }
 
 BodyId PhysicsWorld::addStaticMesh(const Vec3* vertices, u32 vertexCount,
@@ -215,7 +225,7 @@ BodyId PhysicsWorld::addStaticMesh(const Vec3* vertices, u32 vertexCount,
     const JPH::BodyID body =
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::DontActivate);
-    return body.GetIndexAndSequenceNumber();
+    return toBodyId(body);
 }
 
 BodyId PhysicsWorld::addDynamicConvex(const Vec3* vertices, u32 vertexCount,
@@ -252,11 +262,11 @@ BodyId PhysicsWorld::addDynamicConvex(const Vec3* vertices, u32 vertexCount,
     const JPH::BodyID body =
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::Activate);
-    return body.GetIndexAndSequenceNumber();
+    return toBodyId(body);
 }
 
 void PhysicsWorld::setKinematic(BodyId body, bool kinematic) {
-    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    const JPH::BodyID id = toJphBody(body);
     pimpl->system.GetBodyInterface().SetMotionType(
         id, kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic,
         JPH::EActivation::Activate);
@@ -264,18 +274,18 @@ void PhysicsWorld::setKinematic(BodyId body, bool kinematic) {
 
 void PhysicsWorld::moveKinematic(BodyId body, const Vec3& position,
                                  const Quat& rotation, f32 dt) {
-    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    const JPH::BodyID id = toJphBody(body);
     pimpl->system.GetBodyInterface().MoveKinematic(
         id, toJph(position), toJph(rotation), glm::max(dt, 1e-4f));
 }
 
 void PhysicsWorld::setLinearVelocity(BodyId body, const Vec3& velocity) {
-    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    const JPH::BodyID id = toJphBody(body);
     pimpl->system.GetBodyInterface().SetLinearVelocity(id, toJph(velocity));
 }
 
 PhysicsWorld::BodyPose PhysicsWorld::bodyPose(BodyId body) const {
-    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    const JPH::BodyID id = toJphBody(body);
     BodyPose pose;
     const JPH::BodyInterface& bodies = pimpl->system.GetBodyInterface();
     JPH::RVec3 position;
@@ -289,7 +299,7 @@ PhysicsWorld::BodyPose PhysicsWorld::bodyPose(BodyId body) const {
 }
 
 void PhysicsWorld::removeBody(BodyId body) {
-    const JPH::BodyID id { static_cast<JPH::uint32>(body) };
+    const JPH::BodyID id = toJphBody(body);
     pimpl->system.GetBodyInterface().RemoveBody(id);
     pimpl->system.GetBodyInterface().DestroyBody(id);
 }
@@ -307,7 +317,7 @@ RayHit PhysicsWorld::rayCast(const Vec3& from, const Vec3& direction,
         hit.position = { static_cast<f32>(point.GetX()),
                          static_cast<f32>(point.GetY()),
                          static_cast<f32>(point.GetZ()) };
-        hit.body = result.mBodyID.GetIndexAndSequenceNumber();
+        hit.body = toBodyId(result.mBodyID);
         JPH::BodyLockRead lock { pimpl->system.GetBodyLockInterface(),
                                  result.mBodyID };
         if (lock.Succeeded()) {
@@ -338,7 +348,7 @@ RayHit PhysicsWorld::sphereCast(const Vec3& from, const Vec3& direction,
         if (axis.LengthSq() > 1.0e-12f) {
             hit.normal = toGlm(-axis.Normalized());
         }
-        hit.body = collector.mHit.mBodyID2.GetIndexAndSequenceNumber();
+        hit.body = toBodyId(collector.mHit.mBodyID2);
     }
     return hit;
 }

@@ -13,7 +13,7 @@ namespace gameplay {
 namespace {
 
 bool isDead(const GameTimeTickArgs& a) {
-    const auto dead = a.tags.find("State.Dead");
+    const auto dead = a.tags.find(tags::Dead);
     return dead && a.system.tags.has(*dead);
 }
 
@@ -22,7 +22,7 @@ bool isDead(const GameTimeTickArgs& a) {
 // revive/bleedout paths own the exit from Downed, exactly like the
 // corpse-regen gate above owns Dead).
 bool isDowned(const GameTimeTickArgs& a) {
-    const auto downed = a.tags.find("State.Downed");
+    const auto downed = a.tags.find(tags::Downed);
     return downed && a.system.tags.has(*downed);
 }
 
@@ -56,19 +56,13 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
         a.combat.posture = std::max(0.0f,
             a.combat.posture - maxP * a.tuning.electrocutionPostureDrainPercent);
         // The jolt also breaks the stance — on BOTH the real-time and
-        // time-skip paths.
-        a.combat.staggerSeconds =
-            std::max(a.combat.staggerSeconds, a.tuning.staggerSeconds);
-        if (const auto staggered = a.tags.find("State.Staggered")) {
-            a.system.tags.add(*staggered, a.tags);
-        }
+        // time-skip paths; a stagger already running keeps its longer clock.
+        grantTimedState(a.combat, a.system, a.tags, TimedState::Staggered,
+                        a.tuning.staggerSeconds, Grant::Extend);
     }
     if (br.glaciationTriggered) {
-        a.combat.paralysisSeconds = std::max(
-            a.combat.paralysisSeconds, a.tuning.glaciationParalysisDuration);
-        if (const auto tag = a.tags.find("State.Paralyzed")) {
-            a.system.tags.add(*tag, a.tags);
-        }
+        grantTimedState(a.combat, a.system, a.tags, TimedState::Paralyzed,
+                        a.tuning.glaciationParalysisDuration, Grant::Extend);
     }
     if (br.deathTriggered) {
         // Lethal zeroing writes the BASE (§2.9): setting the State.Dead

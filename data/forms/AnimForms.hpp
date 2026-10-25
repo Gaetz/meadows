@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "data/forms/Vocabularies.hpp"
 
 // Animation data Forms. The anim RUNTIME lives in
 // engine/anim (flat structs, no data:: dependency); world/scene/AnimBridge
@@ -93,7 +94,7 @@ struct AnimTransitionForm : Form {
         REFLECT_FIELD(from)
         REFLECT_FIELD(to)
         REFLECT_FIELD(param)
-        REFLECT_FIELD(compare)
+        REFLECT_FIELD_ENUM(compare, vocab::kAnimCompares)
         REFLECT_FIELD(threshold)
         REFLECT_FIELD(requiredTag)
         REFLECT_FIELD(blockedTag)

@@ -20,6 +20,18 @@
 
 namespace nav {
 
+// Contract shared by every Navigator:
+//  - `acceptanceRadius`: the search may stop at the first node within this
+//    distance of `to` (an unreachable exact goal still yields a path to
+//    its edge). Cell navigators that resolve the goal to one cell treat
+//    the cell as the acceptance.
+//  - `waypoints`: `from` first, the goal last (grounded by the navigator
+//    that knows the ground), intermediate points are node positions the
+//    mover steers through. Empty with success=false when no path exists.
+// Of the three world/ai navigators only TerrainNavigator honours both
+// clauses today; the cell navigators return cell centers only and resolve
+// the goal to its exact cell. A shared A* core is the intended way to make
+// them comply by construction rather than by three hand-written loops.
 struct PathQuery {
     Vec3 from {};
     Vec3 to {};

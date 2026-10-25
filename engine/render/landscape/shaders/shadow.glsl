@@ -43,7 +43,9 @@ float shadowFactor(vec3 worldPos, vec3 normal) {
     // (ShadowMapper::kFarCascadeScale, fed through uSsaoInfo.w): the
     // receiver samples the same corner. The margin clamp keeps the
     // hardware-compare bilinear out of the unused area.
-    float texel = 1.0 / 2048.0;
+    // The live resolution (1024/2048/4096): the 3x3 PCF kernel and the
+    // margin stay ONE texel wide at every size.
+    float texel = 1.0 / float(textureSize(uShadowMap, 0).x);
     float uvScale = cascade == 0 ? 1.0 : uSsaoInfo.w;
     proj.xy = min(proj.xy * uvScale, vec2(uvScale - texel));
 

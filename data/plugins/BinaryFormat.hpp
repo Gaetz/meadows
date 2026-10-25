@@ -22,6 +22,8 @@ vector<u8> writePluginBinary(const Plugin& plugin);
 // Bounds-checked; returns nullopt (with a logged error) on truncation, bad
 // magic, or unknown version/field kind. Does not need the type registry:
 // type/field ids are stored raw and validated later by the resolver.
+// `sourceName` is the file path: it labels the errors and its directory
+// becomes `Plugin::baseDir` (asset paths are plugin-relative).
 std::optional<Plugin> readPluginBinary(std::span<const u8> bytes,
                                        std::string_view sourceName);
 

@@ -6,15 +6,17 @@
 #include <functional>
 #include <string>
 
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/core/Clock.hpp"
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 #include "engine/terrain/WaterBodies.hpp"
 #include "engine/terrain/WaterSim.hpp"
-#include "engine/render/ShaderLibrary.hpp"
 
 namespace core {
 class JobSystem;
@@ -48,6 +50,8 @@ public:
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobSystem);
     void destroy(rhi::Device& device);
+    // Builds the pipelines on first call and rebuilds the ones whose
+    // shaders were hot-reloaded (WatchedPipeline). Once per frame.
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     // Pumps finished pool-map bakes and triggers a rebake when the camera
@@ -215,7 +219,7 @@ public:
     }
     f32 simCostMs() const { return simLastMs; } // worker job, F6 line
     bool simIsValid() const { return simValid; }
-    bool simIsPreRolling() const { return simInFlight && !simState; }
+    bool simIsPreRolling() const { return simJobs.busy() && !simState; }
     bool simIsSettling() const { return simSettling; } // gate active
     u32 simWetCellCount() const { return simWetCells; } // last upload
     // On-site debugging: dump the live window (planes + params +
@@ -228,7 +232,7 @@ public:
 private:
     struct BakedMap {
         Vec2 center {};
-        u64 generation { 0 };
+        u64 gen { 0 }; // BakeMailbox stamp
         u32 seed { 0 };
         f32 seaLevel { 0.0f };
         u64 bodiesStamp { 0 };
@@ -242,13 +246,13 @@ private:
     // frame through every bake storm (measured dev). Main only
     // uploads the buffers (Phase-5).
     struct LocalMesh {
-        u64 generation { 0 };
+        u64 gen { 0 }; // BakeMailbox stamp
         u64 stamp { 0 }; // bodiesStamp the build saw
         vector<f32> verts;
         vector<u32> indices;
     };
     struct SimResult {
-        u64 generation { 0 };
+        u64 gen { 0 }; // BakeMailbox stamp
         u32 epoch { 0 };
         sptr<terrain::WaterSimState> state;
         sptr<terrain::WaterSimSnapshot> snap;
@@ -260,20 +264,12 @@ private:
     // Far-water geometry, built like LocalMesh on a worker; carries
     // the request center + content stamp for the staleness check.
     struct FarMesh {
-        u64 generation { 0 };
+        u64 gen { 0 }; // BakeMailbox stamp
         u64 stamp { 0 }; // contentStamp the build saw
         Vec2 center { 0.0f };
         vector<f32> verts;
         vector<u32> indices;
     };
-    struct Shared {
-        core::ConcurrentQueue<BakedMap> baked;
-        core::ConcurrentQueue<SimResult> simDone;
-        core::ConcurrentQueue<LocalMesh> localMesh;
-        core::ConcurrentQueue<FarMesh> farMesh;
-    };
-
-    void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void kickLocalGeometry(const TerrainParams& params);
     // Worker-side geometry build (see LocalMesh): pure function of
     // the published bodies + params, static so the job needs no this.
@@ -291,26 +287,32 @@ private:
     void uploadSimTextures(rhi::Device& device,
                            const terrain::WaterSimSnapshot& snap);
 
-    sptr<Shared> shared;
-    core::JobSystem* jobs { nullptr };
-    u64 generation { 0 };
-    bool bakeInFlight { false };
+    // The four worker lanes (one job in flight each, generation-stamped
+    // results drained on main): the pool-depth map, the local and far
+    // geometry builds, the sim steps.
+    core::BakeMailbox<BakedMap> poolBakes;
+    core::BakeMailbox<LocalMesh> localBuilds;
+    core::BakeMailbox<FarMesh> farBuilds;
+    core::BakeMailbox<SimResult> simJobs;
     Vec2 mapCenter { 1e9f, 1e9f }; // far away: first update() bakes
     u32 bakedSeed { 0 };
     f32 bakedSeaLevel { -1e9f };
 
-    rhi::BufferHandle vertexBuffer {};
-    rhi::BufferHandle indexBuffer {};
-    rhi::PipelineHandle pipeline {};
-    ShaderLibrary::Watch shaderWatch;
-    rhi::TextureHandle poolMap {};
-    rhi::SamplerHandle poolMapSampler {};
-    rhi::BindGroupHandle poolMapGroup {};
+    rhi::UniqueBuffer vertexBuffer;
+    rhi::UniqueBuffer indexBuffer;
+    WatchedPipeline pipeline;
+    rhi::UniqueTexture poolMap;
+    rhi::UniqueSampler poolMapSampler;
+    // Sim window depth / current XZ / spare (binding 8 of the map group).
+    rhi::UniqueTexture simMapB;
 
     // Water material presets (WaterMaterialsUbo, binding 1 of the map
     // group): 16 slots, slot 0 = default water.
     static constexpr u32 kMaxWaterMaterials = 16;
-    rhi::BufferHandle materialsUbo {};
+    rhi::UniqueBuffer materialsUbo;
+    // Declared after everything it binds: members destroy in reverse
+    // order, so the group goes before its textures and buffers.
+    rhi::UniqueBindGroup poolMapGroup;
 
     // Local surfaces (lakes/rivers): world-space triangles, own pipeline
     // (waterlocal.vert), shared water shading.
@@ -319,21 +321,17 @@ private:
     u64 bakedBodiesStamp { ~0ull };
     u64 bakedContentStamp { 0 }; // pool map, rect-scoped (touchedSince)
     bool bodiesDirty { false };
-    bool localBuildInFlight { false };
-    rhi::BufferHandle localVertexBuffer {};
-    rhi::BufferHandle localIndexBuffer {};
+    rhi::UniqueBuffer localVertexBuffer;
+    rhi::UniqueBuffer localIndexBuffer;
     FarWaterFn farFn;
     bool farDirty { false };
-    bool farBuildInFlight { false };
     Vec2 farCenter { 1.0e9f, 1.0e9f };
     u64 farStamp { ~0ull };
-    // Content-stamp coalescing for the far collect (FarTerrain pattern).
-    u64 farLastSeenStamp { 0 };
-    core::TimePoint farQuietSince {};
-    rhi::BufferHandle farVertexBuffer {};
-    rhi::BufferHandle farIndexBuffer {};
+    core::QuietStamp farContent; // the far collect rescans once per publish burst
+    rhi::UniqueBuffer farVertexBuffer;
+    rhi::UniqueBuffer farIndexBuffer;
     u32 farIndexCount { 0 };
-    rhi::PipelineHandle localPipeline {};
+    WatchedPipeline localPipeline;
     u32 localIndexCount { 0 };
 
     // Sim window state (see the public block).
@@ -343,7 +341,6 @@ private:
     sptr<const terrain::WaterSimSnapshot> simSnap;
     vector<terraingen::WaterSource> simSrcCache;
     vector<terraingen::WaterSource> simRuntimeSources; // gameplay springs
-    bool simInFlight { false };
     bool simGroundDirty { false };
     bool simValid { false }; // snapshot uploaded and fresh
     f32 simRainIntensity { 0.0f }; // live storm 0..1 (E6 puddles)
@@ -406,8 +403,8 @@ private:
     // LOD-flattened, advection invisible); the alternative — growing
     // the window — scales n² in kernel, uploads and pre-roll.
     struct FrozenWindow {
-        rhi::BufferHandle vertexBuffer {};
-        rhi::BufferHandle indexBuffer {};
+        rhi::UniqueBuffer vertexBuffer;
+        rhi::UniqueBuffer indexBuffer;
         u32 indexCount { 0 };
         f32 originX { 0.0f };
         f32 originZ { 0.0f };
@@ -418,28 +415,27 @@ private:
     void simFreeze(rhi::Device& device,
                    const terrain::WaterSimSnapshot& snap,
                    f32 replaceRadius, bool pushIfNoMatch);
-    void simFrozenClearNow(rhi::Device& device);
-    rhi::PipelineHandle simFrozenPipeline {};
-    rhi::TextureHandle simMapB {}; // depth / current XZ / spare (binding 8)
+    void simFrozenClearNow();
+    WatchedPipeline simFrozenPipeline;
     // The ONE closed water mesh (built worker-side in extractSnapshot,
     // uploaded verbatim per tick).
-    rhi::BufferHandle simVertexBuffer {};
-    rhi::BufferHandle simIndexBuffer {};
+    rhi::UniqueBuffer simVertexBuffer;
+    rhi::UniqueBuffer simIndexBuffer;
     u32 simIndexCount { 0 };
     u32 simWetCells { 0 };
     std::string simDumpPath; // non-empty = dump requested
-    rhi::PipelineHandle simPipeline {};
+    WatchedPipeline simPipeline;
     // Seam-overlay variant: no depth test — shows where the sim HAS
     // water even where the sheet would lose the depth fight (the
     // unambiguous "is the sim alive here" view).
-    rhi::PipelineHandle simPipelineOverlay {};
+    WatchedPipeline simPipelineOverlay;
     // Debug volume boxes (Sim mode "Volumes debug"): one translucent
     // column per wet cell, instanced.
-    rhi::BufferHandle simBoxVertexBuffer {};
-    rhi::BufferHandle simBoxIndexBuffer {};
-    rhi::BufferHandle simBoxInstanceBuffer {};
+    rhi::UniqueBuffer simBoxVertexBuffer;
+    rhi::UniqueBuffer simBoxIndexBuffer;
+    rhi::UniqueBuffer simBoxInstanceBuffer;
     u32 simBoxInstances { 0 };
-    rhi::PipelineHandle simBoxPipeline {};
+    WatchedPipeline simBoxPipeline;
 };
 
 } // namespace render

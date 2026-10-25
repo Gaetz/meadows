@@ -95,11 +95,11 @@ private:
 
     // An ACTIVE follower in combat tries his special power
     // (the first granted ability that isn't the shared attack — granted by
-    // his class perks). Policy per FollowerClassForm.combatStyle:
-    //   "healer"        -> tryActivate the power ON the lowest ally
+    // his class perks). Policy per gameplay::CombatStyle:
+    //   Healer          -> tryActivate the power ON the lowest ally
     //                      strictly below followerHealThreshold (player,
     //                      followers, herself — gameplay::pickHealTarget);
-    //   anything else   -> self-cast when engaging ("melee" war cry).
+    //   anything else   -> self-cast when engaging (the melee war cry).
     // The ability's own cost/cooldown effects gate the cadence
     // (tryActivate refuses); powerRetryTimer only bounds the call rate.
     void tryUsePower(f32 dt, const NpcContext& ctx, Npc& npc,

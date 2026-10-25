@@ -97,17 +97,9 @@ ImGuiLayer::ImGuiLayer(platform::Window& window, rhi::Device& device)
 
 ImGuiLayer::~ImGuiLayer() {
     window.setEventHook(nullptr);
-    for (auto& [id, group] : textureGroups) {
-        device.destroyBindGroup(group);
-    }
-    device.destroyTexture(fontTexture);
-    device.destroySampler(sampler);
-    device.destroyPipeline(pipeline);
-    device.destroyShader(shader);
-    device.destroyBuffer(vertexBuffer);
-    device.destroyBuffer(indexBuffer);
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+    // GPU objects release through their owning members after this body.
 }
 
 uptr<ImGuiLayer> ImGuiLayer::create(platform::Window& window,
@@ -151,39 +143,46 @@ bool ImGuiLayer::createDeviceObjects() {
     int width = 0;
     int height = 0;
     ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-    fontTexture = device.createTexture({ .width = static_cast<u32>(width),
-                                         .height = static_cast<u32>(height),
-                                         .format = rhi::TextureFormat::RGBA8 },
-                                       pixels);
-    ImGui::GetIO().Fonts->SetTexID(static_cast<ImTextureID>(fontTexture.id));
-    sampler = device.createSampler({});
+    fontTexture = { device,
+                    device.createTexture(
+                        { .width = static_cast<u32>(width),
+                          .height = static_cast<u32>(height),
+                          .format = rhi::TextureFormat::RGBA8 },
+                        pixels) };
+    ImGui::GetIO().Fonts->SetTexID(static_cast<ImTextureID>(fontTexture.id()));
+    sampler = { device, device.createSampler({}) };
 
-    shader = device.createShader({ .debugName = "imgui",
-                                   .vertexSource = kVertexShader,
-                                   .fragmentSource = kFragmentShader });
-    if (shader.id == 0) {
+    shader = { device,
+               device.createShader({ .debugName = "imgui",
+                                     .vertexSource = kVertexShader,
+                                     .fragmentSource = kFragmentShader }) };
+    if (!shader) {
         // Expected on GL 4.1 (macOS): the shader needs GLSL 420+ for its
         // explicit uniform/sampler bindings. Not an error — see create().
         return false;
     }
-    pipeline = device.createPipeline(
-        { .shader = shader,
-          .vertexBuffers =
-              { { .stride = sizeof(ImGuiVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x2,
-                          .offset = static_cast<u32>(offsetof(ImGuiVertex, position)) },
-                        { .location = 1,
-                          .format = rhi::VertexFormat::F32x2,
-                          .offset = static_cast<u32>(offsetof(ImGuiVertex, uv)) },
-                        { .location = 2,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = static_cast<u32>(offsetof(ImGuiVertex, color)) } } } },
-          // ImGui colors are straight (non-premultiplied) alpha.
-          .blend = rhi::BlendMode::Alpha,
-          .pushConstantSize = sizeof(ImGuiUniforms) });
-    if (pipeline.id == 0) {
+    pipeline = { device,
+                 device.createPipeline(
+                     { .shader = shader,
+                       .vertexBuffers =
+                           { { .stride = sizeof(ImGuiVertex),
+                               .attributes =
+                                   { { .location = 0,
+                                       .format = rhi::VertexFormat::F32x2,
+                                       .offset = static_cast<u32>(offsetof(
+                                           ImGuiVertex, position)) },
+                                     { .location = 1,
+                                       .format = rhi::VertexFormat::F32x2,
+                                       .offset = static_cast<u32>(
+                                           offsetof(ImGuiVertex, uv)) },
+                                     { .location = 2,
+                                       .format = rhi::VertexFormat::F32x4,
+                                       .offset = static_cast<u32>(offsetof(
+                                           ImGuiVertex, color)) } } } },
+                       // ImGui colors are straight (non-premultiplied) alpha.
+                       .blend = rhi::BlendMode::Alpha,
+                       .pushConstantSize = sizeof(ImGuiUniforms) }) };
+    if (!pipeline) {
         LOG_ERROR("ImGui: pipeline creation failed");
         return false;
     }
@@ -192,14 +191,29 @@ bool ImGuiLayer::createDeviceObjects() {
 
 rhi::BindGroupHandle ImGuiLayer::groupFor(u32 textureId) {
     if (auto it = textureGroups.find(textureId); it != textureGroups.end()) {
-        return it->second;
+        it->second.lastUsedFrame = frameIndex;
+        return it->second.group;
     }
-    const rhi::BindGroupHandle group = device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = rhi::TextureHandle { textureId },
-                         .sampler = sampler } } });
-    textureGroups.emplace(textureId, group);
-    return group;
+    rhi::UniqueBindGroup group {
+        device, device.createBindGroup(
+                    { .entries = { { .binding = 0,
+                                     .texture = rhi::TextureHandle { textureId },
+                                     .sampler = sampler } } }) };
+    const rhi::BindGroupHandle raw = group;
+    textureGroups.emplace(textureId,
+                          TextureGroup { std::move(group), frameIndex });
+    return raw;
+}
+
+void ImGuiLayer::purgeStaleGroups() {
+    constexpr u64 kKeepFrames = 120; // a toggled panel keeps its group
+    for (auto it = textureGroups.begin(); it != textureGroups.end();) {
+        if (frameIndex - it->second.lastUsedFrame > kKeepFrames) {
+            it = textureGroups.erase(it); // releases the bind group
+        } else {
+            ++it;
+        }
+    }
 }
 
 void ImGuiLayer::processEvent(const void* nativeEvent) {
@@ -215,9 +229,9 @@ void ImGuiLayer::render(rhi::CommandBuffer& cmd) {
     // ImGui::Render() must run even in degraded mode: it closes the frame
     // NewFrame opened (skipping it trips ImGui's frame-scope asserts).
     ImGui::Render();
+    ++frameIndex;
     const ImDrawData* drawData = ImGui::GetDrawData();
-    if (pipeline.id == 0 || drawData == nullptr ||
-        drawData->TotalVtxCount == 0) {
+    if (!pipeline || drawData == nullptr || drawData->TotalVtxCount == 0) {
         return;
     }
 
@@ -303,26 +317,28 @@ void ImGuiLayer::render(rhi::CommandBuffer& cmd) {
         }
     }
     cmd.clearScissor();
+    purgeStaleGroups();
 }
 
 void ImGuiLayer::growBuffers(size_t vertexCount, size_t indexCount) {
-    if (vertexCount > vertexCapacity || vertexBuffer.id == 0) {
-        device.destroyBuffer(vertexBuffer);
+    // Re-assigning the owning handle releases the outgrown buffer.
+    if (vertexCount > vertexCapacity || !vertexBuffer) {
         vertexCapacity = vertexCount + vertexCount / 2 + 4096;
-        vertexBuffer = device.createBuffer(
-            { .usage = rhi::BufferUsage::Vertex,
-              .size = vertexCapacity * sizeof(ImGuiVertex),
-              .dynamic = true },
-            nullptr);
+        vertexBuffer = { device,
+                         device.createBuffer(
+                             { .usage = rhi::BufferUsage::Vertex,
+                               .size = vertexCapacity * sizeof(ImGuiVertex),
+                               .dynamic = true },
+                             nullptr) };
     }
-    if (indexCount > indexCapacity || indexBuffer.id == 0) {
-        device.destroyBuffer(indexBuffer);
+    if (indexCount > indexCapacity || !indexBuffer) {
         indexCapacity = indexCount + indexCount / 2 + 8192;
-        indexBuffer = device.createBuffer(
-            { .usage = rhi::BufferUsage::Index,
-              .size = indexCapacity * sizeof(ImDrawIdx),
-              .dynamic = true },
-            nullptr);
+        indexBuffer = { device,
+                        device.createBuffer(
+                            { .usage = rhi::BufferUsage::Index,
+                              .size = indexCapacity * sizeof(ImDrawIdx),
+                              .dynamic = true },
+                            nullptr) };
     }
 }
 

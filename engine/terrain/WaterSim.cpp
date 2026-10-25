@@ -147,10 +147,7 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         if (source.discharge >= 0.0f) {
             continue;
         }
-        const i32 col = static_cast<i32>(
-            std::lround((source.x - spec.originX) / texel));
-        const i32 row = static_cast<i32>(
-            std::lround((source.z - spec.originZ) / texel));
+        const auto [col, row] = spec.cellOf(source.x, source.z);
         for (i32 dz = -2; dz <= 2; ++dz) {
             for (i32 dx = -2; dx <= 2; ++dx) {
                 if (dx * dx + dz * dz > 4) {
@@ -309,10 +306,7 @@ void stepWindow(WaterSimState& state, const WaterSimParams& params,
         // standing spike — a growing dark spot at every river entry
         // (measured in-game).
         for (const WaterSource& source : sources) {
-            const i32 col = static_cast<i32>(
-                std::lround((source.x - spec.originX) / texel));
-            const i32 row = static_cast<i32>(
-                std::lround((source.z - spec.originZ) / texel));
+            const auto [col, row] = spec.cellOf(source.x, source.z);
             i32 taps = 0;
             for (i32 dz = -2; dz <= 2; ++dz) {
                 for (i32 dx = -2; dx <= 2; ++dx) {

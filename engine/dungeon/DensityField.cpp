@@ -62,8 +62,8 @@ DensityField::DensityField(const SpaceGraph& graph,
         for (size_t i = 1; i < edge.path.size(); ++i) {
             const Vec3 a = slotCenter(sp, edge.path[i - 1]);
             const Vec3 b = slotCenter(sp, edge.path[i]);
-            const f32 radius = params.tunnelRadius *
-                               (edge.kind == EdgeKind::Hidden ? 0.7f : 1.0f);
+            const f32 radius =
+                params.tunnelRadius * edgeTraits(edge.kind).radiusScale;
             // Bend each FLAT hop at a laterally offset midpoint (tree-
             // branch wobble). Ramps stay straight: their two hinged floor
             // planes would crease at the bend into a nav-breaking step —

@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <variant>
@@ -112,7 +114,82 @@ enum FieldFlags : u32 {
     None = 0,
     // Excluded from serialization and patches (pure runtime state).
     Transient = 1u << 0,
+    // A Guid field that names this form's OWNER: the FormDatabase buckets
+    // the form under that guid (childrenOf). A field literally named
+    // `parent` is a ParentLink without the flag — the child-record
+    // convention; the flag is for owners under another name (a quest
+    // branch's `state`, a task's `branch`).
+    ParentLink = 1u << 1,
+    // Still read for compatibility, no longer authored: the loader warns
+    // once when a plugin writes it, the property grid hides it, the
+    // validator counts the writes. Values keep resolving unchanged.
+    Deprecated = 1u << 2,
 };
+
+// A closed vocabulary: the values a Str field may hold (or the ordinals
+// an I32 field may hold), in the order of the C++ enum that consumes
+// them. One table per vocabulary, declared next to that enum (or in
+// data/forms/Vocabularies.hpp when the Form cannot see the enum), bound
+// to the field by REFLECT_FIELD_ENUM. The loader rejects a value outside
+// the table, the validator reports it, the property grid offers a
+// dropdown — and the consumer parses with parseEnum. Zero effect on disk:
+// the value stays the string.
+struct EnumTable {
+    std::span<const std::string_view> names;
+    bool allowEmpty { false }; // "" = unset is a legal value
+
+    constexpr size_t size() const { return names.size(); }
+    constexpr std::string_view name(u32 ordinal) const {
+        return ordinal < names.size() ? names[ordinal] : std::string_view {};
+    }
+    constexpr std::optional<u32> indexOf(std::string_view value) const {
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (names[i] == value) {
+                return static_cast<u32>(i);
+            }
+        }
+        return std::nullopt;
+    }
+    constexpr bool accepts(std::string_view value) const {
+        return (allowEmpty && value.empty()) || indexOf(value).has_value();
+    }
+    constexpr bool accepts(i32 ordinal) const {
+        return ordinal >= 0 && static_cast<size_t>(ordinal) < names.size();
+    }
+    // Str and I32 values are checked; any other kind passes.
+    bool acceptsValue(const Value& value) const {
+        if (const str* s = std::get_if<str>(&value)) {
+            return accepts(std::string_view { *s });
+        }
+        if (const i32* i = std::get_if<i32>(&value)) {
+            return accepts(*i);
+        }
+        return true;
+    }
+    // "a | b | c" for messages.
+    str joined() const {
+        str out;
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i) {
+                out += " | ";
+            }
+            out += names[i];
+        }
+        return out;
+    }
+};
+
+// The typed view of a table: E's enumerators are the table's ordinals.
+template<typename E>
+constexpr std::optional<E> parseEnum(const EnumTable& table,
+                                     std::string_view value) {
+    const auto index = table.indexOf(value);
+    return index ? std::optional<E> { static_cast<E>(*index) } : std::nullopt;
+}
+template<typename E>
+constexpr std::string_view enumName(const EnumTable& table, E value) {
+    return table.name(static_cast<u32>(value));
+}
 
 struct FieldInfo {
     str name;
@@ -120,6 +197,7 @@ struct FieldInfo {
                   // a field breaks existing data (documented trade-off)
     FieldKind kind { FieldKind::Bool };
     u32 flags { None };
+    const EnumTable* enumeration { nullptr }; // Str/I32 fields only
 
     // Type-erased access; `object` must point to an instance of the
     // reflected type (or a derived one).
@@ -189,12 +267,14 @@ public:
 
     template<typename F>
     TypeInfoBuilder&& field(const char* name, F T::* member,
-                            u32 flags = None) && {
+                            u32 flags = None,
+                            const EnumTable* enumeration = nullptr) && {
         FieldInfo fieldInfo;
         fieldInfo.name = name;
         fieldInfo.id = core::fnv1a(name);
         fieldInfo.kind = detail::KindOf<F>::value;
         fieldInfo.flags = flags;
+        fieldInfo.enumeration = enumeration;
         fieldInfo.get = [member](const void* object) -> Value {
             return Value { static_cast<const T*>(object)->*member };
         };
@@ -230,6 +310,10 @@ private:
 
 #define REFLECT_FIELD_FLAGS(fieldName, fieldFlags)                            \
     .field(#fieldName, &ReflectedT::fieldName, fieldFlags)
+
+// A Str (or ordinal I32) field bound to its closed vocabulary.
+#define REFLECT_FIELD_ENUM(fieldName, enumTable)                              \
+    .field(#fieldName, &ReflectedT::fieldName, ::reflect::None, &(enumTable))
 
 #define REFLECT_END()                                                         \
                 .build();                                                     \

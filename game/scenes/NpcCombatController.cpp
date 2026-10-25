@@ -19,7 +19,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
 #include "gameplay/actors/ActorState.hpp"  // FollowerState (defender gate)
-#include "gameplay/actors/Followers.hpp"   // pickPower, pickHealTarget
+#include "gameplay/actors/FollowerProgression.hpp" // pickPower, pickHealTarget
 #include "gameplay/ability/GameplayAbility.hpp" // tryActivate
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
@@ -100,7 +100,7 @@ void NpcCombatController::tryUsePower(
     auto& casterSet = npc.entity.get_mut<gameplay::AttributeSet>();
     auto& casterSystem = npc.entity.get_mut<gameplay::AbilitySystem>();
     const gameplay::AbilityContext abilityCtx { ctx.forms, ctx.gameTags };
-    if (npc.combatStyle == "healer") {
+    if (npc.combatStyle == gameplay::CombatStyle::Healer) {
         // The party's vitals — player, active followers, herself. The
         // downed/dead are excluded: reviving is the potion mechanic,
         // not a spell target.
@@ -385,7 +385,7 @@ bool NpcCombatController::update(
         // default brain (iso-behavior).
         f32 strafeRange = attackRange;
         f32 strafeReach = reach;
-        if (npc.combatStyle == "healer" &&
+        if (npc.combatStyle == gameplay::CombatStyle::Healer &&
             npc.entity.has<gameplay::FollowerState>() &&
             npc.entity.get<gameplay::FollowerState>().followerActive) {
             const f32 preferred =

@@ -32,19 +32,27 @@ struct FireWindow {
                           f32 focusX, f32 focusZ, i32* dCol, i32* dRow);
 };
 
-// The terrain splat classes the fuel is blended over (the same names
-// SurfaceMaterialForm.materialClass carries).
-enum class GroundClass : u8 { Grass = 0, Rock, Cliff, Snow, Sand, kCount };
-constexpr size_t kGroundClasses = static_cast<size_t>(GroundClass::kCount);
-using GroundProps = std::array<MaterialProps, kGroundClasses>;
-using GroundWeights = std::array<f32, kGroundClasses>;
-// The compiled rule table's props by ground class; a class without a
-// record is inert (no fuel).
+// The terrain's splat families, the per-cell weights the fuel is blended
+// from (render::terrain::MaterialWeights channels, in this order). Each
+// family feeds the rule table's material class of the same name
+// (SurfaceMaterialForm.materialClass).
+enum class SplatFamily : u8 { Grass = 0, Rock, Cliff, Snow, Sand, kCount };
+constexpr size_t kSplatFamilies = static_cast<size_t>(SplatFamily::kCount);
+using SplatWeights = std::array<f32, kSplatFamilies>;
+// The fuel blend's inputs, resolved ONCE from the compiled rule table:
+// the props of every material class in `SpiritRuleTable::classIndex`
+// order, and the class each splat family feeds (by name; -1 = no record,
+// the family is inert). A class no splat family names gets no weight.
+struct GroundProps {
+    vector<MaterialProps> classes;
+    std::array<i32, kSplatFamilies> classOf;
+    GroundProps() { classOf.fill(-1); }
+};
 GroundProps groundPropsFrom(const SpiritRuleTable& rules);
 // One cell's fuel from the splat weights (normalized here) and the
 // baked region wetness (a marsh damps like a wet material).
 render::terrain::FireCellFuel fuelFromWeights(const GroundProps& props,
-                                              const GroundWeights& weights,
+                                              const SplatWeights& weights,
                                               f32 wetness);
 
 struct FireIgnition {

@@ -50,10 +50,32 @@ struct DungeonStageResult {
     u32 torchCount { 0 };
 };
 
-// `cellMeshAsset` maps a baked cell to its registered `.cmesh` asset guid;
-// `navAsset` is the registered `.nvg` guid; `doorModel`/`doorMaterial`
+// Everything one Accept stages, grouped: WHERE the records go (the session
+// drafts the export ships, the resolved database and world model they go
+// live in) and WHAT is staged (the bake plus the assets and forms dressing
+// it). `cellMeshAsset` maps a baked cell to its registered `.cmesh` asset
+// guid; `navAsset` is the registered `.nvg` guid; `doorModel`/`doorMaterial`
 // dress the door leaves (null = placeholder visuals). The tool registers
-// those assets (live + export list) before calling this.
+// those assets (live + export list) before calling this. References only:
+// the inputs live for the duration of the call.
+struct DungeonStageInputs {
+    data::EditSession& session;
+    data::FormDatabase& forms;
+    WorldModel& model;
+    const dungeon::DungeonBakeResult& bake;
+    const core::Guid& dungeonId;
+    const str& dungeonName;
+    const std::function<core::Guid(i32 cx, i32 cz)>& cellMeshAsset;
+    const core::Guid& navAsset;
+    const vector<DungeonAnchor>& anchors;
+    const DungeonKit& kit;
+    const core::Guid& doorModel;
+    const core::Guid& doorMaterial;
+};
+
+DungeonStageResult stageDungeonRecords(const DungeonStageInputs& inputs);
+
+// Parameter form of the above: builds the inputs and runs the sequence.
 DungeonStageResult stageDungeonRecords(
     data::EditSession& session, data::FormDatabase& forms, WorldModel& model,
     const dungeon::DungeonBakeResult& bake, const core::Guid& dungeonId,

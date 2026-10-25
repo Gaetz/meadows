@@ -4,12 +4,13 @@
 #include "engine/core/Defines.hpp"
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/HeightField.hpp"
-#include "engine/render/landscape/BakeMailbox.hpp"
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -113,13 +114,12 @@ private:
     };
 
     Config config;
-    BakeMailbox<Baked> mailbox;
+    core::BakeMailbox<Baked> mailbox;
     rhi::UniqueBuffer vertexBuffer;
     rhi::UniqueBuffer indexBuffer;
     rhi::UniqueBuffer treeBuffer;
-    rhi::UniquePipeline pipeline;
-    rhi::UniquePipeline treePipeline;
-    ShaderLibrary::Watch shaderWatch;
+    WatchedPipeline pipeline;
+    WatchedPipeline treePipeline;
     u32 indexCount { 0 };
     u32 treeCount { 0 };
     Vec2 center {};
@@ -131,8 +131,7 @@ private:
     // Content-stamp coalescing: a publish burst bumps the stamp once
     // per tile — this 18 km bake waits for a second of stamp quiet and
     // fires ONCE per burst (stray/seed/sea stay immediate).
-    u64 lastSeenContentStamp { 0 };
-    core::TimePoint contentQuietSince {};
+    core::QuietStamp content;
 };
 
 } // namespace render

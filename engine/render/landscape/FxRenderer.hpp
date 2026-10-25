@@ -7,6 +7,7 @@
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace rhi {
 class Device;
@@ -57,17 +58,16 @@ private:
                    rhi::PipelineHandle pipeline,
                    rhi::BindGroupHandle frameGroup);
 
-    rhi::UniquePipeline alphaPipeline;
-    rhi::UniquePipeline additivePipeline;
-    rhi::UniquePipeline flamePipeline;
-    rhi::UniquePipeline hazePipeline;
+    WatchedPipeline alphaPipeline;
+    WatchedPipeline additivePipeline;
+    WatchedPipeline flamePipeline;
+    WatchedPipeline hazePipeline;
     rhi::UniqueBuffer instances;
     rhi::UniqueBindGroup group;
     rhi::UniqueSampler sheetSampler;
     rhi::UniqueBindGroup sheetGroup; // uFlameSheet (binding 3)
     rhi::TextureHandle boundSheet {};
     u32 capacity { 0 }; // FxInstance slots in the SSBO
-    ShaderLibrary::Watch shaderWatch;
 };
 
 } // namespace render

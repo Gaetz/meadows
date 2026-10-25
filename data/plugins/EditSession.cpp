@@ -4,19 +4,9 @@
 
 #include "data/plugins/RecordDiff.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Fields.hpp"
 
 namespace data {
-
-namespace {
-
-// Clones every reflected field (parents first) from src into dst.
-void copyFields(const reflect::TypeInfo& type, const Form& src, Form& dst) {
-    reflect::forEachField(type, [&](const reflect::FieldInfo& field) {
-        field.set(&dst, field.get(&src));
-    });
-}
-
-} // namespace
 
 const Form* EditSession::view(const core::Guid& id) const {
     const auto it = drafts.find(id);
@@ -51,7 +41,7 @@ EditSession::Draft* EditSession::draftFor(const core::Guid& id) {
         return nullptr;
     }
     clone->id = source->id;
-    copyFields(*type, *source, *clone);
+    reflect::copyFields(*type, source, clone.get());
     Draft draft { std::move(clone), type, /*created=*/false };
     return &drafts.emplace(id, std::move(draft)).first->second;
 }
@@ -111,7 +101,7 @@ core::Guid EditSession::duplicateForm(const core::Guid& source,
         LOG_ERROR("EditSession: no factory for type '{}'", type->name);
         return {};
     }
-    copyFields(*type, *src, *form);
+    reflect::copyFields(*type, src, form.get());
     const core::Guid id = core::Guid::generate();
     form->id = id;
     form->editorId = editorId; // after copyFields: editorId is reflected
@@ -134,7 +124,8 @@ bool EditSession::removeCreated(const core::Guid& id) {
     // Full snapshot: undo must restore edited field values, not defaults.
     sptr<Form> snapshot = types.instantiate(op.typeId);
     snapshot->id = id;
-    copyFields(*it->second.type, *it->second.form, *snapshot);
+    reflect::copyFields(*it->second.type, it->second.form.get(),
+                        snapshot.get());
     op.snapshot = std::move(snapshot);
     op.group = groupForNewOp();
     drafts.erase(it);
@@ -151,7 +142,7 @@ void EditSession::apply(const EditOp& op, bool forward) {
             const reflect::TypeInfo* type = types.findType(op.typeId);
             uptr<Form> form = types.instantiate(op.typeId);
             form->id = op.id;
-            copyFields(*type, *op.snapshot, *form);
+            reflect::copyFields(*type, op.snapshot.get(), form.get());
             drafts.emplace(op.id,
                            Draft { std::move(form), type, /*created=*/true });
         }
@@ -162,7 +153,8 @@ void EditSession::apply(const EditOp& op, bool forward) {
             uptr<Form> form = types.instantiate(op.typeId);
             if (op.sourceId.isValid()) {
                 if (const Form* source = view(op.sourceId)) {
-                    copyFields(*types.findType(op.typeId), *source, *form);
+                    reflect::copyFields(*types.findType(op.typeId), source,
+                                        form.get());
                 }
             }
             form->id = op.id;

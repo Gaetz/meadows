@@ -47,106 +47,82 @@ void GpuOcclusion::create(rhi::Device& device, ShaderLibrary& shaders) {
                         { { "uHiZ", 3 } });
     refreshPipelines(device, shaders);
 
-    depthSampler = device.createSampler(
+    depthSampler = { device, device.createSampler(
         { .minFilter = rhi::FilterMode::Nearest,
-          .magFilter = rhi::FilterMode::Nearest });
-    hizSampler = device.createSampler(
+          .magFilter = rhi::FilterMode::Nearest }) };
+    hizSampler = { device, device.createSampler(
         { .minFilter = rhi::FilterMode::Nearest,
           .magFilter = rhi::FilterMode::Nearest,
-          .mipmapFilter = true }); // NEAREST_MIPMAP_NEAREST
+          .mipmapFilter = true }) }; // NEAREST_MIPMAP_NEAREST
 
-    cullUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
-                                    .size = sizeof(CullUniforms),
-                                    .dynamic = true },
-                                  nullptr);
-    candidateBuffer = device.createBuffer(
+    cullUbo = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform,
+          .size = sizeof(CullUniforms),
+          .dynamic = true },
+        nullptr) };
+    candidateBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Storage,
           .size = kMaxCandidates * sizeof(GpuAabb),
           .dynamic = true },
-        nullptr);
+        nullptr) };
     // GPU-driven: the cull writes one indirect command per candidate.
     // Ping-pong so the write never races the frame still consuming the
     // other side (draws run before the dispatch each frame).
-    for (rhi::BufferHandle& buf : commandBufs) {
-        buf = device.createBuffer(
+    for (rhi::UniqueBuffer& buf : commandBufs) {
+        buf = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Indirect,
               .size = kMaxCandidates *
                       sizeof(rhi::DrawIndexedIndirectCommand) },
-            nullptr);
+            nullptr) };
     }
-}
-
-void GpuOcclusion::destroyPyramid(rhi::Device& device) {
-    device.destroyBindGroup(firstGroup);
-    firstGroup = {};
-    for (const rhi::BindGroupHandle group : downGroups) {
-        device.destroyBindGroup(group);
-    }
-    downGroups.clear();
-    for (rhi::BindGroupHandle& group : cullGroups) {
-        device.destroyBindGroup(group);
-        group = {};
-    }
-    device.destroyTexture(hizTexture);
-    hizTexture = {};
-    boundDepth = {};
-    commandsReady = false; // stale binding layout
 }
 
 void GpuOcclusion::destroy(rhi::Device& device) {
-    destroyPyramid(device);
-    for (rhi::BufferHandle& buf : commandBufs) {
-        device.destroyBuffer(buf);
-    }
-    device.destroyBuffer(candidateBuffer);
-    device.destroyBuffer(cullUbo);
-    device.destroySampler(hizSampler);
-    device.destroySampler(depthSampler);
-    device.destroyPipeline(hizFirstPipeline);
-    device.destroyPipeline(hizDownPipeline);
-    device.destroyPipeline(cullPipeline);
+    (void)device; // Unique handles free through their device
     *this = GpuOcclusion {};
 }
 
 void GpuOcclusion::refreshPipelines(rhi::Device& device,
                                     ShaderLibrary& shaders) {
-    const auto refresh = [&](const char* name, rhi::PipelineHandle& pipeline,
-                             u64& generation) {
-        if (shaders.generation(name) == generation) {
-            return;
-        }
-        if (pipeline.id != 0) {
-            device.destroyPipeline(pipeline);
-        }
-        pipeline = device.createComputePipeline({ shaders.get(name) });
-        generation = shaders.generation(name);
-    };
-    refresh(kHizFirstShader, hizFirstPipeline, hizFirstGeneration);
-    refresh(kHizDownShader, hizDownPipeline, hizDownGeneration);
-    refresh(kCullShader, cullPipeline, cullGeneration);
+    hizFirstPipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kHizFirstShader) });
+    });
+    hizDownPipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kHizDownShader) });
+    });
+    cullPipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kCullShader) });
+    });
 }
 
 void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
     const u32 newWidth = glm::max(width / 2, 1u);
     const u32 newHeight = glm::max(height / 2, 1u);
     if (newWidth == hizWidth && newHeight == hizHeight &&
-        hizTexture.id != 0) {
+        hizTexture.id() != 0) {
         return;
     }
-    destroyPyramid(device);
+    // The bind groups reference the old pyramid: drop them before it goes.
+    firstGroup.reset();
+    downGroups.clear();
+    for (rhi::UniqueBindGroup& group : cullGroups) {
+        group.reset();
+    }
+    boundDepth = {};
+    commandsReady = false; // stale binding layout
     hizWidth = newWidth;
     hizHeight = newHeight;
     mipCount = mipCountFor(hizWidth, hizHeight);
-    hizTexture = device.createTexture(
+    hizTexture = { device, device.createTexture(
         { .width = hizWidth,
           .height = hizHeight,
           .mipLevels = mipCount,
           .format = rhi::TextureFormat::R32F,
           .filter = rhi::FilterMode::Nearest,
           .usage = rhi::TextureUsage_Sampled },
-        nullptr);
+        nullptr) };
     for (u32 mip = 0; mip + 1 < mipCount; ++mip) {
-        downGroups.push_back(device.createBindGroup(
+        downGroups.emplace_back(device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = hizTexture,
                              .storageImage = true,
@@ -157,7 +133,7 @@ void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
                              .imageMip = mip + 1 } } }));
     }
     for (u32 side = 0; side < 2; ++side) {
-        cullGroups[side] = device.createBindGroup(
+        cullGroups[side] = { device, device.createBindGroup(
             { .entries = { { .binding = 0, .buffer = cullUbo },
                            { .binding = 1,
                              .buffer = candidateBuffer,
@@ -167,7 +143,7 @@ void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
                              .sampler = hizSampler },
                            { .binding = 4,
                              .buffer = commandBufs[side],
-                             .storage = true } } });
+                             .storage = true } } }) };
     }
     // firstGroup depends on the depth snapshot texture: (re)built in run().
 }
@@ -175,22 +151,21 @@ void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
 bool GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
                        rhi::TextureHandle sceneDepth, const Mat4& viewProj,
                        const vector<Candidate>& candidates) {
-    if (!ready() || hizFirstPipeline.id == 0 || hizDownPipeline.id == 0 ||
-        candidates.empty()) {
+    if (!ready() || hizFirstPipeline.id() == 0 ||
+        hizDownPipeline.id() == 0 || candidates.empty()) {
         return false;
     }
     if (boundDepth.id != sceneDepth.id) {
         // The depth snapshot texture changed (first run / window resize):
         // rebind the first-reduction group to it.
-        device.destroyBindGroup(firstGroup);
-        firstGroup = device.createBindGroup(
+        firstGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = sceneDepth,
                              .sampler = depthSampler },
                            { .binding = 1,
                              .texture = hizTexture,
                              .storageImage = true,
-                             .imageMip = 0 } } });
+                             .imageMip = 0 } } }) };
         boundDepth = sceneDepth;
     }
 

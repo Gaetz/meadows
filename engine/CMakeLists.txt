@@ -53,6 +53,7 @@ add_library(meadows STATIC
     terrain/generation/WorldLayer.cpp
     terrain/generation/ThermalErosion.cpp
     terrain/generation/TileBake.cpp
+    terrain/generation/MapHydrology.cpp
     terrain/generation/WaterSolve.cpp
     platform/common/Input.cpp
     platform/common/Paths.cpp
@@ -119,6 +120,8 @@ add_library(meadows-render STATIC
     render/landscape/MistMap.cpp
     render/landscape/NoiseVolume.cpp
     render/landscape/PostFx.cpp
+    render/landscape/SsdmChain.cpp
+    render/landscape/FrameDecisions.cpp
     render/landscape/RadianceCascades.cpp
     render/landscape/ShadowMapper.cpp
     render/landscape/SkySystem.cpp
@@ -158,15 +161,21 @@ target_link_libraries(meadows-render
 )
 
 # Vulkan RHI backend (docs/RENDERING.md), gated by the top-level compile-time
-# switch. Vulkan types stay confined to this TU (pimpl, §3.1); SDL3 (already
-# linked) provides the Vulkan surface + loader glue.
+# switch. Vulkan types stay confined to the backend directory (pimpl, §3.1:
+# VulkanInternal.hpp is the backend-private header shared by its TUs); SDL3
+# (already linked) provides the Vulkan surface + loader glue.
 if(MEADOWS_RHI_VULKAN)
     # VulkanSurface.cpp is the Vulkan half of the platform layer, and lives
     # here for the same reason GlContext.cpp does: it needs the graphics API's
     # headers, which the base lib must stay free of.
     target_sources(meadows-render PRIVATE
         platform/common/VulkanSurface.cpp
-        rhi/backends/vulkan/VulkanDevice.cpp)
+        rhi/backends/vulkan/VulkanDevice.cpp
+        rhi/backends/vulkan/VulkanCommandBuffer.cpp
+        rhi/backends/vulkan/VulkanShader.cpp
+        rhi/backends/vulkan/VulkanTransfer.cpp
+        rhi/backends/vulkan/VulkanFrame.cpp
+        rhi/backends/vulkan/VulkanResources.cpp)
     target_link_libraries(meadows-render PRIVATE Vulkan::Vulkan
         ${MEADOWS_SHADERC_LIBRARY} spirv-reflect-static)
     target_compile_definitions(meadows-render PRIVATE MEADOWS_RHI_VULKAN)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "gameplay/combat/CombatAi.hpp" // kCombatStyles
 #include "gameplay/stats/CoreAttributes.hpp"
 
 // Follower class & perk data (docs/CHANTIER-FOLLOWERS.md).
@@ -23,7 +24,7 @@ namespace gameplay {
 // defaults (6, insight 0) so an empty class = the standard humanoid.
 struct FollowerClassForm : data::Form {
     str displayName;
-    str combatStyle; // CombatAi vocabulary; "" = default brain
+    str combatStyle; // kCombatStyles (gameplay::CombatStyle); "" = Default
 
     f32 strengthBase { 6.0f };
     f32 strengthPerLevel { 0.0f };
@@ -46,7 +47,7 @@ struct FollowerClassForm : data::Form {
 
     REFLECT_BEGIN(FollowerClassForm, data::Form)
         REFLECT_FIELD(displayName)
-        REFLECT_FIELD(combatStyle)
+        REFLECT_FIELD_ENUM(combatStyle, kCombatStyles)
         REFLECT_FIELD(strengthBase)
         REFLECT_FIELD(strengthPerLevel)
         REFLECT_FIELD(constitutionBase)

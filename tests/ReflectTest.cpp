@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "engine/reflect/Fields.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "engine/reflect/Registry.hpp"
 
@@ -117,4 +118,116 @@ TEST_CASE("reflect: registry finds types by id and name") {
     CHECK(registry.find(core::fnv1a("TestBase")) ==
           &TestBase::staticTypeInfo());
     CHECK(registry.find("Unknown") == nullptr);
+}
+
+TEST_CASE("reflect: copyFields clones every field, transient included") {
+    TestWeapon src;
+    src.editorId = "Cloned";
+    src.damage = 42.0f;
+    src.charges = 7;
+    src.twoHanded = true;
+    src.cachedDps = 3.5f;
+    TestWeapon dst;
+    reflect::copyFields(TestWeapon::staticTypeInfo(), &src, &dst);
+    CHECK(dst.editorId == "Cloned"); // inherited field, parents first
+    CHECK(dst.damage == 42.0f);
+    CHECK(dst.charges == 7);
+    CHECK(dst.twoHanded);
+    CHECK(dst.cachedDps == 3.5f); // a clone, not a serialization
+}
+
+TEST_CASE("reflect: hashReflected is stable and ignores transient fields") {
+    TestWeapon a;
+    TestWeapon b;
+    const auto hashOf = [](const TestWeapon& w) {
+        core::Fnv64 h;
+        reflect::hashReflected(TestWeapon::staticTypeInfo(), &w, h);
+        return h.value;
+    };
+    CHECK(hashOf(a) == hashOf(b));
+    b.cachedDps = 99.0f; // Transient: never part of the key
+    CHECK(hashOf(a) == hashOf(b));
+    b.damage = 11.0f;
+    CHECK(hashOf(a) != hashOf(b));
+    b.damage = a.damage;
+    b.editorId = "x"; // an inherited field counts too
+    CHECK(hashOf(a) != hashOf(b));
+    CHECK(hashOf(a) != core::kFnv64Basis);
+}
+
+TEST_CASE("reflect: fieldId resolves declared names through the parent chain") {
+    const auto& info = TestWeapon::staticTypeInfo();
+    CHECK(reflect::fieldId(info, "damage") == core::fnv1a("damage"));
+    CHECK(reflect::fieldId(info, "editorId") == core::fnv1a("editorId"));
+}
+
+namespace {
+
+struct TestOwned {
+    core::Guid owner;
+    f32 legacy { 0.0f };
+
+    REFLECT_BEGIN(TestOwned, void)
+        REFLECT_FIELD_FLAGS(owner, reflect::ParentLink)
+        REFLECT_FIELD_FLAGS(legacy, reflect::Deprecated)
+    REFLECT_END()
+};
+
+} // namespace
+
+TEST_CASE("reflect: ParentLink and Deprecated flags are carried") {
+    const auto& info = TestOwned::staticTypeInfo();
+    const auto* owner = info.findField("owner");
+    REQUIRE(owner != nullptr);
+    CHECK((owner->flags & reflect::ParentLink) != 0);
+    CHECK((owner->flags & reflect::Deprecated) == 0);
+    const auto* legacy = info.findField("legacy");
+    REQUIRE(legacy != nullptr);
+    CHECK((legacy->flags & reflect::Deprecated) != 0);
+    CHECK((legacy->flags & reflect::Transient) == 0); // still serialized
+}
+
+namespace {
+
+enum class TestColor { Red, Green, Blue };
+constexpr std::string_view kTestColorNames[] = { "red", "green", "blue" };
+constexpr reflect::EnumTable kTestColors { kTestColorNames };
+constexpr reflect::EnumTable kTestColorsOrNone { kTestColorNames, true };
+
+struct TestPainted {
+    str color { "red" };
+    i32 shade { 0 };
+
+    REFLECT_BEGIN(TestPainted, void)
+        REFLECT_FIELD_ENUM(color, kTestColors)
+        REFLECT_FIELD_ENUM(shade, kTestColors)
+    REFLECT_END()
+};
+
+} // namespace
+
+TEST_CASE("reflect: an EnumTable parses, names and accepts its vocabulary") {
+    static_assert(kTestColors.size() == 3);
+    CHECK(reflect::parseEnum<TestColor>(kTestColors, "green") == TestColor::Green);
+    CHECK(!reflect::parseEnum<TestColor>(kTestColors, "Green").has_value());
+    CHECK(reflect::enumName(kTestColors, TestColor::Blue) == "blue");
+    CHECK(kTestColors.accepts(std::string_view { "red" }));
+    CHECK(!kTestColors.accepts(std::string_view {}));
+    CHECK(kTestColorsOrNone.accepts(std::string_view {}));
+    CHECK(kTestColors.accepts(i32 { 2 }));
+    CHECK(!kTestColors.accepts(i32 { 3 }));
+    CHECK(!kTestColors.accepts(i32 { -1 }));
+    CHECK(kTestColors.acceptsValue(reflect::Value { str { "blue" } }));
+    CHECK(!kTestColors.acceptsValue(reflect::Value { str { "mauve" } }));
+    CHECK(kTestColors.acceptsValue(reflect::Value { 1.5f })); // not a vocabulary kind
+    CHECK(kTestColors.joined() == "red | green | blue");
+
+    const auto& info = TestPainted::staticTypeInfo();
+    const auto* color = info.findField("color");
+    REQUIRE(color != nullptr);
+    CHECK(color->enumeration == &kTestColors);
+    const auto* shade = info.findField("shade");
+    REQUIRE(shade != nullptr);
+    CHECK(shade->enumeration == &kTestColors);
+    CHECK(info.findField("color")->kind == reflect::FieldKind::Str);
 }

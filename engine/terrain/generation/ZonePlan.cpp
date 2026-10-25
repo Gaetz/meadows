@@ -1,7 +1,10 @@
 #include "engine/terrain/generation/ZonePlan.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string_view>
+#include <type_traits>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
@@ -41,73 +44,53 @@ struct Memo {
     std::unordered_map<u64, Zone> cells;
 };
 
-// The params key: the full hash walks ~400 fields (the archetype
-// table included), a per-call cost the per-texel synthesis cannot pay.
-// A cheap FINGERPRINT (every scalar, the rows' key numbers) decides
-// when to re-hash — never a pointer identity, which a stack temporary
-// reusing an address would fool.
-u64 paramsKey(const WorldLayerParams& world, const ZoneParams& zones) {
-    u64 fp = 1469598103934665603ull;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            fp ^= bytes[i];
-            fp *= 1099511628211ull;
+// The memo key: EVERY parameter — the same visitParams walk as the
+// cache key, so no pupitre field can slip through (a partial
+// fingerprint once left stale cells in play after an in-session
+// rebake) — folded one 64-bit word per scalar by a multiply-xorshift
+// mixer: cheaper per call than the FNV byte loop the cache key pays
+// once per bake, which matters because the synthesis asks per texel.
+// Never a pointer identity, which a stack temporary reusing an address
+// would fool.
+struct WordMixer {
+    u64 h { 0x9e3779b97f4a7c15ull };
+    void word(u64 w) {
+        h = (h ^ w) * 0xff51afd7ed558ccdull;
+        h ^= h >> 29;
+    }
+    template <class T>
+        requires((std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) ||
+                 std::is_enum_v<T>)
+    void mix(T v) {
+        static_assert(sizeof(T) <= sizeof(u64));
+        u64 w = 0;
+        std::memcpy(&w, &v, sizeof(v));
+        word(w);
+    }
+    void mix(bool v) { word(v ? 1u : 0u); }
+    void mix(std::string_view s) {
+        word(s.size());
+        for (size_t i = 0; i < s.size(); i += sizeof(u64)) {
+            u64 w = 0;
+            std::memcpy(&w, s.data() + i,
+                        std::min(sizeof(u64), s.size() - i));
+            word(w);
         }
-    };
-    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
-    mix(&world.seed, sizeof(world.seed));
-    f(world.startX);
-    f(world.startZ);
-    f(world.startRadius);
-    f(world.etageWavelength);
-    f(world.continentWavelength);
-    f(world.massifWavelength);
-    f(world.climateWavelength);
-    f(zones.cellSize);
-    f(zones.jitter);
-    f(zones.borderWarp);
-    f(zones.borderWarpWavelength);
-    f(zones.stepHeight);
-    mix(&zones.storeys, sizeof(zones.storeys));
-    f(zones.trendWavelength);
-    f(zones.trendContrast);
-    f(zones.wallWidthOne);
-    f(zones.wallWidthHigh);
-    f(zones.rampWidth);
-    f(zones.startGap);
-    f(zones.mapSize);
-    mix(&zones.rampartSteps, sizeof(zones.rampartSteps));
-    f(zones.gateHalfWidth);
-    f(zones.gateExtra);
-    f(zones.ridgeHeight);
-    for (const ZoneArchetype& a : zones.archetypes) {
-        f(a.weight);
-        mix(&a.storeyBias, sizeof(a.storeyBias));
-        f(a.reliefMul);
-        f(a.terrace);
-        f(a.cliffStep);
-        f(a.minEtage);
-        f(a.maxEtage);
-        mix(&a.piece, sizeof(a.piece));
     }
-    struct Last {
-        u64 fingerprint { 0 };
-        u64 key { 0 };
-        bool valid { false };
-    };
-    thread_local Last last;
-    if (!last.valid || last.fingerprint != fp) {
-        last.fingerprint = fp;
-        last.key = hashParams(world) ^ (hashParams(zones) * 0x9e3779b97f4a7c15ull);
-        last.valid = true;
-    }
-    return last.key;
+};
+
+u64 paramsKey(const WorldLayerParams& world, const ZoneParams& zones) {
+    WordMixer m;
+    visitParams(world, m);
+    visitParams(zones, m);
+    return m.h;
 }
 
-Memo& memoFor(const WorldLayerParams& world, const ZoneParams& zones) {
+// One memo per thread, keyed by paramsKey. The key is computed ONCE per
+// sample and the memo handed down to every cell lookup of that sample —
+// a per-cell recomputation was the dominant cost of a zone sample.
+Memo& memoFor(u64 key) {
     thread_local Memo memo;
-    const u64 key = paramsKey(world, zones);
     if (!memo.valid || memo.key != key || memo.cells.size() > 65536) {
         memo.cells.clear();
         memo.key = key;
@@ -223,8 +206,7 @@ bool ridgeLineCrossesCell(const WorldLayerParams& world,
 }
 
 const Zone& zoneCell(const WorldLayerParams& world, const ZoneParams& zones,
-                     i32 cx, i32 cz) {
-    Memo& memo = memoFor(world, zones);
+                     Memo& memo, i32 cx, i32 cz) {
     const u64 key = cellKey(cx, cz);
     if (const auto it = memo.cells.find(key); it != memo.cells.end()) {
         return it->second;
@@ -291,7 +273,7 @@ struct Nearest {
 };
 
 Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
-                     f32 x, f32 z) {
+                     Memo& memo, f32 x, f32 z) {
     // Warped query: the Voronoi borders wander instead of running
     // straight between two sites.
     const f32 wx =
@@ -311,7 +293,7 @@ Nearest nearestZones(const WorldLayerParams& world, const ZoneParams& zones,
     n.wz = wz;
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
-            const Zone& zone = zoneCell(world, zones, cx + dx, cz + dz);
+            const Zone& zone = zoneCell(world, zones, memo, cx + dx, cz + dz);
             const f32 d = std::hypot(wx - zone.x, wz - zone.z);
             n.zones[n.count] = &zone;
             n.dist[n.count] = d;
@@ -452,7 +434,8 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         return last.sample;
     }
     ZoneSample out;
-    const Nearest n = nearestZones(world, zones, x, z);
+    Memo& memo = memoFor(key);
+    const Nearest n = nearestZones(world, zones, memo, x, z);
     if (!n.a) {
         return out;
     }
@@ -537,6 +520,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         if (st == BorderStyle::None) {
             continue;
         }
+        const BorderTraits& border = borderTraits(st);
         const f32 adjacency =
             1.0f - noise::smoothstep01(0.0f, zones.wallWidthOne,
                                        n.dist[i] - n.db);
@@ -561,8 +545,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
             core::hashU32(glm::max(a.hash, o.hash) * 0x9e3779b9u));
         const u32 count =
             1 + (roll01(pairHash, 1) < zones.gateExtra ? 1u : 0u);
-        const f32 halfWidth = zones.gateHalfWidth *
-                              (st == BorderStyle::Escarpment ? 1.75f : 1.0f);
+        const f32 halfWidth = zones.gateHalfWidth * border.gateWidthMul;
         // The ramp's half-length: the riser plus a margin, longer
         // when the step needs it to stay under ~35 %.
         const f32 stepRise =
@@ -583,7 +566,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
             g = glm::max(g, lateral * (1.0f - noise::smoothstep01(
                                                   halfLen, halfLen + 60.0f,
                                                   std::abs(along))));
-            if (st != BorderStyle::Ridge) {
+            if (border.pad) {
                 const f32 alongHigh = along * highSign;
                 pad = glm::max(
                     pad, (1.0f - noise::smoothstep01(halfWidth, 2.0f * halfWidth,
@@ -599,10 +582,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
         pad *= adjacency;
         if (g > out.gate) {
             out.gate = g;
-            out.gateKind = static_cast<u8>(
-                st == BorderStyle::CliffBand    ? GateKind::Notch
-                : st == BorderStyle::Escarpment ? GateKind::Breach
-                                                : GateKind::Col);
+            out.gateKind = static_cast<u8>(border.gate);
         }
         // The gate's own ramp: the two storeys joined across the border
         // over the ramp's length; where two gates' masks overlap, the
@@ -614,7 +594,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
             floorWeight += g;
         }
         out.gatePad = glm::max(out.gatePad, pad);
-        if (st == BorderStyle::Ridge) {
+        if (border.crest) {
             // The crest along the border, cut at its cols.
             const f32 dBorder = 0.5f * (n.dist[i] - n.da);
             out.ridge = glm::max(
@@ -651,66 +631,15 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
 
 u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
                     f32 x, f32 z) {
-    const Nearest n = nearestZones(world, zones, x, z);
+    Memo& memo = memoFor(paramsKey(world, zones));
+    const Nearest n = nearestZones(world, zones, memo, x, z);
     return n.a ? n.a->archetype : 0u;
 }
 
 u64 hashParams(const ZoneParams& p) {
-    u64 h = 1469598103934665603ull;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= 1099511628211ull;
-        }
-    };
-    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
-    const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
-    const auto i = [&](i32 v) { mix(&v, sizeof(v)); };
-    f(p.cellSize);
-    f(p.jitter);
-    f(p.borderWarp);
-    f(p.borderWarpWavelength);
-    f(p.stepHeight);
-    u(p.storeys);
-    f(p.trendWavelength);
-    f(p.trendContrast);
-    f(p.wallWidthOne);
-    f(p.wallWidthHigh);
-    f(p.rampWidth);
-    f(p.startGap);
-    f(p.mapSize);
-    i(p.rampartSteps);
-    f(p.gateHalfWidth);
-    f(p.gateExtra);
-    f(p.ridgeHeight);
-    for (const ZoneArchetype& a : zoneArchetypesOf(p)) {
-        mix(a.name.data(), a.name.size());
-        f(a.weight);
-        f(a.minEtage);
-        f(a.maxEtage);
-        f(a.minMassif);
-        f(a.maxMassif);
-        f(a.minCoast);
-        f(a.maxCoast);
-        f(a.minMoisture);
-        f(a.maxMoisture);
-        i(a.storeyBias);
-        f(a.reliefMul);
-        f(a.wavelengthMul);
-        f(a.terrace);
-        f(a.cliffStep);
-        f(a.hillCrests);
-        f(a.hardBias);
-        f(a.wetBias);
-        f(a.coverBias);
-        u(a.palette);
-        u(a.piece);
-        f(a.pieceHeight);
-        f(a.pieceRadius);
-        f(a.erosionCut);
-    }
-    return h;
+    core::Fnv64 h;
+    visitParams(p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

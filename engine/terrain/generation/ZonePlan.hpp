@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string_view>
+
+#include <glm/glm.hpp>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
@@ -64,6 +68,26 @@ enum class BorderStyle : u8 { None = 0, CliffBand = 1, Escarpment = 2, Ridge = 3
 // The gate through a border (principle 4 — every wall has its doors,
 // and a door is a real geographic structure), typed by the border.
 enum class GateKind : u8 { None = 0, Notch = 1, Breach = 2, Col = 3 };
+
+// What a border style does, one row per BorderStyle (enum order): the
+// kind of gate it opens, how wide the gate is cut, whether the gate has
+// a landing pad on the high side, whether the border carries a crest.
+// styleFor() decides the style once; the sampler reads the row.
+struct BorderTraits {
+    GateKind gate;
+    f32 gateWidthMul; // hand-tuned
+    bool pad;
+    bool crest;
+};
+inline constexpr BorderTraits kBorderTraits[] = {
+    { GateKind::None, 1.0f, false, false },  // None
+    { GateKind::Notch, 1.0f, true, false },  // CliffBand
+    { GateKind::Breach, 1.75f, true, false }, // Escarpment
+    { GateKind::Col, 1.0f, false, true },    // Ridge
+};
+inline const BorderTraits& borderTraits(BorderStyle style) {
+    return kBorderTraits[static_cast<size_t>(style)];
+}
 
 struct ZoneParams {
     f32 cellSize { 512.0f }; // dev 2026-10-08: twice the rhythm of 1 km
@@ -133,6 +157,19 @@ struct ZoneSample {
 ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
                         f32 x, f32 z);
 
+// The storey the zone adds to the world's floor: stepped at the walls,
+// ramped along a corridor (a pass, not a wall), lowered to the gate
+// floor through a gate, crested on a ridge border, gated off at the
+// shore. THE one formula the lattice sample, the per-texel floor and
+// the per-texel biome id all read — they must never disagree.
+inline f32 zoneFloorLift(const ZoneSample& zs, f32 corridor, f32 shoreGate) {
+    return (glm::mix(glm::mix(zs.storeyHeight, zs.storeyHeightSmooth,
+                              corridor),
+                     zs.gateFloor, zs.gate) +
+            zs.ridge) *
+           shoreGate;
+}
+
 // The archetype index alone (cheap: no kernels) — the per-texel palette.
 u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
                     f32 x, f32 z);
@@ -140,7 +177,58 @@ u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
 const vector<ZoneArchetype>& defaultZoneArchetypes();
 const vector<ZoneArchetype>& zoneArchetypesOf(const ZoneParams& zones);
 
-// FNV-1a over every field (archetypes included): memo and cache keys.
+// EVERY field (the archetypes in force included), in one walk, for the
+// consumers that must agree on what "the parameters" are: the FNV cache
+// key and the zone memo's fingerprint. Add a field = add a line HERE,
+// nowhere else. `v.mix(scalar | string_view)`.
+template <class Visitor>
+void visitParams(const ZoneParams& p, Visitor& v) {
+    v.mix(p.cellSize);
+    v.mix(p.jitter);
+    v.mix(p.borderWarp);
+    v.mix(p.borderWarpWavelength);
+    v.mix(p.stepHeight);
+    v.mix(p.storeys);
+    v.mix(p.trendWavelength);
+    v.mix(p.trendContrast);
+    v.mix(p.wallWidthOne);
+    v.mix(p.wallWidthHigh);
+    v.mix(p.rampWidth);
+    v.mix(p.startGap);
+    v.mix(p.mapSize);
+    v.mix(p.rampartSteps);
+    v.mix(p.gateHalfWidth);
+    v.mix(p.gateExtra);
+    v.mix(p.ridgeHeight);
+    for (const ZoneArchetype& a : zoneArchetypesOf(p)) {
+        v.mix(std::string_view { a.name });
+        v.mix(a.weight);
+        v.mix(a.minEtage);
+        v.mix(a.maxEtage);
+        v.mix(a.minMassif);
+        v.mix(a.maxMassif);
+        v.mix(a.minCoast);
+        v.mix(a.maxCoast);
+        v.mix(a.minMoisture);
+        v.mix(a.maxMoisture);
+        v.mix(a.storeyBias);
+        v.mix(a.reliefMul);
+        v.mix(a.wavelengthMul);
+        v.mix(a.terrace);
+        v.mix(a.cliffStep);
+        v.mix(a.hillCrests);
+        v.mix(a.hardBias);
+        v.mix(a.wetBias);
+        v.mix(a.coverBias);
+        v.mix(a.palette);
+        v.mix(a.piece);
+        v.mix(a.pieceHeight);
+        v.mix(a.pieceRadius);
+        v.mix(a.erosionCut);
+    }
+}
+
+// FNV-1a over every field (visitParams): the cache keys.
 u64 hashParams(const ZoneParams& p);
 
 } // namespace render::terraingen

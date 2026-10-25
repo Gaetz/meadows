@@ -4,11 +4,11 @@
 
 #include <cstdio>
 #include <string_view>
-#include <unordered_map>
+#include <iterator>
 
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/actors/ActorState.hpp" // FollowerState (partner clause)
-#include "gameplay/actors/Followers.hpp"  // followerConvalescent
+#include "gameplay/actors/FollowerLife.hpp"  // followerConvalescent
 
 namespace gameplay {
 
@@ -71,25 +71,29 @@ bool followerConvalescentClause(const ConditionForm&,
            followerConvalescent(*ctx.partnerFollower, ctx.gameHours);
 }
 
+// Indexed by ClauseKind: the names live in kConditionKinds, one row here
+// per enumerator, in enum order (pinned below).
 using ClauseFn = bool (*)(const ConditionForm&, const EvalContext&);
-const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
-    { "HasTag", &hasTag },
-    { "AttributeAtLeast", &attributeAtLeast },
-    { "AttributeAtMost", &attributeAtMost },
-    { "HasItem", &hasItem },
-    { "Lua", &luaPredicate },
-    { "FollowerAffinityAtLeast", &followerAffinityAtLeast },
-    { "FollowerActive", &followerActive },
-    { "FollowerConvalescent", &followerConvalescentClause },
+constexpr ClauseFn kClauseEvaluators[] = {
+    &hasTag,
+    &attributeAtLeast,
+    &attributeAtMost,
+    &hasItem,
+    &luaPredicate,
+    &followerAffinityAtLeast,
+    &followerActive,
+    &followerConvalescentClause,
 };
+static_assert(std::size(kClauseEvaluators) == std::size(kConditionKindNames),
+              "one evaluator per ClauseKind, in enum order");
 
 } // namespace
 
 bool evaluateClause(const ConditionForm& clause, const EvalContext& context) {
-    const auto it = kClauseEvaluators.find(clause.kind);
-    const bool result = it != kClauseEvaluators.end()
-                            ? it->second(clause, context)
-                            : false;
+    const auto kind = reflect::parseEnum<ClauseKind>(kConditionKinds, clause.kind);
+    const bool result =
+        kind ? kClauseEvaluators[static_cast<size_t>(*kind)](clause, context)
+             : false;
     return clause.negate ? !result : result;
 }
 

@@ -49,23 +49,10 @@ GLenum toGlInternalFormat(TextureFormat format) {
     case TextureFormat::BC7_SRGB:
     case TextureFormat::BC7_UNORM:
     case TextureFormat::BC5_UNORM:
-    case TextureFormat::R16_UNORM: break;
+    case TextureFormat::R16_UNORM:
+    case TextureFormat::Count: break;
     }
     return GL_RGBA8;
-}
-
-bool acceptsPixelUpload(TextureFormat format) {
-    // Float formats upload tightly packed f32 texels (GL converts).
-    // R32F/RGBA16F were MISSING here while the water-info and sim maps
-    // created them WITH pixels: createTexture failed, handle 0 was
-    // bound, and the water shaders sampled undefined memory — the
-    // whole family of roaming water artifacts (rounds, crosses, cyan
-    // burns) traced back to this whitelist.
-    return format == TextureFormat::RGBA8 ||
-           format == TextureFormat::SRGBA8 ||
-           format == TextureFormat::R16F ||
-           format == TextureFormat::R32F ||
-           format == TextureFormat::RGBA16F;
 }
 
 void uploadFormatFor(TextureFormat format, GLenum& pixelFormat,
@@ -126,24 +113,17 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
     // Cooked BC/R16_UNORM textures and offline mip chains are Vulkan-only
     // (caps.textureCompressionBC stays false here); consumers must have
     // checked the flag and kept their procedural fallback.
-    if (isBlockCompressed(desc.format) ||
-        desc.format == TextureFormat::R16_UNORM || desc.pixelsIncludeMips) {
+    if (formatTraits(desc.format).cooked || desc.pixelsIncludeMips) {
         LOG_ERROR("createTexture: cooked texture formats/mip chains are not "
                   "implemented on the GL backend");
         return {};
     }
-    if (pixels && !acceptsPixelUpload(desc.format)) {
-        LOG_ERROR("createTexture: initial pixels only supported for "
-                  "RGBA8/SRGBA8 (render-target formats are created empty)");
+    if (!validateTextureDesc(desc, pixels != nullptr, caps())) {
         return {};
     }
 
     const bool isArray = desc.arrayLayers > 1;
     const bool isVolume = desc.depth > 1; // 3D textures (GI clipmap)
-    if (isVolume && isArray) {
-        LOG_ERROR("createTexture: depth and arrayLayers are exclusive");
-        return {};
-    }
     if (isVolume && pixels) {
         LOG_ERROR("createTexture: volumes are GPU-written (storageImage), "
                   "initial pixels unsupported");

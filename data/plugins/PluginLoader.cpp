@@ -1,11 +1,15 @@
 #include "data/plugins/PluginLoader.hpp"
 
+#include <unordered_set>
+
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 #include <toml++/toml.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/reflect/ValueText.hpp"
 
 namespace data {
 
@@ -13,6 +17,21 @@ namespace {
 
 // TOML node -> reflect::Value, driven by the target field's kind. Returns
 // nullopt on mismatch (no implicit coercion beyond TOML's own numerics).
+// A deprecated field still resolves; the warning says so once per
+// (plugin, type, field), not once per record.
+void warnDeprecatedOnce(std::string_view sourceName,
+                        const reflect::TypeInfo& type,
+                        const reflect::FieldInfo& field) {
+    static std::unordered_set<u64> warned;
+    const u64 key = (static_cast<u64>(core::fnv1a(sourceName)) << 32) |
+                    (static_cast<u64>(type.id) ^ field.id);
+    if (!warned.insert(key).second) {
+        return;
+    }
+    LOG_WARN("{}: {}.{} is deprecated (still applied, no longer authored)",
+             sourceName, type.name, field.name);
+}
+
 std::optional<reflect::Value> convertValue(const toml::node& node,
                                            reflect::FieldKind kind) {
     using reflect::FieldKind;
@@ -41,13 +60,17 @@ std::optional<reflect::Value> convertValue(const toml::node& node,
             return Value { *value };
         }
         return std::nullopt;
+    // Out-of-range integers are rejected like any other type mismatch (the
+    // caller warns) instead of wrapping silently.
     case FieldKind::I32:
-        if (const auto value = node.value<i64>()) {
+        if (const auto value = node.value<i64>();
+            value && std::in_range<i32>(*value)) {
             return Value { static_cast<i32>(*value) };
         }
         return std::nullopt;
     case FieldKind::U32:
-        if (const auto value = node.value<i64>(); value && *value >= 0) {
+        if (const auto value = node.value<i64>();
+            value && std::in_range<u32>(*value)) {
             return Value { static_cast<u32>(*value) };
         }
         return std::nullopt;
@@ -218,6 +241,17 @@ core::Result<Plugin> parsePluginToml(std::string_view text,
                     LOG_WARN("{}: record {}: field '{}' has the wrong type",
                              sourceName, formId->toString(), key.str());
                     continue;
+                }
+                if (field->enumeration && !field->enumeration->acceptsValue(*value)) {
+                    LOG_WARN("{}: record {}: field '{}' = '{}' is not one of "
+                             "{} (skipped)",
+                             sourceName, formId->toString(), key.str(),
+                             reflect::valueToString(*value),
+                             field->enumeration->joined());
+                    continue;
+                }
+                if ((field->flags & reflect::Deprecated) != 0) {
+                    warnDeprecatedOnce(sourceName, *type, *field);
                 }
                 record.fields.insert_or_assign(field->id, std::move(*value));
             }

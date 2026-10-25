@@ -1,11 +1,14 @@
 #pragma once
 
+#include <initializer_list>
+
 #include "engine/core/Defines.hpp"
 #include "engine/render/GpuProbe.hpp" // optional sub-pass timing (P0)
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -30,6 +33,8 @@ public:
     static constexpr u32 kBloomLevels = 5;
 
     void create(rhi::Device& device, ShaderLibrary& shaders);
+    // Frees every GPU resource; the public tuning knobs survive (they are
+    // the user's settings, not resources).
     void destroy(rhi::Device& device);
     void refreshPipelines(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -115,28 +120,32 @@ public:
 
     // For the tonemap bind group. Contact hands out its BLURRED target
     // (its IGN jitter needs the filter).
-    rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
-    rhi::TextureHandle godRayTexture() const { return godRayTex; }
-    rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
-    rhi::TextureHandle mistTexture() const { return mistTex; }
+    rhi::TextureHandle bloomTexture() const { return bloom[0].tex; }
+    rhi::TextureHandle godRayTexture() const { return godRay.tex; }
+    rhi::TextureHandle volumetricTexture() const { return volumetric.tex; }
+    rhi::TextureHandle mistTexture() const { return mist.out.tex; }
     // The tonemap taps the display-BLURRED target; the temporal history
     // stays sharp (the froxel display-blur lesson).
-    rhi::TextureHandle skyCloudsTexture() const { return skyCloudBlurTex; }
-    rhi::TextureHandle contactTexture() const { return contactBlurTex; }
+    rhi::TextureHandle skyCloudsTexture() const {
+        return skyCloudBlur.target.tex;
+    }
+    rhi::TextureHandle contactTexture() const {
+        return contact.blur.target.tex;
+    }
     // Half-res SSAO (ssao.frag — the contact pattern's sibling): the
     // tonemap taps the BLURRED target; clearSsao() = toggle off.
     void renderSsao(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup);
     void clearSsao(rhi::CommandBuffer& cmd);
-    rhi::TextureHandle ssaoTexture() const { return ssaoBlurTex; }
+    rhi::TextureHandle ssaoTexture() const { return ssao.blur.target.tex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
     u32 exposureSide() const { return adaptSide; }
     rhi::TextureHandle exposureTexture(u32 side) const {
-        return adaptTex[side];
+        return adapt[side].tex;
     }
 
-    bool ready() const { return bloomTex[0].id() != 0; }
+    bool ready() const { return bloom[0].ready(); }
     // The froxel path A/B (falls back to the 2D march when off or when
     // compute/volume caps are missing).
     bool froxelFog { true };
@@ -149,8 +158,107 @@ public:
     bool froxelReady() const { return froxelInjectPipeline.id() != 0; }
 
 private:
+    // A color render target: the texture plus the framebuffer that draws
+    // into it (sampled + render attachment, clamp-to-edge).
+    struct RenderTarget {
+        rhi::UniqueTexture tex;
+        rhi::UniqueFramebuffer fb;
+
+        void create(rhi::Device& device, u32 width, u32 height,
+                    rhi::TextureFormat format,
+                    rhi::FilterMode filter = rhi::FilterMode::Linear,
+                    u32 mipLevels = 1);
+        void reset();
+        bool ready() const { return tex.id() != 0; }
+    };
+
+    // A target produced from ONE sampled source by a fullscreen pass — the
+    // history copies and the display blurs. `source` samples the texture
+    // the target derives from, bound at slot 0 of the copy/blur shaders.
+    struct DerivedTarget {
+        RenderTarget target;
+        rhi::UniqueBindGroup source;
+
+        void create(rhi::Device& device, u32 width, u32 height,
+                    rhi::TextureFormat format, rhi::TextureHandle sourceTex,
+                    rhi::SamplerHandle sampler);
+        void reset();
+        // The fullscreen draw into the target (no clear).
+        void record(rhi::CommandBuffer& cmd,
+                    rhi::PipelineHandle pipeline) const;
+    };
+
+    // Temporal EMA reprojection state shared by the media passes (mist,
+    // sky clouds, froxels): last frame's view-proj/camera for the history
+    // lookup, the std140 ubo the shaders read it from, and the validity
+    // gate. `prevReach` is the froxels' reach-aware history slice; the
+    // screen-space media leave it at zero.
+    struct TemporalHistory {
+        rhi::UniqueBuffer ubo;
+        Mat4 prevViewProj { 1.0f };
+        Vec3 prevCamera { 0.0f };
+        f32 prevReach { 0.0f };
+        u32 frame { 0 };
+        bool valid { false };
+
+        void create(rhi::Device& device);
+        // Fraction of the CURRENT sample this frame: `blend` clamped, or
+        // the full-weight 1 when the history can't be reprojected (first
+        // frame, invalidated, or a camera jump).
+        f32 alpha(f32 blend, const Vec3& camera) const;
+        // Uploads this frame's reprojection uniforms (`cameraW` rides
+        // prevCamera.w, `dustNoise` temporalInfo.z) and advances the
+        // frame counter the shaders' jitter sequence reads.
+        void upload(rhi::Device& device, f32 alpha, f32 cameraW,
+                    f32 dustNoise);
+        // Records this frame as next frame's history.
+        void commit(const Mat4& viewProj, const Vec3& camera, f32 reach,
+                    bool nowValid);
+    };
+
+    // A screen-space medium raymarched into its own half-res target with
+    // a temporal EMA against last frame's result: the ground mist and the
+    // volumetric sky clouds. History is a plain copy of last frame's
+    // target (a blit after the pass) — no ping-pong, so the tonemap blit
+    // group stays static. `group` = scene depth (0) + history (10) +
+    // temporal ubo (3). The ubo outlives the window-size targets.
+    struct MediaPass {
+        RenderTarget out;
+        TemporalHistory temporal;
+        DerivedTarget history; // samples `out`
+        rhi::UniqueBindGroup group;
+
+        void createTargets(rhi::Device& device, u32 width, u32 height,
+                           rhi::TextureHandle sceneDepthCopy,
+                           rhi::SamplerHandle sampler);
+        void resetTargets();
+    };
+
+    // A half-res pass whose IGN jitter needs the 3x3 blur before the
+    // tonemap taps it: contact shadows and SSAO. `group` = the march's
+    // inputs; the blur samples `raw`.
+    struct FilteredPass {
+        RenderTarget raw;
+        rhi::UniqueBindGroup group;
+        DerivedTarget blur; // samples `raw`
+
+        void reset();
+    };
+
+    struct SlotGroup {
+        u32 slot;
+        rhi::BindGroupHandle group;
+    };
+
+    // The shared media recording: temporal uniforms, the raymarch into
+    // `pass.out` (frame group at 0, the pass group at 1, then `groups` in
+    // order — zero handles skipped), the history blit, the commit.
+    void renderMedia(rhi::Device& device, rhi::CommandBuffer& cmd,
+                     const FrameUniforms& frameData, MediaPass& pass,
+                     rhi::PipelineHandle pipeline, f32 blend,
+                     rhi::BindGroupHandle frameBindGroup,
+                     std::initializer_list<SlotGroup> groups);
     void destroyTargets(rhi::Device& device);
-    void buildPipelines(rhi::Device& device, ShaderLibrary& shaders);
 
     rhi::UniqueSampler linearSampler;
     // Contact-shadow march inputs: depth/alpha must NOT be filtered —
@@ -159,115 +267,70 @@ private:
     // contact shadow around the tips.
     rhi::UniqueSampler nearestSampler;
 
-    array<rhi::UniqueTexture, kBloomLevels> bloomTex;
-    array<rhi::UniqueFramebuffer, kBloomLevels> bloomFb;
+    array<RenderTarget, kBloomLevels> bloom;
     // Sampling bind groups: prefilter reads the scene, down[i] reads level
     // i-1, up[i] reads level i+1.
     rhi::UniqueBindGroup prefilterGroup;
     array<rhi::UniqueBindGroup, kBloomLevels> downGroup;
     array<rhi::UniqueBindGroup, kBloomLevels> upGroup;
 
-    rhi::UniqueTexture godRayTex;
-    rhi::UniqueFramebuffer godRayFb;
+    RenderTarget godRay;
     rhi::UniqueBindGroup godRayGroup;
 
-    rhi::UniqueTexture volumetricTex;
-    rhi::UniqueFramebuffer volumetricFb;
+    RenderTarget volumetric;
     rhi::UniqueBindGroup volumetricGroup;
 
-    rhi::UniqueTexture mistTex;
-    rhi::UniqueFramebuffer mistFb;
-    // Scene depth (0) + history (10) + temporal ubo (3). History is a
-    // plain copy of last frame's target (copyTexture after the pass) —
-    // no ping-pong, so the tonemap blit group stays static.
-    rhi::UniqueBindGroup mistGroup;
-    rhi::UniqueTexture mistHistoryTex;
-    rhi::UniqueFramebuffer mistHistoryFb;
-    rhi::UniqueBindGroup mistHistoryGroup; // samples mistTex
-    rhi::UniqueBuffer mistTemporalUbo;
-    Mat4 mistPrevViewProj { 1.0f };
-    Vec3 mistPrevCamera { 0.0f };
-    u32 mistFrame { 0 };
-    bool mistHistoryValid { false };
+    MediaPass mist;
 
-    // Volumetric sky clouds — the mist target/history/temporal family.
-    rhi::UniqueTexture skyCloudTex;
-    rhi::UniqueFramebuffer skyCloudFb;
-    rhi::UniqueBindGroup skyCloudGroup; // depth 0 + history 10 + ubo 3
-    rhi::UniqueTexture skyCloudHistoryTex;
-    rhi::UniqueFramebuffer skyCloudHistoryFb;
-    rhi::UniqueBindGroup skyCloudHistoryGroup; // samples skyCloudTex
-    rhi::UniqueTexture skyCloudBlurTex; // display-only 3x3 (postblur)
-    rhi::UniqueFramebuffer skyCloudBlurFb;
-    rhi::UniqueBindGroup skyCloudBlurGroup; // samples skyCloudTex
-    rhi::UniqueBuffer skyCloudTemporalUbo;
-    Mat4 skyCloudPrevViewProj { 1.0f };
-    Vec3 skyCloudPrevCamera { 0.0f };
-    u32 skyCloudFrame { 0 };
-    bool skyCloudHistoryValid { false };
+    // Volumetric sky clouds — the mist family plus a display-only 3x3
+    // blur (postblur) the tonemap taps; the EMA history stays sharp.
+    MediaPass skyCloud;
+    DerivedTarget skyCloudBlur; // samples skyCloud.out
 
     // Froxel fog (docs/RENDERING.md V4/H4): fixed-size frustum volumes,
-    // inject + integrate in compute, resolved into volumetricTex by a
-    // fullscreen fetch — the tonemap composite is untouched. The 2D march
-    // stays as the fallback (no compute caps) and the A/B.
+    // inject + integrate in compute, resolved into the volumetric target
+    // by a fullscreen fetch — the tonemap composite is untouched. The 2D
+    // march stays as the fallback (no compute caps) and the A/B.
     static constexpr u32 kFroxelX = 128, kFroxelY = 72, kFroxelZ = 64;
+    rhi::UniqueSampler froxelSampler;
     // Scatter is a ping-pong pair: inject writes one side while sampling
     // the other as last frame's history (temporal accumulation).
     rhi::UniqueTexture froxelScatter[2];
     rhi::UniqueTexture froxelIntegrated;
+    TemporalHistory froxelTemporal;
     rhi::UniqueBindGroup froxelInjectGroup[2]; // images 12+13, history 7,
                                                // temporal ubo 9
-    rhi::UniqueBuffer froxelTemporalUbo;
     u32 froxelSide { 0 };
-    u32 froxelFrame { 0 };
-    bool froxelHistoryValid { false };
-    Mat4 froxelPrevViewProj { 1.0f };
-    Vec3 froxelPrevCamera { 0.0f };
-    f32 froxelPrevReach { 0.0f };
     rhi::UniqueBindGroup froxelApplyGroup;    // integrated sampler at 4
-    rhi::UniquePipeline froxelInjectPipeline;
-    rhi::UniquePipeline froxelIntegratePipeline;
-    rhi::UniquePipeline froxelApplyPipeline;
-    rhi::UniqueSampler froxelSampler;
+    WatchedPipeline froxelInjectPipeline;
+    WatchedPipeline froxelIntegratePipeline;
+    WatchedPipeline froxelApplyPipeline;
 
     // Contact shadows + the 3x3 blur that filters their IGN
     // jitter — the tonemap taps the blurred target (contactTexture()).
-    rhi::UniqueTexture contactTex;
-    rhi::UniqueFramebuffer contactFb;
-    rhi::UniqueBindGroup contactGroup;
-    rhi::UniqueTexture contactBlurTex;
-    rhi::UniqueFramebuffer contactBlurFb;
-    rhi::UniqueTexture ssaoTex;
-    rhi::UniqueFramebuffer ssaoFb;
-    rhi::UniqueBindGroup ssaoGroup;
-    rhi::UniqueTexture ssaoBlurTex;
-    rhi::UniqueFramebuffer ssaoBlurFb;
-    rhi::UniqueBindGroup ssaoBlurGroup;
-    rhi::UniquePipeline ssaoPipeline;
-    rhi::UniqueBindGroup contactBlurGroup; // samples contactTex
+    FilteredPass contact;
+    FilteredPass ssao;
+    WatchedPipeline ssaoPipeline;
 
     // Auto-exposure targets (window-size independent).
-    rhi::UniqueTexture luminanceTex;
-    rhi::UniqueFramebuffer luminanceFb;
+    RenderTarget luminance;
     rhi::UniqueBindGroup luminanceGroup;
-    array<rhi::UniqueTexture, 2> adaptTex;
-    array<rhi::UniqueFramebuffer, 2> adaptFb;
+    array<RenderTarget, 2> adapt;
     array<rhi::UniqueBindGroup, 2> adaptGroup;
     u32 adaptSide { 0 };
 
-    rhi::UniquePipeline prefilterPipeline;
-    rhi::UniquePipeline downPipeline;
-    rhi::UniquePipeline upPipeline; // additive blend
-    rhi::UniquePipeline godRayPipeline;
-    rhi::UniquePipeline volumetricPipeline;
-    rhi::UniquePipeline contactPipeline;
-    rhi::UniquePipeline mistPipeline;
-    rhi::UniquePipeline skyCloudPipeline;
-    rhi::UniquePipeline copyPipeline; // history blit (postcopy)
-    rhi::UniquePipeline blurPipeline; // contact jitter filter (postblur)
-    rhi::UniquePipeline luminancePipeline;
-    rhi::UniquePipeline adaptPipeline;
-    ShaderLibrary::Watch shaderWatch;
+    WatchedPipeline prefilterPipeline;
+    WatchedPipeline downPipeline;
+    WatchedPipeline upPipeline; // additive blend
+    WatchedPipeline godRayPipeline;
+    WatchedPipeline volumetricPipeline;
+    WatchedPipeline contactPipeline;
+    WatchedPipeline mistPipeline;
+    WatchedPipeline skyCloudPipeline;
+    WatchedPipeline copyPipeline; // history blit (postcopy)
+    WatchedPipeline blurPipeline; // contact jitter filter (postblur)
+    WatchedPipeline luminancePipeline;
+    WatchedPipeline adaptPipeline;
 };
 
 } // namespace render

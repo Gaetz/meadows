@@ -2,6 +2,9 @@
 
 // Subsystem map: docs/AUDIT/U2-rhi-gl.md
 
+#include <iterator>
+#include <optional>
+
 #include "engine/core/Defines.hpp"
 
 namespace rhi {
@@ -144,30 +147,95 @@ enum class TextureFormat {
     R16_UNORM, // 16-bit normalized single channel (terrain material heights —
                // height blending bands with only 8 bits). Initial-data
                // contract: raw u16 per texel, UNLIKE R16F's f32-to-half.
+    Count,
 };
 
-// Bytes of one 4x4 block for compressed formats, of one texel otherwise.
-// With mipLevelBytes/textureDataBytes below, the single authority for
-// upload-size arithmetic shared by backends, loaders, the cooker and tests.
-constexpr u32 formatBlockBytes(TextureFormat f) {
-    switch (f) {
-    case TextureFormat::RGBA8:
-    case TextureFormat::SRGBA8:    return 4;
-    case TextureFormat::RGBA16F:   return 8;
-    case TextureFormat::R16F:      return 4; // f32 initial data (converted)
-    case TextureFormat::R32F:      return 4;
-    case TextureFormat::Depth32F:  return 4;
-    case TextureFormat::BC7_SRGB:
-    case TextureFormat::BC7_UNORM:
-    case TextureFormat::BC5_UNORM: return 16;
-    case TextureFormat::R16_UNORM: return 2;
-    }
-    return 0;
+// THE format table: every backend-agnostic property of a TextureFormat in
+// one row, in enum order (pinned below). Backends keep only their API
+// column (GL internal format, VkFormat); loaders, the cooker, the
+// validation and the size arithmetic read this table. Adding a format =
+// one enum value + one row, and the static_assert refuses a missing row.
+struct FormatTraits {
+    TextureFormat format;
+    u32 uploadBytes;      // bytes of one texel (one 4x4 block for BC) in the
+                          // initial-data contract handed to createTexture
+    u32 gpuBytes;         // bytes of one texel in GPU memory (staging,
+                          // readbacks); 0 for block formats (mipLevelBytes)
+    bool blockCompressed;
+    bool depth;
+    bool srgb;
+    bool uploadable;      // accepts initial pixels through the base-mip path
+    bool storage;         // may back a storage image (compute writes)
+    bool cooked;          // produced offline by tools/cooker only (BC chain,
+                          // R16_UNORM); needs caps.textureCompressionBC
+    u32 cookCode;         // stable .mtex on-disk code, 0 = not cookable.
+                          // Never renumber, only append.
+};
+
+inline constexpr FormatTraits kFormatTraits[] = {
+    // format                  upload gpu   bc     depth  srgb   upld   stor   cooked code
+    { TextureFormat::RGBA8,     4,     4,   false, false, false, true,  true,  false, 1 },
+    { TextureFormat::SRGBA8,    4,     4,   false, false, true,  true,  false, false, 2 },
+    { TextureFormat::RGBA16F,   8,     8,   false, false, false, true,  true,  false, 0 },
+    { TextureFormat::R16F,      4,     2,   false, false, false, true,  true,  false, 0 },
+    { TextureFormat::R32F,      4,     4,   false, false, false, true,  true,  false, 0 },
+    { TextureFormat::Depth32F,  4,     4,   false, true,  false, false, false, false, 0 },
+    { TextureFormat::BC7_SRGB,  16,    0,   true,  false, true,  false, false, true,  3 },
+    { TextureFormat::BC7_UNORM, 16,    0,   true,  false, false, false, false, true,  4 },
+    { TextureFormat::BC5_UNORM, 16,    0,   true,  false, false, false, false, true,  5 },
+    { TextureFormat::R16_UNORM, 2,     2,   false, false, false, true,  true,  true,  6 },
+};
+static_assert(std::size(kFormatTraits) == size_t(TextureFormat::Count),
+              "one row per TextureFormat");
+
+constexpr const FormatTraits& formatTraits(TextureFormat f) {
+    return kFormatTraits[static_cast<size_t>(f)];
 }
 
+namespace detail {
+constexpr bool formatRowsInEnumOrder() {
+    for (size_t i = 0; i < std::size(kFormatTraits); ++i) {
+        if (kFormatTraits[i].format != static_cast<TextureFormat>(i)) {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace detail
+static_assert(detail::formatRowsInEnumOrder(),
+              "kFormatTraits rows must follow the TextureFormat order");
+
+// Bytes of one 4x4 block for compressed formats, of one texel otherwise —
+// in the INITIAL-DATA contract (R16F uploads f32 texels). With
+// mipLevelBytes/textureDataBytes below, the authority for upload-size
+// arithmetic shared by backends, loaders, the cooker and tests.
+constexpr u32 formatBlockBytes(TextureFormat f) {
+    return formatTraits(f).uploadBytes;
+}
+// Bytes of one texel in GPU memory (0 for block formats).
+constexpr u32 formatGpuBytes(TextureFormat f) {
+    return formatTraits(f).gpuBytes;
+}
 constexpr bool isBlockCompressed(TextureFormat f) {
-    return f == TextureFormat::BC7_SRGB || f == TextureFormat::BC7_UNORM
-        || f == TextureFormat::BC5_UNORM;
+    return formatTraits(f).blockCompressed;
+}
+constexpr bool isDepthFormat(TextureFormat f) {
+    return formatTraits(f).depth;
+}
+// .mtex code of a format (0 = not cookable) and back (nullopt = unknown).
+constexpr u32 formatCookCode(TextureFormat f) {
+    return formatTraits(f).cookCode;
+}
+constexpr std::optional<TextureFormat> formatFromCookCode(u32 code) {
+    if (code == 0) {
+        return std::nullopt;
+    }
+    for (const FormatTraits& row : kFormatTraits) {
+        if (row.cookCode == code) {
+            return row.format;
+        }
+    }
+    return std::nullopt;
 }
 
 // Byte size of one layer of one mip level, block-aligned (4x4) for BC.

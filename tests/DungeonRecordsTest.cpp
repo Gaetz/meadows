@@ -151,13 +151,14 @@ TEST_CASE("dungeon records: staging emits worldspace, cells, meshes, nav, doors"
     // barrier's guid deriving from its lever's (the scene's pull-time
     // inversion contract).
     const DungeonKit kit = testKit();
-    REQUIRE_FALSE(fx.bake.chests.empty());
+    using dungeon::AnchorKind;
+    REQUIRE(fx.bake.countOf(AnchorKind::Chest) > 0);
     const auto* chestRef = static_cast<const ReferenceForm*>(
         session.view(core::Guid::combine(
             kDungeonId, core::Guid { 0x5100, 0x64756E67656F6E31ull })));
     REQUIRE(chestRef != nullptr);
     CHECK(chestRef->baseForm == kit.chest);
-    for (const auto& lever : fx.bake.levers) {
+    for (const auto& lever : fx.bake.anchorsOf(AnchorKind::Lever)) {
         const core::Guid leverRef = core::Guid::combine(
             kDungeonId,
             core::Guid { 0x5000 + lever.lockId, 0x64756E67656F6E31ull });
@@ -172,15 +173,16 @@ TEST_CASE("dungeon records: staging emits worldspace, cells, meshes, nav, doors"
     }
 
     // Enemies: at least the goal guardian, each staged at its bake anchor.
-    REQUIRE_FALSE(fx.bake.enemySpawns.empty());
-    for (size_t i = 0; i < fx.bake.enemySpawns.size(); ++i) {
+    const auto enemies = fx.bake.anchorsOf(AnchorKind::EnemySpawn);
+    REQUIRE_FALSE(enemies.empty());
+    for (size_t i = 0; i < enemies.size(); ++i) {
         const auto* enemyRef = static_cast<const ReferenceForm*>(
             session.view(core::Guid::combine(
                 kDungeonId,
                 core::Guid { 0x5300 + i, 0x64756E67656F6E31ull })));
         REQUIRE(enemyRef != nullptr);
         CHECK(enemyRef->baseForm == kit.enemy);
-        CHECK(enemyRef->position == fx.bake.enemySpawns[i].position);
+        CHECK(enemyRef->position == enemies[i].position);
     }
 }
 
@@ -263,9 +265,10 @@ TEST_CASE("dungeon records: re-Accept patches the same records, no duplicates") 
 
 TEST_CASE("dungeon records: re-Accept updates live records and disables "
           "leftovers") {
+    using dungeon::AnchorKind;
     Fixture fx;
     REQUIRE_FALSE(fx.bake.empty());
-    REQUIRE_FALSE(fx.bake.enemySpawns.empty());
+    REQUIRE(fx.bake.countOf(AnchorKind::EnemySpawn) > 0);
     data::EditSession session { fx.db, fx.types };
 
     stageDungeonRecords(session, fx.db, fx.model, fx.bake, kDungeonId,
@@ -277,17 +280,25 @@ TEST_CASE("dungeon records: re-Accept updates live records and disables "
     // at its old spot).
     dungeon::DungeonBakeResult moved = fx.bake;
     const Vec3 shift { 10.0f, 0.0f, 10.0f };
-    for (auto* family : { &moved.enemySpawns, &moved.oreVeins,
-                          &moved.chests, &moved.patrolPoints }) {
-        for (auto& anchor : *family) {
+    for (auto& anchor : moved.anchors) {
+        if (anchor.kind == AnchorKind::EnemySpawn ||
+            anchor.kind == AnchorKind::OreVein ||
+            anchor.kind == AnchorKind::Chest ||
+            anchor.kind == AnchorKind::PatrolPoint) {
             anchor.position += shift;
         }
     }
     for (auto& torch : moved.torches) {
         torch.position += shift;
     }
-    const size_t dropped = moved.enemySpawns.size() - 1;
-    moved.enemySpawns.pop_back();
+    const size_t dropped = moved.countOf(AnchorKind::EnemySpawn) - 1;
+    for (size_t i = moved.anchors.size(); i-- > 0;) {
+        if (moved.anchors[i].kind == AnchorKind::EnemySpawn) {
+            moved.anchors.erase(moved.anchors.begin() +
+                                static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
     stageDungeonRecords(session, fx.db, fx.model, moved, kDungeonId,
                         "TestMine", meshAssetFor, kNavAsset, fx.anchors,
                         testKit());

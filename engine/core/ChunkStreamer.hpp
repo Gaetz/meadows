@@ -9,10 +9,11 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Jobs.hpp"
 
-namespace render {
+namespace core {
 
-// The shared terrain chunk grid key: (cx, cz) packed into a
-// u64, matching HeightPatches::keyOf and the occluders' convention.
+// THE chunk grid key: (cx, cz) packed into a u64. Every map keyed on
+// terrain chunks (streamers, patches, occluders, collision tiles) uses
+// it, so a key crosses subsystems without re-packing.
 inline constexpr u64 chunkKey(i32 cx, i32 cz) {
     return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
            static_cast<u32>(cz);
@@ -27,7 +28,7 @@ inline i32 chunkCoordOf(f32 worldCoord, f32 chunkSize) {
     return static_cast<i32>(std::floor(worldCoord / chunkSize));
 }
 
-// The chunk-streaming ring shared by Terrain/Grass/Vegetation:
+// The chunk-streaming ring shared by the terrain/grass/vegetation systems:
 // a map of chunks keyed on the terrain grid, worker builds coming back
 // through a generation-stamped ConcurrentQueue, budgeted nearest-first
 // requests, and evict-beyond-hysteresis. The systems keep what actually
@@ -175,4 +176,4 @@ private:
     u64 generation_ { 0 };
 };
 
-} // namespace render
+} // namespace core

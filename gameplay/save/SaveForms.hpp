@@ -184,6 +184,11 @@ struct SavedEffectForm : data::Form {
     f32 decayPerHour { 1.0f };
     f32 expiryMagnitude { 0.0f };
     bool gameTime { false };
+    // The runtime effectId at capture: rows one EffectForm spawned (its
+    // attribute2 line) share it, and the restore pairs them again under
+    // ONE fresh id so removeEffectById keeps taking both out. Only the
+    // pairing survives; 0 = an older save or an untracked row.
+    u32 effectId { 0 };
 
     REFLECT_BEGIN(SavedEffectForm, data::Form)
         REFLECT_FIELD(parent)
@@ -199,6 +204,7 @@ struct SavedEffectForm : data::Form {
         REFLECT_FIELD(decayPerHour)
         REFLECT_FIELD(expiryMagnitude)
         REFLECT_FIELD(gameTime)
+        REFLECT_FIELD(effectId)
     REFLECT_END()
 };
 

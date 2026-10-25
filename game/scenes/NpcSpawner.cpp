@@ -159,7 +159,8 @@ void NpcSpawner::refreshNpcs(
                 if (const auto* followerClass =
                         forms.find<gameplay::FollowerClassForm>(
                             actor.followerClass)) {
-                    npc->combatStyle = followerClass->combatStyle;
+                    npc->combatStyle =
+                        gameplay::parseCombatStyle(followerClass->combatStyle);
                 }
             }
             // Brain script: Lua decides this actor's combat moves

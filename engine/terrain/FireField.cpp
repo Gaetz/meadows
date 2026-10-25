@@ -34,8 +34,7 @@ void fireRestoreCell(FireGrid& grid, f32 x, f32 z, FireState state,
         return;
     }
     const i32 n = static_cast<i32>(grid.spec.n);
-    const i32 col = static_cast<i32>(std::lround((x - grid.spec.originX) / grid.spec.texelSize));
-    const i32 row = static_cast<i32>(std::lround((z - grid.spec.originZ) / grid.spec.texelSize));
+    const auto [col, row] = grid.spec.cellOf(x, z);
     if (col < 0 || row < 0 || col >= n || row >= n) {
         return;
     }
@@ -133,8 +132,7 @@ void fireIgnite(FireGrid& grid, f32 x, f32 z, f32 radius, f32 heat,
     }
     const i32 n = static_cast<i32>(grid.spec.n);
     const f32 texel = grid.spec.texelSize;
-    const i32 col = static_cast<i32>(std::lround((x - grid.spec.originX) / texel));
-    const i32 row = static_cast<i32>(std::lround((z - grid.spec.originZ) / texel));
+    const auto [col, row] = grid.spec.cellOf(x, z);
     const i32 reach = static_cast<i32>(std::ceil(radius / texel));
     for (i32 dz = -reach; dz <= reach; ++dz) {
         for (i32 dx = -reach; dx <= reach; ++dx) {
@@ -163,8 +161,7 @@ void fireDouse(FireGrid& grid, f32 x, f32 z, f32 radius) {
     }
     const i32 n = static_cast<i32>(grid.spec.n);
     const f32 texel = grid.spec.texelSize;
-    const i32 col = static_cast<i32>(std::lround((x - grid.spec.originX) / texel));
-    const i32 row = static_cast<i32>(std::lround((z - grid.spec.originZ) / texel));
+    const auto [col, row] = grid.spec.cellOf(x, z);
     const i32 reach = static_cast<i32>(std::ceil(radius / texel));
     for (i32 dz = -reach; dz <= reach; ++dz) {
         for (i32 dx = -reach; dx <= reach; ++dx) {

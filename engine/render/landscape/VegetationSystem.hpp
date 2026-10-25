@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <iterator>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -9,13 +10,14 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
-#include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/render/landscape/TreeGenerator.hpp" // *TreeParams (builder)
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace core {
 class JobSystem;
@@ -84,6 +86,67 @@ public:
     static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
     static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
     static constexpr u32 kFirstPebble = kFirstMass + kMassVariants;
+
+    // Prop FAMILIES: the variant slots are partitioned into contiguous
+    // families (enum order = slot order). Every per-family rule — shadow
+    // casting, GI injection, hero-LOD radius, collision ranges, the
+    // procedural placeholder, the scatter rules — reads this table
+    // through familyOf()/traitsOf(); the kFirst* constants above are its
+    // `first` column, kept for the callers that address slots directly.
+    enum class PropFamily : u8 {
+        Tree,
+        Rock,
+        Bush,
+        Debris,
+        Plant,
+        Mass,
+        Pebble,
+        Count
+    };
+    static constexpr u8 kNoGiKind = 0xff;
+    struct PropFamilyTraits {
+        u32 first;
+        u32 count;
+        // drawDepth draws the family into the shadow cascades.
+        bool castsShadow;
+        // GiProp::kind the family injects into the GI volume as
+        // (kNoGiKind = not injected: small cutouts).
+        u8 giKind;
+        // Hero mesh within highDetailRadius; false = camera chunk only
+        // (short-reach props would otherwise stay full-detail wherever
+        // they are visible).
+        bool hasHighDetailRadius;
+        constexpr u32 end() const { return first + count; }
+        constexpr bool contains(u32 variant) const {
+            return variant >= first && variant < end();
+        }
+    };
+    static constexpr PropFamilyTraits kFamilies[] = {
+        //  first          count            shadow  giKind     heroRadius
+        { 0, kTreeVariants, true, 0, true },                   // Tree
+        { kFirstRock, kRockVariants, true, 1, true },          // Rock
+        { kFirstBush, kBushVariants, true, 2, true },          // Bush
+        { kFirstDebris, kDebrisVariants, true, 1, true },      // Debris: rock-like solid
+        { kFirstPlant, kPlantVariants, false, kNoGiKind, false },   // Plant
+        { kFirstMass, kMassVariants, false, kNoGiKind, false },     // Mass
+        { kFirstPebble, kPebbleVariants, false, kNoGiKind, false }, // Pebble
+    };
+    static constexpr const PropFamilyTraits& familyTraits(PropFamily family) {
+        return kFamilies[static_cast<u32>(family)];
+    }
+    // The family owning a variant slot (PropFamily::Count past the end).
+    static constexpr PropFamily familyOf(u32 variant) {
+        for (u32 f = 0; f < static_cast<u32>(PropFamily::Count); ++f) {
+            if (kFamilies[f].contains(variant)) {
+                return static_cast<PropFamily>(f);
+            }
+        }
+        return PropFamily::Count;
+    }
+    // Precondition: variant < kVariantCount.
+    static constexpr const PropFamilyTraits& traitsOf(u32 variant) {
+        return familyTraits(familyOf(variant));
+    }
     // Shader names, shared by create() (loads), the pipeline builds and
     // nothing else — the split TUs all see them here.
     static constexpr const char* kTreeShader = "tree";
@@ -199,17 +262,18 @@ public:
 
     // Per-variant albedo texture (sRGB, RGBA8): the variant draws
     // textured — its mesh uv is REAL texture coordinates, flagged to the
-    // shaders by a NEGATIVE instance fade lane (scatter emits it for the
-    // plant slots). Alpha < 0.5 discards (cutout). Call AFTER
-    // overrideVariantMesh (which resets the variant's GPU state).
+    // shaders by the instance's textured lane (PropEncoding.hpp; the
+    // scatter emits it for the textured families). Alpha < 0.5 discards
+    // (cutout). Call AFTER overrideVariantMesh (which resets the
+    // variant's GPU state).
     void setVariantAlbedo(rhi::Device& device, u32 variant, u32 width,
                           u32 height, vector<u8> rgba,
                           u32 normalWidth = 0, u32 normalHeight = 0,
                           vector<u8> normalRgba = {});
 
     // Bark textures for the procedural trees (docs/PAYSAGE.md §1.7): wood
-    // vertices carry a flag (uv.y < -0.5) and tree.frag samples the
-    // slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
+    // vertices carry the bark flag (PropEncoding.hpp) and tree.frag
+    // samples the slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
     // oak/broadleaf default, 1 = spruce/conifer default); the tree
     // builder picks per slot via variantBark + barkGroupsDirty.
     struct BarkImage {
@@ -294,8 +358,8 @@ public:
     struct Instance {
         Vec4 positionScale; // xyz = terrain point, w = uniform scale
         // x = yaw, y = tint jitter (also the thinning key), z = sway
-        // phase (negative = rigid prop), w = fade end in meters
-        // (negative = textured prop: uv are texture coordinates).
+        // phase, w = fade end in meters. The z/w lanes carry the rigid
+        // and textured flags as negative values — PropEncoding.hpp.
         Vec4 params;
     };
 
@@ -325,7 +389,7 @@ public:
     struct GiProp {
         Vec3 position; // terrain point (prop base)
         f32 scale;     // uniform scale
-        u8 kind;       // 0 = tree, 1 = rock, 2 = bush
+        u8 kind;       // kFamilies giKind: 0 = tree, 1 = rock-like, 2 = bush
     };
     // Appends props within `halfSpan` (Chebyshev) of `center`, nearest
     // chunks first, until `out` reaches `maxProps`.
@@ -439,8 +503,8 @@ private:
     // The slot's species: its override, else the live global params.
     TreeSpecies speciesFor(u32 slot) const;
 
-    // The shared ring mechanics live in ChunkStreamer.
-    ChunkStreamer<Chunk, VariantBuckets> streamer;
+    // The shared ring mechanics live in core::ChunkStreamer.
+    core::ChunkStreamer<Chunk, VariantBuckets> streamer;
     InstancePool instancePool;
     u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };
@@ -504,10 +568,8 @@ private:
     rhi::UniqueTexture leafMask;
     rhi::UniqueSampler leafMaskSampler;
     rhi::UniqueBindGroup leafMaskGroup;
-    rhi::UniquePipeline pipeline;
-    ShaderLibrary::Watch shaderWatch;
-    rhi::UniquePipeline casterPipeline;
-    ShaderLibrary::Watch casterShaderWatch;
+    WatchedPipeline pipeline;
+    WatchedPipeline casterPipeline;
     // Showcase mode (tool scenes): explicit instances of variant 0.
     rhi::UniqueBuffer showcaseInstances;
     u32 showcaseCount { 0 };
@@ -531,6 +593,44 @@ private:
     bool reseedQueued { false };
     u32 reseedQueuedSeed { 0 };
 };
+
+// The family table is THE partition of the variant slots: one row per
+// enum value, contiguous from slot 0, covering every slot, with the
+// kFirst*/k*Variants constants as its first/count columns.
+static_assert(std::size(VegetationSystem::kFamilies) ==
+              static_cast<size_t>(VegetationSystem::PropFamily::Count));
+static_assert(VegetationSystem::kFamilies[0].first == 0);
+static_assert([] {
+    for (size_t f = 1; f < std::size(VegetationSystem::kFamilies); ++f) {
+        if (VegetationSystem::kFamilies[f].first !=
+            VegetationSystem::kFamilies[f - 1].end()) {
+            return false;
+        }
+    }
+    return true;
+}());
+static_assert(VegetationSystem::kFamilies[std::size(VegetationSystem::kFamilies) - 1].end() ==
+              VegetationSystem::kVariantCount);
+static_assert(VegetationSystem::familyTraits(VegetationSystem::PropFamily::Tree).count ==
+                  VegetationSystem::kTreeVariants &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Rock).first ==
+                  VegetationSystem::kFirstRock &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Bush).first ==
+                  VegetationSystem::kFirstBush &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Debris).first ==
+                  VegetationSystem::kFirstDebris &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Plant).first ==
+                  VegetationSystem::kFirstPlant &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Mass).first ==
+                  VegetationSystem::kFirstMass &&
+              VegetationSystem::familyTraits(VegetationSystem::PropFamily::Pebble).first ==
+                  VegetationSystem::kFirstPebble);
+static_assert(VegetationSystem::familyOf(VegetationSystem::kFirstPebble) ==
+                  VegetationSystem::PropFamily::Pebble &&
+              VegetationSystem::familyOf(VegetationSystem::kFirstRock - 1) ==
+                  VegetationSystem::PropFamily::Tree &&
+              VegetationSystem::familyOf(VegetationSystem::kVariantCount) ==
+                  VegetationSystem::PropFamily::Count);
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.
 // The forest-belt mask (broad noise thresholded) — FarTerrain raises and

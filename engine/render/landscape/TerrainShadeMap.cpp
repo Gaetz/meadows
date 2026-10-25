@@ -1,6 +1,7 @@
 #include "engine/render/landscape/TerrainShadeMap.hpp"
 
 #include <cmath>
+#include <utility>
 
 #include "engine/core/Jobs.hpp"
 #include "engine/rhi/Device.hpp"
@@ -9,45 +10,39 @@ namespace render {
 
 void TerrainShadeMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
     mailbox.create(jobSystem, "terrainShadeMap");
-    sampler = device.createSampler({});
+    sampler = { device, device.createSampler({}) };
     // Textures are (re)created per landed bake (no RHI texture update).
-    (void)device;
 }
 
 void TerrainShadeMap::destroy(rhi::Device& device) {
-    mailbox.reset(); // orphan in-flight bakes
-    device.destroyBindGroup(group);
-    device.destroySampler(sampler);
-    device.destroyTexture(texture0);
-    device.destroyTexture(texture1);
-    group = {};
-    sampler = {};
-    texture0 = {};
-    texture1 = {};
+    (void)device;
+    // Orphan in-flight bakes: the mailbox generation must keep moving
+    // ACROSS the reset (a fresh mailbox would restart it at zero).
+    core::BakeMailbox<Baked> saved = std::move(mailbox);
+    saved.reset();
+    *this = TerrainShadeMap {}; // the owning handles release themselves
+    mailbox = std::move(saved);
 }
 
 void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
                              const Vec3& focus) {
     mailbox.drain([&](Baked& done) {
-        if (texture0.id != 0) {
-            device.destroyBindGroup(group);
-            device.destroyTexture(texture0);
-            device.destroyTexture(texture1);
-        }
+        // Re-assignment releases the previous bake's textures and group.
         const rhi::TextureDesc desc { .width = kSize,
                                       .height = kSize,
                                       .format = rhi::TextureFormat::RGBA8,
                                       .filter = rhi::FilterMode::Linear,
                                       .usage = rhi::TextureUsage_Sampled };
-        texture0 = device.createTexture(desc, done.t0.data());
-        texture1 = device.createTexture(desc, done.t1.data());
-        group = device.createBindGroup(
-            { .entries = { { .binding = 4,
-                             .texture = texture0,
-                             .sampler = sampler },
-                           { .binding = 5,
-                             .texture = texture1,
-                             .sampler = sampler } } });
+        texture0 = { device, device.createTexture(desc, done.t0.data()) };
+        texture1 = { device, device.createTexture(desc, done.t1.data()) };
+        group = { device,
+                  device.createBindGroup(
+                      { .entries = { { .binding = 4,
+                                       .texture = texture0,
+                                       .sampler = sampler },
+                                     { .binding = 5,
+                                       .texture = texture1,
+                                       .sampler = sampler } } }) };
         center = done.center;
         bakedStamp = done.stamp;
     });
@@ -56,8 +51,7 @@ void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
     }
 
     const Vec2 want { focus.x, focus.z };
-    const bool strayed = !mailbox.ready() ||
-                         glm::distance(want, center) > kSpan * 0.25f;
+    const bool strayed = mailbox.strayed(center, want, kSpan * 0.25f);
     const bool contentChanged =
         mailbox.ready() &&
         terrain::contentTouchedSince(params, bakedStamp,

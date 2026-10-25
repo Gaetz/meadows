@@ -37,20 +37,22 @@ void FireWindow::scrollFor(const render::terraingen::GridSpec& spec,
 }
 
 GroundProps groundPropsFrom(const SpiritRuleTable& rules) {
-    static const char* const kNames[kGroundClasses] = { "grass", "rock", "cliff",
+    // SplatFamily order.
+    static const char* const kNames[kSplatFamilies] = { "grass", "rock", "cliff",
                                                         "snow", "sand" };
-    GroundProps out {};
-    for (size_t i = 0; i < kGroundClasses; ++i) {
+    GroundProps out;
+    out.classes = rules.props;
+    for (size_t i = 0; i < kSplatFamilies; ++i) {
         const i32 index = rules.classIndex(kNames[i]);
-        if (index >= 0 && static_cast<size_t>(index) < rules.props.size()) {
-            out[i] = rules.props[static_cast<size_t>(index)];
-        }
+        out.classOf[i] =
+            index >= 0 && static_cast<size_t>(index) < out.classes.size() ? index
+                                                                           : -1;
     }
     return out;
 }
 
 render::terrain::FireCellFuel fuelFromWeights(const GroundProps& props,
-                                              const GroundWeights& weights,
+                                              const SplatWeights& weights,
                                               f32 wetness) {
     f32 total = 0.0f;
     for (const f32 w : weights) {
@@ -60,11 +62,16 @@ render::terrain::FireCellFuel fuelFromWeights(const GroundProps& props,
     if (total <= 1e-6f) {
         return out; // no ground: nothing burns
     }
-    for (size_t i = 0; i < kGroundClasses; ++i) {
+    for (size_t i = 0; i < kSplatFamilies; ++i) {
+        const i32 cls = props.classOf[i];
+        if (cls < 0) {
+            continue; // an inert family: no record
+        }
+        const MaterialProps& material = props.classes[static_cast<size_t>(cls)];
         const f32 w = glm::max(weights[i], 0.0f) / total;
-        out.fuel += w * props[i].fuel;
-        out.flammability += w * props[i].flammability;
-        out.moisture += w * props[i].moisture;
+        out.fuel += w * material.fuel;
+        out.flammability += w * material.flammability;
+        out.moisture += w * material.moisture;
     }
     out.moisture = glm::clamp(glm::max(out.moisture, wetness), 0.0f, 1.0f);
     return out;

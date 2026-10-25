@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "data/forms/FormDatabase.hpp"
+#include "engine/reflect/ValueText.hpp"
 
 namespace data {
 
@@ -29,6 +30,22 @@ ValidationReport validatePlugins(const vector<const Plugin*>& loadOrder,
     }
     known.insert(runtimeProvided.begin(), runtimeProvided.end());
 
+    for (const Plugin* plugin : loadOrder) {
+        for (const Record& record : plugin->records) {
+            const reflect::TypeInfo* type = types.findType(record.typeId);
+            if (!type) {
+                continue; // the resolver already reported it
+            }
+            for (const auto& [fieldId, value] : record.fields) {
+                const reflect::FieldInfo* field = type->findField(fieldId);
+                if (field && (field->flags & reflect::Deprecated) != 0) {
+                    report.deprecatedWrites.push_back(
+                        { record.formId, type->name, field->name });
+                }
+            }
+        }
+    }
+
     for (u32 i = 1; i <= database.count(); ++i) {
         const FormHandle handle { i };
         const Form* form = database.get(handle);
@@ -37,6 +54,14 @@ ValidationReport validatePlugins(const vector<const Plugin*>& loadOrder,
             continue;
         }
         reflect::forEachField(*type, [&](const reflect::FieldInfo& field) {
+            if (field.enumeration) {
+                const reflect::Value value = field.get(form);
+                if (!field.enumeration->acceptsValue(value)) {
+                    report.vocabularyErrors.push_back(
+                        { form->id, type->name, field.name,
+                          reflect::valueToString(value) });
+                }
+            }
             if (field.kind != reflect::FieldKind::Guid) {
                 return;
             }

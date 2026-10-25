@@ -4,7 +4,9 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -77,7 +79,9 @@ public:
              rhi::TextureHandle sceneDepth, const Mat4& viewProj,
              const vector<Candidate>& candidates);
 
-    bool ready() const { return cullPipeline.id != 0 && hizTexture.id != 0; }
+    bool ready() const {
+        return cullPipeline.id() != 0 && hizTexture.id() != 0;
+    }
 
     // GPU-driven consumption (no readback): the command buffer side the
     // last dispatch wrote, and its per-group ranges. Commands are consumed
@@ -104,28 +108,26 @@ private:
         glm::uvec4 draw2 {};
     };
 
-    void destroyPyramid(rhi::Device& device);
+    WatchedPipeline hizFirstPipeline;
+    WatchedPipeline hizDownPipeline;
+    WatchedPipeline cullPipeline;
 
-    rhi::PipelineHandle hizFirstPipeline {};
-    rhi::PipelineHandle hizDownPipeline {};
-    rhi::PipelineHandle cullPipeline {};
-    u64 hizFirstGeneration { 0 };
-    u64 hizDownGeneration { 0 };
-    u64 cullGeneration { 0 };
-
-    rhi::TextureHandle hizTexture {};
-    rhi::SamplerHandle hizSampler {};   // nearest + nearest-mip: no blending
-    rhi::SamplerHandle depthSampler {}; // nearest, for the first reduction
-    rhi::BindGroupHandle firstGroup {};
-    vector<rhi::BindGroupHandle> downGroups; // [i]: mip i -> mip i+1
-    array<rhi::BindGroupHandle, 2> cullGroups {}; // one per command side
-    rhi::TextureHandle boundDepth {}; // firstGroup references this snapshot
-
-    rhi::BufferHandle cullUbo {};
-    rhi::BufferHandle candidateBuffer {};
+    rhi::UniqueBuffer cullUbo;
+    rhi::UniqueBuffer candidateBuffer;
     // Ping-pong indirect command buffers: run() writes 1-readSide, the
     // NEXT frame's draw consumes it as the new readSide.
-    array<rhi::BufferHandle, 2> commandBufs {};
+    array<rhi::UniqueBuffer, 2> commandBufs {};
+
+    rhi::UniqueTexture hizTexture;
+    rhi::UniqueSampler hizSampler;   // nearest + nearest-mip: no blending
+    rhi::UniqueSampler depthSampler; // nearest, for the first reduction
+    // The bind groups reference the resources above: declared after them so
+    // they are released first.
+    rhi::UniqueBindGroup firstGroup;
+    vector<rhi::UniqueBindGroup> downGroups; // [i]: mip i -> mip i+1
+    array<rhi::UniqueBindGroup, 2> cullGroups {}; // one per command side
+    rhi::TextureHandle boundDepth {}; // non-owning: the snapshot firstGroup
+                                      // was built against
     array<array<u32, kMaxGroups>, 2> groupFirsts {};
     array<array<u32, kMaxGroups>, 2> groupCounts {};
     u32 readSide { 0 };

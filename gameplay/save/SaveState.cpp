@@ -4,11 +4,13 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "engine/core/Hash.hpp" // deterministic SavedBountyForm row guids
+#include "engine/reflect/Fields.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp" // grantAbility
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/inventory/Inventory.hpp"
@@ -66,7 +68,8 @@ void copyMatchingFields(const reflect::TypeInfo& srcType, const void* src,
 }
 
 void restoreActiveEffect(AbilitySystem& system, const SavedEffectForm& row,
-                         const GameplayTagRegistry& registry) {
+                         const GameplayTagRegistry& registry,
+                         EffectIdRemap* remap) {
     ActiveEffect effect;
     effect.attribute = row.attribute;
     effect.op = static_cast<ModifierOp>(row.op);
@@ -79,7 +82,21 @@ void restoreActiveEffect(AbilitySystem& system, const SavedEffectForm& row,
     effect.decayPerHour = row.decayPerHour;
     effect.expiryMagnitude = row.expiryMagnitude;
     effect.gameTime = row.gameTime;
-    effect.effectId = system.nextEffectId++;
+    // The saved id only PAIRS rows: a row whose saved id already got a
+    // fresh id on this actor (the primary of an attribute2 pair) shares it.
+    u32 id = 0;
+    if (remap && row.effectId != 0) {
+        if (const auto it = remap->find(row.effectId); it != remap->end()) {
+            id = it->second;
+        }
+    }
+    if (id == 0) {
+        id = system.nextEffectId++;
+        if (remap && row.effectId != 0) {
+            (*remap)[row.effectId] = id;
+        }
+    }
+    effect.effectId = id;
     if (!row.grantedTag.empty()) {
         // A tag from an unloaded mod fails the lookup: the row still
         // restores, just untagged (§5: never fatal).
@@ -111,6 +128,7 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
         row.decayPerHour = effect.decayPerHour;
         row.expiryMagnitude = effect.expiryMagnitude;
         row.gameTime = effect.gameTime;
+        row.effectId = effect.effectId;
         if (effect.grantedTag.isValid()) {
             if (const str* name = registry.nameOf(effect.grantedTag)) {
                 row.grantedTag = *name;
@@ -147,7 +165,7 @@ vector<data::Record> captureActor(ecs::Entity entity,
     // The sentinel must survive resolution even for a pristine actor: an
     // empty record would carry no field at all — keep `parent` always.
     records.back().fields.emplace(
-        SavedStatsForm::staticTypeInfo().findField("parent")->id,
+        reflect::fieldId(SavedStatsForm::staticTypeInfo(), "parent"),
         reflect::Value { refGuid });
 
     if (entity.has<AbilitySystem>()) {
@@ -352,8 +370,9 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         for (const SavedAbilityForm* row : saved.abilities) {
             grantAbility(system, row->ability);
         }
+        EffectIdRemap effectIds; // this actor's saved id -> fresh id
         for (const SavedEffectForm* row : saved.effects) {
-            restoreActiveEffect(system, *row, registry);
+            restoreActiveEffect(system, *row, registry, &effectIds);
         }
         // §6: currents are DERIVED — seed from the restored bases, fold
         // the restored modifiers back in, then re-derive the life state
@@ -363,7 +382,7 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         // DOWNED (0 HP under protection) must reload downed, not dead.
         // Owned tags are not captured state; this is their re-derivation.
         if (entity.has<FollowerState>()) {
-            syncStateTag(system, registry, "Follower.Protected",
+            syncStateTag(system, registry, tags::FollowerProtected,
                          entity.get<FollowerState>().followerActive);
         }
         const auto& set = entity.get<AttributeSet>();

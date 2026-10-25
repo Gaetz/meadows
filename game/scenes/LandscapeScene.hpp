@@ -2,7 +2,6 @@
 
 // Subsystem map: docs/AUDIT/U4-landscapescene.md
 
-#include <deque>
 #include <unordered_set>
 #include <optional>
 
@@ -28,9 +27,6 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/MapController.hpp"
 #include "game/scenes/SpiritDirector.hpp"
-#include "world/spirit/Spells.hpp"
-#include "world/spirit/WaterReading.hpp"
-#include "world/terrain/TerrainBrush.hpp"
 #include "game/scenes/MiniMapPanel.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -41,9 +37,11 @@
 #include "game/scenes/PlayerController.hpp"
 #include "game/scenes/QuestDirector.hpp"
 #include "game/scenes/RideController.hpp"
+#include "game/scenes/SandboxWorldController.hpp"
 #include "game/scenes/SaveController.hpp"
 #include "game/scenes/SceneConsole.hpp"
 #include "engine/render/AtmosphereParams.hpp"
+#include "game/scenes/WarmupController.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
@@ -76,6 +74,8 @@
 #include "engine/audio/Audio.hpp"
 #include "game/SoundResolver.hpp"
 #include "game/scenes/FxDirector.hpp"
+#include "game/scenes/AmbientFxController.hpp"
+#include "game/scenes/FireDirector.hpp"
 #include "engine/render/WorldRenderer.hpp"
 #include "game/scenes/ProjectileDirector.hpp"
 #include "engine/rhi/Rhi.hpp"
@@ -211,59 +211,16 @@ private:
     // `world`; rebuilt right after it in onEnter.
     flecs::query<const world::Transform, const world::DoorTarget> doorQuery;
     flecs::query<const world::Transform, const world::RefId> interactQuery;
-    // Props carrying flames (world::FxSource — torches, campfires): one
-    // emitter set per entity while it lives within reach of the camera.
+    // Props carrying flames (world::FxSource — torches, campfires): the
+    // query is the world's; the emitter sets, the river dressing and the
+    // ground events live in AmbientFxController, wired per call through
+    // makeAmbientFxContext().
     flecs::query<const world::Transform, world::FxSource> fxSourceQuery;
-    struct FxSourceEmitters {
-        u32 flame { 0 };
-        u32 smoke { 0 };
-        u32 haze { 0 };
-        audio::AudioSystem::SoundId sound { 0 };
-    };
-    std::unordered_map<u64, FxSourceEmitters> fxSourceEmitters;
-    // River-source dressing (F4): mist + optional sound at the true
-    // heads of published courses, start/stop by reach like FxSource.
-    std::unordered_map<u64, FxSourceEmitters> riverSourceEmitters;
-    std::unordered_map<u64, FxSourceEmitters> riverCascadeEmitters;
-    // The frame's water (douses, jet lumps, splashes, springs) and fire
-    // (sparks, brands, the jet's pulses) events, as discs on the ground:
-    // what snuffs a torch and what relights it. Cleared once consumed.
-    struct GroundEvent {
-        Vec2 at { 0.0f };
-        f32 radius { 0.0f };
-    };
-    vector<GroundEvent> waterEvents;
-    vector<GroundEvent> fireEvents;
-    // A spell's spark on the ground: the lane's ignition, remembered for
-    // the frame (the props that relight from it).
-    void igniteGround(f32 x, f32 z, f32 radius, f32 heat);
-    void snuffFxSource(ecs::Entity entity, world::FxSource& source, const Vec3& at);
-    static constexpr f32 kFxSourceReach = 90.0f;
-    void updateFxSources();
-    void updateRiverSourceFx();
+    AmbientFxController ambientFx;
+    AmbientFxContext makeAmbientFxContext();
     // Validation overview: the whole map in one glance (far plane
     // pushed to 14 km, fog thinned at submit — never persisted).
     bool overviewView { false };
-    void updateRiverCascadeFx();
-    void resetFxSources(); // map swap / exit: the emitters go with the world
-    // The igniters among them (FxSource.igniteHeat > 0), rebuilt each
-    // frame: their heat goes to the wooden props and trees within reach
-    // (per frame, waking the fire lane so its job ticks them) and to the
-    // ground when the flame stands within a metre of it.
-    struct FxIgniter {
-        Vec3 at { 0.0f };
-        f32 radius { 0.0f };
-        f32 heat { 0.0f };
-        bool ground { false };
-    };
-    vector<FxIgniter> fxIgniters;
-    f32 fxIgniterTreeClock { 0.0f };
-    bool fxIgniterNearTree { false };
-    void applyFxIgniters(f32 dt);
-    bool nearFxIgniter(const Vec3& at) const;
-    // A wooden prop catches: its flames, sparks and smoke, the record
-    // shared by the fire's own heat (updateSpiritFireProps) and an igniter's.
-    void lightProp(ecs::Entity entity, const Vec3& position, f32 fuel);
 
     // Cells stream around the player (synchronous ring —
     // async streaming may come later). References
@@ -279,7 +236,22 @@ private:
     // drives the streamer; `interiorMode` reshapes the renderer (no
     // terrain/sky/sun/water — ambient + local lights only).
     data::FormHandle activeWorldspace {};
+    // An ingredient of the world kind (with sandboxActive): written by
+    // the enter/load path and performTravel, read by decideWorldKind only
+    // — every gate, context fill and render view reads worldKind() /
+    // policy().
     bool interiorMode { false };
+    // The active world's kind — the ONE derived truth every world gate
+    // reads: policy() for an affordance, worldKind() for identity.
+    // decideWorldKind is the single decider; the writers of its two
+    // ingredients (the enter/load path, performTravel, setSandboxMode)
+    // end there. The exterior identity (sandboxActive) survives an
+    // interior visit, which is why it stays a separate fact.
+    WorldKind activeWorld { WorldKind::AuthoredCells };
+    WorldPolicy activePolicy { worldPolicy(WorldKind::AuthoredCells) };
+    void decideWorldKind();
+    WorldKind worldKind() const { return activeWorld; }
+    const WorldPolicy& policy() const { return activePolicy; }
     // Last travel's arrival marker: in an interior this is the way OUT —
     // where broken fighters flee (NpcContext.interiorExit).
     Vec3 interiorArrival { 0.0f };
@@ -319,7 +291,7 @@ private:
     SculptContext makeSculptContext();
     DungeonGenContext makeDungeonGenContext();
     // The resolved map-scale bake params — ONE definition shared by
-    // applyMapWorld's streamer and the editor's map bake (M5.3).
+    // the sandbox world's streamer and the editor's map bake.
     render::terraingen::TileBakeParams makeMapBakeParams() const;
     void saveGenTuningFile(const str& preset);
     bool loadGenTuningFile(const str& preset);
@@ -370,6 +342,26 @@ private:
     void setupGameplay();                             // physics/nav/stats/quest
     void setupWorldAndStreaming();                    // ECS world, cells, clock
     void spawnInitialWorld(rhi::Device& device);      // spawn + npc + camera
+
+    // update() phases: update() runs these in order, every frame. The
+    // gates (modal UI, spectator) are decided once by updateUi and
+    // applied by update() itself, never inside a phase.
+    struct FrameGates {
+        bool uiPaused { false };  // a modal game screen owns the input
+        bool simPaused { false }; // uiPaused or Spectator: the living sim is frozen
+    };
+    void drainCompletions();            // asset uploads + finished saves (fixed drain point)
+    FrameGates updateUi(f32 dt);        // game UI, then the frame's pause flags
+    void tickPhysics(f32 dt);           // physics step, collision tiles, seized rocks
+    void updateWorld(bool uiPaused);    // bakes, cells, colliders, sky clock, map crossing + travel
+    void updateSim(f32 dt);             // interaction, game clock, character, triggers, prefetch, spirits, fire
+    void extractScene();                // meshes, lights, water -> snapshot (the render seam)
+    void updateActorsAndFx(f32 dt);     // NPCs, followers, projectiles, particles, kill-z, floaters
+    void updateAmbientAndAudio(f32 dt); // camera shake, ambient fx, igniters, audio listener
+    void extractFx();                   // particle batches, skinned poses, arrows -> snapshot
+    void extractViewmodel();            // the first-person weapon -> snapshot
+    void updateAtmosphere(f32 dt);      // wind phase, weather crossfade, wind hold
+    void updateInput(f32 dt, bool uiPaused); // player / ride / fly camera (who owns the input)
 
     void createGameUi(rhi::Device& device);
     void updateGameUi(f32 dt);
@@ -482,10 +474,6 @@ private:
     const data::WeaponForm* banditWeapon { nullptr };
     const gameplay::AbilityForm* attackAbility { nullptr };
     const gameplay::AbilityForm* dodgeAbility { nullptr };
-    // The spirit ability behind Q (chantier ESPRITS): its Lua script
-    // acts through the world actions bound on the Vm. Selected by the
-    // console (`spirit cast <EditorId>`) until a spirit bar exists.
-    const gameplay::AbilityForm* spiritAbility { nullptr };
     const gameplay::EffectForm* swimCostEffect { nullptr }; // D2b
     const gameplay::EffectForm* sneakCostEffect { nullptr }; // sneak
     const gameplay::EffectForm* bowDrawCostEffect { nullptr }; // drawn-bow drain
@@ -499,30 +487,24 @@ private:
     // The baked-base layer under it (generated terrain regions), same
     // immutable-publish contract.
     sptr<const render::TerrainBase> terrainBase;
-    // Sandbox mode: the tile streamer and the water bodies its bakes
-    // emitted (rendered/queried by the water systems).
-    uptr<TerrainBakeStreamer> bakeStreamer;
+    // The bounded-map world — the active map, its tile streamer, the
+    // resident lakes/rivers, the probed spawn, the queued crossing and
+    // the neighbour prefetch — lives in SandboxWorldController, wired
+    // per call through makeSandboxContext(). The scene keeps the
+    // exterior identity flip (setSandboxMode), the camera placement and
+    // the shared publish layers (terrainBase, waterBodies, activeSnowLine)
+    // the renderer view and the water queries read.
+    SandboxWorldController sandboxWorld;
+    SandboxContext makeSandboxContext();
+    // The exterior identity (the other ingredient of the world kind,
+    // written by setSandboxMode only). It outlives an interior visit, so
+    // the sites that need the exterior map whatever the active world
+    // (map crossing, save reload, the console's map travel) read it.
     bool sandboxActive { false };
-    // The probed sandbox start (stable per seed): survives the story
-    // camera-init that runs later in load().
-    Vec3 sandboxSpawn { 0.0f };
-    bool sandboxSpawnValid { false };
     // Snow altitude of the ACTIVE mode (story: tuning.snowLine, sandbox:
     // tuning.sandboxSnowLine) — feeds both params.snowLine (CPU rules)
     // and the render view (shader), so they stay in lockstep.
     f32 activeSnowLine { render::kSnowLine };
-    vector<render::terraingen::Lake> sandboxLakes;
-    vector<render::terraingen::River> sandboxRivers;
-    // Map-wide lake registry (every lake of the active map, from the
-    // streamer's one-time cache scan). A lake lives in ONE slice's
-    // .twb, so per-tile transport misses any lake whose owner slice is
-    // out of prefetch reach while the player stands over a far arm —
-    // sandboxLakes membership is selected from here by distance to the
-    // lake's BBOX instead (refreshSandboxLakes).
-    vector<render::terraingen::Lake> mapLakes;
-    bool mapLakesValid { false };
-    Vec3 lastLakeRefreshFocus { 0.0f };
-    bool lakeRefreshFocusValid { false };
     // Local water bodies (sea + lakes + rivers): Forms + sandbox bakes,
     // immutable-publish; swim queries and WaterSystem share it.
     sptr<const render::WaterBodies> waterBodies;
@@ -574,366 +556,41 @@ private:
     // interleaves refreshNpcs between snap and nav to preserve order.
     StreamingController streaming;
     StreamingContext makeStreamingContext();
-    // Sandbox: lands the frame's finished tiles as ONE transaction —
-    // a single TerrainBase publish, one water rebuild, one collision
-    // rebuild and one queue pass however many tiles arrived (N per-tile
-    // publishes multiplied every cost during warmups).
-    void publishBakedTiles(
-        vector<TerrainBakeStreamer::PublishedTile>&& tiles,
-        const Vec3& focus);
-    // Rebuilds waterBodies from Forms + sandbox results and hands it to
-    // the swim queries and the WaterSystem.
-    void publishWaterBodies();
-    // Reselects sandboxLakes from the mapLakes registry around `focus`
-    // (bbox distance, previous-map residents kept). Returns true when
-    // membership changed — the caller republishes the water bodies.
-    bool refreshSandboxLakes(const Vec3& focus);
     // Main-menu game mode: story (authored world, legacy terrain) or
-    // sandbox (infinite generated world + streamer). Idempotent; sandbox
-    // also moves the fly camera to a pleasant generated start so the
-    // play capsule spawns there.
+    // sandbox (bounded generated map + streamer). Idempotent; the thin
+    // entry over sandboxWorld: flips the exterior identity, applies map
+    // (0, 0) or restores the authored world, arms the warmup at the
+    // probed start so the play capsule spawns there.
     void setSandboxMode(bool enable);
-    // The ONE map-swap transaction (chantier CARTES M2.3): terrain
-    // identity, streamer, water closures, transient clears, collision
-    // rebuild, content invalidation — mode switch and map travel share
-    // it.
-    void applyMapWorld(i32 mapX, i32 mapZ);
-    // Console-driven map travel (M4.1); the pass/door path (M4.2)
-    // reuses it. `arrival` (nullable) lands the traveler THERE instead
-    // of the map's probed spawn — the far side of a pass.
-    void travelToMap(i32 mapX, i32 mapZ, const Vec2* arrival = nullptr);
-    Vec3 probeSandboxSpawn() const;
-    // The far-water provider of map (mapX, mapZ): cached .twb lakes and
-    // ribbons plus the master fleuves, pure and worker-callable (the
-    // water system's far layer, and the spawn probe's water oracle).
-    render::WaterSystem::FarWaterFn
-    makeFarWaterProvider(i32 mapX, i32 mapZ,
-                         const render::terraingen::TileBakeParams& bake,
-                         const render::terraingen::MapGridSpec& grid,
-                         f32 pinHalfWidth) const;
-    u32 loadNeighbourOverviews(
-        render::SandboxTerrain& sb,
-        const render::terraingen::TileBakeParams& bakeParams) const;
-    // The active bounded map (set by applyMapWorld; saved/restored).
-    i32 activeMapX { 0 };
-    i32 activeMapZ { 0 };
-    // A map crossing asked mid-frame (pass trigger Lua): executed at a
-    // safe point, never inside an ECS iteration.
-    struct PendingMapTravel {
-        i32 mapX { 0 };
-        i32 mapZ { 0 };
-        bool hasArrival { false };
-        Vec2 arrival { 0.0f, 0.0f };
-    };
-    std::optional<PendingMapTravel> pendingMapTravel;
-    // Chantier ESPRITS: the placed spirit sources (springs...). Their
-    // lifetimes run in SIM seconds; the water kernel reads value copies.
+    // The spirit framework and the caster's gestures (docs/
+    // CHANTIER-ESPRITS.md, docs/SPELLS.md): the placed sources, the jets,
+    // the fire lane and every held gesture live in SpiritDirector, wired
+    // per call through makeSpiritContext(). The scene keeps the safe
+    // point (applyPendingActions after the sim's ECS iterations), the
+    // Vm world-action bindings and the `spirit` console command, which
+    // call the director; the water kernel reads value copies of the
+    // sources through pushRuntimeWaterSources.
     SpiritDirector spiritDirector;
+    SpiritContext makeSpiritContext();
     void pushRuntimeWaterSources();
     core::Guid activeWorldspaceGuid() const;
-    // The ability -> world seam. A script's `spirit.spawn(...)` runs
-    // mid-frame (a coroutine resume, a trigger dispatch) so it only
-    // QUEUES here; the same safe point as pendingMapTravel applies.
-    struct PendingSpiritAction {
-        render::terrain::SpiritKind kind {};
-        f32 x { 0.0f };
-        f32 z { 0.0f };
-        f32 rate { 0.0f };
-        f32 radius { 0.0f };
-        f32 seconds { 0.0f };
-        // Source: placed at (x, z). Jet: streamed from the caster's
-        // nozzle along the aim at `speed`. Hold: the control spell's
-        // held volume, drawn at the aim while the key is held.
-        // EarthBump: an instant mound at (x, z) that throws what stands
-        // on it. EarthDig: the ground lowered under the aim while held.
-        // EarthBrush: the ground raised (create) or lowered (destroy) under
-        // the aim while held. EarthWall: a ridge from the press spot to the
-        // release spot.
-        // EarthSeize: the nearest rock within `radius` of the aim, no
-        // bigger than `rate` metres, carried while held.
-        // FireIgnite: `rate` heat dealt to the fire field's cells within
-        // `radius` of (x, z) — the field spreads it.
-        // FireDouse: the burning cells within `radius` of (x, z) put out.
-        // FireBrand: a flame carried at the aim while held, igniting
-        // `radius` around it with `rate` heat every costPeriod.
-        // FireGlobe: the fire ward around the caster while held — nothing
-        // burns within `radius`, the caster feels no flame.
-        // FireStream: the flame jet — a short cone ahead of the caster while
-        // held, igniting the ground along it (`rate` heat, `radius`) and
-        // burning whoever stands in it, out to `range`.
-        // WindBlow: the breath — a gust carried at the aim while held.
-        // WindCalm / WindDirect: the weather's wind stilled / steered
-        // where the caster faces, while held.
-        enum class Mode : u8 { Source, Jet, Hold, EarthBump, EarthBrush,
-                               EarthDig, EarthWall, EarthSeize, FireIgnite,
-                               FireDouse, FireBrand, FireGlobe, FireStream,
-                               WindBlow, WindCalm, WindDirect };
-        Mode mode { Mode::Source };
-        f32 speed { 0.0f };
-        f32 range { 0.0f };
-        f32 dirX { 0.0f }; // wind sources: the direction they blow toward
-        f32 dirZ { 0.0f };
-        bool channeled { false };
-        f32 costPeriod { 1.0f };
-        f32 upkeepScale { 0.25f };
-    };
-    std::deque<PendingSpiritAction> pendingSpiritActions;
-    void applyPendingSpiritActions();
-    // Jets follow the caster every frame: re-aim, re-land, steer their
-    // particle stream, feed the water kernel. Play mode only.
-    void updateSpiritJets(f32 dt);
-    void stopSpiritEmitters(const vector<u32>& emitters);
-    // The caster's nozzle (eye ray, hand-height offset).
-    Vec3 spiritNozzle() const;
-    // The stream is lumps launched at this cadence (seconds).
-    static constexpr f32 kJetSphereInterval = 0.12f;
-    // Earth: the dig in progress (world/terrain/TerrainBrush working
-    // grids, previewed at ~20 Hz, committed once on release), and the
-    // bump. rate = metres per second lowered (dig) / metres raised (bump),
-    // divided by the ground's hardness (SurfaceMaterialForm).
-    struct SpiritEarth {
-        world::BrushGrids grids;
-        bool raise { false }; // the stone brush raises, the dig lowers
-        f32 rate { 0.0f };
-        f32 radius { 4.0f };
-        f32 remaining { 0.0f };
-        f32 previewTimer { 0.0f };
-        f32 cueTimer { 0.0f };
-        f32 costPeriod { 1.0f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        core::Guid ability;
-    };
-    std::optional<SpiritEarth> spiritEarth;
-    void applyEarthBump(const PendingSpiritAction& action);
-    void updateSpiritEarth(f32 dt);
-    void finishSpiritEarth(bool commit);
-    f32 groundHardnessAt(f32 x, f32 z) const;
-    // Rocks the earth spirit seized: their static body became a dynamic
-    // convex hull (engine/physics), carried kinematically while held,
-    // free afterwards — the entity's Transform follows the body.
-    struct SpiritRock {
-        ecs::Entity entity;
-        phys::BodyId body { 0 };
-        bool held { false };
-        f32 radius { 1.0f };
-        Vec3 lastTarget { 0.0f };
-        f32 costPeriod { 1.0f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        core::Guid ability;
-    };
-    vector<SpiritRock> spiritRocks;
     // Chunks whose ground the spirits (or a Play-mode stroke) reshaped —
-    // the save writes their .ter (E2.b); seeded on load from the save's
-    // own TerrainPatchForm records so a re-save keeps them.
+    // the save writes their .ter; seeded on load from the save's own
+    // TerrainPatchForm records so a re-save keeps them.
     std::unordered_set<u64> spellTouchedChunks;
-    void seizeRock(const PendingSpiritAction& action);
-    void updateSpiritRocks(f32 dt);
-    void releaseSpiritRocks(); // map swap / exit: bodies go with the world
-    // The fire lane (SpiritDirector::updateFire): the per-frame job kick,
-    // the scorch mask upload when a job lands, and the flame emitters
-    // re-placed on the burning cells nearest the camera under a budget
-    // (the Far Cry 2 "hair transplant").
-    void updateSpiritFire(f32 simSeconds);
-    void resetSpiritFire(); // map swap / exit: window, mask and flames go
-    struct FlameEmitter {
-        Vec2 at { 0.0f }; // the cell center (exact: matched by equality)
-        u32 emitter { 0 }; // the flames
-        u32 sparks { 0 };  // the embers it sheds
-        u32 smoke { 0 };   // one cell in four smokes (discreet)
-        u32 haze { 0 };    // the heat shimmer, near cells only
-    };
-    vector<FlameEmitter> flameEmitters;
-    static constexpr f32 kFlameHazeNear = 30.0f; // shimmer within this
-    static constexpr u32 kMaxFlames = 96;
-    static constexpr f32 kFlameReach = 120.0f;
-    static constexpr f32 kFlameBehindRadius = 12.0f; // behind the camera, flames only this close
-    // Beyond this, one flame stands for a 2x2 block of cells (bigger,
-    // sparser): the far front costs a quarter of the emitters.
-    static constexpr f32 kFlameLodNear = 40.0f;
-    // The field's 3D loop (SpiritForm.fieldSound): one source that
-    // follows the burning cell nearest the camera, silent beyond reach.
-    audio::AudioSystem::SoundId fireLoop { 0 };
-    static constexpr f32 kFireSoundReach = 60.0f;
-    void updateSpiritFireSound(const Vec3& cam);
-    // The fire's lights (docs/FIRE-RENDER.md F3): the front's cells
-    // aggregated per 8 m tile into point lights, the nearest tiles first,
-    // inserted ahead of the world's lights in the frame's list (the
-    // clustered path and the GI take them like any other).
-    static constexpr f32 kFireLightTile = 8.0f;
-    void extractFireLights(render::RenderSnapshot& out);
-    // E3.c — the fire is dangerous: actors standing on a glowing cell take
-    // the spirit's contactEffect (an ignition buildup, §2.9: the ONLY path
-    // to their attributes) every contactPeriod; wooden props (StaticForm
-    // surfaceMaterial "wood") heat up in the fire, burn for their
-    // material's fuel, light the ground around them and are gone for good
-    // (disabled in the save layer, like a picked-up item).
-    void applyFireContact(f32 dt);
-    // One actor's contact with fire this frame: `inFire` accumulates its
-    // clock toward contactPeriod, then the spirit's contactEffect
-    // (buildup) and contactDamage (typed, through applyDamage) land.
-    void fireTouch(ecs::Entity entity, f32& clock, f32 dt, bool inFire);
-    void updateSpiritFireProps();
-    f32 playerFireClock { 0.0f };
-    std::unordered_map<u64, f32> npcFireClocks;
-    // Actors standing in the flame jet THIS frame: the contact pass reads
-    // it beside the ground's own fire (it would otherwise reset their
-    // contact clock every job, the ground under them being unlit).
-    std::unordered_set<u64> flameJetTouched;
-    std::unordered_map<u64, f32> propFireHeat; // entity id -> heat 0..1
-    struct BurningProp {
-        ecs::Entity entity;
-        f32 remaining { 0.0f };
-        u32 flames { 0 };
-        u32 sparks { 0 };
-        u32 smoke { 0 };
-        bool lit { false }; // the ground around it took its spark
-    };
-    vector<BurningProp> burningProps;
-    static constexpr f32 kPropHeatRate = 0.4f; // per second in full fire
-    // E3.e — the trees of the scatter in the fire: one state per tree
-    // (keyed by its quantized base), heated by the burning cells around
-    // its trunk, burning with flames, its canopy going through the mask's
-    // B channel (the tree shader's leaf fall), regrowing after. Never
-    // removed.
-    struct TreeFireEntry {
-        Vec3 at { 0.0f };
-        f32 scale { 1.0f };
-        world::TreeFire state;
-        u32 flames { 0 };      // the trunk and branches
-        u32 crownFlames { 0 }; // the canopy
-        u32 sparks { 0 };
-        u32 smoke { 0 };
-        f32 emberClock { 0.0f };
-    };
-    std::unordered_map<u64, TreeFireEntry> treeFires;
-    vector<u8> fireCanopy; // the mask's B channel, composed per landed job
-    f32 fireLandClock { 0.0f }; // sim seconds since the last landed job
-    void updateSpiritFireTrees(f32 landDt);
-    static constexpr f32 kTreeFireReach = 160.0f;
-
-    static u64 treeKey(const Vec3& at) {
-        const i64 x = static_cast<i64>(std::llround(at.x * 4.0f));
-        const i64 z = static_cast<i64>(std::llround(at.z * 4.0f));
-        return (static_cast<u64>(x) << 32) ^ (static_cast<u64>(z) & 0xffffffffu);
-    }
-    // Control x Fire, the firebrand: a flame at the aim that lights the
-    // ground under it while the key is held (upkeep like the water hold).
-    struct SpiritBrand {
-        f32 heat { 1.0f };
-        f32 radius { 1.0f };
-        f32 costPeriod { 1.0f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        f32 pulseClock { 0.0f };
-        u32 emitter { 0 };
-        core::Guid ability;
-    };
-    std::optional<SpiritBrand> spiritBrand;
-    void updateSpiritBrand(f32 dt);
-    void endSpiritBrand();
-    static constexpr f32 kBrandPulse = 0.25f;
-    // Destroy x Fire on self, held: the fire ward — a douse repeated by
-    // every fire job around the caster, who feels no flame meanwhile.
-    struct SpiritGlobe {
-        f32 radius { 6.0f };
-        f32 costPeriod { 1.0f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        u32 emitter { 0 };
-        core::Guid ability;
-    };
-    std::optional<SpiritGlobe> spiritGlobe;
-    void updateSpiritGlobe(f32 dt);
-    void endSpiritGlobe();
-    // Create x Fire as a stream, held: the flame jet — the fire's
-    // counterpart of the water jet, short and straight: flames stream
-    // from the hand along the aim, the ground under the cone catches
-    // (props and trees through the field), whoever stands in it burns.
-    struct SpiritFlameJet {
-        f32 heat { 1.0f };
-        f32 radius { 1.0f };
-        f32 range { 10.0f };
-        f32 costPeriod { 0.5f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        f32 pulseClock { 0.0f };
-        u32 emitter { 0 };
-        core::Guid ability;
-    };
-    std::optional<SpiritFlameJet> spiritFlameJet;
-    void updateSpiritFlameJet(f32 dt);
-    void endSpiritFlameJet();
-    static constexpr f32 kFlameJetPulse = 0.25f;
-    // E4.b — the wind spirit. The scene's wind FIELD: the weather's
-    // global wind (direction and strength x kWindSpeedPerStrength m/s)
-    // plus the placed gusts (Wind SpiritSources) and the breath's carried
-    // gust; the fire job, the particles and the player's body read it.
-    render::terrain::WindField windField;
-    static constexpr f32 kWindSpeedPerStrength = 5.0f; // m/s at weather strength 1
-    static constexpr f32 kPlayerWindPush = 0.6f;       // of the gusts' speed
-    static constexpr f32 kFloaterWindDrift = 0.08f;    // of the wind, on a floating prop
-    // A water jet's lump passing through an actor shoves him along its
-    // flight: this many m/s of shove gained per second in the stream,
-    // capped (the stream flows at ~24 m/s; a character is not a leaf).
-    static constexpr f32 kWaterJetShoveRate = 24.0f;
-    static constexpr f32 kWaterJetShoveMax = 6.0f;
-    void updateSpiritWind(f32 dt);
-    // The breath (Create x Wind as a stream, held).
-    struct SpiritBlow {
-        f32 speed { 12.0f };
-        f32 radius { 6.0f };
-        f32 range { 20.0f };
-        f32 costPeriod { 0.5f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        u32 emitter { 0 };
-        core::Guid ability;
-    };
-    std::optional<SpiritBlow> spiritBlow;
-    void updateSpiritBlow(f32 dt);
-    void endSpiritBlow();
-    // The weather's wind under a spell: calmed (Destroy x Wind on self,
-    // held) or steered where the caster faces (Control x Wind on self,
-    // held). The base is what the weather set before the spell.
-    struct SpiritWindHold {
-        bool calm { false };
-        bool direct { false };
-        // Released: the wind eases back to the weather's over ~1 s
-        // before the hold ends (a recast cancels the release).
-        bool releasing { false };
-        f32 calmFactor { 1.0f };
-        f32 currentDeg { 0.0f }; // the eased heading (direct)
-        f32 costPeriod { 1.0f };
-        f32 costClock { 0.0f };
-        f32 upkeepScale { 0.25f };
-        core::Guid ability;
-    };
-    std::optional<SpiritWindHold> spiritWindHold;
-    f32 windBaseStrength { 1.0f };
-    f32 windBaseDirectionDeg { 20.0f };
-    void updateSpiritWindHold(f32 dt);
-    static constexpr f32 kWindHoldEase = 0.33f; // s; ~95 % of the way in a second
-    void endSpiritWindHold();
-    void resetSpiritWind();
-    static constexpr f32 kFlameJetSpeed = 14.0f;     // m/s, the flames' travel
-    static constexpr f32 kFlameJetHalfAngle = 0.28f; // radians, the cone
-    // The wall gesture: the press spot, the release spot builds the ridge.
-    struct SpiritLine {
-        Vec3 start { 0.0f };
-        f32 height { 0.0f };
-        f32 halfWidth { 1.5f };
-    };
-    std::optional<SpiritLine> spiritLine;
-    void updateSpiritLine();
-    // Understand x Earth: the ground under the aim, same HUD block.
-    void castGroundReading(const Vec3& at, f32 seconds, bool live);
-    enum class ReadingKind : u8 { Water, Ground, Fire };
-    // Understand x Fire: the cell under the aim (cold / heating / burning /
-    // burnt and regrowing), its fuel, the nearest front.
-    void castFireReading(const Vec3& at, f32 seconds, bool live);
-    ReadingKind spiritReadingKind { ReadingKind::Water };
+    // The fire's presentation and its bite on the world (docs/
+    // FIRE-RENDER.md) — the lane's per-frame kick, the mask upload, the
+    // flames, props, trees, loop, lights and contact — live in
+    // FireDirector, wired per call through makeFireContext(); what the
+    // fire gestures share with it (the flame jet's touched set, the ward,
+    // the wind field) it reads from the spirit director.
+    FireDirector fire;
+    FireContext makeFireContext();
+    // The world's fx forget the world: the fire director and the ambient
+    // fx (map swap, the console's clear) — called right after
+    // SpiritDirector::resetGestures ended the gestures. Site-specific
+    // steps stay at the sites.
+    void resetWorldFx();
     // Ground rising into characters throws them (the earth spirit's lift
     // curve, SpiritForm Earth). ONE mechanism at the ONE place the ground
     // changes — the republishTerrain funnel: every actor standing in a
@@ -942,51 +599,17 @@ private:
     void throwActorsOnGroundRise(
         const std::function<void()>& swapOverlay,
         const std::vector<u64>& changedChunks);
-    // Understand x Water: the reading shown by the HUD for a while
-    // (world/spirit/WaterReading, formatted here from the loc keys).
-    vector<str> spiritReading; // one line per HUD slot (kReadingLines)
-    f32 spiritReadingSeconds { 0.0f };
-    // A channeled reading follows the aim while Q is held and closes on
-    // release (the timed one just fades).
-    bool spiritReadingLive { false };
-    static constexpr u32 kReadingLines = 6;
-    void castWaterReading(const Vec3& at, f32 seconds, bool live);
-    void updateSpiritReading(f32 dt);
-    // The control spell's held volume (world/spirit/SpiritJets
-    // SpiritHold): drawn at the aim while Q is held, dropped on release.
-    std::optional<world::SpiritHold> spiritHold;
-    void updateSpiritHold(f32 dt);
-    void releaseSpiritHold(bool drop);
-    // The spell book (draft UI): every ability carrying a SpellForm, in
-    // editorId order; the wheel cycles it, the HUD names the current one.
-    vector<const gameplay::AbilityForm*> spellBook;
-    void buildSpellBook();
-    void cycleSpell(i32 direction);
-    str currentSpellName() const;
-    // The gestures' water as geometry (jet tubes, the carried blob) into
-    // the snapshot — drawn with the placed-volume water look.
-    void extractSpiritWater(render::RenderSnapshot& out) const;
     // The aimed ground point: the eye ray against physics, rejected when
     // the hit sits on a prop rather than the terrain. nullopt = nothing.
+    // Lent to the spirit gestures and the Vm's `aim()`.
     std::optional<Vec3> aimGround() const;
-    // Q in Play: the geometric pre-checks (aim, dry ground) then the
-    // ability activation — cost/cooldown are its effects (§6), its
-    // script places the source.
-    void castSpirit();
-    // A compiled SpellForm (docs/SPELLS.md) into world actions; `aimedAt`
-    // is the pre-checked ground spot for point spells.
-    void executeSpell(const world::SpellSpec& spell,
-                      const std::optional<Vec3>& aimedAt);
     // `self` for the player's ability scripts (the trigger idiom, with
     // the liveness handle so a coroutine survives archetype moves).
     script::ScriptContext playerScriptContext();
-    f32 mapPrefetchCooldown { 0.0f };
-    // Boot/mode-switch camera: sandbox -> the probed start, story -> the
-    // NPC-side viewpoint. `sandboxKeepHeading`: an automatic map
-    // crossing re-seats the position only -- the traveler walked
-    // through the line and keeps looking where they were going.
+    // Boot/mode-switch camera: sandbox -> the probed start (heading kept
+    // across an automatic crossing, sandboxWorld.keepHeading()), story
+    // -> the NPC-side viewpoint.
     void placeStartCamera();
-    bool sandboxKeepHeading { false };
     // farPlane follows the live terrain view radius (slider up to 45
     // chunks = 2880 m; the old fixed 1600 clipped everything past it).
     void updateCameraFarPlane();
@@ -1003,56 +626,28 @@ private:
     // quits N seconds later — the smoke of the REAL scene, no hand on
     // the mouse (the headless suite never reaches the GPU paths).
     bool bootPlayPending { false };
-    bool bootSandbox { false };
+    // The main menu's two "Enter the world" picks.
+    enum class BootMode : u8 { Story, Sandbox };
+    BootMode bootMode { BootMode::Story };
+    // The ONE entry into the game: world pick (setSandboxMode), menus
+    // closed, Play entered through restoreMode. The UiRouter play-story /
+    // play-sandbox closure and the MEADOWS_BOOT override share this body.
+    void beginPlay(BootMode boot);
     f32 bootQuitSeconds { 0.0f };
     f32 bootQuitClock { 0.0f };
 
     // World warmup — the ONE state machine behind every loading veil
-    // (boot, sandbox entry, travel, the spectator catch-up). Phases run
-    // strictly in order so consumers never race the generation:
-    //   BakeRing    bake/publish every tile of the ring at `target`
-    //   PlaceSpawn  validate/relocate the spawn ONCE, on the FINAL
-    //               baked+water world (sandbox boot only)
-    //   BuildScene  let meshes/scatter/caches converge on that world
-    //   Reveal      fade the veil
-    // Soft mode (spectator catch-up) shows a light veil instead of the
-    // black shroud and cancels itself if the camera speeds off.
-    enum class WarmupPhase : u8 {
-        Idle,
-        BakeRing,
-        PlaceSpawn,
-        BuildScene,
-        Reveal,
-    };
-    // `spawnSearchRadius`: how far the wet-spawn validation may
-    // relocate. Mode entries scout up to 6 km; a TRAVEL arrival is an
-    // authored point — it may only snap locally, never be re-scouted
-    // kilometers away.
-    void armWarmup(const Vec3& target, bool placeSpawn, bool soft,
-                   f32 minSeconds = 0.0f,
-                   f32 spawnSearchRadius = 6000.0f);
-    void updateWarmup(f32 dt);    // end of update(): phase machine + veil state
-    void finalizeSandboxSpawn();  // the single-shot spawn validation
-    WarmupPhase warmupPhase { WarmupPhase::Idle };
-    bool pendingPlayEntry { false }; // "Play" clicked mid-warmup
-    Vec3 warmupTarget { 0.0f };
-    bool warmupPlaceSpawn { false };
-    bool warmupSoft { false };
-    u32 warmupFrames { 0 };
-    u32 warmupPeakPending { 0 };  // BuildScene high-water mark
-    f32 warmupProgress { 0.0f };  // monotone within one warmup
-    f32 warmupElapsed { 0.0f };   // wall time under the veil
-    f32 warmupSpawnRadius { 6000.0f }; // wet-relocation bound (armWarmup)
-    // Minimum veil time (map travel asks ~1 s so the crossing READS as
-    // a transition even with both maps warm; 0 everywhere else).
-    f32 warmupMinSeconds { 0.0f };
-    // Spectator soft veil re-arm cooldown: a hover near the map rim
-    // completes its clamped ring instantly — without the cooldown the
-    // veil arms and reveals every few frames (border flicker).
-    f32 softVeilCooldown { 0.0f };
-    f32 loadingGateAlpha { 0.0f };
-    f32 loadingGateShown { 0.0f }; // eased display value (bar/label)
-    Vec3 warmupLastCamPos { 0.0f }; // spectator speed estimate
+    // (boot, sandbox entry, travel, the spectator catch-up) lives in
+    // WarmupController: it owns the phase machine and the veil state,
+    // wired per call through makeWarmupContext(). The scene arms it
+    // from every entry path, runs it at the end of update(), and reads
+    // warmup.phase() to gate the map-crossing check and the re-arm on
+    // (re-)enter. The scene actions behind its callbacks: the spawn
+    // validation (sandboxWorld.finalizeSpawn + capsule re-seat), the
+    // deferred Play entry (restoreMode) and the boot override's scripted
+    // "Enter the world" click (beginPlay).
+    WarmupController warmup;
+    WarmupContext makeWarmupContext();
 
     // The `torchbench` console command's transient light entities
     // (docs/RENDERING.md §5 B0) — cleared on re-run and on exit.
@@ -1083,9 +678,17 @@ private:
     gameplay::EncumbranceCategory playerEncumbrance {
         gameplay::EncumbranceCategory::Light };
     f32 playerCarriedWeight { 0.0f };
-    void enterPlayMode();
+    // The two halves of restoreMode's Play transition — called from the
+    // funnel only. `feet` (nullable): the capsule lands exactly there (a
+    // loaded save's position, wherever the world) instead of grounded on
+    // the terrain under the camera; it also bypasses the sandbox warmup
+    // deferral, since a saved position needs no spawn validation.
+    void enterPlayMode(const Vec3* feet);
     void exitPlayMode();
-    void restoreMode(SceneMode target); // drive into a mode (Escape → last mode)
+    // THE mode transition: every mode write funnels here (hotkeys, menus,
+    // the save load, the boot, the dev checkbox, onExit). `feet` is
+    // forwarded to enterPlayMode when `target` is Play.
+    void restoreMode(SceneMode target, const Vec3* feet = nullptr);
 
     // The player is a GAS actor (docs/STATS.md) — spawned from the
     // "Player" ActorForm, ticked by tickCharacter; the controller READS

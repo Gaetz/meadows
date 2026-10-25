@@ -2,12 +2,14 @@
 
 // Subsystem map: docs/AUDIT/U6-gas-stats.md
 
+#include <iterator>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
 
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 
@@ -19,6 +21,11 @@ namespace gameplay {
 
 // How a modifier combines with an attribute's value.
 enum class ModifierOp { Add, Multiply, Override };
+inline constexpr std::string_view kModifierOpNames[] = { "add", "multiply",
+                                                         "override" };
+inline constexpr reflect::EnumTable kModifierOps { kModifierOpNames };
+static_assert(std::size(kModifierOpNames) ==
+              static_cast<size_t>(ModifierOp::Override) + 1);
 
 // A modifier currently affecting an AbilitySystem, from a Duration/Infinite or
 // Periodic effect. Non-periodic (period == 0) entries contribute to the

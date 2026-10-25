@@ -14,8 +14,10 @@
 #include "engine/core/Clock.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 // RmlUi adapters over the RHI (docs/HORIZONTAL-PASS.md). Design notes:
 //  - Geometry is COMPILED (static VB/IB per handle): RmlUi compiles once
@@ -63,25 +65,31 @@ public:
     rhi::Device* device { nullptr };
     rhi::CommandBuffer* cmd { nullptr }; // valid during render() only
     render::ShaderLibrary* shaders { nullptr };
-    rhi::PipelineHandle pipeline {};
-    u64 shaderGeneration { 0 };
+    render::WatchedPipeline pipeline;
 
-    rhi::SamplerHandle sampler {};
-    rhi::TextureHandle whiteTexture {};
-    rhi::BindGroupHandle whiteGroup {};
+    // Owning handles: members destroy in reverse declaration order, so the
+    // white bind group goes before the texture/sampler it references, and
+    // the per-handle maps (declared last) empty first. All of them must be
+    // released while the Device is alive — UiSystem::destroy() is that
+    // path (the owner outlives scene teardown).
+    rhi::UniqueSampler sampler;
+    rhi::UniqueTexture whiteTexture;
+    rhi::UniqueBindGroup whiteGroup;
     u32 viewportWidth { 0 };
     u32 viewportHeight { 0 };
     vector<std::filesystem::path> roots;
 
+    // RmlUi gets an opaque key; erasing a map entry releases the GPU
+    // objects behind it.
     struct Geometry {
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle indices {};
+        rhi::UniqueBuffer vertices;
+        rhi::UniqueBuffer indices;
         u32 indexCount { 0 };
     };
     std::unordered_map<uintptr_t, Geometry> geometries;
     struct Texture {
-        rhi::TextureHandle texture {};
-        rhi::BindGroupHandle group {};
+        rhi::UniqueTexture texture;
+        rhi::UniqueBindGroup group; // after the texture: destroyed first
     };
     std::unordered_map<uintptr_t, Texture> textures;
     uintptr_t nextHandle { 1 };
@@ -96,27 +104,27 @@ public:
     };
     std::unordered_map<str, RuntimePixels> runtimePixels;
 
-    void createPipeline() {
-        if (pipeline.id != 0) {
-            device->destroyPipeline(pipeline);
-        }
-        pipeline = device->createPipeline(
-            { .shader = shaders->get(kUiShader),
-              .vertexBuffers =
-                  { { .stride = sizeof(UiVertex),
-                      .attributes =
-                          { { .location = 0,
-                              .format = rhi::VertexFormat::F32x2,
-                              .offset = offsetof(UiVertex, position) },
-                            { .location = 1,
-                              .format = rhi::VertexFormat::F32x4,
-                              .offset = offsetof(UiVertex, color) },
-                            { .location = 2,
-                              .format = rhi::VertexFormat::F32x2,
-                              .offset = offsetof(UiVertex, uv) } } } },
-              .blend = rhi::BlendMode::PremultipliedAlpha,
-              .pushConstantSize = sizeof(UiUniforms) });
-        shaderGeneration = shaders->generation(kUiShader);
+    // Builds the pipeline on first use and rebuilds it after a shader
+    // hot-reload; called every render() and once eagerly in create().
+    void ensurePipeline() {
+        pipeline.ensure(*device, *shaders, [&] {
+            return device->createPipeline(
+                { .shader = shaders->get(kUiShader),
+                  .vertexBuffers =
+                      { { .stride = sizeof(UiVertex),
+                          .attributes =
+                              { { .location = 0,
+                                  .format = rhi::VertexFormat::F32x2,
+                                  .offset = offsetof(UiVertex, position) },
+                                { .location = 1,
+                                  .format = rhi::VertexFormat::F32x4,
+                                  .offset = offsetof(UiVertex, color) },
+                                { .location = 2,
+                                  .format = rhi::VertexFormat::F32x2,
+                                  .offset = offsetof(UiVertex, uv) } } } },
+                  .blend = rhi::BlendMode::PremultipliedAlpha,
+                  .pushConstantSize = sizeof(UiUniforms) });
+        });
     }
 
     Rml::CompiledGeometryHandle CompileGeometry(
@@ -134,16 +142,20 @@ public:
         vector<u32> converted_indices { indices.begin(), indices.end() };
         Geometry geometry;
         geometry.indexCount = static_cast<u32>(converted_indices.size());
-        geometry.vertices = device->createBuffer(
-            { .usage = rhi::BufferUsage::Vertex,
-              .size = converted.size() * sizeof(UiVertex) },
-            converted.data());
-        geometry.indices = device->createBuffer(
-            { .usage = rhi::BufferUsage::Index,
-              .size = converted_indices.size() * sizeof(u32) },
-            converted_indices.data());
+        geometry.vertices = { *device,
+                              device->createBuffer(
+                                  { .usage = rhi::BufferUsage::Vertex,
+                                    .size = converted.size() *
+                                            sizeof(UiVertex) },
+                                  converted.data()) };
+        geometry.indices = { *device,
+                             device->createBuffer(
+                                 { .usage = rhi::BufferUsage::Index,
+                                   .size = converted_indices.size() *
+                                           sizeof(u32) },
+                                 converted_indices.data()) };
         const uintptr_t handle = nextHandle++;
-        geometries.emplace(handle, geometry);
+        geometries.emplace(handle, std::move(geometry));
         return handle;
     }
 
@@ -164,8 +176,9 @@ public:
         // GL executes in order; on Vulkan every recorded draw would read the
         // last element's translation and the UI would come out misaligned.
         cmd->setPushConstants(&uniforms, sizeof(uniforms));
-        cmd->setBindGroup(0, texIt != textures.end() ? texIt->second.group
-                                                     : whiteGroup);
+        cmd->setBindGroup(0, texIt != textures.end()
+                                 ? texIt->second.group.get()
+                                 : whiteGroup.get());
         cmd->setVertexBuffer(0, it->second.vertices);
         cmd->setIndexBuffer(it->second.indices, rhi::IndexFormat::U32);
         cmd->drawIndexed(it->second.indexCount);
@@ -176,22 +189,21 @@ public:
         if (it == geometries.end()) {
             return;
         }
-        device->destroyBuffer(it->second.vertices);
-        device->destroyBuffer(it->second.indices);
-        geometries.erase(it);
+        geometries.erase(it); // releases both buffers
     }
 
-    Rml::TextureHandle registerTexture(rhi::TextureHandle texture) {
+    Rml::TextureHandle registerTexture(rhi::UniqueTexture texture) {
         Texture entry;
-        entry.texture = texture;
         // Texture only: the per-draw transform moved to push constants, so
         // nothing here needs a buffer any more.
-        entry.group = device->createBindGroup(
-            { .entries = { { .binding = 0,
-                             .texture = texture,
-                             .sampler = sampler } } });
+        entry.group = { *device,
+                        device->createBindGroup(
+                            { .entries = { { .binding = 0,
+                                             .texture = texture,
+                                             .sampler = sampler } } }) };
+        entry.texture = std::move(texture);
         const uintptr_t handle = nextHandle++;
-        textures.emplace(handle, entry);
+        textures.emplace(handle, std::move(entry));
         return handle;
     }
 
@@ -207,13 +219,16 @@ public:
             const RuntimePixels& px = it->second;
             dimensions = { static_cast<int>(px.width),
                            static_cast<int>(px.height) };
-            const rhi::TextureHandle texture = device->createTexture(
-                { .width = px.width,
-                  .height = px.height,
-                  .format = rhi::TextureFormat::RGBA8,
-                  .filter = rhi::FilterMode::Linear },
-                px.rgba.data());
-            return registerTexture(texture);
+            rhi::UniqueTexture texture { *device,
+                                         device->createTexture(
+                                             { .width = px.width,
+                                               .height = px.height,
+                                               .format =
+                                                   rhi::TextureFormat::RGBA8,
+                                               .filter =
+                                                   rhi::FilterMode::Linear },
+                                             px.rgba.data()) };
+            return registerTexture(std::move(texture));
         }
         // Resolve through the roots, last root first (mod override).
         std::filesystem::path resolved;
@@ -233,25 +248,29 @@ public:
         }
         dimensions = { static_cast<int>(image->width),
                        static_cast<int>(image->height) };
-        const rhi::TextureHandle texture = device->createTexture(
-            { .width = image->width,
-              .height = image->height,
-              .format = rhi::TextureFormat::RGBA8,
-              .filter = rhi::FilterMode::Linear },
-            image->pixels.data());
-        return registerTexture(texture);
+        rhi::UniqueTexture texture { *device,
+                                     device->createTexture(
+                                         { .width = image->width,
+                                           .height = image->height,
+                                           .format = rhi::TextureFormat::RGBA8,
+                                           .filter = rhi::FilterMode::Linear },
+                                         image->pixels.data()) };
+        return registerTexture(std::move(texture));
     }
 
     Rml::TextureHandle GenerateTexture(
         Rml::Span<const Rml::byte> source,
         Rml::Vector2i dimensions) override {
-        const rhi::TextureHandle texture = device->createTexture(
-            { .width = static_cast<u32>(dimensions.x),
-              .height = static_cast<u32>(dimensions.y),
-              .format = rhi::TextureFormat::RGBA8,
-              .filter = rhi::FilterMode::Linear },
-            source.data());
-        return registerTexture(texture);
+        rhi::UniqueTexture texture { *device,
+                                     device->createTexture(
+                                         { .width = static_cast<u32>(
+                                               dimensions.x),
+                                           .height = static_cast<u32>(
+                                               dimensions.y),
+                                           .format = rhi::TextureFormat::RGBA8,
+                                           .filter = rhi::FilterMode::Linear },
+                                         source.data()) };
+        return registerTexture(std::move(texture));
     }
 
     void ReleaseTexture(Rml::TextureHandle handle) override {
@@ -259,9 +278,7 @@ public:
         if (it == textures.end()) {
             return;
         }
-        device->destroyBindGroup(it->second.group);
-        device->destroyTexture(it->second.texture);
-        textures.erase(it);
+        textures.erase(it); // releases the bind group, then the texture
     }
 
     void EnableScissorRegion(bool enable) override {
@@ -283,17 +300,15 @@ public:
                         static_cast<u32>(region.Height()));
     }
 
+    // Releases every GPU object this interface owns; the Device must still
+    // be alive (UiSystem::destroy).
     void releaseAll() {
-        for (auto& [handle, geometry] : geometries) {
-            device->destroyBuffer(geometry.vertices);
-            device->destroyBuffer(geometry.indices);
-        }
         geometries.clear();
-        for (auto& [handle, texture] : textures) {
-            device->destroyBindGroup(texture.group);
-            device->destroyTexture(texture.texture);
-        }
         textures.clear();
+        whiteGroup.reset();
+        whiteTexture.reset();
+        sampler.reset();
+        pipeline.reset();
     }
 };
 
@@ -457,16 +472,21 @@ bool UiSystem::create(rhi::Device& device, render::ShaderLibrary& shaders,
     impl.fileInterface.roots = std::move(documentRoots);
 
     shaders.load(kUiShader, {}, { { "uTexture", 0 } });
-    impl.renderInterface.createPipeline();
-    impl.renderInterface.sampler = device.createSampler({});
+    impl.renderInterface.ensurePipeline();
+    impl.renderInterface.sampler = { device, device.createSampler({}) };
     const u32 white[1] = { 0xffffffffu };
-    impl.renderInterface.whiteTexture = device.createTexture(
-        { .width = 1, .height = 1, .format = rhi::TextureFormat::RGBA8 },
-        white);
-    impl.renderInterface.whiteGroup = device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = impl.renderInterface.whiteTexture,
-                         .sampler = impl.renderInterface.sampler } } });
+    impl.renderInterface.whiteTexture = {
+        device, device.createTexture({ .width = 1,
+                                       .height = 1,
+                                       .format = rhi::TextureFormat::RGBA8 },
+                                     white) };
+    impl.renderInterface.whiteGroup = {
+        device, device.createBindGroup(
+                    { .entries = { { .binding = 0,
+                                     .texture =
+                                         impl.renderInterface.whiteTexture,
+                                     .sampler =
+                                         impl.renderInterface.sampler } } }) };
 
     Rml::SetRenderInterface(&impl.renderInterface);
     Rml::SetSystemInterface(&impl.systemInterface);
@@ -485,13 +505,12 @@ void UiSystem::destroy(rhi::Device& device) {
     if (!pimpl) {
         return;
     }
+    (void)device; // the owning handles release through their Device
+    // Shutdown first: RmlUi hands its remaining geometry/textures back
+    // through the render interface, then releaseAll() drops the rest while
+    // the Device is still alive.
     Rml::Shutdown();
     pimpl->renderInterface.releaseAll();
-    device.destroyBindGroup(pimpl->renderInterface.whiteGroup);
-    device.destroyTexture(pimpl->renderInterface.whiteTexture);
-    device.destroySampler(pimpl->renderInterface.sampler);
-
-    device.destroyPipeline(pimpl->renderInterface.pipeline);
     pimpl.reset();
     created = false;
     --gInstances;
@@ -624,11 +643,9 @@ void UiSystem::render(rhi::CommandBuffer& cmd, rhi::Device& device,
         return;
     }
     auto& ri = pimpl->renderInterface;
-    if (ri.shaders->generation(kUiShader) != ri.shaderGeneration) {
-        ri.createPipeline();
-    }
-    ri.cmd = &cmd;
     ri.device = &device;
+    ri.ensurePipeline();
+    ri.cmd = &cmd;
     ri.viewportWidth = width;
     ri.viewportHeight = height;
     pimpl->context->Render();

@@ -22,6 +22,20 @@ namespace dungeon {
 
 constexpr u32 kDungeonBakeVersion = 1;
 
+// The gameplay anchor families populateAnchors derives from the mission
+// semantics. Enum order is the records emitter's staging order
+// (world/dungeon/DungeonRecords.cpp, kAnchorEmits — pinned by static_assert).
+enum class AnchorKind : u8 {
+    Barrier,     // across each Locked corridor (lockId set)
+    Lever,       // in the matching Key room (lockId set)
+    Chest,       // the Goal prize
+    OreVein,     // Reward rooms (sub-cycle goals) and dead-end lodes
+    EnemySpawn,  // along Dangerous arcs, plain rooms, one Goal guardian
+    NpcSpawn,    // flavor NPC, near the first ore vein
+    PatrolPoint, // plain-room floors: NPC wander anchors
+    Count,
+};
+
 struct DungeonParams {
     u32 seed { 1337 };
     MissionParams mission;   // seeds inside are overridden from `seed`
@@ -66,18 +80,41 @@ struct DungeonBakeResult {
     // width widens the prop across the tunnel: a barrier on a corridor
     // TURN spans the junction's diagonal, wider than a straight tube.
     struct Anchor {
+        AnchorKind kind { AnchorKind::Barrier };
         Vec3 position;
         f32 yawDeg { 0.0f };
         u32 lockId { 0 };
         f32 width { 1.0f };
     };
-    vector<Anchor> barriers;    // across each Locked corridor (lockId set)
-    vector<Anchor> levers;      // in the matching Key room (lockId set)
-    vector<Anchor> chests;      // the Goal prize
-    vector<Anchor> oreVeins;    // Reward rooms (sub-cycle goals)
-    vector<Anchor> enemySpawns; // along Dangerous arcs + one Goal guardian
-    vector<Anchor> npcSpawns;   // flavor NPC, near the first ore vein
-    vector<Anchor> patrolPoints; // plain-room floors: NPC wander anchors
+    // All kinds interleaved in populate order. Within one kind the order
+    // is the family's index order: the records emitter keys reference ids
+    // on the index within the kind, so anchorsOf(kind) IS the identity.
+    vector<Anchor> anchors;
+
+    vector<Anchor> anchorsOf(AnchorKind kind) const {
+        vector<Anchor> family;
+        for (const Anchor& anchor : anchors) {
+            if (anchor.kind == kind) {
+                family.push_back(anchor);
+            }
+        }
+        return family;
+    }
+    size_t countOf(AnchorKind kind) const {
+        size_t count = 0;
+        for (const Anchor& anchor : anchors) {
+            count += anchor.kind == kind ? 1 : 0;
+        }
+        return count;
+    }
+    const Anchor* firstOf(AnchorKind kind) const {
+        for (const Anchor& anchor : anchors) {
+            if (anchor.kind == kind) {
+                return &anchor;
+            }
+        }
+        return nullptr;
+    }
 
     Vec3 entrancePos { 0.0f }; // floor point of the entrance room
     Vec3 entranceDir { -1.0f, 0.0f, 0.0f }; // toward the outside door
@@ -87,6 +124,20 @@ struct DungeonBakeResult {
 
     bool empty() const { return cellMeshes.empty(); }
 };
+
+// The corridor cell a Locked corridor's barrier stands on, as an index into
+// SpaceEdge::path (never an endpoint). `straight` is false on a turn, where
+// the gate must span the junction's diagonal (Anchor::width).
+struct BarrierCell {
+    size_t index { 0 };
+    bool straight { false };
+};
+
+// Pure decision on the corridor polyline: the flat cell nearest the target
+// (the entrance mouth when the lock touches the entrance room, the middle
+// otherwise), straight cells preferred over turns. Requires
+// edge.path.size() >= 3.
+BarrierCell pickBarrierCell(const SpaceEdge& edge, u32 entrance);
 
 // Deterministic for (params): same seed -> same result, bit for bit.
 DungeonBakeResult bakeDungeon(const DungeonParams& params);

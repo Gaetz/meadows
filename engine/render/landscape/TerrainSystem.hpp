@@ -8,12 +8,13 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
-#include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace core {
 class JobSystem;
@@ -66,20 +67,25 @@ public:
     static constexpr u32 kMaxRequestsPerFrame = 8;
 
     static constexpr u32 lodQuads(u32 lod) { return kChunkQuads >> lod; }
-    // Ring distances: LOD0 under the camera, then 1/3/6/12 chunk rings.
-    // The pool sizing (kLodCoreSide below) mirrors these bands — change
-    // them together.
+    // Ring bands (Chebyshev chunk distance where each LOD ends): LOD0
+    // under the camera, then 1/3/6/12 chunk rings; the last LOD fills the
+    // rest of the view. The pool sizing derives from these bands.
+    static constexpr i32 kLodBands[kLodCount - 1] = { 1, 3, 6, 12 };
     static constexpr u32 lodForDistance(i32 chebyshev) {
-        if (chebyshev <= 1) { return 0; }
-        if (chebyshev <= 3) { return 1; }
-        if (chebyshev <= 6) { return 2; }
-        if (chebyshev <= 12) { return 3; }
-        return 4;
+        for (u32 lod = 0; lod < kLodCount - 1; ++lod) {
+            if (chebyshev <= kLodBands[lod]) {
+                return lod;
+            }
+        }
+        return kLodCount - 1;
     }
     // Side of the square core covered by LODs finer than `lod` — the
     // ring a LOD actually fills is (2r+1)^2 minus this core squared.
-    static constexpr u32 kLod3CoreSide = 13; // 2*6+1  (LOD 0-2 core)
-    static constexpr u32 kLod4CoreSide = 25; // 2*12+1 (LOD 0-3 core)
+    // (Spelled out rather than through a helper: a constexpr member
+    // function is not usable in the class body that declares it.)
+    static constexpr u32 kLod3CoreSide = 2 * kLodBands[2] + 1; // LOD 0-2 core
+    static constexpr u32 kLod4CoreSide = 2 * kLodBands[3] + 1; // LOD 0-3 core
+    static_assert(kLod3CoreSide == 13 && kLod4CoreSide == 25);
 
     // Cooked material array files (.mtex — engine/assets/CookedTexture),
     // resolved by the scene from the plugin VFS. Any empty path (or a
@@ -143,10 +149,11 @@ public:
     // keyOf() — the shared terrain chunk grid.
     void remeshChunks(const vector<u64>& keys);
 
-    // Rebuilds the pipeline when the terrain shader hot-reloaded.
+    // Builds the pipelines on first call, rebuilds them when a terrain
+    // shader hot-reloaded or the wireframe flag changed.
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    // Debug wireframe (rebuilds the pipeline when the flag changes).
+    // Debug wireframe (rebuilds the main pipeline when the flag changes).
     void setWireframe(bool enabled, rhi::Device& device,
                       ShaderLibrary& shaders);
     bool isWireframe() const { return wireframe; }
@@ -189,8 +196,8 @@ public:
             if (chunk.residentLod == kNoLod) {
                 continue;
             }
-            const f32 x0 = static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
-            const f32 z0 = static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
+            const f32 x0 = static_cast<f32>(core::chunkKeyCx(key)) * kChunkSize;
+            const f32 z0 = static_cast<f32>(core::chunkKeyCz(key)) * kChunkSize;
             const u32 lod = chunk.residentLod;
             out.push_back({ key,
                             { x0, chunk.minY, z0 },
@@ -295,8 +302,6 @@ private:
     void requestMissing(const Vec3& cameraPos, bool boost);
     void enqueueBuild(i32 cx, i32 cz, u8 lod);
     void evictFar(rhi::Device& device, const Vec3& cameraPos);
-    void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
-    void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     void pumpUploads(rhi::Device& device, const Vec3& cameraPos, bool boost);
     u32 allocSlot(u32 lod);
@@ -310,8 +315,8 @@ private:
     bool stealFurthestSlot(u32 lod, const Vec3& cameraPos);
 
     // The shared ring mechanics (audit U3-1): map + generation-stamped
-    // queue + budgeted request/evict live in ChunkStreamer.
-    ChunkStreamer<Chunk, BuiltMesh> streamer;
+    // queue + budgeted request/evict live in core::ChunkStreamer.
+    core::ChunkStreamer<Chunk, BuiltMesh> streamer;
     array<VertexPool, kLodCount> pools;
     u32 resident { 0 };
     u32 pending { 0 };
@@ -330,10 +335,9 @@ private:
     // skirts are vertical walls along chunk borders and would cast shadow
     // lines onto neighboring terrain.
     array<u32, kLodCount> gridIndexCounts {};
-    rhi::UniquePipeline pipeline;
-    ShaderLibrary::Watch shaderWatch;
-    rhi::UniquePipeline casterPipeline;
-    ShaderLibrary::Watch casterShaderWatch;
+    // The main recipe reads `wireframe`: setWireframe() invalidates it.
+    WatchedPipeline pipeline;
+    WatchedPipeline casterPipeline;
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
     // repeat sampler, bound as bind group 1 by draw(). splatTexture is

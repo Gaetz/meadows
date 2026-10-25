@@ -33,6 +33,7 @@ public:
     Backend backend() const override { return Backend::Vulkan; }
     const DeviceCaps& caps() const override { return caps_; }
     u64 nativeTextureId(TextureHandle handle) const override;
+    u32 validationMessageCount() const override;
 
     // --- Resources -----------------------------------------------------------
     BufferHandle createBuffer(const BufferDesc& desc,
@@ -76,9 +77,9 @@ public:
 
     // Every Vulkan handle (instance, device, swapchain, command pools…) lives
     // behind this pimpl so no <vulkan/*> type leaks into a header (§3.1). Only
-    // the NAME is public — the type stays incomplete outside VulkanDevice.cpp,
-    // where the backend's own CommandBuffer needs to name it to reach the
-    // resource tables.
+    // the NAME is public — the type is defined in the backend-internal
+    // VulkanInternal.hpp, shared by the backend's translation units (and its
+    // own CommandBuffer, which reaches the resource tables through it).
     struct Impl;
 
 private:

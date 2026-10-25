@@ -65,10 +65,12 @@ public:
     virtual void drawIndexedIndirect(BufferHandle args, u64 offset,
                                      u32 drawCount, u32 stride) = 0;
 
-    // Copies the full base level of `src` into `dst` (same size and format;
-    // Vulkan vkCmdCopyImage). Call OUTSIDE a render pass — the intended use
-    // is snapshotting scene color/depth between passes so a later pass can
-    // sample them (sampling a bound attachment is undefined).
+    // Copies the base level of `src` into `dst`, every layer/slice (same
+    // size, format and layout; Vulkan vkCmdCopyImage). Mips above 0 are not
+    // copied. Both textures are left sampleable afterwards. Call OUTSIDE a
+    // render pass — the intended use is snapshotting scene color/depth
+    // between passes so a later pass can sample them (sampling a bound
+    // attachment is undefined).
     virtual void copyTexture(TextureHandle src, TextureHandle dst) = 0;
 
     // GPU-side buffer copy (Vulkan vkCmdCopyBuffer). Pairs a device-local

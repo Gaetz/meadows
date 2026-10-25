@@ -1,9 +1,15 @@
 #pragma once
 
+#include <cstddef>
+#include <iterator>
+#include <string_view>
+
+#include "data/forms/CoreForms.hpp" // WeaponForm / ArmorForm member pointers (kDamageTypes)
 #include "engine/core/Defines.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
@@ -22,7 +28,51 @@ enum class DamageType {
     Slash, Pierce, Blunt,
     Fire, Cold, Lightning,
     Sonic, Chemical, Psychic, Holy, Dark, Ether,
+    Count,
 };
+
+// The injury family a channel feeds (docs/STATS.md §5): edges cut, blunt
+// bruises or fractures, elemental damage injures nothing.
+enum class InjuryClass : u8 { None, Edged, Blunt };
+
+// Everything the engine knows about one damage type, in one row. Every
+// per-type trait (name, physical/elemental routing, which derived stat
+// mitigates it and which primary attribute feeds that stat, the weapon
+// channel that deals it, the armor field folded into it, the injury class)
+// is read from here — no per-type switch anywhere else.
+struct DamageTypeTraits {
+    const char* name;            // enum spelling: "Cue.Hit." + name, logs
+    bool physical;               // flat mitigation by defense/constitution, else will/ego
+    const char* mitigationAttr;  // the derived % stat: "armorSlash" / "resistFire"
+    const char* sourceAttr;      // the primary attribute the derived stat scales on
+    f32 data::WeaponForm::* attack;    // the weapon channel; nullptr = weapons never deal it
+    f32 data::ArmorForm::* mitigation; // the armor field folded into mitigationAttr
+    InjuryClass injury;
+};
+
+// Physical: armor from strength/constitution/grace. Elemental resistances map
+// the three essence attributes (docs/STATS.md §3): charisma → fire/sonic/holy,
+// ego → cold/chemical/dark, insight → lightning/psychic/ether.
+inline constexpr DamageTypeTraits kDamageTypes[] = {
+    { "Slash",     true,  "armorSlash",      "strength",     &data::WeaponForm::slashAttack,     &data::ArmorForm::armorSlash,      InjuryClass::Edged },
+    { "Pierce",    true,  "armorPierce",     "grace",        &data::WeaponForm::pierceAttack,    &data::ArmorForm::armorPierce,     InjuryClass::Edged },
+    { "Blunt",     true,  "armorBlunt",      "constitution", &data::WeaponForm::bluntAttack,     &data::ArmorForm::armorBlunt,      InjuryClass::Blunt },
+    { "Fire",      false, "resistFire",      "charisma",     &data::WeaponForm::fireAttack,      &data::ArmorForm::resistFire,      InjuryClass::None  },
+    { "Cold",      false, "resistCold",      "ego",          nullptr,                            &data::ArmorForm::resistCold,      InjuryClass::None  },
+    { "Lightning", false, "resistLightning", "insight",      &data::WeaponForm::lightningAttack, &data::ArmorForm::resistLightning, InjuryClass::None  },
+    { "Sonic",     false, "resistSonic",     "charisma",     nullptr,                            &data::ArmorForm::resistSonic,     InjuryClass::None  },
+    { "Chemical",  false, "resistChemical",  "ego",          nullptr,                            &data::ArmorForm::resistChemical,  InjuryClass::None  },
+    { "Psychic",   false, "resistPsychic",   "insight",      nullptr,                            &data::ArmorForm::resistPsychic,   InjuryClass::None  },
+    { "Holy",      false, "resistHoly",      "charisma",     nullptr,                            &data::ArmorForm::resistHoly,      InjuryClass::None  },
+    { "Dark",      false, "resistDark",      "ego",          nullptr,                            &data::ArmorForm::resistDark,      InjuryClass::None  },
+    { "Ether",     false, "resistEther",     "insight",      nullptr,                            &data::ArmorForm::resistEther,     InjuryClass::None  },
+};
+static_assert(std::size(kDamageTypes) == static_cast<size_t>(DamageType::Count),
+              "kDamageTypes must mirror DamageType, in enum order");
+
+constexpr const DamageTypeTraits& damageTraits(DamageType type) {
+    return kDamageTypes[static_cast<size_t>(type)];
+}
 
 // The type's name, matching the enum spelling — tag composition
 // ("Cue.Hit." + name, the cue emission points) and logs.
@@ -68,6 +118,11 @@ struct DamageEvent {
     str buildupType;
     f32 buildupAmount { 0.0f };
 };
+
+// The channel type carrying the most damage (amounts summed per type);
+// the first in enum order on a tie, Slash for an empty event. The cue
+// emission points name their hit by it.
+DamageType dominantDamageType(const DamageEvent& event);
 
 struct DamageResult {
     f32 healthDamage { 0.0f };  // mitigated total dealt to health
@@ -126,6 +181,44 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
                          const DerivedStatRegistry& derived,
                          const StatModifiers* extra = nullptr,
                          const StatsTuningForm& tuning = {});
+
+// The tag-backed combat timers: each pairs a CombatState countdown with the
+// State.* tag held while it runs. Granting and ticking go through ONE
+// writer each, so timer and tag can never disagree.
+enum class TimedState : u8 { Staggered, Paralyzed, CriticalWindow, Shaken, Count };
+
+// What expiry does besides dropping the tag.
+enum class OnExpire : u8 { None, RefillPosture };
+
+struct TimedStateTraits {
+    f32 CombatState::* timer;
+    std::string_view tag;
+    OnExpire onExpire;
+};
+
+// Posture sits at 0 for the whole critical window and refills on expiry
+// (docs/STATS.md §4) — the only timer with a side effect.
+inline constexpr TimedStateTraits kTimedStates[] = {
+    { &CombatState::staggerSeconds,    tags::Staggered,        OnExpire::None          },
+    { &CombatState::paralysisSeconds,  tags::Paralyzed,        OnExpire::None          },
+    { &CombatState::critWindowSeconds, tags::CriticalWeakness, OnExpire::RefillPosture },
+    { &CombatState::shakenSeconds,     tags::Shaken,           OnExpire::None          },
+};
+static_assert(std::size(kTimedStates) == static_cast<size_t>(TimedState::Count),
+              "kTimedStates must mirror TimedState, in enum order");
+
+// Overwrite = the timer restarts at `seconds`; Extend = max(timer, seconds).
+enum class Grant : u8 { Overwrite, Extend };
+
+// The ONE writer of a timed state: sets the timer and grants its tag.
+void grantTimedState(CombatState& combat, AbilitySystem& system,
+                     const GameplayTagRegistry& tags, TimedState state,
+                     f32 seconds, Grant grant);
+
+// Counts down every running timer in enum order; a timer that elapses is
+// zeroed, its tag dropped and its OnExpire applied.
+void tickTimedStates(CombatState& combat, AbilitySystem& system, f32 dt,
+                     const GameplayTagRegistry& tags);
 
 // Counts down an active stagger; drops State.Staggered when it elapses.
 void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,

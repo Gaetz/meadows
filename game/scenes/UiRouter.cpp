@@ -1,15 +1,21 @@
 #include "game/scenes/UiRouter.hpp"
 
+#include <charconv>
 #include <cstdio>
 #include <ctime>
+#include <iterator>
 #include <optional>
+#include <string_view>
+#include <system_error>
 
 #include <glm/glm.hpp>
 
 #include "data/forms/CoreForms.hpp" // ActorForm, WeaponForm, ArmorForm...
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/LocForms.hpp" // TextTable
+#include "data/forms/LocForms.hpp"     // TextTable
+#include "data/forms/Vocabularies.hpp" // kArmorSlots
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/platform/Paths.hpp" // platform::localTime
 #include "engine/ui/UiSystem.hpp"
 #include "game/Barter.hpp"
@@ -21,7 +27,7 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/actors/ActorState.hpp"     // gameplay::VendorState
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::applyLoadout
-#include "gameplay/actors/Followers.hpp"      // canCarry
+#include "gameplay/actors/FollowerProgression.hpp" // canCarry
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
@@ -33,6 +39,159 @@
 namespace game {
 
 namespace {
+
+// --- The data-event vocabulary ------------------------------------------
+
+// The models whose events reach the router (the scene hands options/map/
+// recruit to their own controllers first) and the events those models
+// declare (LandscapeScene createModel). Both parse through
+// reflect::parseEnum; the route table in handleUiEvent says which event
+// lands on which model.
+enum class UiModel : u8 {
+    Inventory,
+    Container,
+    Barter,
+    Menu,
+    Saves,
+    Journal,
+    Dialogue,
+    Count
+};
+constexpr std::string_view kUiModelNames[] = { "inventory", "container",
+                                               "barter",    "menu",
+                                               "saves",     "journal",
+                                               "dialogue" };
+constexpr reflect::EnumTable kUiModels { kUiModelNames };
+static_assert(std::size(kUiModelNames) == static_cast<size_t>(UiModel::Count));
+
+enum class UiEvent : u8 {
+    Tab,
+    SortCol,
+    Pick,
+    EquipAction,
+    UseAction,
+    PickLoot,
+    TakeAll,
+    PickBuy,
+    MenuAction,
+    LoadSlot,
+    LoadCancel,
+    JournalClose,
+    Choose,
+    Count
+};
+constexpr std::string_view kUiEventNames[] = {
+    "tab",      "sortCol",    "pick",     "equipAction", "useAction",
+    "pickLoot", "takeAll",    "pickBuy",  "menuAction",  "loadSlot",
+    "loadCancel", "journalClose", "choose" };
+constexpr reflect::EnumTable kUiEvents { kUiEventNames };
+static_assert(std::size(kUiEventNames) == static_cast<size_t>(UiEvent::Count));
+
+using UiEventHandler = void (UiRouter::*)(const UiRouterContext&,
+                                          const vector<str>&);
+struct UiRoute {
+    UiModel model;
+    UiEvent event;
+    UiEventHandler handler;
+};
+
+// The item screens re-push their models after EVERY event they receive:
+// rows, gold line and detail pane all read router state.
+constexpr bool refreshesItemModels(UiModel model) {
+    switch (model) {
+    case UiModel::Inventory:
+    case UiModel::Container:
+    case UiModel::Barter:
+        return true;
+    case UiModel::Menu:
+    case UiModel::Saves:
+    case UiModel::Journal:
+    case UiModel::Dialogue:
+    case UiModel::Count:
+        return false;
+    }
+    return false;
+}
+
+// The shared menu vocabulary (pause/main/wait/workshop screens). WaitHours
+// has no name of its own: "wait<N>" carries its duration in the action
+// string and is parsed structurally — it closes the named table.
+enum class MenuAction : u8 {
+    Resume,
+    Cancel,
+    Save,
+    LoadMenu,
+    Wait,
+    Play,
+    PlayStory,
+    PlaySandbox,
+    MainMenu,
+    Options,
+    Quit,
+    WaitHours
+};
+constexpr std::string_view kMenuActionNames[] = {
+    "resume",   "cancel",       "save",     "loadmenu", "wait",   "play",
+    "play-story", "play-sandbox", "mainmenu", "options",  "quit" };
+constexpr reflect::EnumTable kMenuActions { kMenuActionNames };
+static_assert(std::size(kMenuActionNames) ==
+              static_cast<size_t>(MenuAction::WaitHours));
+constexpr std::string_view kWaitPrefix = "wait";
+
+struct MenuCommand {
+    MenuAction action;
+    f32 hours { 0.0f }; // WaitHours only
+};
+
+std::optional<MenuCommand> parseMenuCommand(std::string_view text) {
+    if (const auto action =
+            reflect::parseEnum<MenuAction>(kMenuActions, text)) {
+        return MenuCommand { .action = *action };
+    }
+    if (text.starts_with(kWaitPrefix) && text.size() > kWaitPrefix.size()) {
+        const std::string_view digits = text.substr(kWaitPrefix.size());
+        u32 hours = 0;
+        const auto [end, error] = std::from_chars(
+            digits.data(), digits.data() + digits.size(), hours);
+        if (error == std::errc {} && end == digits.data() + digits.size()) {
+            return MenuCommand { .action = MenuAction::WaitHours,
+                                 .hours = static_cast<f32>(hours) };
+        }
+    }
+    return std::nullopt;
+}
+
+// The dialogue row id that ends the conversation (the option tagged
+// 'leave' in dialogue.rml).
+constexpr std::string_view kLeaveOption = "leave";
+
+// GearSlot's armor members follow the kArmorSlots vocabulary order right
+// after Weapon, so an ArmorForm.slot ordinal maps by offset.
+constexpr gameplay::GearSlot armorGearSlot(u32 armorSlotOrdinal) {
+    return static_cast<gameplay::GearSlot>(armorSlotOrdinal + 1);
+}
+static_assert(armorGearSlot(0) == gameplay::GearSlot::Head &&
+              armorGearSlot(static_cast<u32>(
+                  data::vocab::kArmorSlots.size() - 1)) ==
+                  gameplay::GearSlot::Legs);
+
+// A name no table accepts is a document/model mismatch (a modded .rml
+// emitting what the scene never declared): one warning per distinct
+// line, not one per click.
+void warnOnce(str line) {
+    static vector<str> reported;
+    for (const str& seen : reported) {
+        if (seen == line) {
+            return;
+        }
+    }
+    LOG_WARN("{}", line);
+    reported.push_back(std::move(line));
+}
+
+std::optional<core::Guid> argGuid(const vector<str>& args) {
+    return args.empty() ? std::nullopt : core::Guid::fromString(args[0]);
+}
 
 // Is the open container a LIVING follower actor? His gear
 // obeys the base-kit lock, the carry-weight cap and the auto-equip; a
@@ -322,18 +481,11 @@ void UiRouter::toggleEquip(const UiRouterContext& ctx, const core::Guid& id) {
     } else if (type->isA(data::ArmorForm::staticTypeInfo().id)) {
         const auto* armor =
             static_cast<const data::ArmorForm*>(ctx.forms.get(handle));
-        core::Guid* slot = nullptr;
-        if (armor->slot == "head") {
-            slot = &equipment.head;
-        } else if (armor->slot == "torso") {
-            slot = &equipment.torso;
-        } else if (armor->slot == "arms") {
-            slot = &equipment.arms;
-        } else if (armor->slot == "legs") {
-            slot = &equipment.legs;
-        }
-        if (slot) {
-            *slot = *slot == id ? core::Guid {} : id;
+        if (const auto ordinal =
+                data::vocab::kArmorSlots.indexOf(armor->slot)) {
+            core::Guid& slot =
+                gameplay::gearSlotRef(equipment, armorGearSlot(*ordinal));
+            slot = slot == id ? core::Guid {} : id;
         }
     }
 }
@@ -382,132 +534,199 @@ void UiRouter::useConsumable(const UiRouterContext& ctx,
 
 void UiRouter::handleUiEvent(const UiRouterContext& ctx, const str& model,
                              const str& event, const vector<str>& args) {
-    const auto argGuid = [&]() -> std::optional<core::Guid> {
-        return args.empty() ? std::nullopt
-                            : core::Guid::fromString(args[0]);
+    // Lives in a member so the pointers to the private handlers can be
+    // formed; one row per (model, event) the documents may emit.
+    static constexpr UiRoute kRoutes[] = {
+        { UiModel::Inventory, UiEvent::Tab, &UiRouter::onInventoryTab },
+        { UiModel::Inventory, UiEvent::SortCol, &UiRouter::onInventorySortCol },
+        { UiModel::Inventory, UiEvent::Pick, &UiRouter::onInventoryPick },
+        { UiModel::Inventory, UiEvent::EquipAction,
+          &UiRouter::onInventoryEquip },
+        { UiModel::Inventory, UiEvent::UseAction, &UiRouter::onInventoryUse },
+        { UiModel::Container, UiEvent::PickLoot,
+          &UiRouter::onContainerPickLoot },
+        { UiModel::Container, UiEvent::TakeAll, &UiRouter::onContainerTakeAll },
+        { UiModel::Barter, UiEvent::PickBuy, &UiRouter::onBarterPickBuy },
+        { UiModel::Menu, UiEvent::MenuAction, &UiRouter::onMenuAction },
+        { UiModel::Saves, UiEvent::LoadSlot, &UiRouter::onSavesLoadSlot },
+        { UiModel::Saves, UiEvent::LoadCancel, &UiRouter::onSavesLoadCancel },
+        { UiModel::Journal, UiEvent::JournalClose, &UiRouter::onJournalClose },
+        { UiModel::Dialogue, UiEvent::Choose, &UiRouter::onDialogueChoose },
     };
-    if (model == "inventory") {
-        if (event == "tab" && !args.empty()) {
-            using Category = InventoryView::Category;
-            Category category = Category::All;
-            if (args[0] == "weapons") {
-                category = Category::Weapons;
-            } else if (args[0] == "armor") {
-                category = Category::Armor;
-            } else if (args[0] == "consumables") {
-                category = Category::Consumables;
-            } else if (args[0] == "misc") {
-                category = Category::Misc;
+    const auto modelId = reflect::parseEnum<UiModel>(kUiModels, model);
+    const auto eventId = reflect::parseEnum<UiEvent>(kUiEvents, event);
+    const UiRoute* route = nullptr;
+    if (modelId && eventId) {
+        for (const UiRoute& candidate : kRoutes) {
+            if (candidate.model == *modelId && candidate.event == *eventId) {
+                route = &candidate;
+                break;
             }
-            ctx.hud.inventory().setCategory(category);
-        } else if (event == "sortCol" && !args.empty()) {
-            using Column = InventoryView::Column;
-            Column column = Column::Name;
-            if (args[0] == "weight") {
-                column = Column::Weight;
-            } else if (args[0] == "value") {
-                column = Column::Value;
-            } else if (args[0] == "power") {
-                column = Column::Power;
-            }
-            ctx.hud.inventory().sortBy(column);
-        } else if (event == "pick") {
-            if (const auto id = argGuid()) {
-                if (barterMode_) {
-                    barterTrade(ctx, *id, /*playerBuys=*/false); // sell
-                } else if (containerEntity_.is_alive()) {
-                    transferItem(ctx, *id, /*fromContainer=*/false);
-                } else {
-                    ctx.hud.inventory().select(*id);
-                }
-            }
-        } else if (event == "equipAction") {
-            toggleEquip(ctx, ctx.hud.inventory().selected());
-        } else if (event == "useAction") {
-            useConsumable(ctx, ctx.hud.inventory().selected());
-        }
-        ctx.pushItemModels();
-    } else if (model == "container") {
-        if (event == "pickLoot") {
-            if (const auto id = argGuid()) {
-                transferItem(ctx, *id, /*fromContainer=*/true);
-            }
-        } else if (event == "takeAll" && containerEntity_.is_alive() &&
-                   ctx.playerEntity.is_alive()) {
-            auto& loot = containerEntity_.get_mut<gameplay::Inventory>();
-            auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
-            // A LIVING follower keeps his base kit — unremovable
-            // stacks stay put; everything else moves as before.
-            const data::ActorForm* follower =
-                livingFollower(ctx, containerEntity_);
-            vector<gameplay::ItemStack> kept;
-            for (const gameplay::ItemStack& stack : loot.items) {
-                if (stack.count <= 0) {
-                    continue;
-                }
-                if (follower &&
-                    gameplay::itemUnremovable(ctx.forms, stack.item)) {
-                    kept.push_back(stack);
-                    continue;
-                }
-                gameplay::addItem(bag, stack.item, stack.count);
-            }
-            loot.items = std::move(kept);
-            if (follower && containerEntity_.has<gameplay::Equipment>()) {
-                reequipFromInventory(
-                    ctx, loot,
-                    containerEntity_.get_mut<gameplay::Equipment>());
-            }
-        }
-        ctx.pushItemModels();
-    } else if (model == "barter") {
-        if (event == "pickBuy") {
-            if (const auto id = argGuid()) {
-                barterTrade(ctx, *id, /*playerBuys=*/true);
-            }
-        }
-        ctx.pushItemModels();
-    } else if (model == "menu") {
-        if (event == "menuAction" && !args.empty()) {
-            handleMenuAction(ctx, args[0]);
-        }
-    } else if (model == "saves") {
-        if (event == "loadSlot" && !args.empty()) {
-            ctx.screenStack.closeAll();
-            ctx.requestLoad(args[0]);
-        } else if (event == "loadCancel") {
-            ctx.screenStack.closeTop();
-        }
-    } else if (model == "journal") {
-        if (event == "journalClose") {
-            ctx.screenStack.closeTop();
-        }
-    } else if (model == "dialogue") {
-        if (event == "choose" && !args.empty() && ctx.dialogueRunner) {
-            if (args[0] == "leave") {
-                ctx.dialogueRunner->end();
-            } else if (const auto id = core::Guid::fromString(args[0])) {
-                for (const quest::DialogueNodeForm* option :
-                     ctx.hud.dialogueOptions()) {
-                    if (option->id == *id) {
-                        ctx.dialogueRunner->select(*option);
-                        break;
-                    }
-                }
-            }
-            // Closes the screen when the dialogue ended.
-            ctx.pushDialogueModel();
         }
     }
+    if (route) {
+        (this->*route->handler)(ctx, args);
+    } else {
+        warnOnce("ui: no route for event '" + event + "' on model '" + model +
+                 "'");
+    }
+    if (modelId && refreshesItemModels(*modelId)) {
+        ctx.pushItemModels();
+    }
+}
+
+void UiRouter::onInventoryTab(const UiRouterContext& ctx,
+                              const vector<str>& args) {
+    if (args.empty()) {
+        return;
+    }
+    using Category = InventoryView::Category;
+    // An unknown tab name lands on the All tab.
+    ctx.hud.inventory().setCategory(
+        reflect::parseEnum<Category>(kInventoryCategories, args[0])
+            .value_or(Category::All));
+}
+
+void UiRouter::onInventorySortCol(const UiRouterContext& ctx,
+                                  const vector<str>& args) {
+    if (args.empty()) {
+        return;
+    }
+    using Column = InventoryView::Column;
+    // An unknown column name sorts by name.
+    ctx.hud.inventory().sortBy(
+        reflect::parseEnum<Column>(kInventoryColumns, args[0])
+            .value_or(Column::Name));
+}
+
+void UiRouter::onInventoryPick(const UiRouterContext& ctx,
+                               const vector<str>& args) {
+    const auto id = argGuid(args);
+    if (!id) {
+        return;
+    }
+    if (barterMode_) {
+        barterTrade(ctx, *id, /*playerBuys=*/false); // sell
+    } else if (containerEntity_.is_alive()) {
+        transferItem(ctx, *id, /*fromContainer=*/false);
+    } else {
+        ctx.hud.inventory().select(*id);
+    }
+}
+
+void UiRouter::onInventoryEquip(const UiRouterContext& ctx,
+                                const vector<str>& /*args*/) {
+    toggleEquip(ctx, ctx.hud.inventory().selected());
+}
+
+void UiRouter::onInventoryUse(const UiRouterContext& ctx,
+                              const vector<str>& /*args*/) {
+    useConsumable(ctx, ctx.hud.inventory().selected());
+}
+
+void UiRouter::onContainerPickLoot(const UiRouterContext& ctx,
+                                   const vector<str>& args) {
+    if (const auto id = argGuid(args)) {
+        transferItem(ctx, *id, /*fromContainer=*/true);
+    }
+}
+
+void UiRouter::onContainerTakeAll(const UiRouterContext& ctx,
+                                  const vector<str>& /*args*/) {
+    if (!containerEntity_.is_alive() || !ctx.playerEntity.is_alive()) {
+        return;
+    }
+    auto& loot = containerEntity_.get_mut<gameplay::Inventory>();
+    auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
+    // A LIVING follower keeps his base kit — unremovable
+    // stacks stay put; everything else moves as before.
+    const data::ActorForm* follower = livingFollower(ctx, containerEntity_);
+    vector<gameplay::ItemStack> kept;
+    for (const gameplay::ItemStack& stack : loot.items) {
+        if (stack.count <= 0) {
+            continue;
+        }
+        if (follower && gameplay::itemUnremovable(ctx.forms, stack.item)) {
+            kept.push_back(stack);
+            continue;
+        }
+        gameplay::addItem(bag, stack.item, stack.count);
+    }
+    loot.items = std::move(kept);
+    if (follower && containerEntity_.has<gameplay::Equipment>()) {
+        reequipFromInventory(ctx, loot,
+                             containerEntity_.get_mut<gameplay::Equipment>());
+    }
+}
+
+void UiRouter::onBarterPickBuy(const UiRouterContext& ctx,
+                               const vector<str>& args) {
+    if (const auto id = argGuid(args)) {
+        barterTrade(ctx, *id, /*playerBuys=*/true);
+    }
+}
+
+void UiRouter::onMenuAction(const UiRouterContext& ctx,
+                            const vector<str>& args) {
+    if (!args.empty()) {
+        handleMenuAction(ctx, args[0]);
+    }
+}
+
+void UiRouter::onSavesLoadSlot(const UiRouterContext& ctx,
+                               const vector<str>& args) {
+    if (args.empty()) {
+        return;
+    }
+    ctx.screenStack.closeAll();
+    ctx.requestLoad(args[0]);
+}
+
+void UiRouter::onSavesLoadCancel(const UiRouterContext& ctx,
+                                 const vector<str>& /*args*/) {
+    ctx.screenStack.closeTop();
+}
+
+void UiRouter::onJournalClose(const UiRouterContext& ctx,
+                              const vector<str>& /*args*/) {
+    ctx.screenStack.closeTop();
+}
+
+void UiRouter::onDialogueChoose(const UiRouterContext& ctx,
+                                const vector<str>& args) {
+    if (args.empty() || !ctx.dialogueRunner) {
+        return;
+    }
+    if (args[0] == kLeaveOption) {
+        ctx.dialogueRunner->end();
+    } else if (const auto id = core::Guid::fromString(args[0])) {
+        for (const quest::DialogueNodeForm* option :
+             ctx.hud.dialogueOptions()) {
+            if (option->id == *id) {
+                ctx.dialogueRunner->select(*option);
+                break;
+            }
+        }
+    }
+    // Closes the screen when the dialogue ended.
+    ctx.pushDialogueModel();
 }
 
 // --- Menus --------------------------------------------------------------
 
 void UiRouter::handleMenuAction(const UiRouterContext& ctx,
                                 const str& action) {
-    if (action == "resume" || action == "cancel") {
+    const auto command = parseMenuCommand(action);
+    if (!command) {
+        warnOnce("ui: unknown menu action '" + action + "'");
+        return;
+    }
+    switch (command->action) {
+    case MenuAction::Resume:
+    case MenuAction::Cancel:
         ctx.screenStack.closeTop();
-    } else if (action == "save") {
+        break;
+    case MenuAction::Save: {
         // Timestamped manual slot; F5 owns "quick".
         char slot[32];
         const std::time_t now = std::time(nullptr);
@@ -516,7 +735,9 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
         ctx.performSave(slot);
         ctx.screenStack.closeTop();
-    } else if (action == "loadmenu") {
+        break;
+    }
+    case MenuAction::LoadMenu: {
         vector<::ui::UiRow> rows;
         for (const SaveSlotInfo& info : listSaveSlots()) {
             ::ui::UiRow row;
@@ -528,43 +749,53 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         ctx.ui.setBool("saves", "empty", rows.empty());
         ctx.ui.setRows("saves", std::move(rows));
         ctx.screenStack.show("saves");
-    } else if (action == "wait") {
+        break;
+    }
+    case MenuAction::Wait:
         ctx.updateMenuClockLine();
         ctx.screenStack.show("wait");
-    } else if (action == "wait1" || action == "wait4" ||
-               action == "wait8") {
-        ctx.wait(action == "wait1" ? 1.0f
-                                   : action == "wait4" ? 4.0f : 8.0f);
+        break;
+    case MenuAction::WaitHours:
+        ctx.wait(command->hours);
         ctx.updateMenuClockLine();
         ctx.screenStack.closeTop();
-    } else if (action == "play") {
+        break;
+    case MenuAction::Play:
         ctx.screenStack.closeAll();
         if (!ctx.playMode) {
             ctx.enterPlayMode();
         }
-    } else if (action == "play-story" || action == "play-sandbox") {
-        // Main-menu mode pick: flip the world BEFORE the capsule spawns
-        // (sandbox also moves the start point to generated land).
-        if (ctx.setSandboxMode) {
-            ctx.setSandboxMode(action == "play-sandbox");
+        break;
+    case MenuAction::PlayStory:
+    case MenuAction::PlaySandbox:
+        // Main-menu world pick: the scene's closure owns the whole game
+        // entry (world flipped BEFORE the capsule spawns, menus closed,
+        // Play entered) — one body shared with the boot override.
+        if (ctx.beginPlay) {
+            ctx.beginPlay(command->action == MenuAction::PlaySandbox);
+            break;
         }
         ctx.screenStack.closeAll();
         if (!ctx.playMode) {
             ctx.enterPlayMode();
         }
-    } else if (action == "mainmenu") {
+        break;
+    case MenuAction::MainMenu:
         if (ctx.playMode) {
             ctx.exitPlayMode();
         }
         ctx.screenStack.closeAll();
         ctx.updateMenuClockLine();
         ctx.screenStack.show("mainmenu");
-    } else if (action == "options") {
+        break;
+    case MenuAction::Options:
         // The scene fills the "options" model (settings + bindings
         // are its state) and shows the screen over the current menu.
         ctx.openOptions();
-    } else if (action == "quit") {
+        break;
+    case MenuAction::Quit:
         ctx.requestQuit();
+        break;
     }
 }
 

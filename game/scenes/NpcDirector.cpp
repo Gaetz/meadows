@@ -17,7 +17,8 @@
 #include "gameplay/actors/ActorState.hpp" // FollowerState (follow dispatch)
 #include "gameplay/ai/ScheduleSystem.hpp" // updateInterruption edges
 #include "gameplay/actors/CharacterTick.hpp"
-#include "gameplay/actors/Followers.hpp"  // foldAgeModifiers
+#include "gameplay/actors/FollowerParty.hpp"       // followerStance
+#include "gameplay/actors/FollowerProgression.hpp" // foldAgeModifiers
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
@@ -134,9 +135,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // (kill tasks) and crime listen on the bus. Reload paths never fire
         // it: refreshNpcs seeds npc.dead from the tag.
         if (npc.dead && !wasDead) {
-            ctx.eventBus.dispatch({ gameplay::eventKind("OnDeath"),
-                                    ecs::Entity {}, npc.entity,
-                                    npc.factionTag });
+            ctx.eventBus.dispatch(
+                { gameplay::eventKind(gameplay::events::OnDeath),
+                  ecs::Entity {}, npc.entity, npc.factionTag });
             if (ctx.cues) { // the fall's LOOK (dust puff by default)
                 ctx.cues->emit({ "Cue.Death",
                                  transform.position +
@@ -176,9 +177,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             npc.entity.get_mut<gameplay::CombatState>().downedSeconds =
                 ctx.statsTuning.downedBleedoutSeconds;
             npc.combatTarget = ecs::Entity {};
-            ctx.eventBus.dispatch({ gameplay::eventKind("OnDowned"),
-                                    ecs::Entity {}, npc.entity,
-                                    npc.factionTag });
+            ctx.eventBus.dispatch(
+                { gameplay::eventKind(gameplay::events::OnDowned),
+                  ecs::Entity {}, npc.entity, npc.factionTag });
             LOG_INFO("{} is DOWN ({:.0f}s bleedout window)",
                      npc.editorId, ctx.statsTuning.downedBleedoutSeconds);
         } else if (!npc.downed && wasDowned) {
@@ -326,7 +327,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // hit windows (routed above) and footsteps filter on it.
         for (str& name : npc.pendingAnimEvents) {
             gameplay::Event event;
-            event.kind = gameplay::eventKind("AnimEvent");
+            event.kind = gameplay::eventKind(gameplay::events::AnimEvent);
             event.source = npc.entity;
             event.name = std::move(name);
             ctx.eventBus.dispatch(event);

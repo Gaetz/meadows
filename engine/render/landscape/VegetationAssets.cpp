@@ -139,7 +139,8 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             continue;
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
-        if (i < kFirstRock) {
+        switch (familyOf(i)) {
+        case PropFamily::Tree: {
             const TreeSpecies species = speciesFor(i);
             const auto tree = [&](u32 lod) {
                 return species.colonized
@@ -162,11 +163,9 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
                     generateColonizedTreeShadowProxy(seed,
                                                      species.params));
             }
-        } else if (i < kFirstBush || i >= kFirstDebris) {
-            // Rocks — and the debris slots' PLACEHOLDER until the scene's
-            // scanned-prop overrides land (meshOverrides above wins).
-            uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
-        } else {
+            break;
+        }
+        case PropFamily::Bush:
             if (bushSpecies) {
                 // A knee-high colonized canopy: real branches + card
                 // foliage, three LODs like the trees.
@@ -184,6 +183,12 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
                 uploadVariantMesh(device, i,
                                   baked(generateBush(seed), 0.55f));
             }
+            break;
+        default:
+            // Rocks — and the scanned families' PLACEHOLDER until the
+            // scene's prop overrides land (meshOverrides above wins).
+            uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
+            break;
         }
     }
     // Textured plants: the reset above dropped their albedo bind groups
@@ -237,7 +242,7 @@ void uploadMeshBuffers(rhi::Device& device, const MeshData& mesh,
 
 void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
                                          const MeshData& mesh) {
-    if (variant < kTreeVariants && !mesh.vertices.empty()) {
+    if (familyOf(variant) == PropFamily::Tree && !mesh.vertices.empty()) {
         // Silhouette measurement (see TreeSilhouette): height, widest
         // radial extent, and where the crown starts (first height with
         // real width — everything below is bare trunk).

@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/core/Defines.hpp"
 
 // Authored-terrain delta-overlay data. Headless data structs
@@ -27,10 +28,7 @@ struct HeightPatches {
     f32 chunkSize { 64.0f }; // world meters per chunk (= terrain chunks)
     std::unordered_map<u64, HeightPatch> chunks;
 
-    static u64 keyOf(i32 cx, i32 cz) {
-        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
-               static_cast<u64>(static_cast<u32>(cz));
-    }
+    static u64 keyOf(i32 cx, i32 cz) { return core::chunkKey(cx, cz); }
 };
 
 } // namespace render

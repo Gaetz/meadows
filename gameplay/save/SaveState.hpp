@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include "data/plugins/Record.hpp"
 #include "data/plugins/RecordDiff.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
@@ -61,12 +63,21 @@ data::Record createRecord(const T& filled, const core::Guid& id) {
     return record;
 }
 
+// Saved effectId -> the fresh runtime id it got on this actor: rows that
+// shared an id at capture (an EffectForm's attribute2 line) must share
+// the new one, or removeEffectById would leave the malus behind after a
+// load. One map per actor, scoped to one restore pass.
+using EffectIdRemap = std::unordered_map<u32, u32>;
+
 // Re-creates one ACTIVE effect row from its saved mirror: pushes the
 // ActiveEffect, re-adds the granted tag (ref-counted), allocates a fresh
-// effectId. Does NOT recompute currents — the caller recomputes once
-// after restoring every row (§6: currents are derived).
+// effectId — the one `remap` already holds for the row's saved id when
+// given (nullptr = every row gets its own id). Does NOT recompute
+// currents — the caller recomputes once after restoring every row (§6:
+// currents are derived).
 void restoreActiveEffect(AbilitySystem& system, const SavedEffectForm& row,
-                         const GameplayTagRegistry& registry);
+                         const GameplayTagRegistry& registry,
+                         EffectIdRemap* remap = nullptr);
 
 // The mirror of restoreActiveEffect: one saved record per active row.
 // `parent` = the actor's ReferenceForm guid; guids are deterministic

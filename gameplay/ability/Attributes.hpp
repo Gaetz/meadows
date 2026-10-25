@@ -59,4 +59,21 @@ struct AttributeSet {
 // The data-driven handle for an attribute = fnv1a of its field name.
 inline u32 attr(std::string_view field) { return core::fnv1a(field); }
 
+// The vital pairs (value, cap): the ONLY attributes the core clamps and
+// refills by name. `theoreticalMax` is the synthetic overlay id under which
+// the character tick publishes the pre-cascade cap for the HUD (an entry
+// without a reflected field, like `damage`). `spendPausesRegen` marks the
+// vital whose negative instant spends arm the regen delay.
+struct VitalPair {
+    const char* value;
+    const char* max;
+    const char* theoreticalMax;
+    bool spendPausesRegen;
+};
+inline constexpr VitalPair kVitals[] = {
+    { "health",  "maxHealth",  "theoreticalMaxHealth",  false },
+    { "energy",  "maxEnergy",  "theoreticalMaxEnergy",  true  },
+    { "essence", "maxEssence", "theoreticalMaxEssence", false },
+};
+
 } // namespace gameplay

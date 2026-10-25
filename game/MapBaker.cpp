@@ -13,6 +13,7 @@
 #include <thread>
 
 #include "engine/core/ConcurrentQueue.hpp"
+#include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "game/TerrainBakeStreamer.hpp"
@@ -70,12 +71,12 @@ std::optional<MapOverview> loadMapOverview(
 }
 
 u64 mapBakeKey(const TileBakeParams& params, i32 tilesPerSide) {
-    u64 h = 1469598103934665603ull; // FNV-1a
+    u64 h = core::kFnv64Basis;
     const auto mix = [&](const void* data, size_t size) {
         const auto* bytes = static_cast<const unsigned char*>(data);
         for (size_t i = 0; i < size; ++i) {
             h ^= bytes[i];
-            h *= 1099511628211ull;
+            h *= core::kFnv64Prime;
         }
     };
     const auto mixF = [&](f32 v) { mix(&v, sizeof(v)); };
@@ -143,30 +144,73 @@ std::filesystem::path mapCacheDir(const std::filesystem::path& cacheDir,
     return cacheDir / dir;
 }
 
-MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
-                     const std::filesystem::path& cacheDir,
-                     core::JobSystem* jobs, i32 tilesPerSide,
-                     const std::function<void(u32, u32)>& progress) {
-    MapBakeStats stats;
-    const std::atomic<bool>* cancel = jobs ? &jobs->stopFlag() : nullptr;
-    const auto cancelled = [cancel] {
-        return cancel && cancel->load(std::memory_order_relaxed);
-    };
 
-    const auto mapDir = mapCacheDir(cacheDir, mapX, mapZ);
-    std::error_code ec;
-    std::filesystem::create_directories(mapDir, ec);
-    if (ec) {
-        LOG_ERROR("map bake: cannot create {} ({})", mapDir.string(),
-                  ec.message());
-        return stats;
+namespace {
+
+constexpr f32 kOvUnset = -1.0e30f;
+
+// One bake of one map: the inputs, the state the stages hand down (the
+// global stage-1, the slice grounds, the map hydrology, the overview
+// lattice) and the stats returned. Stages run in order; each returns
+// false to stop the bake (cancelled or failed) with `stats` carrying
+// what was done.
+struct MapBakeRun {
+    MapBakeRun(const TileBakeParams& bakeParams, i32 mx, i32 mz,
+               const std::filesystem::path& cache, core::JobSystem* js,
+               i32 tps, const std::function<void(u32, u32)>& prog)
+        : params { bakeParams }, mapX { mx }, mapZ { mz },
+          cacheDir { cache }, jobs { js }, tilesPerSide { tps },
+          progress { prog }, cancel { js ? &js->stopFlag() : nullptr },
+          tx0 { mx * tps }, tz0 { mz * tps },
+          total { static_cast<u32>(tps) * static_cast<u32>(tps) } {}
+
+    bool cancelled() const {
+        return cancel && cancel->load(std::memory_order_relaxed);
     }
 
-    // The global stage-1: same recipe, map-sized window, the production
-    // apron (rim basins resolve inside it; its rim is the base level).
-    TileBakeParams mapParams = params;
+    const TileBakeParams& params;
+    i32 mapX;
+    i32 mapZ;
+    const std::filesystem::path& cacheDir;
+    core::JobSystem* jobs;
+    i32 tilesPerSide;
+    const std::function<void(u32, u32)>& progress;
+    const std::atomic<bool>* cancel;
+    i32 tx0;
+    i32 tz0;
+    u32 total;
+
+    std::filesystem::path mapDir;
+    TileBakeParams mapParams;
+    TileStage1 mapS1;
+    std::chrono::steady_clock::time_point s2Start;
+    vector<FinalizeResult> grounds;
+    MapHydrology mapHydro;
+    render::terraingen::GridSpec ovGrid;
+    vector<f32> ovFine;
+    MapBakeStats stats;
+};
+
+bool createMapDir(MapBakeRun& run) {
+    run.mapDir = mapCacheDir(run.cacheDir, run.mapX, run.mapZ);
+    std::error_code ec;
+    std::filesystem::create_directories(run.mapDir, ec);
+    if (ec) {
+        LOG_ERROR("map bake: cannot create {} ({})", run.mapDir.string(),
+                  ec.message());
+        return false;
+    }
+    return true;
+}
+
+// The global stage-1: same recipe, map-sized window, the production
+// apron (rim basins resolve inside it; its rim is the base level).
+bool bakeGlobalStage1(MapBakeRun& run) {
+    const TileBakeParams& params = run.params;
+    TileBakeParams& mapParams = run.mapParams;
+    mapParams = params;
     mapParams.tileSize =
-        params.tileSize * static_cast<f32>(tilesPerSide);
+        params.tileSize * static_cast<f32>(run.tilesPerSide);
     mapParams.apron = kMapApron;
     // The border-transition grid: pure function of the world seed and
     // the map lattice — nothing per-map to fill.
@@ -176,37 +220,43 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         mapParams.mapGrid.seaLevel = params.macro.seaLevel;
     }
     const auto s1Start = std::chrono::steady_clock::now();
-    TileStage1 mapS1 = bakeTileStage1(mapParams, mapX, mapZ,
-                                      cancel);
-    stats.stage1Seconds = secondsSince(s1Start);
-    if (cancelled()) {
-        stats.cancelled = true;
-        return stats; // partial stage-1: no slice, no manifest
+    run.mapS1 = bakeTileStage1(mapParams, run.mapX, run.mapZ,
+                               run.cancel);
+    run.stats.stage1Seconds = secondsSince(s1Start);
+    if (run.cancelled()) {
+        run.stats.cancelled = true;
+        return false; // partial stage-1: no slice, no manifest
     }
     LOG_INFO("map bake ({}, {}): global stage-1 {}x{} in {:.1f} s",
-             mapX, mapZ, mapS1.sim.n, mapS1.sim.n, stats.stage1Seconds);
+             run.mapX, run.mapZ, run.mapS1.sim.n, run.mapS1.sim.n,
+             run.stats.stage1Seconds);
+    return true;
+}
 
-    // TWO-PHASE slice bake (restructuration eau, PAYSAGE §7.8):
-    // A. every slice's final GROUND (parallel, held in memory);
-    // B. ONE map hydrology ON those grounds — water placed on the
-    //    terrain the player walks is correct by construction;
-    // C. every slice's water carves + files (parallel).
-    const i32 tx0 = mapX * tilesPerSide;
-    const i32 tz0 = mapZ * tilesPerSide;
-    const u32 total =
-        static_cast<u32>(tilesPerSide) * static_cast<u32>(tilesPerSide);
-    const auto s2Start = std::chrono::steady_clock::now();
+// TWO-PHASE slice bake (docs/PAYSAGE.md §7.8):
+// A. every slice's final GROUND (parallel, held in memory);
+// B. ONE map hydrology ON those grounds — water placed on the
+//    terrain the player walks is correct by construction;
+// C. every slice's water carves + files (parallel).
+// Phase A. The slice clock starts here and runs through phase C.
+bool bakeSliceGrounds(MapBakeRun& run) {
+    const TileBakeParams& params = run.params;
+    const TileStage1& mapS1 = run.mapS1;
+    const i32 tilesPerSide = run.tilesPerSide;
+    const u32 total = run.total;
+    run.s2Start = std::chrono::steady_clock::now();
     const MapDrainage drainage =
-        computeMapDrainage(params, mapS1, mapX, mapZ, tilesPerSide);
-    vector<FinalizeResult> grounds(total);
+        computeMapDrainage(params, mapS1, run.mapX, run.mapZ, tilesPerSide);
+    vector<FinalizeResult>& grounds = run.grounds;
+    grounds = vector<FinalizeResult>(total);
     {
         core::ConcurrentQueue<i32> doneA;
         u32 landedA = 0;
         const auto bakeGround = [&](u32 slot, i32 tx, i32 tz) {
-            if (!cancelled()) {
+            if (!run.cancelled()) {
                 grounds[slot] =
                     bakeSliceGround(params, tx, tz, mapS1, drainage,
-                                    cancel);
+                                    run.cancel);
             }
             doneA.push(1);
         };
@@ -214,10 +264,10 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
             for (i32 dx = 0; dx < tilesPerSide; ++dx) {
                 const u32 slot = static_cast<u32>(
                     dz * tilesPerSide + dx);
-                const i32 tx = tx0 + dx;
-                const i32 tz = tz0 + dz;
-                if (jobs) {
-                    jobs->enqueue(
+                const i32 tx = run.tx0 + dx;
+                const i32 tz = run.tz0 + dz;
+                if (run.jobs) {
+                    run.jobs->enqueue(
                         [&, slot, tx, tz] { bakeGround(slot, tx, tz); });
                 } else {
                     bakeGround(slot, tx, tz);
@@ -228,8 +278,8 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
             i32 ok = 0;
             if (doneA.tryPop(ok)) {
                 ++landedA;
-                if (progress) {
-                    progress(landedA, total * 2);
+                if (run.progress) {
+                    run.progress(landedA, total * 2);
                 }
             } else {
                 std::this_thread::sleep_for(
@@ -237,75 +287,98 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
             }
         }
     }
-    if (cancelled()) {
-        stats.cancelled = true;
-        return stats;
+    if (run.cancelled()) {
+        run.stats.cancelled = true;
+        return false;
     }
+    return true;
+}
+
+// Border slices of CACHED neighbour maps: the hydrology window reads
+// their published final ground past our rect, so the shared margin's
+// water resolves on the terrain both maps show. A map baked alone (no
+// neighbour cache) stays bit-exact.
+vector<render::TerrainRegion> loadNeighbourBorderSlices(
+    const MapBakeRun& run) {
+    const i32 tilesPerSide = run.tilesPerSide;
+    vector<render::TerrainRegion> neighbourRegions;
+    const i32 offs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
+                             { 0, -1 } };
+    for (const auto& off : offs) {
+        const i32 nx = run.mapX + off[0];
+        const i32 nz = run.mapZ + off[1];
+        if (!mapBakedAndValid(run.cacheDir, nx, nz, tilesPerSide,
+                              &run.params)) {
+            continue;
+        }
+        const auto nDir = mapCacheDir(run.cacheDir, nx, nz);
+        for (i32 k = 0; k < tilesPerSide; ++k) {
+            // The neighbour's slice ROW/COLUMN along our shared
+            // line (the waterMargin band lies inside it).
+            const i32 tx =
+                off[0] != 0
+                    ? (off[0] > 0 ? nx * tilesPerSide
+                                  : nx * tilesPerSide +
+                                        tilesPerSide - 1)
+                    : nx * tilesPerSide + k;
+            const i32 tz =
+                off[1] != 0
+                    ? (off[1] > 0 ? nz * tilesPerSide
+                                  : nz * tilesPerSide +
+                                        tilesPerSide - 1)
+                    : nz * tilesPerSide + k;
+            char stem[64];
+            std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u",
+                          tx, tz, kTileBakeVersion);
+            if (auto region = world::readTrgFile(
+                    nDir / (str { stem } + ".trg"))) {
+                neighbourRegions.push_back(std::move(*region));
+            }
+        }
+    }
+    if (!neighbourRegions.empty()) {
+        LOG_INFO("map bake ({}, {}): {} neighbour border slice(s) "
+                 "feed the hydrology margin",
+                 run.mapX, run.mapZ, neighbourRegions.size());
+    }
+    return neighbourRegions;
+}
+
+// Phase B: the one map hydrology on the phase-A grounds.
+bool extractHydrology(MapBakeRun& run) {
     const auto hydroStart = std::chrono::steady_clock::now();
     vector<const FinalizeResult*> groundPtrs;
-    groundPtrs.reserve(grounds.size());
-    for (const FinalizeResult& g : grounds) {
+    groundPtrs.reserve(run.grounds.size());
+    for (const FinalizeResult& g : run.grounds) {
         groundPtrs.push_back(&g);
     }
-    // Border slices of CACHED neighbour maps: the hydrology window
-    // reads their published final ground past our rect, so the shared
-    // margin's water resolves on the terrain both maps show. A map
-    // baked alone (no neighbour cache) stays bit-exact.
-    vector<render::TerrainRegion> neighbourRegions;
-    {
-        const i32 offs[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
-                                 { 0, -1 } };
-        for (const auto& off : offs) {
-            const i32 nx = mapX + off[0];
-            const i32 nz = mapZ + off[1];
-            if (!mapBakedAndValid(cacheDir, nx, nz, tilesPerSide,
-                                  &params)) {
-                continue;
-            }
-            const auto nDir = mapCacheDir(cacheDir, nx, nz);
-            for (i32 k = 0; k < tilesPerSide; ++k) {
-                // The neighbour's slice ROW/COLUMN along our shared
-                // line (the waterMargin band lies inside it).
-                const i32 tx =
-                    off[0] != 0
-                        ? (off[0] > 0 ? nx * tilesPerSide
-                                      : nx * tilesPerSide +
-                                            tilesPerSide - 1)
-                        : nx * tilesPerSide + k;
-                const i32 tz =
-                    off[1] != 0
-                        ? (off[1] > 0 ? nz * tilesPerSide
-                                      : nz * tilesPerSide +
-                                            tilesPerSide - 1)
-                        : nz * tilesPerSide + k;
-                char stem[64];
-                std::snprintf(stem, sizeof(stem), "tile_%d_%d_v%u",
-                              tx, tz, kTileBakeVersion);
-                if (auto region = world::readTrgFile(
-                        nDir / (str { stem } + ".trg"))) {
-                    neighbourRegions.push_back(std::move(*region));
-                }
-            }
-        }
-        if (!neighbourRegions.empty()) {
-            LOG_INFO("map bake ({}, {}): {} neighbour border slice(s) "
-                     "feed the hydrology margin",
-                     mapX, mapZ, neighbourRegions.size());
-        }
+    const vector<render::TerrainRegion> neighbourRegions =
+        loadNeighbourBorderSlices(run);
+    run.mapHydro = extractMapHydrology(
+        run.params, run.mapS1, run.mapX, run.mapZ, run.tilesPerSide,
+        groundPtrs, neighbourRegions, run.cancel);
+    if (run.cancelled()) {
+        run.stats.cancelled = true;
+        return false;
     }
-    const MapHydrology mapHydro = extractMapHydrology(
-        params, mapS1, mapX, mapZ, tilesPerSide, groundPtrs,
-        neighbourRegions, cancel);
-    if (cancelled()) {
-        stats.cancelled = true;
-        return stats;
-    }
+    const MapHydrology& mapHydro = run.mapHydro;
     LOG_INFO("map bake ({}, {}): map hydrology {}x{} in {:.1f} s — {} "
              "lake(s), {} river(s)",
-             mapX, mapZ, mapHydro.window.n, mapHydro.window.n,
+             run.mapX, run.mapZ, mapHydro.window.n, mapHydro.window.n,
              secondsSince(hydroStart), mapHydro.hydro.lakes.size(),
              mapHydro.hydro.rivers.size());
+    return true;
+}
 
+// Phase C: every slice's water carves + files, splatting the overview
+// lattice as it lands. Closes the slice clock and the written count.
+bool carveSlicesAndWrite(MapBakeRun& run) {
+    const TileBakeParams& params = run.params;
+    const TileStage1& mapS1 = run.mapS1;
+    const MapHydrology& mapHydro = run.mapHydro;
+    const i32 tilesPerSide = run.tilesPerSide;
+    const u32 total = run.total;
+    const auto& mapDir = run.mapDir;
     core::ConcurrentQueue<i32> done; // 1 = written, 0 = failed/cancelled
     u32 landed = 0;
     u32 written = 0;
@@ -313,27 +386,27 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     // ground must be the FINAL carved fine ground, not the pre-carve
     // window — the published water now seats on the fine floor, and a
     // far terrain without the carved canyons buried every ribbon
-    // metres under its own décor (measured dev). Tile rects partition
-    // the map, so each worker writes disjoint texels (no lock); the
+    // metres under its own décor (measured). Tile rects partition the
+    // map, so each worker writes disjoint texels (no lock); the
     // completion queue orders the main thread's read. Texels no slice
     // owns (apron, window ring) keep the window/stage-1 fallback.
-    render::terraingen::GridSpec ovGrid;
+    render::terraingen::GridSpec& ovGrid = run.ovGrid;
     ovGrid.originX = mapS1.sim.originX;
     ovGrid.originZ = mapS1.sim.originZ;
     ovGrid.texelSize =
         mapS1.sim.texelSize * static_cast<f32>(kOverviewStep);
     ovGrid.n = (mapS1.sim.n - 1) / kOverviewStep + 1;
-    constexpr f32 kOvUnset = -1.0e30f;
-    vector<f32> ovFine(ovGrid.cells(), kOvUnset);
+    vector<f32>& ovFine = run.ovFine;
+    ovFine = vector<f32>(ovGrid.cells(), kOvUnset);
     const auto bakeSlice = [&](u32 slot, i32 tx, i32 tz) {
-        if (cancelled()) {
+        if (run.cancelled()) {
             done.push(0);
             return;
         }
         TileBakeResult slice =
             bakeSliceWater(params, tx, tz, mapS1, mapHydro,
-                           std::move(grounds[slot]), cancel);
-        if (cancelled()) {
+                           std::move(run.grounds[slot]), run.cancel);
+        if (run.cancelled()) {
             done.push(0);
             return;
         }
@@ -388,10 +461,10 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
     for (i32 dz = 0; dz < tilesPerSide; ++dz) {
         for (i32 dx = 0; dx < tilesPerSide; ++dx) {
             const u32 slot = static_cast<u32>(dz * tilesPerSide + dx);
-            const i32 tx = tx0 + dx;
-            const i32 tz = tz0 + dz;
-            if (jobs) {
-                jobs->enqueue(
+            const i32 tx = run.tx0 + dx;
+            const i32 tz = run.tz0 + dz;
+            if (run.jobs) {
+                run.jobs->enqueue(
                     [&, slot, tx, tz] { bakeSlice(slot, tx, tz); });
             } else {
                 bakeSlice(slot, tx, tz);
@@ -403,116 +476,149 @@ MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
         if (done.tryPop(ok)) {
             ++landed;
             written += ok > 0 ? 1u : 0u;
-            if (progress) {
-                progress(total + landed, total * 2);
+            if (run.progress) {
+                run.progress(total + landed, total * 2);
             }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     }
-    stats.sliceSeconds = secondsSince(s2Start);
-    stats.slicesWritten = written;
-    if (cancelled() || written != total) {
-        stats.cancelled = cancelled();
+    run.stats.sliceSeconds = secondsSince(run.s2Start);
+    run.stats.slicesWritten = written;
+    if (run.cancelled() || written != total) {
+        run.stats.cancelled = run.cancelled();
         LOG_WARN("map bake ({}, {}): incomplete ({}/{} slices) — no "
                  "manifest written",
-                 mapX, mapZ, written, total);
-        return stats;
+                 run.mapX, run.mapZ, written, total);
+        return false;
     }
+    return true;
+}
 
-    // The overview: the shared surface decimated to 64 m (exact texel
-    // picks — rim and shaped apron included), the runtime fallback
-    // inside the map.
-    {
-        MapOverview overview;
-        overview.grid = ovGrid;
-        overview.heights.resize(overview.grid.cells());
-        for (u32 row = 0; row < overview.grid.n; ++row) {
-            for (u32 col = 0; col < overview.grid.n; ++col) {
-                const size_t idx =
-                    static_cast<size_t>(row) * overview.grid.n + col;
-                // A slice-owned texel carries the FINAL carved fine
-                // ground (splatted in bakeSlice); outside the tiles,
-                // the pierced window inside the hydrology window and
-                // the stage-1 on the apron.
-                if (ovFine[idx] > kOvUnset * 0.5f) {
-                    overview.heights[idx] = ovFine[idx];
-                    continue;
-                }
-                const f32 x = overview.grid.x(col);
-                const f32 z = overview.grid.z(row);
-                const f32 s1 =
-                    mapS1.eroded[static_cast<size_t>(row) *
-                                     kOverviewStep * mapS1.sim.n +
-                                 static_cast<size_t>(col) *
-                                     kOverviewStep];
-                const render::terraingen::GridSpec& win =
-                    mapHydro.window;
-                const f32 winMaxX =
-                    win.originX +
-                    static_cast<f32>(win.n - 1) * win.texelSize;
-                const f32 winMaxZ =
-                    win.originZ +
-                    static_cast<f32>(win.n - 1) * win.texelSize;
-                overview.heights[idx] =
-                    (x >= win.originX && x <= winMaxX &&
-                     z >= win.originZ && z <= winMaxZ)
-                        ? render::terraingen::bilinearWorld(
-                              win, mapHydro.ground, x, z)
-                        : s1;
+// The overview: the shared surface decimated to 64 m (exact texel
+// picks — rim and shaped apron included), the runtime fallback inside
+// the map.
+bool writeOverview(MapBakeRun& run) {
+    const TileStage1& mapS1 = run.mapS1;
+    const MapHydrology& mapHydro = run.mapHydro;
+    const vector<f32>& ovFine = run.ovFine;
+    MapOverview overview;
+    overview.grid = run.ovGrid;
+    overview.heights.resize(overview.grid.cells());
+    for (u32 row = 0; row < overview.grid.n; ++row) {
+        for (u32 col = 0; col < overview.grid.n; ++col) {
+            const size_t idx =
+                static_cast<size_t>(row) * overview.grid.n + col;
+            // A slice-owned texel carries the FINAL carved fine
+            // ground (splatted in phase C); outside the tiles, the
+            // pierced window inside the hydrology window and the
+            // stage-1 on the apron.
+            if (ovFine[idx] > kOvUnset * 0.5f) {
+                overview.heights[idx] = ovFine[idx];
+                continue;
             }
-        }
-        std::ofstream file { mapDir / "overview.bin",
-                             std::ios::binary | std::ios::trunc };
-        const auto write = [&](const auto& value) {
-            file.write(reinterpret_cast<const char*>(&value),
-                       sizeof(value));
-        };
-        file.write(kOverviewMagic, 4);
-        write(overview.grid.originX);
-        write(overview.grid.originZ);
-        write(overview.grid.texelSize);
-        write(overview.grid.n);
-        file.write(
-            reinterpret_cast<const char*>(overview.heights.data()),
-            static_cast<std::streamsize>(overview.heights.size() *
-                                         sizeof(f32)));
-        if (!file) {
-            LOG_ERROR("map bake: cannot write overview in {}",
-                      mapDir.string());
-            return stats;
+            const f32 x = overview.grid.x(col);
+            const f32 z = overview.grid.z(row);
+            const f32 s1 =
+                mapS1.eroded[static_cast<size_t>(row) *
+                                 kOverviewStep * mapS1.sim.n +
+                             static_cast<size_t>(col) *
+                                 kOverviewStep];
+            const render::terraingen::GridSpec& win =
+                mapHydro.window;
+            const f32 winMaxX =
+                win.originX +
+                static_cast<f32>(win.n - 1) * win.texelSize;
+            const f32 winMaxZ =
+                win.originZ +
+                static_cast<f32>(win.n - 1) * win.texelSize;
+            overview.heights[idx] =
+                (x >= win.originX && x <= winMaxX &&
+                 z >= win.originZ && z <= winMaxZ)
+                    ? render::terraingen::bilinearWorld(
+                          win, mapHydro.ground, x, z)
+                    : s1;
         }
     }
+    std::ofstream file { run.mapDir / "overview.bin",
+                         std::ios::binary | std::ios::trunc };
+    const auto write = [&](const auto& value) {
+        file.write(reinterpret_cast<const char*>(&value),
+                   sizeof(value));
+    };
+    file.write(kOverviewMagic, 4);
+    write(overview.grid.originX);
+    write(overview.grid.originZ);
+    write(overview.grid.texelSize);
+    write(overview.grid.n);
+    file.write(
+        reinterpret_cast<const char*>(overview.heights.data()),
+        static_cast<std::streamsize>(overview.heights.size() *
+                                     sizeof(f32)));
+    if (!file) {
+        LOG_ERROR("map bake: cannot write overview in {}",
+                  run.mapDir.string());
+        return false;
+    }
+    return true;
+}
 
-    // The manifest marks the map COMPLETE and carries what the runtime
-    // needs before any slice is read. Written last: its absence means
-    // the map must be (re)baked.
-    std::ofstream manifest { mapDir / "manifest.txt",
+// The manifest marks the map COMPLETE and carries what the runtime
+// needs before any slice is read. Written last: its absence means the
+// map must be (re)baked.
+bool writeManifest(MapBakeRun& run) {
+    const i32 tilesPerSide = run.tilesPerSide;
+    std::ofstream manifest { run.mapDir / "manifest.txt",
                              std::ios::trunc };
     manifest << "meadows-map " << kMapBakeVersion << "\n"
-             << "map " << mapX << " " << mapZ << "\n"
-             << "mapSize " << mapParams.tileSize << "\n"
-             << "tileSize " << params.tileSize << "\n"
+             << "map " << run.mapX << " " << run.mapZ << "\n"
+             << "mapSize " << run.mapParams.tileSize << "\n"
+             << "tileSize " << run.params.tileSize << "\n"
              << "tilesPerSide " << tilesPerSide << "\n"
-             << "seed " << params.worldSeed << "\n"
+             << "seed " << run.params.worldSeed << "\n"
              << "bakeVersion " << kTileBakeVersion << "\n"
-             << "key " << mapBakeKey(params, tilesPerSide) << "\n";
+             << "key " << mapBakeKey(run.params, tilesPerSide) << "\n";
     for (i32 dz = 0; dz < tilesPerSide; ++dz) {
         for (i32 dx = 0; dx < tilesPerSide; ++dx) {
-            manifest << "slice " << (tx0 + dx) << " " << (tz0 + dz)
+            manifest << "slice " << (run.tx0 + dx) << " " << (run.tz0 + dz)
                      << "\n";
         }
     }
     if (!manifest) {
         LOG_ERROR("map bake: cannot write manifest in {}",
-                  mapDir.string());
-        return stats;
+                  run.mapDir.string());
+        return false;
     }
     LOG_INFO("map bake ({}, {}): {} slice(s) in {:.1f} s (+ {:.1f} s "
              "stage-1) -> {}",
-             mapX, mapZ, written, stats.sliceSeconds,
-             stats.stage1Seconds, mapDir.string());
-    return stats;
+             run.mapX, run.mapZ, run.stats.slicesWritten,
+             run.stats.sliceSeconds, run.stats.stage1Seconds,
+             run.mapDir.string());
+    return true;
+}
+
+} // namespace
+
+MapBakeStats bakeMap(const TileBakeParams& params, i32 mapX, i32 mapZ,
+                     const std::filesystem::path& cacheDir,
+                     core::JobSystem* jobs, i32 tilesPerSide,
+                     const std::function<void(u32, u32)>& progress) {
+    MapBakeRun run { params, mapX, mapZ, cacheDir, jobs, tilesPerSide,
+                     progress };
+    // The stage order IS the map pipeline's contract: a stage that
+    // stops (cancelled or failed) leaves `stats` saying how far it got.
+    using Stage = bool (*)(MapBakeRun&);
+    constexpr Stage kStages[] = {
+        createMapDir,        bakeGlobalStage1, bakeSliceGrounds,
+        extractHydrology,    carveSlicesAndWrite, writeOverview,
+        writeManifest,
+    };
+    for (const Stage stage : kStages) {
+        if (!stage(run)) {
+            break;
+        }
+    }
+    return run.stats;
 }
 
 } // namespace game

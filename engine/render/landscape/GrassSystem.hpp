@@ -2,11 +2,12 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
-#include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 
 namespace core {
 class JobSystem;
@@ -183,11 +184,9 @@ private:
         f32 maxY { 0.0f };
     };
 
-    void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
-
     // The shared ring mechanics (audit U3-1): map + generation-stamped
-    // queue + budgeted request/evict live in ChunkStreamer.
-    ChunkStreamer<Chunk, vector<Instance>> streamer;
+    // queue + budgeted request/evict live in core::ChunkStreamer.
+    core::ChunkStreamer<Chunk, vector<Instance>> streamer;
     u32 instances { 0 };
     u32 frameIndices { 0 }; // reset in update(), summed by draw()
     u32 frameBlades { 0 };
@@ -195,8 +194,7 @@ private:
     rhi::UniqueBuffer bladeVertexBuffer;
     rhi::UniqueBuffer bladeIndexBuffer;
     u32 bladeIndexCount { 0 };
-    rhi::UniquePipeline pipeline;
-    ShaderLibrary::Watch shaderWatch;
+    WatchedPipeline pipeline;
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic:

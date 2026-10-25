@@ -18,6 +18,11 @@ namespace gameplay {
 struct EvalContext;
 class EventBus;
 
+// Cost gating (AbilityForm.costPolicy); "" = by resource (see canAfford).
+inline constexpr std::string_view kCostPolicyNames[] = { "permissive",
+                                                         "strict" };
+inline constexpr reflect::EnumTable kCostPolicies { kCostPolicyNames, true };
+
 // A minimal GameplayAbility (§6): an activatable action. Faithful to GAS in that
 // **cost and cooldown are themselves GameplayEffects**. Kept flat
 // and data-only — no AbilityTasks. The
@@ -39,7 +44,7 @@ struct AbilityForm : data::Form {
     //                 you have; overdraw clamps to 0). Empty (0) still blocks —
     //                 for energy that is the State.Exhausted gate. Stamina model.
     //   "strict"      require the FULL cost (current >= cost). Magic model.
-    str costPolicy;
+    str costPolicy; // kCostPolicies
 
     // Skills-by-use: the SkillForm this ability
     // trains. Each successful activation grants the skill's xpPerUse
@@ -53,7 +58,7 @@ struct AbilityForm : data::Form {
         REFLECT_FIELD(cooldown)
         REFLECT_FIELD(effect)
         REFLECT_FIELD(script)
-        REFLECT_FIELD(costPolicy)
+        REFLECT_FIELD_ENUM(costPolicy, kCostPolicies)
         REFLECT_FIELD(skill)
     REFLECT_END()
 };

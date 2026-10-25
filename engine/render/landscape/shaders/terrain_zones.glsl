@@ -5,6 +5,8 @@
 // grassZoneAt (species/clutter coupling) — same hash (murmur
 // finalizer), same lattice, same sharpening.
 
+#include "splat_layers.glsl"
+
 const float kGrassZoneSize = 3.0; // meters per lattice cell
 
 uint zoneHash(uint v) {
@@ -78,30 +80,34 @@ int hexVariantOf(ivec2 v) {
 float hexFamilyLayer(int family, ivec2 v, float bias) {
     if (family == 0) {
         int g = hexVariantOf(v);
-        return g == 0 ? 0.0 : float(4 + g);
+        return g == 0 ? kLayerGrass : float(kGrassVariantFirst - 1 + g);
     }
     if (family >= 4) {
         ivec2 vc = ivec2(floor(vec2(v) / 8.0)); // ~24 m panels
         uint hc = zoneHash(uint(vc.x) * 0x9e3779b9u ^
                            uint(vc.y) * 0x85ebca6bu);
         int g = int(hc % 3u);
-        return g == 0 ? 4.0 : float(16 + g); // 17..18
+        return g == 0 ? kLayerCliff : float(kCliffVariantFirst - 1 + g);
     }
     uint h = zoneHash(uint(v.x) * (0x68e31da4u + uint(family) * 977u) ^
                       uint(v.y) * (0xb5297a4du + uint(family) * 331u));
     if (family == 1) {
         int g = int(h % 5u);
-        return g == 0 ? 1.0 : (g == 4 ? 19.0 : float(7 + g)); // 8..10, 19
+        return g == 0 ? kLayerRock
+               : (g == 4 ? kRockVariantLast
+                         : float(kRockVariantFirst - 1 + g));
     }
     if (family == 2) {
         int g = int(h & 3u);
-        return g == 0 ? 2.0 : (g == 3 ? 20.0 : float(10 + g)); // 11..12, 20
+        return g == 0 ? kLayerSnow
+               : (g == 3 ? kSnowVariantLast
+                         : float(kSnowVariantFirst - 1 + g));
     }
     if (float((h >> 8) & 255u) * (1.0 / 255.0) < bias) {
-        return 16.0; // scree
+        return kScreeLayer;
     }
     int g = int(h & 3u);
-    return g == 0 ? 3.0 : float(12 + g); // 13..15
+    return g == 0 ? kLayerSand : float(kSandVariantFirst - 1 + g);
 }
 
 // Which of the two heath grounds a lattice vertex deposits (22/23):
@@ -109,7 +115,7 @@ float hexFamilyLayer(int family, ivec2 v, float bias) {
 // family — while the heath COVERAGE itself is per-pixel (terrain.frag).
 float heathLayerOf(ivec2 v) {
     uint h = zoneHash(uint(v.x) * 0x9e3779b9u ^ uint(v.y) * 0x85ebca6bu);
-    return ((h >> 16) & 1u) == 0u ? 22.0 : 23.0;
+    return ((h >> 16) & 1u) == 0u ? kHeathLayerA : kHeathLayerB;
 }
 
 vec2 hexOffsetOf(ivec2 v) {

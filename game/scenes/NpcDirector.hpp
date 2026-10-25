@@ -200,10 +200,10 @@ struct Npc {
     // (quest kill filters, crime factions).
     gameplay::GameplayTag factionTag {};
 
-    // The class's combat style ("melee", "healer"... —
-    // FollowerClassForm.combatStyle, resolved at build) drives how the
-    // follower USES his special power in combat; empty = default (self).
-    str combatStyle;
+    // The class's combat style (FollowerClassForm.combatStyle, parsed
+    // once at build) drives how the follower USES his special power in
+    // combat; Default = self-cast.
+    gameplay::CombatStyle combatStyle { gameplay::CombatStyle::Default };
     // Bounds the tryActivate call rate for the power (the ability's own
     // cost/cooldown effects are the real gate — tryActivate refuses).
     f32 powerRetryTimer { 0.0f };

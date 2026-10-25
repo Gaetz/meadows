@@ -13,6 +13,22 @@ namespace render::terraingen {
 
 namespace {
 
+// The carve profile of a river tier: the moddable FinalizeParams columns
+// (depth cap, bank shoulder) joined to the fixed TierTraits row.
+struct TierProfile {
+    f32 depthMax;
+    f32 shoulder;
+    f32 flatBoost;
+};
+TierProfile tierProfile(const FinalizeParams& p, u8 tier) {
+    const TierTraits& traits = tierTraits(tier);
+    switch (tier) {
+    case 0: return { p.streamDepthMax, p.bankShoulder, traits.flatBoost };
+    case 2: return { p.fleuveDepthMax, p.fleuveBankShoulder, traits.flatBoost };
+    default: return { p.riverDepthMax, p.bankShoulder, traits.flatBoost };
+    }
+}
+
 constexpr u32 kSaltRelief = 0xf1e2d3c4u;
 constexpr u32 kSaltStrata = 0x57a7a5b1u;
 
@@ -350,26 +366,37 @@ FinalizeResult finalizeGround(const GridSpec& coarse,
     return out;
 }
 
-void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
-                   const vector<f32>& eroded, const MacroResult& macro,
-                   const HydrologyResult& hydro,
-                   const GridSpec& hydroSpec,
-                   const FinalizeParams& params, u32 seed,
-                   const vector<f32>* deposit) {
-    // World-coordinate sampler into the hydrology window grids.
-    const auto hydroAt = [&](const vector<f32>& grid, f32 wx,
-                             f32 wz) -> f32 {
-        return bilinearWorld(hydroSpec, grid, wx, wz);
-    };
-    // Water cells (sea, lakes, river courses) and the chamfer distance
-    // to them — the S6 masks read it.
+namespace {
+
+// The inputs every water-pass step samples: the ground-pass result being
+// carved, the coarse ground, and the hydrology on its own window grid.
+struct WaterPass {
+    FinalizeResult& out;
+    const GridSpec& coarse;
+    const vector<f32>& eroded;
+    const MacroResult& macro;
+    const HydrologyResult& hydro;
+    const GridSpec& hydroSpec;
+    const FinalizeParams& params;
+    u32 seed;
+    const vector<f32>* deposit;
+};
+
+constexpr f32 kMouthSandReach = 250.0f; // hand-tuned
+constexpr f32 kHeadWetReach = 24.0f;    // hand-tuned
+
+// Water cells (sea, lakes, river courses) on the coarse grid and the
+// chamfer distance to them — the mask channels read it.
+vector<f32> waterDistance(const WaterPass& w) {
+    const GridSpec& coarse = w.coarse;
+    const HydrologyResult& hydro = w.hydro;
     vector<u8> waterMask(coarse.cells(), 0);
     for (u32 row = 0; row < coarse.n; ++row) {
         for (u32 col = 0; col < coarse.n; ++col) {
             const size_t i = static_cast<size_t>(row) * coarse.n + col;
-            if (eroded[i] <= params.seaLevel ||
-                hydroAt(hydro.lakeDepth, coarse.x(col), coarse.z(row)) >
-                    0.0f) {
+            if (w.eroded[i] <= w.params.seaLevel ||
+                bilinearWorld(w.hydroSpec, hydro.lakeDepth, coarse.x(col),
+                              coarse.z(row)) > 0.0f) {
                 waterMask[i] = 1;
             }
         }
@@ -401,45 +428,31 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             }
             for (u32 col = 0; col < coarse.n; ++col) {
                 const f32 x = coarse.x(col);
-                if (x < lake.minX || x > lake.maxX) {
-                    continue;
-                }
-                const u32 mx = glm::min(
-                    static_cast<u32>(glm::max(
-                        (x - lake.minX) / lake.maskTexel + 0.5f,
-                        0.0f)),
-                    lake.maskWidth - 1);
-                const u32 mz = glm::min(
-                    static_cast<u32>(glm::max(
-                        (z - lake.minZ) / lake.maskTexel + 0.5f,
-                        0.0f)),
-                    lake.maskHeight - 1);
-                if (lake.mask[static_cast<size_t>(mz) *
-                                  lake.maskWidth +
-                              mx]) {
+                if (lake.covers(x, z)) {
                     waterMask[static_cast<size_t>(row) * coarse.n +
                               col] = 1;
                 }
             }
         }
     }
-    const vector<f32> waterDist = distanceToMask(coarse, waterMask);
-    // S5c — river carving on the fine grid: parabolic bed under the
-    // water surface, bank shoulder blending back into the hillside.
-    // Pre-carve snapshot: the carve REFERENCE ground must not read
-    // cells this very loop already dug (order-dependence).
-    const vector<f32> preCarve = out.height;
-    for (const River& river : hydro.rivers) {
+    return distanceToMask(coarse, waterMask);
+}
+
+// River carving on the fine grid: parabolic bed under the water
+// surface, bank shoulder blending back into the hillside. `preCarve`
+// is the ground before any carve: the carve REFERENCE ground must not
+// read cells this very pass already dug (order-dependence).
+void carveRiverBeds(WaterPass& w, const vector<f32>& preCarve) {
+    FinalizeResult& out = w.out;
+    const FinalizeParams& params = w.params;
+    for (const River& river : w.hydro.rivers) {
         // Tier character: cap band + shoulder (the ruisseau's shallow
         // cap is what keeps it wadeable whatever its width says).
-        const f32 tierDepthMax = river.tier == 0 ? params.streamDepthMax
-                                 : river.tier == 2
-                                     ? params.fleuveDepthMax
-                                     : params.riverDepthMax;
+        const TierProfile tier = tierProfile(params, river.tier);
+        const f32 tierDepthMax = tier.depthMax;
         const f32 tierDepthMin =
             glm::min(params.riverDepthMin, tierDepthMax);
-        const f32 shoulder = river.tier == 2 ? params.fleuveBankShoulder
-                                             : params.bankShoulder;
+        const f32 shoulder = tier.shoulder;
         for (size_t s = 0; s + 1 < river.points.size(); ++s) {
             const RiverPoint& a = river.points[s];
             const RiverPoint& b = river.points[s + 1];
@@ -468,18 +481,8 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             const f32 maxX = glm::max(a.x, b.x) + reach;
             const f32 minZ = glm::min(a.z, b.z) - reach;
             const f32 maxZ = glm::max(a.z, b.z) + reach;
-            const i32 c0 = static_cast<i32>(
-                std::floor((minX - out.fineSpec.originX) /
-                           out.fineSpec.texelSize));
-            const i32 c1 = static_cast<i32>(
-                std::ceil((maxX - out.fineSpec.originX) /
-                          out.fineSpec.texelSize));
-            const i32 r0 = static_cast<i32>(
-                std::floor((minZ - out.fineSpec.originZ) /
-                           out.fineSpec.texelSize));
-            const i32 r1 = static_cast<i32>(
-                std::ceil((maxZ - out.fineSpec.originZ) /
-                          out.fineSpec.texelSize));
+            const auto [c0, c1, r0, r1] =
+                out.fineSpec.cellRange(minX, minZ, maxX, maxZ);
             const f32 abx = b.x - a.x;
             const f32 abz = b.z - a.z;
             const f32 abLen2 = abx * abx + abz * abz;
@@ -495,7 +498,7 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                 segLen > 1.0f ? (a.surface - b.surface) / segLen
                               : 1.0f;
             const f32 flatBoost =
-                (river.tier == 0 ? 0.3f : 0.5f) *
+                tier.flatBoost *
                 (1.0f -
                  noise::smoothstep01(0.01f, 0.03f, segSlope));
             for (i32 row = glm::max(r0, 0);
@@ -619,129 +622,118 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             }
         }
     }
+}
 
-    // S5d-bis — lake-bed profile: every masked natural lake gets a
-    // basin carved under its surface, deeper away from the shore (the
-    // erosion+deposition floor often sits just under the spill — a
-    // sheet with no water under it). Carve-only.
-    if (params.lakeDepthCoef > 0.0f) {
-        for (const Lake& lake : hydro.lakes) {
-            // Both mask dims: the bilinear shore read below taps
-            // (mx + 1, mz + 1) — a one-row mask indexed off its end.
-            if (lake.dug || lake.mask.empty() || lake.maskWidth < 3 ||
-                lake.maskHeight < 3) {
-                continue;
-            }
-            // Chamfer distance to the nearest DRY mask cell, in mask
-            // texels (small grids: the giant basins are ~250^2).
-            const i32 mw = static_cast<i32>(lake.maskWidth);
-            const i32 mh = static_cast<i32>(lake.maskHeight);
-            vector<f32> shore(static_cast<size_t>(mw) * mh, 1.0e30f);
-            for (i32 row = 0; row < mh; ++row) {
-                for (i32 col = 0; col < mw; ++col) {
-                    const size_t i = static_cast<size_t>(row) * mw + col;
-                    // Border cells and dry cells are the shore.
-                    if (!lake.mask[i] || row == 0 || col == 0 ||
-                        row == mh - 1 || col == mw - 1) {
-                        shore[i] = 0.0f;
-                    }
-                }
-            }
-            chamferSweep(shore, mw, mh);
-            // Carve the fine texels covered by wet mask cells.
-            const i32 c0 = static_cast<i32>(
-                std::floor((lake.minX - out.fineSpec.originX) /
-                           out.fineSpec.texelSize));
-            const i32 c1 = static_cast<i32>(
-                std::ceil((lake.maxX - out.fineSpec.originX) /
-                          out.fineSpec.texelSize));
-            const i32 r0 = static_cast<i32>(
-                std::floor((lake.minZ - out.fineSpec.originZ) /
-                           out.fineSpec.texelSize));
-            const i32 r1 = static_cast<i32>(
-                std::ceil((lake.maxZ - out.fineSpec.originZ) /
-                          out.fineSpec.texelSize));
-            const i32 fineN = static_cast<i32>(out.fineSpec.n);
-            for (i32 row = glm::max(r0, 0);
-                 row <= glm::min(r1, fineN - 1); ++row) {
-                for (i32 col = glm::max(c0, 0);
-                     col <= glm::min(c1, fineN - 1); ++col) {
-                    const f32 x = out.fineSpec.x(static_cast<u32>(col));
-                    const f32 z = out.fineSpec.z(static_cast<u32>(row));
-                    const f32 mu = (x - lake.minX) / lake.maskTexel;
-                    const f32 mv = (z - lake.minZ) / lake.maskTexel;
-                    const i32 mx = glm::clamp(
-                        static_cast<i32>(std::floor(mu)), 0, mw - 2);
-                    const i32 mz = glm::clamp(
-                        static_cast<i32>(std::floor(mv)), 0, mh - 2);
-                    const auto at = [&](i32 cx, i32 cz) {
-                        return shore[static_cast<size_t>(cz) * mw + cx];
-                    };
-                    const f32 tu = glm::clamp(
-                        mu - static_cast<f32>(mx), 0.0f, 1.0f);
-                    const f32 tv = glm::clamp(
-                        mv - static_cast<f32>(mz), 0.0f, 1.0f);
-                    const f32 a = at(mx, mz) +
-                                  (at(mx + 1, mz) - at(mx, mz)) * tu;
-                    const f32 b =
-                        at(mx, mz + 1) +
-                        (at(mx + 1, mz + 1) - at(mx, mz + 1)) * tu;
-                    const f32 shoreDist =
-                        (a + (b - a) * tv) * lake.maskTexel;
-                    if (shoreDist <= 0.0f || shoreDist > 1.0e29f) {
-                        continue;
-                    }
-                    const f32 depth =
-                        glm::min(params.lakeDepthCoef * shoreDist,
-                                 params.lakeDepthMax);
-                    const size_t i =
-                        static_cast<size_t>(row) * out.fineSpec.n +
-                        static_cast<size_t>(col);
-                    // Only cells that can HOLD the sheet become bed:
-                    // the mask is window-resolution, and where the
-                    // fine ground stands above the level, cutting it
-                    // punched a one-texel wall along the mask edge
-                    // (razor cliffs, measured up to 276 m at pond
-                    // rims). The dry rim is shore, not bed.
-                    if (out.height[i] > lake.level + 0.5f) {
-                        continue;
-                    }
-                    // Bounded by the SHEET: a bank below the level
-                    // at most (a ground-anchored bound left detail
-                    // bumps poking through the sheet). Dig-only: the
-                    // bound never raises a deeper pre-existing floor.
-                    out.height[i] = glm::min(
-                        out.height[i],
-                        glm::max(glm::min(out.height[i],
-                                          lake.level - depth),
-                                 lake.level - depth -
-                                     params.bankMaxCut));
+// Lake-bed profile: every masked natural lake gets a basin carved under
+// its surface, deeper away from the shore (the erosion+deposition floor
+// often sits just under the spill — a sheet with no water under it).
+// Carve-only.
+void carveLakeBasins(WaterPass& w) {
+    FinalizeResult& out = w.out;
+    const FinalizeParams& params = w.params;
+    if (!(params.lakeDepthCoef > 0.0f)) {
+        return;
+    }
+    for (const Lake& lake : w.hydro.lakes) {
+        // Both mask dims: the bilinear shore read below taps
+        // (mx + 1, mz + 1) — a one-row mask indexed off its end.
+        if (lake.dug || lake.mask.empty() || lake.maskWidth < 3 ||
+            lake.maskHeight < 3) {
+            continue;
+        }
+        // Chamfer distance to the nearest DRY mask cell, in mask
+        // texels (small grids: the giant basins are ~250^2).
+        const i32 mw = static_cast<i32>(lake.maskWidth);
+        const i32 mh = static_cast<i32>(lake.maskHeight);
+        vector<f32> shore(static_cast<size_t>(mw) * mh, 1.0e30f);
+        for (i32 row = 0; row < mh; ++row) {
+            for (i32 col = 0; col < mw; ++col) {
+                const size_t i = static_cast<size_t>(row) * mw + col;
+                // Border cells and dry cells are the shore.
+                if (!lake.mask[i] || row == 0 || col == 0 ||
+                    row == mh - 1 || col == mw - 1) {
+                    shore[i] = 0.0f;
                 }
             }
         }
+        chamferSweep(shore, mw, mh);
+        // Carve the fine texels covered by wet mask cells.
+        const auto [c0, c1, r0, r1] =
+            out.fineSpec.cellRange(lake.minX, lake.minZ, lake.maxX, lake.maxZ);
+        const i32 fineN = static_cast<i32>(out.fineSpec.n);
+        for (i32 row = glm::max(r0, 0);
+             row <= glm::min(r1, fineN - 1); ++row) {
+            for (i32 col = glm::max(c0, 0);
+                 col <= glm::min(c1, fineN - 1); ++col) {
+                const f32 x = out.fineSpec.x(static_cast<u32>(col));
+                const f32 z = out.fineSpec.z(static_cast<u32>(row));
+                const f32 mu = (x - lake.minX) / lake.maskTexel;
+                const f32 mv = (z - lake.minZ) / lake.maskTexel;
+                const i32 mx = glm::clamp(
+                    static_cast<i32>(std::floor(mu)), 0, mw - 2);
+                const i32 mz = glm::clamp(
+                    static_cast<i32>(std::floor(mv)), 0, mh - 2);
+                const auto at = [&](i32 cx, i32 cz) {
+                    return shore[static_cast<size_t>(cz) * mw + cx];
+                };
+                const f32 tu = glm::clamp(
+                    mu - static_cast<f32>(mx), 0.0f, 1.0f);
+                const f32 tv = glm::clamp(
+                    mv - static_cast<f32>(mz), 0.0f, 1.0f);
+                const f32 a = at(mx, mz) +
+                              (at(mx + 1, mz) - at(mx, mz)) * tu;
+                const f32 b =
+                    at(mx, mz + 1) +
+                    (at(mx + 1, mz + 1) - at(mx, mz + 1)) * tu;
+                const f32 shoreDist =
+                    (a + (b - a) * tv) * lake.maskTexel;
+                if (shoreDist <= 0.0f || shoreDist > 1.0e29f) {
+                    continue;
+                }
+                const f32 depth =
+                    glm::min(params.lakeDepthCoef * shoreDist,
+                             params.lakeDepthMax);
+                const size_t i =
+                    static_cast<size_t>(row) * out.fineSpec.n +
+                    static_cast<size_t>(col);
+                // Only cells that can HOLD the sheet become bed:
+                // the mask is window-resolution, and where the
+                // fine ground stands above the level, cutting it
+                // punched a one-texel wall along the mask edge
+                // (razor cliffs, measured up to 276 m at pond
+                // rims). The dry rim is shore, not bed.
+                if (out.height[i] > lake.level + 0.5f) {
+                    continue;
+                }
+                // Bounded by the SHEET: a bank below the level
+                // at most (a ground-anchored bound left detail
+                // bumps poking through the sheet). Dig-only: the
+                // bound never raises a deeper pre-existing floor.
+                out.height[i] = glm::min(
+                    out.height[i],
+                    glm::max(glm::min(out.height[i],
+                                      lake.level - depth),
+                             lake.level - depth -
+                                 params.bankMaxCut));
+            }
+        }
     }
+}
 
-    // S5d — dig the placed ponds (Lake::dug): a parabolic dish under the
-    // pond level. Natural lakes already sit in their eroded basin.
-    for (const Lake& pond : hydro.lakes) {
+// Dig the placed ponds (Lake::dug): a parabolic dish under the pond
+// level. Natural lakes already sit in their eroded basin.
+void digPlacedPonds(WaterPass& w) {
+    FinalizeResult& out = w.out;
+    const FinalizeParams& params = w.params;
+    for (const Lake& pond : w.hydro.lakes) {
         if (!pond.dug) {
             continue;
         }
         const f32 cx = (pond.minX + pond.maxX) * 0.5f;
         const f32 cz = (pond.minZ + pond.maxZ) * 0.5f;
         const f32 radius = glm::max((pond.maxX - pond.minX) * 0.5f, 1.0f);
-        const i32 c0 = static_cast<i32>(
-            std::floor((pond.minX - out.fineSpec.originX) /
-                       out.fineSpec.texelSize));
-        const i32 c1 = static_cast<i32>(
-            std::ceil((pond.maxX - out.fineSpec.originX) /
-                      out.fineSpec.texelSize));
-        const i32 r0 = static_cast<i32>(
-            std::floor((pond.minZ - out.fineSpec.originZ) /
-                       out.fineSpec.texelSize));
-        const i32 r1 = static_cast<i32>(
-            std::ceil((pond.maxZ - out.fineSpec.originZ) /
-                      out.fineSpec.texelSize));
+        const auto [c0, c1, r0, r1] =
+            out.fineSpec.cellRange(pond.minX, pond.minZ, pond.maxX, pond.maxZ);
         for (i32 row = glm::max(r0, 0);
              row <= glm::min(r1, static_cast<i32>(out.fineSpec.n) - 1);
              ++row) {
@@ -785,121 +777,132 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             }
         }
     }
+}
 
-    // Estuary sand fans: the beach widens around every sea mouth.
+// Sea mouths: the tail of every rivière/fleuve that reaches the sea.
+// The beach widens into a sand fan around each one.
+vector<Vec2> collectSeaMouths(const WaterPass& w) {
     vector<Vec2> mouths;
-    constexpr f32 kMouthSandReach = 250.0f; // hand-tuned
-    for (const River& river : hydro.rivers) {
+    for (const River& river : w.hydro.rivers) {
         if (river.tier < 1 || river.points.empty()) {
             continue;
         }
         const RiverPoint& tail = river.points.back();
-        if (tail.surface <= params.seaLevel + 0.5f) {
+        if (tail.surface <= w.params.seaLevel + 0.5f) {
             mouths.push_back({ tail.x, tail.z });
         }
     }
-    // Course heads (true sources, not lake resumes): the ground
-    // around a spring reads damp — wetness stamped in a small fan.
+    return mouths;
+}
+
+// Course heads (true sources, not lake resumes): the ground around a
+// spring reads damp — wetness stamped in a small fan.
+vector<Vec2> collectSpringHeads(const WaterPass& w) {
     vector<Vec2> heads;
-    constexpr f32 kHeadWetReach = 24.0f; // hand-tuned
-    for (const River& river : hydro.rivers) {
+    for (const River& river : w.hydro.rivers) {
         if (river.lakeFed || river.points.empty()) {
             continue;
         }
         const RiverPoint& head = river.points.front();
-        if (head.surface > params.seaLevel + 0.5f) {
+        if (head.surface > w.params.seaLevel + 0.5f) {
             heads.push_back({ head.x, head.z });
         }
     }
-    const auto headWet = [&](f32 x, f32 z) -> f32 {
-        f32 best = 1.0e30f;
-        for (const Vec2& h : heads) {
-            const f32 dx = x - h.x;
-            const f32 dz = z - h.y;
-            best = glm::min(best, dx * dx + dz * dz);
-        }
-        if (best > kHeadWetReach * kHeadWetReach) {
-            return 0.0f;
-        }
-        return 1.0f - noise::smoothstep01(0.0f, kHeadWetReach,
-                                          std::sqrt(best));
-    };
-    const auto mouthFan = [&](f32 x, f32 z) -> f32 {
-        f32 best = 1.0e30f;
-        for (const Vec2& m : mouths) {
-            const f32 dx = x - m.x;
-            const f32 dz = z - m.y;
-            best = glm::min(best, dx * dx + dz * dz);
-        }
-        if (best > kMouthSandReach * kMouthSandReach) {
-            return 0.0f;
-        }
-        return 1.0f - noise::smoothstep01(0.0f, kMouthSandReach,
-                                          std::sqrt(best));
-    };
+    return heads;
+}
 
-    // S6 — coarse mask channels.
+// Radial falloff [0,1] from the nearest of `centers`: 1 at the center,
+// 0 at `reach` and beyond.
+f32 fanFalloff01(const vector<Vec2>& centers, f32 reach, f32 x, f32 z) {
+    f32 best = 1.0e30f;
+    for (const Vec2& c : centers) {
+        const f32 dx = x - c.x;
+        const f32 dz = z - c.y;
+        best = glm::min(best, dx * dx + dz * dz);
+    }
+    if (best > reach * reach) {
+        return 0.0f;
+    }
+    return 1.0f - noise::smoothstep01(0.0f, reach, std::sqrt(best));
+}
+
+// Coarse slope for the rock mask — computed on the FINAL ground
+// resampled at the same 16 m lattice, AFTER the carves: the gorge
+// walls, pierce notches and lake beds are carve products the
+// stage-1 slope never saw, so they wore meadow materials draped
+// on near-vertical rock. Same grid, same thresholds: the look
+// only moves where the carves moved the ground. Outside this
+// slice's fine rect the stage-1 value remains.
+vector<f32> finalGroundSlope(const WaterPass& w) {
+    const FinalizeResult& out = w.out;
+    const GridSpec& coarse = w.coarse;
+    vector<f32> slopeCoarse(coarse.cells());
+    const i32 cn = static_cast<i32>(coarse.n);
+    const f32 fineMaxX =
+        out.fineSpec.originX +
+        static_cast<f32>(out.fineSpec.n - 1) *
+            out.fineSpec.texelSize;
+    const f32 fineMaxZ =
+        out.fineSpec.originZ +
+        static_cast<f32>(out.fineSpec.n - 1) *
+            out.fineSpec.texelSize;
+    const auto finalAt = [&](i32 px, i32 pz) {
+        px = glm::clamp(px, 0, cn - 1);
+        pz = glm::clamp(pz, 0, cn - 1);
+        const f32 wx = coarse.x(static_cast<u32>(px));
+        const f32 wz = coarse.z(static_cast<u32>(pz));
+        if (wx >= out.fineSpec.originX && wx <= fineMaxX &&
+            wz >= out.fineSpec.originZ && wz <= fineMaxZ) {
+            return bilinearWorld(out.fineSpec, out.height, wx, wz);
+        }
+        return w.eroded[static_cast<size_t>(pz) * coarse.n +
+                        static_cast<size_t>(px)];
+    };
+    for (i32 cz = 0; cz < cn; ++cz) {
+        for (i32 cx = 0; cx < cn; ++cx) {
+            const f32 gx =
+                (finalAt(cx + 1, cz) - finalAt(cx - 1, cz)) /
+                (2.0f * coarse.texelSize);
+            const f32 gz =
+                (finalAt(cx, cz + 1) - finalAt(cx, cz - 1)) /
+                (2.0f * coarse.texelSize);
+            slopeCoarse[static_cast<size_t>(cz) * coarse.n + cx] =
+                std::sqrt(gx * gx + gz * gz);
+        }
+    }
+    return slopeCoarse;
+}
+
+// The coarse mask channels (flow, wetness, beach, detailAmp,
+// rockExposure), read off the carved ground, the water distance and
+// the pre-carve snapshot (a freshly cut face is bared rock).
+void writeMaskChannels(WaterPass& w, const vector<f32>& waterDist,
+                       const vector<f32>& preCarve,
+                       const vector<Vec2>& mouths,
+                       const vector<Vec2>& heads) {
+    FinalizeResult& out = w.out;
+    const GridSpec& coarse = w.coarse;
+    const FinalizeParams& params = w.params;
     const f32 cellArea = coarse.texelSize * coarse.texelSize;
     out.flow.resize(coarse.cells());
     out.wetness.resize(coarse.cells());
     out.beach.resize(coarse.cells());
     out.detailAmp.resize(coarse.cells());
     out.rockExposure.resize(coarse.cells());
-    const f32 s6FineMaxX =
+    const f32 fineMaxX =
         out.fineSpec.originX +
         static_cast<f32>(out.fineSpec.n - 1) * out.fineSpec.texelSize;
-    const f32 s6FineMaxZ =
+    const f32 fineMaxZ =
         out.fineSpec.originZ +
         static_cast<f32>(out.fineSpec.n - 1) * out.fineSpec.texelSize;
-    // Coarse slope for the rock mask — computed on the FINAL ground
-    // resampled at the same 16 m lattice, AFTER the carves: the gorge
-    // walls, pierce notches and lake beds are carve products the
-    // stage-1 slope never saw, so they wore meadow materials draped
-    // on near-vertical rock. Same grid, same thresholds: the look
-    // only moves where the carves moved the ground. Outside this
-    // slice's fine rect the stage-1 value remains.
-    vector<f32> slopeCoarse(coarse.cells());
-    {
-        const i32 cn = static_cast<i32>(coarse.n);
-        const f32 fineMaxX =
-            out.fineSpec.originX +
-            static_cast<f32>(out.fineSpec.n - 1) *
-                out.fineSpec.texelSize;
-        const f32 fineMaxZ =
-            out.fineSpec.originZ +
-            static_cast<f32>(out.fineSpec.n - 1) *
-                out.fineSpec.texelSize;
-        const auto finalAt = [&](i32 px, i32 pz) {
-            px = glm::clamp(px, 0, cn - 1);
-            pz = glm::clamp(pz, 0, cn - 1);
-            const f32 wx = coarse.x(static_cast<u32>(px));
-            const f32 wz = coarse.z(static_cast<u32>(pz));
-            if (wx >= out.fineSpec.originX && wx <= fineMaxX &&
-                wz >= out.fineSpec.originZ && wz <= fineMaxZ) {
-                return bilinearWorld(out.fineSpec, out.height, wx, wz);
-            }
-            return eroded[static_cast<size_t>(pz) * coarse.n +
-                          static_cast<size_t>(px)];
-        };
-        for (i32 cz = 0; cz < cn; ++cz) {
-            for (i32 cx = 0; cx < cn; ++cx) {
-                const f32 gx =
-                    (finalAt(cx + 1, cz) - finalAt(cx - 1, cz)) /
-                    (2.0f * coarse.texelSize);
-                const f32 gz =
-                    (finalAt(cx, cz + 1) - finalAt(cx, cz - 1)) /
-                    (2.0f * coarse.texelSize);
-                slopeCoarse[static_cast<size_t>(cz) * coarse.n + cx] =
-                    std::sqrt(gx * gx + gz * gz);
-            }
-        }
-    }
+    const vector<f32> slopeCoarse = finalGroundSlope(w);
     for (u32 row = 0; row < coarse.n; ++row) {
         for (u32 col = 0; col < coarse.n; ++col) {
             const size_t i = static_cast<size_t>(row) * coarse.n + col;
             const f32 flowNorm = glm::clamp(
                 std::log10(glm::max(
-                    hydroAt(hydro.area, coarse.x(col), coarse.z(row)) /
+                    bilinearWorld(w.hydroSpec, w.hydro.area, coarse.x(col),
+                                  coarse.z(row)) /
                         cellArea,
                     1.0f)) /
                     params.flowLogSpan,
@@ -915,10 +918,11 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                                0.35f * incNorm);
             if (!heads.empty()) {
                 wet = glm::max(
-                    wet, headWet(coarse.x(col), coarse.z(row)));
+                    wet, fanFalloff01(heads, kHeadWetReach, coarse.x(col),
+                                      coarse.z(row)));
             }
             // Beach: the shore band, on land, minus underwater texels.
-            const f32 d = macro.seaDist[i];
+            const f32 d = w.macro.seaDist[i];
             f32 beach =
                 d >= 0.0f
                     ? 1.0f - noise::smoothstep01(params.beachBand * 0.5f,
@@ -926,7 +930,8 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                     : 0.0f;
             if (d >= -1.0f && !mouths.empty()) {
                 beach = glm::max(
-                    beach, mouthFan(coarse.x(col), coarse.z(row)));
+                    beach, fanFalloff01(mouths, kMouthSandReach,
+                                        coarse.x(col), coarse.z(row)));
             }
             // Detail dies on beaches and under/near water, breathes on
             // dry land.
@@ -942,17 +947,17 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             // deposit stays soil-covered), strata-banded so cliff
             // pixels read as geology instead of one flat material.
             const f32 scree =
-                deposit ? noise::smoothstep01(0.3f, 1.5f, (*deposit)[i])
-                        : 0.0f;
+                w.deposit ? noise::smoothstep01(0.3f, 1.5f, (*w.deposit)[i])
+                          : 0.0f;
             const f32 warp =
-                (noise::fbm(seed ^ kSaltStrata, coarse.x(col),
+                (noise::fbm(w.seed ^ kSaltStrata, coarse.x(col),
                             coarse.z(row), 1.0f / 80.0f, 2, 2.0f,
                             0.5f) *
                      2.0f -
                  1.0f) *
                 4.0f;
             const f32 band =
-                strataBand01(eroded[i], warp, params.strataPeriod);
+                strataBand01(w.eroded[i], warp, params.strataPeriod);
             // A face the carve or the pierce CUT is freshly bared
             // rock whatever the deposit said: the scree term described
             // the pre-cut soil apron, and it kept every carved gorge
@@ -973,8 +978,8 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
                                                     { 0.0f, -16.0f } };
                 const f32 wx = coarse.x(col) + kOff[dn][0];
                 const f32 wz = coarse.z(row) + kOff[dn][1];
-                if (wx < out.fineSpec.originX || wx > s6FineMaxX ||
-                    wz < out.fineSpec.originZ || wz > s6FineMaxZ) {
+                if (wx < out.fineSpec.originX || wx > fineMaxX ||
+                    wz < out.fineSpec.originZ || wz > fineMaxZ) {
                     continue;
                 }
                 cut = glm::max(
@@ -995,6 +1000,29 @@ void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
             out.rockExposure[i] = toU8(rock);
         }
     }
+}
+
+} // namespace
+
+void finalizeWater(FinalizeResult& out, const GridSpec& coarse,
+                   const vector<f32>& eroded, const MacroResult& macro,
+                   const HydrologyResult& hydro,
+                   const GridSpec& hydroSpec,
+                   const FinalizeParams& params, u32 seed,
+                   const vector<f32>* deposit) {
+    WaterPass w { out, coarse, eroded, macro, hydro, hydroSpec, params,
+                  seed, deposit };
+    const vector<f32> waterDist = waterDistance(w);
+    // Snapshot of the ground before any carve: the river carve references
+    // it (never the cells it already dug) and the rock mask reads the
+    // carve depth as (preCarve - final).
+    const vector<f32> preCarve = out.height;
+    carveRiverBeds(w, preCarve);
+    carveLakeBasins(w);
+    digPlacedPonds(w);
+    const vector<Vec2> mouths = collectSeaMouths(w);
+    const vector<Vec2> heads = collectSpringHeads(w);
+    writeMaskChannels(w, waterDist, preCarve, mouths, heads);
 }
 
 FinalizeResult finalizeTerrain(const GridSpec& coarse,

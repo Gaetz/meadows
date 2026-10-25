@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/Camera2D.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace render {
 
@@ -56,17 +57,20 @@ private:
         u32 instanceCount;
     };
 
+    // Owning handles: members destroy in reverse declaration order, so the
+    // bind groups go before the UBO/texture they reference and the
+    // pipeline before its shader.
     rhi::Device& device;
-    rhi::BufferHandle quadVertices {};
-    rhi::BufferHandle quadIndices {};
-    rhi::BufferHandle instanceBuffer {};
-    rhi::BufferHandle cameraUbo {};
-    rhi::ShaderHandle shader {};
-    rhi::PipelineHandle pipeline {};
-    rhi::TextureHandle whiteTexture {};  // fallback for untextured sprites
+    rhi::UniqueBuffer quadVertices;
+    rhi::UniqueBuffer quadIndices;
+    rhi::UniqueBuffer instanceBuffer;
+    rhi::UniqueBuffer cameraUbo;
+    rhi::UniqueTexture whiteTexture;  // fallback for untextured sprites
+    rhi::UniqueShader shader;
+    rhi::UniquePipeline pipeline;
 
     // One bind group per texture seen so far (camera UBO + texture).
-    std::unordered_map<u32, rhi::BindGroupHandle> bindGroups;
+    std::unordered_map<u32, rhi::UniqueBindGroup> bindGroups;
 
     vector<Instance> instances;
     vector<Batch> batches;

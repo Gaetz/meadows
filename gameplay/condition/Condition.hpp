@@ -19,13 +19,36 @@ namespace gameplay {
 // evaluator is THE shared predicate engine — abilities, quests, dialogue, AI.
 // New clause kinds are added by extending evaluateClause (e.g. QuestStage,
 // FactionStanding land with quests/factions).
+// The clause kinds; kConditionKinds names them (ConditionForm.kind) and
+// Condition.cpp holds one evaluator per kind, in this order. The Follower*
+// clauses read the dialogue PARTNER's state, not the player's mirror tags.
+enum class ClauseKind {
+    HasTag,
+    AttributeAtLeast,
+    AttributeAtMost,
+    HasItem,
+    Lua,
+    FollowerAffinityAtLeast,
+    FollowerActive,
+    FollowerConvalescent,
+};
+inline constexpr std::string_view kConditionKindNames[] = {
+    "HasTag",
+    "AttributeAtLeast",
+    "AttributeAtMost",
+    "HasItem",
+    "Lua",
+    "FollowerAffinityAtLeast",
+    "FollowerActive",
+    "FollowerConvalescent",
+};
+inline constexpr reflect::EnumTable kConditionKinds { kConditionKindNames };
+static_assert(std::size(kConditionKindNames) ==
+              static_cast<size_t>(ClauseKind::FollowerConvalescent) + 1);
+
 struct ConditionForm : data::Form {
     core::Guid parent;      // the gated node (ability / quest stage / dialogue node)
-    str kind { "HasTag" };  // HasTag | AttributeAtLeast | AttributeAtMost | HasItem
-                            //   | Lua | FollowerAffinityAtLeast
-                            //   | FollowerActive | FollowerConvalescent
-                            //   (per-PARTNER, not the player's global
-                            //   mirror tags)
+    str kind { "HasTag" };  // kConditionKinds
     str tag;                // HasTag
     str attribute;          // AttributeAtLeast / AttributeAtMost
     f32 value { 0.0f };     // threshold (attributes / affinity) / min count (HasItem)
@@ -35,7 +58,7 @@ struct ConditionForm : data::Form {
 
     REFLECT_BEGIN(ConditionForm, data::Form)
         REFLECT_FIELD(parent)
-        REFLECT_FIELD(kind)
+        REFLECT_FIELD_ENUM(kind, kConditionKinds)
         REFLECT_FIELD(tag)
         REFLECT_FIELD(attribute)
         REFLECT_FIELD(value)

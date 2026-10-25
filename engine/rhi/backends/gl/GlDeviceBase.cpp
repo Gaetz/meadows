@@ -417,10 +417,19 @@ void GlCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
     }
     const auto& srcTex = device.textures.at(src.id);
     const auto& dstTex = device.textures.at(dst.id);
-    glCopyImageSubData(srcTex.name, GL_TEXTURE_2D, 0, 0, 0, 0, dstTex.name,
-                       GL_TEXTURE_2D, 0, 0, 0, 0,
+    // Base level, every layer/slice (the CommandBuffer contract) — the
+    // target must match the texture's own, or the copy is a GL error.
+    const auto targetOf = [](const auto& t) -> GLenum {
+        return t.depth > 1         ? GL_TEXTURE_3D
+               : t.arrayLayers > 1 ? GL_TEXTURE_2D_ARRAY
+                                   : GL_TEXTURE_2D;
+    };
+    const GLsizei slices = static_cast<GLsizei>(
+        srcTex.depth > srcTex.arrayLayers ? srcTex.depth : srcTex.arrayLayers);
+    glCopyImageSubData(srcTex.name, targetOf(srcTex), 0, 0, 0, 0,
+                       dstTex.name, targetOf(dstTex), 0, 0, 0, 0,
                        static_cast<GLsizei>(srcTex.width),
-                       static_cast<GLsizei>(srcTex.height), 1);
+                       static_cast<GLsizei>(srcTex.height), slices);
 }
 
 // --- GlDeviceBase -------------------------------------------------------------
@@ -695,8 +704,7 @@ TimestampHandle GlDeviceBase::insertTimestamp() {
 bool GlDeviceBase::timestampReady(TimestampHandle handle, u64& nanos) {
     const auto it = timerQueries.find(handle.id);
     if (it == timerQueries.end()) {
-        nanos = 0;
-        return true; // unknown handle = nothing to wait for
+        return false; // unknown handle = dead (Device contract), never a 0 ns
     }
     GLuint available = 0;
     glGetQueryObjectuiv(it->second, GL_QUERY_RESULT_AVAILABLE, &available);
@@ -734,21 +742,8 @@ void GlDeviceBase::destroyPipeline(PipelineHandle handle) {
 }
 
 BindGroupHandle GlDeviceBase::createBindGroup(const BindGroupDesc& desc) {
-    for (const BindGroupEntry& entry : desc.entries) {
-        const bool hasBuffer  = entry.buffer.id != 0;
-        const bool hasTexture = entry.texture.id != 0;
-        if (hasBuffer == hasTexture) {
-            LOG_ERROR("createBindGroup: entry {} must reference exactly one "
-                      "of buffer/texture",
-                      entry.binding);
-            return {};
-        }
-        if (entry.sampler.id != 0 && !hasTexture) {
-            LOG_ERROR("createBindGroup: entry {} has a sampler without a "
-                      "texture",
-                      entry.binding);
-            return {};
-        }
+    if (!validateBindGroupDesc(desc)) {
+        return {};
     }
     const u32 id = nextId++;
     bindGroups.emplace(id, desc);

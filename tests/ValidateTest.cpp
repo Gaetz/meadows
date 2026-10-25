@@ -115,3 +115,25 @@ TEST_CASE("validate: dangling refs and orphan patches fail; conflicts don't") {
     CHECK(cleanReport.resolve.conflicts.size() == 1);
     CHECK_FALSE(cleanReport.hasErrors());
 }
+
+TEST_CASE("validate: a resolved value outside its vocabulary is an error") {
+    data::FormTypeRegistry types;
+    data::registerAnimFormTypes(types);
+    data::Plugin base = basePlugin();
+    const Guid transition =
+        *Guid::fromString("aa110000-0000-4000-8000-000000000008");
+    auto record = makeRecord(
+        transition, data::AnimTransitionForm::staticTypeInfo().id, true);
+    record.fields[core::fnv1a("parent")] = reflect::Value { kGraph };
+    record.fields[core::fnv1a("to")] = reflect::Value { kStateOk };
+    // A cooked record can carry what the TOML loader would have refused.
+    record.fields[core::fnv1a("compare")] = reflect::Value { str { "equal" } };
+    base.records.push_back(std::move(record));
+
+    const auto report = data::validatePlugins({ &base }, types);
+    REQUIRE(report.vocabularyErrors.size() == 1);
+    CHECK(report.vocabularyErrors[0].form == transition);
+    CHECK(report.vocabularyErrors[0].fieldName == "compare");
+    CHECK(report.vocabularyErrors[0].value == "equal");
+    CHECK(report.hasErrors());
+}

@@ -2,11 +2,30 @@
 
 #include <memory>
 
+#include <glm/glm.hpp>
+
+#include "engine/core/Clock.hpp"
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/core/Jobs.hpp"
 
-namespace render {
+namespace core {
+
+// A stamp that must hold still before a heavy reaction fires: a tile
+// publish burst bumps the content stamp once per tile, the consumer
+// rescans ONCE, after the burst has been quiet for `seconds`.
+struct QuietStamp {
+    u64 seen { 0 };
+    TimePoint since {};
+    // Feed the current stamp; true once it has not moved for `seconds`.
+    bool settled(u64 stamp, f64 seconds) {
+        if (stamp != seen) {
+            seen = stamp;
+            since = clockNow();
+        }
+        return secondsSince(since) > seconds;
+    }
+};
 
 // The worker-bake mailbox shared by the ring-baked maps (TerrainLightMap,
 // TerrainShadeMap, MistMap, FarTerrain): at most one bake in flight,
@@ -50,6 +69,11 @@ public:
 
     bool busy() const { return inFlight; }
     bool ready() const { return uploaded; } // at least one bake landed
+    // The ring-baked maps' re-bake trigger: nothing landed yet, or the
+    // focus left `reach` of the landed center.
+    bool strayed(const Vec2& center, const Vec2& want, f32 reach) const {
+        return !uploaded || glm::distance(want, center) > reach;
+    }
 
     // Run `bake(baked, stop)` on a worker; the stamped result comes back
     // through drain() on a later frame. `stop` is the JobSystem's shutdown
@@ -87,4 +111,4 @@ private:
     u64 generation { 0 };
 };
 
-} // namespace render
+} // namespace core

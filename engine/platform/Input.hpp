@@ -82,7 +82,10 @@ public:
     void setStickDeadzone(f32 zone) { stickDeadzone = zone; }
     f32 stickDeadzoneValue() const { return stickDeadzone; }
 
-    Vec2 mousePosition() const;             // screen pixels, top-left origin
+    // Window PIXELS, top-left origin — the unit of Window::width/height,
+    // so picking stays exact on HiDPI displays (SDL reports the mouse in
+    // logical points; update() scales by the focused window's density).
+    Vec2 mousePosition() const;
     // Mouse motion since last frame, in pixels. Keeps accumulating in relative
     // mouse mode (Window::setRelativeMouseMode), where mousePosition freezes.
     Vec2 mouseDelta() const;
@@ -110,8 +113,9 @@ private:
     array<bool, static_cast<size_t>(Key::Count)> previous {};
     array<bool, static_cast<size_t>(MouseButton::Count)> mouseCurrent {};
     array<bool, static_cast<size_t>(MouseButton::Count)> mousePrevious {};
-    Vec2 mousePos {};      // screen pixels
+    Vec2 mousePos {};      // window pixels
     Vec2 mouseDeltaPx {};  // pixels moved since last update()
+    f32 pixelDensity { 1.0f }; // pixels per logical point of the focused window
 
     // Gamepad state. The handle is opaque (§3.1: no SDL type
     // in this header); id tracks which device we own for hotplug removal.

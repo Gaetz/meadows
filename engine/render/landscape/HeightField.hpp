@@ -1,7 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
-#include "engine/render/landscape/BakeMailbox.hpp"
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 
 namespace render {
@@ -93,7 +93,7 @@ private:
 
     void publish(const TerrainParams& params);
 
-    array<BakeMailbox<Baked>, kLevelCount> mailboxes;
+    array<core::BakeMailbox<Baked>, kLevelCount> mailboxes;
     array<sptr<const Level>, kLevelCount> levels {};
     array<u64, kLevelCount> seenStamps {};
     sptr<const Snapshot> snap;

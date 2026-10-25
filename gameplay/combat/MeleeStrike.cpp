@@ -25,11 +25,10 @@ void maybeRollInjury(StatBlock& defender, ecs::Entity defenderEntity,
     f32 edged = 0.0f;
     f32 blunt = 0.0f;
     for (const DamageChannel& channel : event.channels) {
-        if (channel.type == DamageType::Slash ||
-            channel.type == DamageType::Pierce) {
-            edged += channel.amount;
-        } else if (channel.type == DamageType::Blunt) {
-            blunt += channel.amount;
+        switch (damageTraits(channel.type).injury) {
+        case InjuryClass::Edged: edged += channel.amount; break;
+        case InjuryClass::Blunt: blunt += channel.amount; break;
+        case InjuryClass::None:  break;
         }
     }
     if (edged <= 0.0f && blunt <= 0.0f) {
@@ -94,10 +93,9 @@ DamageResult resolveStrikeDamage(StatBlock& defender,
         if (blocked) {
             ctx.cues->emit({ "Cue.Block", impact, result.postureDamage });
         } else {
-            const DamageType type = event.channels.empty()
-                                        ? DamageType::Slash
-                                        : event.channels[0].type;
-            ctx.cues->emit({ str { "Cue.Hit." } + damageTypeName(type),
+            // The hit LOOKS like its dominant channel.
+            ctx.cues->emit({ str { "Cue.Hit." } +
+                                 damageTypeName(dominantDamageType(event)),
                              impact, result.healthDamage });
         }
     }
@@ -117,7 +115,7 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
     // defender has no guard up in practice, so the block stage below
     // stays untouched.
     if (geo.targetUnaware) {
-        if (const auto sneaking = ctx.tags.find("State.Sneaking");
+        if (const auto sneaking = ctx.tags.find(tags::Sneaking);
             sneaking && attacker.system.tags.has(*sneaking)) {
             out.sneakAttack = true;
             for (DamageChannel& channel : event.channels) {
@@ -128,7 +126,7 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
     }
     // A defender in its critical window eats the critical execution
     // (both camps go through this one path).
-    if (const auto weakness = ctx.tags.find("State.CriticalWeakness")) {
+    if (const auto weakness = ctx.tags.find(tags::CriticalWeakness)) {
         event.critical = defender.system.tags.has(*weakness);
         out.critical = event.critical;
     }
@@ -136,7 +134,7 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
     // blocked amount runs the guard's POSTURE down instead. A guard
     // raised inside the perfect window parries CLEAN and the ATTACKER's
     // poise pays for the read attack.
-    if (const auto blockTag = ctx.tags.find("State.Blocking");
+    if (const auto blockTag = ctx.tags.find(tags::Blocking);
         blockTag && defender.system.tags.has(*blockTag)) {
         out.guard = applyBlock(
             event, geo.defenderFacing, geo.defenderPos, geo.attackerPos,

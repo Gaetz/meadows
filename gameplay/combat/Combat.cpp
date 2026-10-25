@@ -1,9 +1,11 @@
 #include "gameplay/combat/Combat.hpp"
 
+#include "gameplay/ability/Tags.hpp"
+
 namespace gameplay {
 
 void updateLifeState(AbilitySystem& system, const GameplayTagRegistry& registry) {
-    const auto dead = registry.find("State.Dead");
+    const auto dead = registry.find(tags::Dead);
     if (!dead) {
         return;
     }
@@ -16,8 +18,8 @@ void updateLifeState(AbilitySystem& system, const GameplayTagRegistry& registry)
     // the bleedout resolution lifts the protection and calls back in.
     // With neither tag registered/held, 0 HP is a plain death (bandits
     // still just die).
-    const auto downed = registry.find("State.Downed");
-    const auto shield = registry.find("Follower.Protected");
+    const auto downed = registry.find(tags::Downed);
+    const auto shield = registry.find(tags::FollowerProtected);
     const bool isProtected = shield && system.tags.has(*shield);
     if (atZero && !tagged) {
         if (isProtected && downed) {

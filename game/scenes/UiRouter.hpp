@@ -58,10 +58,12 @@ struct UiRouterContext {
     std::function<void(f32 hours)> wait; // interaction.wait + clock line
     std::function<void()> enterPlayMode;
     std::function<void()> exitPlayMode;
-    // Main-menu game mode: story (the authored world) or sandbox (the
-    // infinite generated one). Applied BEFORE enterPlayMode. Sits
-    // between exitPlayMode and requestQuit in the initializer.
-    std::function<void(bool sandbox)> setSandboxMode;
+    // Main-menu world pick: story (the authored world) or sandbox (the
+    // bounded generated map). The scene's closure owns the whole game
+    // entry (world flipped, menus closed, Play entered) — one body shared
+    // with the boot override. Sits between exitPlayMode and requestQuit
+    // in the initializer.
+    std::function<void(bool sandbox)> beginPlay;
     std::function<void()> requestQuit;
     std::function<void()> openOptions; // Push model + show screen
     // The HUD toast — the transfer guards talk
@@ -80,11 +82,14 @@ struct UiRouterContext {
 // this only routes the choose/leave clicks back into the runner.
 class UiRouter {
 public:
-    // The RmlUi data-event callback target (model, event, args).
+    // The RmlUi data-event callback target (model, event, args). Model and
+    // event names parse through their tables; a (model, event) pair no
+    // route accepts is logged once instead of being dropped silently.
     void handleUiEvent(const UiRouterContext& ctx, const str& model,
                        const str& event, const vector<str>& args);
 
-    // Pause / main / wait / workstation menus share one action vocabulary.
+    // Pause / main / wait / workstation menus share one action vocabulary;
+    // "wait<N>" carries its duration (hours) in the action name.
     void handleMenuAction(const UiRouterContext& ctx, const str& action);
 
     // Item screens: player-only, loot, and the barter screen.
@@ -103,6 +108,26 @@ public:
     void reset();
 
 private:
+    // The routed data-event handlers, one per (model, event) row of the
+    // route table in handleUiEvent.
+    void onInventoryTab(const UiRouterContext& ctx, const vector<str>& args);
+    void onInventorySortCol(const UiRouterContext& ctx,
+                            const vector<str>& args);
+    void onInventoryPick(const UiRouterContext& ctx, const vector<str>& args);
+    void onInventoryEquip(const UiRouterContext& ctx, const vector<str>& args);
+    void onInventoryUse(const UiRouterContext& ctx, const vector<str>& args);
+    void onContainerPickLoot(const UiRouterContext& ctx,
+                             const vector<str>& args);
+    void onContainerTakeAll(const UiRouterContext& ctx,
+                            const vector<str>& args);
+    void onBarterPickBuy(const UiRouterContext& ctx, const vector<str>& args);
+    void onMenuAction(const UiRouterContext& ctx, const vector<str>& args);
+    void onSavesLoadSlot(const UiRouterContext& ctx, const vector<str>& args);
+    void onSavesLoadCancel(const UiRouterContext& ctx,
+                           const vector<str>& args);
+    void onJournalClose(const UiRouterContext& ctx, const vector<str>& args);
+    void onDialogueChoose(const UiRouterContext& ctx, const vector<str>& args);
+
     void barterTrade(const UiRouterContext& ctx, const core::Guid& item,
                      bool playerBuys);
     void toggleEquip(const UiRouterContext& ctx, const core::Guid& id);

@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "data/plugins/RecordStager.hpp"
 #include "engine/core/Log.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
@@ -21,25 +22,6 @@ constexpr u64 kLakeBase = 0x1000;
 constexpr u64 kRiverBase = 0x2000;
 constexpr u64 kRiverPointBase = 0x3000; // off the RIVER guid
 constexpr u64 kSliceBase = 0x4000;
-
-struct Stager {
-    data::EditSession& session;
-    const data::FormDatabase& forms;
-
-    void ensure(const reflect::TypeInfo& type, const core::Guid& guid,
-                const str& editorId) {
-        if (!forms.find(guid) && !session.isCreated(guid)) {
-            session.createForm(type.id, editorId, guid);
-        }
-    }
-
-    template <typename T>
-    void set(const reflect::TypeInfo& type, const core::Guid& guid,
-             const char* field, const T& value) {
-        session.setField(guid, type.findField(field)->id,
-                         reflect::Value { value });
-    }
-};
 
 } // namespace
 
@@ -62,7 +44,7 @@ MapStageResult stageMapRecords(
     f32 mapSize, u32 mapSeed, const vector<MapSliceRecord>& slices,
     const vector<render::terraingen::Lake>& lakes,
     const vector<render::terraingen::River>& rivers, f32 riverThin) {
-    Stager st { session, forms };
+    data::RecordStager st { session, forms };
     MapStageResult out;
     out.worldspace = mapGuid;
 

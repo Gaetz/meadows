@@ -94,79 +94,61 @@ TEST_CASE("spells: every enumerated field is validated by name") {
 }
 
 TEST_CASE("spells: the matrix names what the generic caster implements") {
-    auto spec = *compileSpell(waterSpring());
-    CHECK(spellSupported(spec));
-    spec.trajectory = SpellTrajectory::Projectile;
-    CHECK_FALSE(spellSupported(spec)); // one-shot arcs wait for their brick
-    spec.trajectory = SpellTrajectory::Point;
-    spec.element = SpiritKind::Fire;
-    CHECK(spellSupported(spec)); // the spark
-    spec.trajectory = SpellTrajectory::Stream;
-    CHECK_FALSE(spellSupported(spec)); // the flame jet is held by nature
-    spec.channeled = true;
-    CHECK(spellSupported(spec)); // the flame jet
-    spec.channeled = false;
-    spec.trajectory = SpellTrajectory::Point;
+    const SpellSpec base = *compileSpell(waterSpring());
+    // Every cell is supported by a spec built from it and resolves to
+    // itself; a held cell refuses the one-shot spec unless another
+    // (instant) cell takes it; one-shot arcs have no cell yet.
+    for (const SpellCell& cell : kSpellMatrix) {
+        CHECK(cell.trajectory != SpellTrajectory::Projectile);
+        CHECK(cell.verb != SpellVerb::Transform);
+        SpellSpec spec = base;
+        spec.element = cell.element;
+        spec.verb = cell.verb;
+        spec.trajectory = cell.trajectory;
+        spec.channeled = cell.channel == Channel::Held;
+        CHECK(spellSupported(spec));
+        REQUIRE(spellCell(spec) == &cell);
+        if (cell.channel == Channel::Any) {
+            spec.channeled = true;
+            CHECK(spellCell(spec) == &cell);
+        } else {
+            spec.channeled = !spec.channeled;
+            const SpellCell* other = spellCell(spec);
+            CHECK((other == nullptr || other->channel != cell.channel));
+            CHECK((other == nullptr || other->effect != cell.effect));
+        }
+        spec.trajectory = SpellTrajectory::Projectile;
+        spec.channeled = false;
+        CHECK_FALSE(spellSupported(spec));
+        spec.channeled = true;
+        CHECK_FALSE(spellSupported(spec));
+    }
+    // The hand-picked negatives the matrix encodes.
+    SpellSpec spec = base;
+    CHECK(spellCell(spec)->effect == SpellEffect::WaterSource);
     spec.verb = SpellVerb::Destroy;
-    CHECK(spellSupported(spec)); // put out at the aim
-    spec.trajectory = SpellTrajectory::Self;
-    CHECK_FALSE(spellSupported(spec)); // the ward is held by nature
-    spec.channeled = true;
-    CHECK(spellSupported(spec)); // the fire ward
-    spec.trajectory = SpellTrajectory::Point;
-    spec.verb = SpellVerb::Control;
-    CHECK(spellSupported(spec)); // the firebrand, held
-    spec.channeled = false;
-    CHECK_FALSE(spellSupported(spec));
-    spec.verb = SpellVerb::Understand;
-    CHECK(spellSupported(spec)); // the fire reading
-    spec.verb = SpellVerb::Create;
-    spec.element = SpiritKind::Wind;
-    CHECK(spellSupported(spec)); // a gust placed at the aim
-    spec.trajectory = SpellTrajectory::Stream;
-    CHECK_FALSE(spellSupported(spec)); // the breath is held by nature
-    spec.channeled = true;
-    CHECK(spellSupported(spec));
-    spec.trajectory = SpellTrajectory::Self;
-    spec.verb = SpellVerb::Destroy;
-    CHECK(spellSupported(spec)); // calm the wind
-    spec.verb = SpellVerb::Control;
-    CHECK(spellSupported(spec)); // steer the wind
-    spec.verb = SpellVerb::Understand;
-    CHECK_FALSE(spellSupported(spec));
-    spec.channeled = false;
-    spec.trajectory = SpellTrajectory::Point;
-    spec.verb = SpellVerb::Create;
-    spec.element = SpiritKind::Earth;
-    CHECK(spellSupported(spec)); // the bump
-    spec.trajectory = SpellTrajectory::Line;
-    CHECK(spellSupported(spec)); // the wall
-    spec.trajectory = SpellTrajectory::Point;
-    spec.verb = SpellVerb::Understand;
-    CHECK(spellSupported(spec)); // the ground reading
-    spec.verb = SpellVerb::Control;
-    CHECK_FALSE(spellSupported(spec)); // seizing a rock is channeled
-    spec.channeled = true;
-    CHECK(spellSupported(spec));
-    spec.channeled = false;
-    spec.verb = SpellVerb::Create;
-    spec.verb = SpellVerb::Destroy;
-    CHECK_FALSE(spellSupported(spec)); // the dig is channeled by nature
-    spec.channeled = true;
-    CHECK(spellSupported(spec));
-    spec.channeled = false;
-    spec.verb = SpellVerb::Create;
-    spec.element = SpiritKind::Water;
-    spec.verb = SpellVerb::Destroy;
-    CHECK(spellSupported(spec)); // a draining source
+    CHECK(spellCell(spec)->effect == SpellEffect::WaterSource); // draining
     spec.verb = SpellVerb::Control;
     CHECK_FALSE(spellSupported(spec)); // control is channeled by nature
-    spec.channeled = true;
-    CHECK(spellSupported(spec));
-    spec.verb = SpellVerb::Understand;
-    CHECK(spellSupported(spec)); // the reading
     spec.verb = SpellVerb::Transform;
     CHECK_FALSE(spellSupported(spec));
+    spec.element = SpiritKind::Earth;
+    spec.verb = SpellVerb::Create;
+    CHECK(spellCell(spec)->effect == SpellEffect::EarthBump);
+    spec.channeled = true;
+    CHECK(spellCell(spec)->effect == SpellEffect::EarthBrush);
+    spec.channeled = false;
+    spec.verb = SpellVerb::Destroy;
+    CHECK_FALSE(spellSupported(spec)); // the dig is channeled by nature
+    spec.element = SpiritKind::Fire;
+    spec.trajectory = SpellTrajectory::Stream;
+    spec.verb = SpellVerb::Create;
+    CHECK_FALSE(spellSupported(spec)); // the flame jet is held by nature
+    spec.element = SpiritKind::Wind;
+    spec.trajectory = SpellTrajectory::Self;
+    spec.verb = SpellVerb::Understand;
+    spec.channeled = true;
+    CHECK_FALSE(spellSupported(spec)); // the wind has no reading
 }
 
 TEST_CASE("spells: range converts to the 45-degree launch speed") {

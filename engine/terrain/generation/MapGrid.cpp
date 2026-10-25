@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/MapGrid.hpp"
+#include "engine/core/Hash.hpp"
 
 #include <cmath>
 #include <unordered_map>
@@ -13,11 +14,11 @@ constexpr u32 kSaltBorderStyle = 0xb02de125u;
 
 MapEdgeStyle mapBorderStyle(u32 seed, i32 lineIndex, i32 cellCross,
                             bool vertical) {
-    u64 h = 14695981039346656037ull;
+    u64 h = core::kFnv64Basis;
     const auto mix = [&h](u64 v) {
         for (int byte = 0; byte < 8; ++byte) {
             h ^= (v >> (byte * 8)) & 0xFF;
-            h *= 1099511628211ull;
+            h *= core::kFnv64Prime;
         }
     };
     mix(seed ^ kSaltBorderStyle);

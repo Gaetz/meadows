@@ -197,6 +197,9 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
 // composite, per-tile hydrology, canonical basin resolution, anchor
 // ownership — died with the windowed streamer path, chantier CARTES
 // M1.5b, docs/PAYSAGE.md §1.1.)
+// CONTRACT: the stage order here (stage-1 -> drainage -> slice ground
+// -> map hydrology -> slice water) must match game::bakeMap
+// (game/MapBaker.cpp); a stage added to one side is added to both.
 TileBakeResult bakeSoloTile(const TileBakeParams& params, i32 tx,
                             i32 tz,
                             const std::atomic<bool>* cancel = nullptr);
@@ -291,7 +294,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 121;
+constexpr u32 kTileBakeVersion = 122;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

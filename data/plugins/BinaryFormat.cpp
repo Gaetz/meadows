@@ -1,205 +1,26 @@
 #include "data/plugins/BinaryFormat.hpp"
 
 #include <algorithm>
-#include <bit>
 #include <cstring>
+#include <filesystem>
 
+#include "engine/core/BinaryArchive.hpp"
 #include "engine/core/Log.hpp"
-#include "engine/reflect/Visit.hpp"
+#include "engine/reflect/BinaryValue.hpp"
 
 namespace data {
 
 namespace {
 
 constexpr u8 kMagic[4] = { 'M', 'D', 'W', 'P' };
-constexpr u8 kMaxKind = static_cast<u8>(reflect::FieldKind::F64);
-
-class Writer {
-public:
-    explicit Writer(vector<u8>& out) : out { out } {}
-
-    void u8_(u8 value) { out.push_back(value); }
-    void u32_(u32 value) {
-        for (u32 i = 0; i < 4; ++i) {
-            out.push_back(static_cast<u8>(value >> (i * 8)));
-        }
-    }
-    void u64_(u64 value) {
-        for (u32 i = 0; i < 8; ++i) {
-            out.push_back(static_cast<u8>(value >> (i * 8)));
-        }
-    }
-    void f32_(f32 value) { u32_(std::bit_cast<u32>(value)); }
-    void f64_(f64 value) { u64_(std::bit_cast<u64>(value)); }
-    void str_(const str& value) {
-        u32_(static_cast<u32>(value.size()));
-        out.insert(out.end(), value.begin(), value.end());
-    }
-    void guid(const core::Guid& value) {
-        u64_(value.hi);
-        u64_(value.lo);
-    }
-
-    void value(const reflect::Value& v) {
-        u8_(static_cast<u8>(reflect::valueKind(v)));
-        // Exhaustive: a new FieldKind without a case here fails to compile
-        // (was a silent no-op that corrupted the cooked stream). Quat order
-        // x, y, z, w — explicit, independent of glm's storage layout.
-        reflect::visit(v, reflect::overloaded {
-            [&](bool b)              { u8_(b ? 1 : 0); },
-            [&](i32 x)               { u32_(std::bit_cast<u32>(x)); },
-            [&](u32 x)               { u32_(x); },
-            [&](f32 x)               { f32_(x); },
-            [&](f64 x)               { f64_(x); },
-            [&](const str& s)        { str_(s); },
-            [&](const Vec2& vec)     { f32_(vec.x); f32_(vec.y); },
-            [&](const Vec3& vec)     { f32_(vec.x); f32_(vec.y); f32_(vec.z); },
-            [&](const Vec4& vec)     { f32_(vec.x); f32_(vec.y); f32_(vec.z); f32_(vec.w); },
-            [&](const Quat& q)       { f32_(q.x); f32_(q.y); f32_(q.z); f32_(q.w); },
-            [&](const core::Guid& g) { guid(g); },
-        });
-    }
-
-private:
-    vector<u8>& out;
-};
-
-class Reader {
-public:
-    Reader(std::span<const u8> bytes) : bytes { bytes } {}
-
-    bool u8_(u8& value) {
-        if (remaining() < 1) return false;
-        value = bytes[pos++];
-        return true;
-    }
-    bool u32_(u32& value) {
-        if (remaining() < 4) return false;
-        value = 0;
-        for (u32 i = 0; i < 4; ++i) {
-            value |= static_cast<u32>(bytes[pos++]) << (i * 8);
-        }
-        return true;
-    }
-    bool u64_(u64& value) {
-        if (remaining() < 8) return false;
-        value = 0;
-        for (u32 i = 0; i < 8; ++i) {
-            value |= static_cast<u64>(bytes[pos++]) << (i * 8);
-        }
-        return true;
-    }
-    bool f32_(f32& value) {
-        u32 bits = 0;
-        if (!u32_(bits)) return false;
-        value = std::bit_cast<f32>(bits);
-        return true;
-    }
-    bool f64_(f64& value) {
-        u64 bits = 0;
-        if (!u64_(bits)) return false;
-        value = std::bit_cast<f64>(bits);
-        return true;
-    }
-    bool str_(str& value) {
-        u32 size = 0;
-        if (!u32_(size) || remaining() < size) return false;
-        value.assign(reinterpret_cast<const char*>(bytes.data() + pos), size);
-        pos += size;
-        return true;
-    }
-    bool guid(core::Guid& value) { return u64_(value.hi) && u64_(value.lo); }
-
-    bool value(reflect::Value& out) {
-        using reflect::FieldKind;
-        u8 kindByte = 0;
-        if (!u8_(kindByte) || kindByte > kMaxKind) return false;
-        switch (static_cast<FieldKind>(kindByte)) {
-        case FieldKind::Bool: {
-            u8 v = 0;
-            if (!u8_(v)) return false;
-            out = (v != 0);
-            return true;
-        }
-        case FieldKind::I32: {
-            u32 v = 0;
-            if (!u32_(v)) return false;
-            out = std::bit_cast<i32>(v);
-            return true;
-        }
-        case FieldKind::U32: {
-            u32 v = 0;
-            if (!u32_(v)) return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::F32: {
-            f32 v = 0;
-            if (!f32_(v)) return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::F64: {
-            f64 v = 0;
-            if (!f64_(v)) return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::Str: {
-            str v;
-            if (!str_(v)) return false;
-            out = std::move(v);
-            return true;
-        }
-        case FieldKind::Vec2: {
-            Vec2 v {};
-            if (!f32_(v.x) || !f32_(v.y)) return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::Vec3: {
-            Vec3 v {};
-            if (!f32_(v.x) || !f32_(v.y) || !f32_(v.z)) return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::Vec4: {
-            Vec4 v {};
-            if (!f32_(v.x) || !f32_(v.y) || !f32_(v.z) || !f32_(v.w))
-                return false;
-            out = v;
-            return true;
-        }
-        case FieldKind::Quat: {
-            f32 x, y, z, w;
-            if (!f32_(x) || !f32_(y) || !f32_(z) || !f32_(w)) return false;
-            out = Quat { w, x, y, z }; // glm ctor takes w first
-            return true;
-        }
-        case FieldKind::Guid: {
-            core::Guid v;
-            if (!guid(v)) return false;
-            out = v;
-            return true;
-        }
-        }
-        return false;
-    }
-
-private:
-    size_t remaining() const { return bytes.size() - pos; }
-
-    std::span<const u8> bytes;
-    size_t pos { 0 };
-};
 
 } // namespace
 
 vector<u8> writePluginBinary(const Plugin& plugin) {
     vector<u8> out;
-    Writer w { out };
+    core::ByteWriter w { out };
 
-    out.insert(out.end(), std::begin(kMagic), std::end(kMagic));
+    w.bytes(kMagic, sizeof(kMagic));
     w.u32_(kPluginBinaryVersion);
 
     w.guid(plugin.id);
@@ -233,7 +54,7 @@ vector<u8> writePluginBinary(const Plugin& plugin) {
         w.u32_(static_cast<u32>(sorted.size()));
         for (const auto& [id, value] : sorted) {
             w.u32_(id);
-            w.value(*value);
+            reflect::writeValue(w, *value);
         }
     }
     return out;
@@ -241,11 +62,11 @@ vector<u8> writePluginBinary(const Plugin& plugin) {
 
 std::optional<Plugin> readPluginBinary(std::span<const u8> bytes,
                                        std::string_view sourceName) {
-    Reader r { bytes };
+    core::ByteReader r { bytes };
 
     u8 magic[4] = {};
-    if (!r.u8_(magic[0]) || !r.u8_(magic[1]) || !r.u8_(magic[2]) ||
-        !r.u8_(magic[3]) || std::memcmp(magic, kMagic, 4) != 0) {
+    if (!r.bytes_(magic, sizeof(magic)) ||
+        std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) {
         LOG_ERROR("{}: not a cooked plugin (bad magic)", sourceName);
         return std::nullopt;
     }
@@ -309,7 +130,7 @@ std::optional<Plugin> readPluginBinary(std::span<const u8> bytes,
         for (u32 f = 0; f < fieldCount; ++f) {
             u32 fieldId = 0;
             reflect::Value value;
-            if (!r.u32_(fieldId) || !r.value(value)) {
+            if (!r.u32_(fieldId) || !reflect::readValue(r, value)) {
                 return truncated();
             }
             record.fields.insert_or_assign(fieldId, std::move(value));
@@ -317,6 +138,10 @@ std::optional<Plugin> readPluginBinary(std::span<const u8> bytes,
         plugin.records.push_back(std::move(record));
     }
 
+    // Asset paths resolve against the plugin's directory, like the TOML
+    // loader sets it; `sourceName` is the file path (or a bare label).
+    plugin.baseDir =
+        std::filesystem::path { sourceName }.parent_path().string();
     return plugin;
 }
 

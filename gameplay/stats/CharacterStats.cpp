@@ -57,33 +57,14 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     const f32 m = t.mitigationPerAttribute;
     registry.add({ attr("defense"), core,
                    [m](const StatView& v) { return m * v.get("constitution"); } });
-    registry.add({ attr("armorSlash"), core,
-                   [m](const StatView& v) { return m * v.get("strength"); } });
-    registry.add({ attr("armorBlunt"), core,
-                   [m](const StatView& v) { return m * v.get("constitution"); } });
-    registry.add({ attr("armorPierce"), core,
-                   [m](const StatView& v) { return m * v.get("grace"); } });
-    // Elemental resistances (docs/STATS.md §3): 0.5·attribute, mapped
-    // charisma → fire/sonic/holy, ego → cold/chemical/dark,
-    // insight → lightning/psychic/ether.
-    registry.add({ attr("resistFire"), core,
-                   [m](const StatView& v) { return m * v.get("charisma"); } });
-    registry.add({ attr("resistSonic"), core,
-                   [m](const StatView& v) { return m * v.get("charisma"); } });
-    registry.add({ attr("resistHoly"), core,
-                   [m](const StatView& v) { return m * v.get("charisma"); } });
-    registry.add({ attr("resistCold"), core,
-                   [m](const StatView& v) { return m * v.get("ego"); } });
-    registry.add({ attr("resistChemical"), core,
-                   [m](const StatView& v) { return m * v.get("ego"); } });
-    registry.add({ attr("resistDark"), core,
-                   [m](const StatView& v) { return m * v.get("ego"); } });
-    registry.add({ attr("resistLightning"), core,
-                   [m](const StatView& v) { return m * v.get("insight"); } });
-    registry.add({ attr("resistPsychic"), core,
-                   [m](const StatView& v) { return m * v.get("insight"); } });
-    registry.add({ attr("resistEther"), core,
-                   [m](const StatView& v) { return m * v.get("insight"); } });
+    // Per-type armor / resistance = m · <source attribute> (docs/STATS.md §3),
+    // the pairing read from kDamageTypes. Each formula depends only on a
+    // primary attribute, so their registration order is irrelevant.
+    for (const DamageTypeTraits& row : kDamageTypes) {
+        const char* source = row.sourceAttr;
+        registry.add({ attr(row.mitigationAttr), core,
+                       [m, source](const StatView& v) { return m * v.get(source); } });
+    }
     registry.add({ attr("will"), core, [t](const StatView& v) {
         return t.willBase + v.get("ego") * t.willPerEgo;
     } });

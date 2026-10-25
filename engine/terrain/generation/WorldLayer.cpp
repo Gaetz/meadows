@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Hash.hpp"
 #include "engine/terrain/Noise.hpp"
 
 namespace render::terraingen {
@@ -440,60 +441,9 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
 }
 
 u64 hashParams(const WorldLayerParams& p) {
-    u64 h = 1469598103934665603ull;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= 1099511628211ull;
-        }
-    };
-    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
-    const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
-    u(p.seed);
-    f(p.continentWavelength);
-    u(p.continentCellSupers);
-    f(p.continentSuperSize);
-    f(p.continentLatticeOrigin);
-    f(p.continentRadius);
-    f(p.continentJitter);
-    f(p.continentShapeWavelength);
-    f(p.continentShapeAmp);
-    f(p.continentChance);
-    u(p.borderFromWorld ? 1u : 0u);
-    f(p.borderMassifMin);
-    f(p.coastDetailWavelength);
-    f(p.coastDetailAmp);
-    f(p.continentWarpWavelength);
-    f(p.continentWarpStrength);
-    f(p.seaThreshold);
-    f(p.coastBand);
-    f(p.etageWavelength);
-    f(p.massifWavelength);
-    for (const f32 a : p.etageAltitude) {
-        f(a);
-    }
-    f(p.massifLift);
-    f(p.benchWavelength);
-    f(p.benchAmp);
-    f(p.plateauWavelength);
-    f(p.plateauStep);
-    u(p.plateauLevels);
-    f(p.plateauEdge);
-    f(p.plateauStartGap);
-    f(p.startX);
-    f(p.startZ);
-    f(p.startEtage);
-    f(p.anchorRadius);
-    f(p.anchorFade);
-    f(p.startRadius);
-    f(p.startFade);
-    f(p.climateWavelength);
-    f(p.climateSlowWavelength);
-    f(p.lapsePerKm);
-    f(p.coverWavelength);
-    f(p.coverAmp);
-    return h;
+    core::Fnv64 h;
+    visitParams(p, h);
+    return h.value;
 }
 
 f32 etageIndexFor(const WorldLayerParams& p, f32 base) {

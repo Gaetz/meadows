@@ -3,6 +3,7 @@
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -11,34 +12,28 @@ constexpr const char* kCullShader = "cluster_cull";
 }
 
 void LightClusters::createBuffer(rhi::Device& device) {
-    buffer = device.createBuffer(
+    buffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Storage,
           .size = kClusterX * kClusterY * kClusterZ * kSlots * sizeof(u32) },
-        nullptr);
+        nullptr) };
 }
 
 void LightClusters::createPipeline(rhi::Device& device,
                                    ShaderLibrary& shaders) {
     shaders.loadCompute(kCullShader,
-                        { { "FrameUbo", 0 }, { "LightsUbo", 5 } });
+                        { render::kFrameUbo, render::kLightsUbo });
     refreshPipeline(device, shaders);
 }
 
 void LightClusters::refreshPipeline(rhi::Device& device,
                                     ShaderLibrary& shaders) {
-    if (shaders.generation(kCullShader) == generation) {
-        return;
-    }
-    if (pipeline.id != 0) {
-        device.destroyPipeline(pipeline);
-    }
-    pipeline = device.createComputePipeline({ shaders.get(kCullShader) });
-    generation = shaders.generation(kCullShader);
+    pipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kCullShader) });
+    });
 }
 
 void LightClusters::destroy(rhi::Device& device) {
-    device.destroyPipeline(pipeline);
-    device.destroyBuffer(buffer);
+    (void)device; // Unique handles free through their device
     *this = LightClusters {};
 }
 

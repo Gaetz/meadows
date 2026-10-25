@@ -162,6 +162,9 @@ rhi::ShaderHandle ShaderLibrary::load(const str& name,
                                       vector<rhi::SamplerBinding> samplers,
                                       const str& vertexName) {
     Entry& entry = entries[name];
+    if (alreadyLoaded(name, entry, uniformBlocks, samplers)) {
+        return entry.handle;
+    }
     entry.vertexName = vertexName;
     entry.uniformBlocks = std::move(uniformBlocks);
     entry.samplers = std::move(samplers);
@@ -175,6 +178,9 @@ rhi::ShaderHandle ShaderLibrary::loadCompute(
     const str& name, vector<rhi::UniformBlockBinding> uniformBlocks,
     vector<rhi::SamplerBinding> samplers) {
     Entry& entry = entries[name];
+    if (alreadyLoaded(name, entry, uniformBlocks, samplers)) {
+        return entry.handle;
+    }
     entry.compute = true;
     entry.uniformBlocks = std::move(uniformBlocks);
     entry.samplers = std::move(samplers);
@@ -182,6 +188,40 @@ rhi::ShaderHandle ShaderLibrary::loadCompute(
         LOG_ERROR("ShaderLibrary: initial load of compute '{}' failed", name);
     }
     return entry.handle;
+}
+
+bool ShaderLibrary::alreadyLoaded(
+    const str& name, const Entry& entry,
+    const vector<rhi::UniformBlockBinding>& uniformBlocks,
+    const vector<rhi::SamplerBinding>& samplers) const {
+    if (entry.handle.id == 0) {
+        return false;
+    }
+    // A second load() of a live program used to retire it under every
+    // consumer built on it (hot-reload semantics, no generation bump);
+    // loading is idempotent instead. Divergent bindings are a caller bug.
+    const bool sameBlocks =
+        entry.uniformBlocks.size() == uniformBlocks.size() &&
+        std::equal(entry.uniformBlocks.begin(), entry.uniformBlocks.end(),
+                   uniformBlocks.begin(),
+                   [](const rhi::UniformBlockBinding& a,
+                      const rhi::UniformBlockBinding& b) {
+                       return a.name == b.name && a.binding == b.binding;
+                   });
+    const bool sameSamplers =
+        entry.samplers.size() == samplers.size() &&
+        std::equal(entry.samplers.begin(), entry.samplers.end(),
+                   samplers.begin(),
+                   [](const rhi::SamplerBinding& a,
+                      const rhi::SamplerBinding& b) {
+                       return a.name == b.name && a.unit == b.unit;
+                   });
+    if (!sameBlocks || !sameSamplers) {
+        LOG_WARN("ShaderLibrary: '{}' loaded twice with different bindings; "
+                 "keeping the first program",
+                 name);
+    }
+    return true;
 }
 
 rhi::ShaderHandle ShaderLibrary::get(const str& name) const {

@@ -2,17 +2,11 @@
 
 #include <cmath>
 
+#include "engine/core/ChunkStreamer.hpp"
+
 namespace game {
 
 namespace {
-
-u64 packTile(i32 x, i32 z) {
-    return (static_cast<u64>(static_cast<u32>(x)) << 32) |
-           static_cast<u64>(static_cast<u32>(z));
-}
-
-i32 unpackX(u64 key) { return static_cast<i32>(key >> 32); }
-i32 unpackZ(u64 key) { return static_cast<i32>(key & 0xFFFFFFFFu); }
 
 // The expensive part of a tile: 64x64 samples of the multi-octave terrain
 // function (patches included). Deterministic — a stale in-flight result
@@ -61,11 +55,11 @@ void TerrainCollision::cookSync(i32 tx, i32 tz) {
     const Vec3 origin { static_cast<f32>(tx) * kTileEdge, 0.0f,
                         static_cast<f32>(tz) * kTileEdge };
     const vector<f32> samples = sampleTile(params, origin);
-    addTile(packTile(tx, tz), origin, samples.data());
+    addTile(core::chunkKey(tx, tz), origin, samples.data());
 }
 
 bool TerrainCollision::request(i32 tx, i32 tz, bool& budget) {
-    const u64 key = packTile(tx, tz);
+    const u64 key = core::chunkKey(tx, tz);
     if (tiles.contains(key) || pending.contains(key)) {
         return false;
     }
@@ -122,8 +116,8 @@ void TerrainCollision::update(const Vec3& focus) {
     // 2. The tile underfoot is non-negotiable: with the heading prefetch
     // it is normally resident long before we cross; this synchronous cook
     // only fires on teleports/travel (and covers the async gap).
-    if (!tiles.contains(packTile(centerX, centerZ))) {
-        pending.erase(packTile(centerX, centerZ)); // in-flight? superseded
+    if (!tiles.contains(core::chunkKey(centerX, centerZ))) {
+        pending.erase(core::chunkKey(centerX, centerZ)); // in-flight? superseded
         cookSync(centerX, centerZ);
     }
 
@@ -144,8 +138,8 @@ void TerrainCollision::update(const Vec3& focus) {
     // 4. Evict beyond ring 2 (hysteresis: a tile-border stroll never
     // churns); forget out-of-ring pending requests the same way.
     for (auto it = tiles.begin(); it != tiles.end();) {
-        const i32 dx = unpackX(it->first) - centerX;
-        const i32 dz = unpackZ(it->first) - centerZ;
+        const i32 dx = core::chunkKeyCx(it->first) - centerX;
+        const i32 dz = core::chunkKeyCz(it->first) - centerZ;
         if (dx < -2 || dx > 2 || dz < -2 || dz > 2) {
             physics.removeBody(it->second);
             it = tiles.erase(it);
@@ -154,8 +148,8 @@ void TerrainCollision::update(const Vec3& focus) {
         }
     }
     for (auto it = pending.begin(); it != pending.end();) {
-        const i32 dx = unpackX(*it) - centerX;
-        const i32 dz = unpackZ(*it) - centerZ;
+        const i32 dx = core::chunkKeyCx(*it) - centerX;
+        const i32 dz = core::chunkKeyCz(*it) - centerZ;
         if (dx < -2 || dx > 2 || dz < -2 || dz > 2) {
             it = pending.erase(it);
         } else {

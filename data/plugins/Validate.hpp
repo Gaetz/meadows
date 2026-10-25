@@ -27,13 +27,33 @@ struct DanglingReference {
     core::Guid target; // the guid nothing creates or declares
 };
 
+struct DeprecatedWrite {
+    core::Guid form; // the record writing it
+    str typeName;
+    str fieldName;   // flagged reflect::Deprecated
+};
+
+// A resolved Str/I32 field holding a value outside its reflect::EnumTable
+// (a record that bypassed the loader's check, e.g. cooked binary).
+struct VocabularyError {
+    core::Guid form;
+    str typeName;
+    str fieldName;
+    str value;
+};
+
 struct ValidationReport {
     ResolveReport resolve;
     vector<DanglingReference> danglingRefs;
+    vector<VocabularyError> vocabularyErrors;
+    // Warnings, not errors: the values still apply, the authoring should
+    // move to the field's replacement.
+    vector<DeprecatedWrite> deprecatedWrites;
 
     bool hasErrors() const {
         return resolve.orphanPatches > 0 ||
-               resolve.dependencyViolations > 0 || !danglingRefs.empty();
+               resolve.dependencyViolations > 0 || !danglingRefs.empty() ||
+               !vocabularyErrors.empty();
     }
 };
 

@@ -792,7 +792,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         while (strideAccumulator >= stride) {
             strideAccumulator -= stride;
             gameplay::Event step;
-            step.kind = gameplay::eventKind("AnimEvent");
+            step.kind = gameplay::eventKind(gameplay::events::AnimEvent);
             step.source = ctx.playerEntity;
             step.name = "Footstep";
             ctx.eventBus->dispatch(step);

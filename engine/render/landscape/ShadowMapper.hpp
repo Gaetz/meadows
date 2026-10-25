@@ -3,6 +3,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/Camera3D.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class Device;
@@ -66,12 +67,15 @@ public:
 
 private:
     u32 resolution_ { kDefaultResolution };
-    rhi::TextureHandle shadowMap {};
-    rhi::SamplerHandle compareSampler {};
-    array<rhi::FramebufferHandle, kCascadeCount> framebuffers_ {};
-    array<rhi::BufferHandle, kCascadeCount> cascadeUbos {};
-    array<rhi::BindGroupHandle, kCascadeCount> casterGroups {};
-    rhi::BindGroupHandle receiverGroup {};
+    // Owning handles: members destroy in reverse declaration order, so the
+    // framebuffers and bind groups go before the texture/sampler/UBOs
+    // they reference.
+    rhi::UniqueTexture shadowMap;
+    rhi::UniqueSampler compareSampler;
+    array<rhi::UniqueBuffer, kCascadeCount> cascadeUbos;
+    array<rhi::UniqueFramebuffer, kCascadeCount> framebuffers_;
+    array<rhi::UniqueBindGroup, kCascadeCount> casterGroups;
+    rhi::UniqueBindGroup receiverGroup;
 };
 
 } // namespace render

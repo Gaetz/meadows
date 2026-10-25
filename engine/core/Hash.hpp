@@ -1,10 +1,55 @@
 #pragma once
 
+#include <cstddef>
 #include <string_view>
+#include <type_traits>
 
 #include "engine/core/Defines.hpp"
 
 namespace core {
+
+// FNV-1a 64-bit over raw bytes: the stable key family of the terrain
+// bake caches (parameter hashes, map keys) and of the Vulkan pipeline
+// cache. ONE basis for every site — the 20-digit constant had been
+// mistyped once and copied nine times, which is why the loop lives here.
+constexpr u64 kFnv64Basis = 14695981039346656037ull;
+constexpr u64 kFnv64Prime = 1099511628211ull;
+
+struct Fnv64 {
+    u64 value { kFnv64Basis };
+
+    void bytes(const void* data, size_t size) {
+        const auto* p = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) {
+            value ^= p[i];
+            value *= kFnv64Prime;
+        }
+    }
+    // Scalars by their bytes, a bool as one byte, a string by content:
+    // the overload set a parameter walker (visitParams) feeds.
+    template <class T>
+        requires((std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) ||
+                 std::is_enum_v<T>)
+    void mix(T v) {
+        bytes(&v, sizeof(v));
+    }
+    void mix(bool v) {
+        const u8 b = v ? 1 : 0;
+        bytes(&b, 1);
+    }
+    void mix(std::string_view s) { bytes(s.data(), s.size()); }
+};
+
+// FNV-1a 64-bit of a text: the 64-bit sibling of fnv1a for cache keys
+// and file names that must not collide across a whole world.
+constexpr u64 fnv1a64(std::string_view text) {
+    u64 hash = kFnv64Basis;
+    for (const char c : text) {
+        hash ^= static_cast<u8>(c);
+        hash *= kFnv64Prime;
+    }
+    return hash;
+}
 
 // FNV-1a. Used for stable type and field ids in the reflection system:
 // the hash of a name is what plugins and saves store, so renaming a

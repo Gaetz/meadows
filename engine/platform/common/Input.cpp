@@ -171,14 +171,25 @@ void Input::update() {
             state[SDL_SCANCODE_LALT] || state[SDL_SCANCODE_RALT];
     }
     // SDL3: position is filled as floats; the return value is the button bitmask.
+    // SDL reports the mouse in the window's LOGICAL points while
+    // Window::width/height are pixels (SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED):
+    // scale by the focused window's density so both share one unit — 1 on
+    // a 100 % desktop, 2 on a Retina display. The last density holds while
+    // the pointer is outside every window.
+    if (SDL_Window* focus = SDL_GetMouseFocus()) {
+        const float density = SDL_GetWindowPixelDensity(focus);
+        if (density > 0.0f) {
+            pixelDensity = density;
+        }
+    }
     float mx = 0.0f, my = 0.0f;
     const SDL_MouseButtonFlags mask = SDL_GetMouseState(&mx, &my);
-    mousePos = { mx, my };
+    mousePos = Vec2 { mx, my } * pixelDensity;
     // Accumulated motion since the previous call — works in relative mouse
     // mode too, where the absolute position stops moving.
     float dx = 0.0f, dy = 0.0f;
     SDL_GetRelativeMouseState(&dx, &dy);
-    mouseDeltaPx = { dx, dy };
+    mouseDeltaPx = Vec2 { dx, dy } * pixelDensity;
     for (size_t i = 0; i < mouseCurrent.size(); ++i) {
         mouseCurrent[i] =
             (mask & SDL_BUTTON_MASK(sdlButtonFor(static_cast<MouseButton>(i)))) != 0;

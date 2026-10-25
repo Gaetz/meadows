@@ -113,10 +113,13 @@ bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     const Vec3 before = transform.position;
     transform.position += dir * glm::min(walkSpeed * dt, distance);
     resolveWallOverlap(ctx, transform.position);
-    if (!groundNpc(ctx, transform.position)) {
-        transform.position = before; // ledge: hold the edge, keep facing
-    }
+    if (groundNpc(ctx, transform.position)) {
         transform.position.y += npc.airHeight; // thrown: over the ground
+    } else {
+        // Ledge: hold the edge, keep facing. `before` already carries the
+        // air height — adding it again lifted a thrown NPC every frame.
+        transform.position = before;
+    }
     smoothYawToward(npc.yaw, std::atan2(dir.x, dir.z), 8.0f, dt);
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
@@ -134,10 +137,11 @@ void moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
     const Vec3 before = transform.position;
     transform.position += direction * walkSpeed * dt;
     resolveWallOverlap(ctx, transform.position);
-    if (!groundNpc(ctx, transform.position)) {
-        transform.position = before; // ledge: hold the edge, keep facing
-    }
+    if (groundNpc(ctx, transform.position)) {
         transform.position.y += npc.airHeight; // thrown: over the ground
+    } else {
+        transform.position = before; // ledge: hold the edge (air height kept)
+    }
     npc.yaw = faceYaw;
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));

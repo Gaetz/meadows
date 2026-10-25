@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 
 namespace render {
 
@@ -50,7 +51,6 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
     const Vec3 u = glm::normalize(glm::cross(axis, helper));
     const Vec3 v = glm::cross(axis, u);
 
-    constexpr f32 kTau = 6.2831853f;
     // Per-vertex angles, shared by both rings. Jitter stays under half a
     // step so the sequence keeps its order (no folded quads).
     const auto angleAt = [&](u32 i) {
@@ -62,7 +62,7 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
                       0.5f) *
                      0.9f * angleJitter;
         }
-        return kTau * (static_cast<f32>(i) + offset) /
+        return core::kTau * (static_cast<f32>(i) + offset) /
                static_cast<f32>(sides);
     };
     for (u32 i = 0; i < sides; ++i) {
@@ -86,7 +86,6 @@ void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
     if (points.size() < 2 || sides < 3) {
         return;
     }
-    constexpr f32 kTau = 6.2831853f;
     // Per-vertex angles, shared by every ring (k == sides wraps onto
     // vertex 0 a full turn later, closing the ring exactly).
     const auto angleAt = [&](u32 k) {
@@ -99,7 +98,7 @@ void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
                  0.5f) *
                 0.9f * angleJitter;
         }
-        return kTau * (static_cast<f32>(k) + offset) /
+        return core::kTau * (static_cast<f32>(k) + offset) /
                static_cast<f32>(sides);
     };
     const auto safeNormalize = [](const Vec3& vec, const Vec3& fallback) {

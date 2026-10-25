@@ -4,6 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class Device;
@@ -78,9 +79,11 @@ public:
 private:
     void rebuildGroup(rhi::Device& device);
 
-    rhi::TextureHandle texture {};
-    rhi::SamplerHandle sampler {};
-    rhi::BindGroupHandle group {};
+    // Owning handles; the group is declared last so it releases before
+    // the texture/sampler it references.
+    rhi::UniqueTexture texture;
+    rhi::UniqueSampler sampler;
+    rhi::UniqueBindGroup group;
     Vec2 origin {};
     f32 texel { 0.0f };
     u32 cells { 0 };

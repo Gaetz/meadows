@@ -139,8 +139,58 @@ struct WorldSample {
 
 WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z);
 
-// FNV-1a over EVERY field (the memo keys: a pupitre edit must never
-// serve a stale sample). Add a field = add a line here.
+// EVERY field, in one walk, for the consumers that must agree on what
+// "the parameters" are: the FNV cache key below and the zone memo's
+// fingerprint (ZonePlan.cpp) — a pupitre edit must never serve a stale
+// sample. Add a field = add a line HERE, nowhere else. `v.mix(scalar)`.
+template <class Visitor>
+void visitParams(const WorldLayerParams& p, Visitor& v) {
+    v.mix(p.seed);
+    v.mix(p.continentWavelength);
+    v.mix(p.continentCellSupers);
+    v.mix(p.continentSuperSize);
+    v.mix(p.continentLatticeOrigin);
+    v.mix(p.continentRadius);
+    v.mix(p.continentJitter);
+    v.mix(p.continentShapeWavelength);
+    v.mix(p.continentShapeAmp);
+    v.mix(p.continentChance);
+    v.mix(p.borderFromWorld);
+    v.mix(p.borderMassifMin);
+    v.mix(p.coastDetailWavelength);
+    v.mix(p.coastDetailAmp);
+    v.mix(p.continentWarpWavelength);
+    v.mix(p.continentWarpStrength);
+    v.mix(p.seaThreshold);
+    v.mix(p.coastBand);
+    v.mix(p.etageWavelength);
+    v.mix(p.massifWavelength);
+    for (const f32 a : p.etageAltitude) {
+        v.mix(a);
+    }
+    v.mix(p.massifLift);
+    v.mix(p.benchWavelength);
+    v.mix(p.benchAmp);
+    v.mix(p.plateauWavelength);
+    v.mix(p.plateauStep);
+    v.mix(p.plateauLevels);
+    v.mix(p.plateauEdge);
+    v.mix(p.plateauStartGap);
+    v.mix(p.startX);
+    v.mix(p.startZ);
+    v.mix(p.startEtage);
+    v.mix(p.anchorRadius);
+    v.mix(p.anchorFade);
+    v.mix(p.startRadius);
+    v.mix(p.startFade);
+    v.mix(p.climateWavelength);
+    v.mix(p.climateSlowWavelength);
+    v.mix(p.lapsePerKm);
+    v.mix(p.coverWavelength);
+    v.mix(p.coverAmp);
+}
+
+// FNV-1a over every field (visitParams): the cache keys.
 u64 hashParams(const WorldLayerParams& p);
 
 // Continuous province index 0..3 for a floor altitude (the inverse of

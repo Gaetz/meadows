@@ -1,5 +1,6 @@
 #include "gameplay/inventory/Inventory.hpp"
 
+#include "engine/core/Assert.hpp"
 #include "engine/ecs/World.hpp"
 
 namespace gameplay {
@@ -10,6 +11,10 @@ void registerInventoryComponents(ecs::World& world) {
 }
 
 void addItem(Inventory& inventory, const core::Guid& item, i32 count) {
+    ENGINE_ASSERT_MSG(count > 0, "addItem: count {} must be positive", count);
+    if (count <= 0) {
+        return;
+    }
     for (ItemStack& stack : inventory.items) {
         if (stack.item == item) {
             stack.count += count;
@@ -20,6 +25,11 @@ void addItem(Inventory& inventory, const core::Guid& item, i32 count) {
 }
 
 bool removeItem(Inventory& inventory, const core::Guid& item, i32 count) {
+    ENGINE_ASSERT_MSG(count > 0, "removeItem: count {} must be positive",
+                      count);
+    if (count <= 0) {
+        return false;
+    }
     for (auto it = inventory.items.begin(); it != inventory.items.end(); ++it) {
         if (it->item == item) {
             if (it->count < count) {

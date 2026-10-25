@@ -12,6 +12,7 @@
 #include "gameplay/ability/DerivedStats.hpp" // StatModifiers, attr
 #include "gameplay/ability/GameplayAbility.hpp" // grantAbility
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect (§2.9)
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/actors/ActorState.hpp"    // FollowerState
 #include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm,
                                              //   classAttributesAt
@@ -125,7 +126,7 @@ BleedoutResult resolveBleedout(StatBlock& target, Injuries& injuries,
         // write point do the killing (health is already 0; updateLifeState
         // grants State.Dead and clears State.Downed — the normal OnDeath
         // flow fires on the game side's dead edge).
-        if (const auto shield = tags.find("Follower.Protected")) {
+        if (const auto shield = tags.find(tags::FollowerProtected)) {
             if (target.system.tags.has(*shield)) {
                 target.system.tags.remove(*shield, tags);
             }

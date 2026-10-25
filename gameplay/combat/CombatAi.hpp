@@ -1,9 +1,11 @@
 #pragma once
 
+#include <iterator>
 #include <optional>
 #include <string_view>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 
 // The melee combat move decision, sim-pure. ONE flat
 // function turns the situation into ONE move (real states are
@@ -19,6 +21,33 @@ enum class CombatMove : u8 {
     Strafe,   // in the preferred band, attack cooling: orbit the target
     Flee      // too hurt for this fight: run
 };
+inline constexpr std::string_view kCombatMoveNames[] = { "approach", "strike",
+                                                         "strafe", "flee" };
+inline constexpr reflect::EnumTable kCombatMoves { kCombatMoveNames };
+static_assert(std::size(kCombatMoveNames) ==
+              static_cast<size_t>(CombatMove::Flee) + 1);
+
+// A follower class's combat style (FollowerClassForm.combatStyle): how
+// the actor uses his special power and holds his band in combat. The
+// ranged behaviour itself comes from the weapon (projectileSpeed > 0),
+// so Archer is a vocabulary entry with no brain branch of its own.
+// kCombatStyles names them in this order; "" = Default.
+enum class CombatStyle : u8 {
+    Default, // self-cast the power when engaging; the melee brain
+    Melee,   // same brain as Default, named for the class vocabulary
+    Healer,  // the power goes to the lowest ally; holds a support band
+    Archer,  // vocabulary only — the bow decides the behaviour
+    Count
+};
+inline constexpr std::string_view kCombatStyleNames[] = { "default", "melee",
+                                                          "healer", "archer" };
+inline constexpr reflect::EnumTable kCombatStyles { kCombatStyleNames, true };
+static_assert(std::size(kCombatStyleNames) ==
+              static_cast<size_t>(CombatStyle::Count));
+
+// "" and any name outside kCombatStyles read as Default (the loader
+// already rejects unknown values; this covers hand-built forms).
+CombatStyle parseCombatStyle(std::string_view name);
 
 struct CombatSituation {
     f32 distance { 0.0f };       // to the target (m)

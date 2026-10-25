@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "engine/core/Jobs.hpp"
-#include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/core/ChunkStreamer.hpp"
 
 // The shared chunk-streaming ring — extracted from
 // Terrain/Grass/Vegetation precisely so its mechanics get locked headless:
@@ -15,20 +15,20 @@ struct TestChunk {
     int value { 0 };
 };
 
-using Streamer = render::ChunkStreamer<TestChunk, int>;
+using Streamer = core::ChunkStreamer<TestChunk, int>;
 
 } // namespace
 
 TEST_CASE("chunk streamer: key packing round-trips negative coords") {
-    const u64 key = render::chunkKey(-7, 13);
-    CHECK(render::chunkKeyCx(key) == -7);
-    CHECK(render::chunkKeyCz(key) == 13);
-    const u64 negBoth = render::chunkKey(-1, -1);
-    CHECK(render::chunkKeyCx(negBoth) == -1);
-    CHECK(render::chunkKeyCz(negBoth) == -1);
-    CHECK(render::chunkCoordOf(-0.5f, 64.0f) == -1);
-    CHECK(render::chunkCoordOf(63.9f, 64.0f) == 0);
-    CHECK(render::chunkCoordOf(64.0f, 64.0f) == 1);
+    const u64 key = core::chunkKey(-7, 13);
+    CHECK(core::chunkKeyCx(key) == -7);
+    CHECK(core::chunkKeyCz(key) == 13);
+    const u64 negBoth = core::chunkKey(-1, -1);
+    CHECK(core::chunkKeyCx(negBoth) == -1);
+    CHECK(core::chunkKeyCz(negBoth) == -1);
+    CHECK(core::chunkCoordOf(-0.5f, 64.0f) == -1);
+    CHECK(core::chunkCoordOf(63.9f, 64.0f) == 0);
+    CHECK(core::chunkCoordOf(64.0f, 64.0f) == 1);
 }
 
 TEST_CASE("chunk streamer: requests go out nearest-first, budgeted") {
@@ -87,7 +87,7 @@ TEST_CASE("chunk streamer: a rejected result frees its upload slot") {
     // the budget of 1 (evicted-while-in-flight results are free).
     u32 accepted = 0;
     streamer.pump(1, 0.0, [&](u64 key, Streamer::Built&) {
-        if (render::chunkKeyCx(key) != 2) {
+        if (core::chunkKeyCx(key) != 2) {
             return false;
         }
         ++accepted;
@@ -119,10 +119,10 @@ TEST_CASE("chunk streamer: eviction honors the hysteresis radius") {
     core::JobSystem jobs { 1 };
     streamer.create(jobs, "test");
 
-    streamer.chunks.emplace(render::chunkKey(0, 0), TestChunk { true, 1 });
-    streamer.chunks.emplace(render::chunkKey(2, 0), TestChunk { true, 2 });
-    streamer.chunks.emplace(render::chunkKey(0, 3), TestChunk { true, 3 });
-    streamer.chunks.emplace(render::chunkKey(-4, 1), TestChunk { true, 4 });
+    streamer.chunks.emplace(core::chunkKey(0, 0), TestChunk { true, 1 });
+    streamer.chunks.emplace(core::chunkKey(2, 0), TestChunk { true, 2 });
+    streamer.chunks.emplace(core::chunkKey(0, 3), TestChunk { true, 3 });
+    streamer.chunks.emplace(core::chunkKey(-4, 1), TestChunk { true, 4 });
 
     vector<int> evicted;
     streamer.evictFar(0, 0, /*evictRadius=*/2, [&](TestChunk& chunk) {
@@ -130,8 +130,8 @@ TEST_CASE("chunk streamer: eviction honors the hysteresis radius") {
     });
 
     // Chebyshev distance: (0,0)=0 and (2,0)=2 stay; (0,3)=3 and (-4,1)=4 go.
-    CHECK(streamer.chunks.contains(render::chunkKey(0, 0)));
-    CHECK(streamer.chunks.contains(render::chunkKey(2, 0)));
+    CHECK(streamer.chunks.contains(core::chunkKey(0, 0)));
+    CHECK(streamer.chunks.contains(core::chunkKey(2, 0)));
     CHECK(streamer.chunks.size() == 2);
     REQUIRE(evicted.size() == 2);
     CHECK((evicted[0] + evicted[1]) == 7); // values 3 and 4, any order
@@ -145,10 +145,10 @@ TEST_CASE("chunk streamer: round trip request -> worker -> pump") {
         streamer.requestMissing(
             0, 0, 1, 99,
             [&](i32 cx, i32 cz, i32, i32) {
-                return !streamer.chunks.contains(render::chunkKey(cx, cz));
+                return !streamer.chunks.contains(core::chunkKey(cx, cz));
             },
             [&](i32 cx, i32 cz, i32, i32) {
-                streamer.chunks.emplace(render::chunkKey(cx, cz),
+                streamer.chunks.emplace(core::chunkKey(cx, cz),
                                         TestChunk {});
                 streamer.enqueueBuild(cx, cz, [cx, cz] { return cx + cz; });
             });
@@ -166,6 +166,6 @@ TEST_CASE("chunk streamer: round trip request -> worker -> pump") {
     }) > 0) {
     }
     CHECK(accepted == 9);
-    CHECK(streamer.chunks.at(render::chunkKey(1, -1)).value == 0);
-    CHECK(streamer.chunks.at(render::chunkKey(1, 1)).value == 2);
+    CHECK(streamer.chunks.at(core::chunkKey(1, -1)).value == 0);
+    CHECK(streamer.chunks.at(core::chunkKey(1, 1)).value == 2);
 }

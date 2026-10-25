@@ -1,4 +1,7 @@
-#include "engine/rhi/backends/vulkan/VulkanDevice.hpp"
+// The single TU that emits the VMA implementation (the header only
+// declares it for the other Vulkan TUs).
+#define VMA_IMPLEMENTATION
+#include "engine/rhi/backends/vulkan/VulkanInternal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,24 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
-#include <unordered_map>
 
-#include <glm/gtc/packing.hpp> // f32 -> f16 for R16F initial-data uploads
-
-// Portability-subset structs (MoltenVK feature opt-in) live in vulkan_beta.h.
-#define VK_ENABLE_BETA_EXTENSIONS
-#include <vulkan/vulkan.h>
-
-#include <shaderc/shaderc.h>
-#include <spirv_reflect.h>
-
-// VMA is header-only; this is the single TU that emits its implementation.
-#define VMA_IMPLEMENTATION
-#define VMA_STATIC_VULKAN_FUNCTIONS 1
-#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
-#include <vk_mem_alloc.h>
-
-#include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/VulkanSurface.hpp"
 #include "engine/platform/Window.hpp"
@@ -31,25 +17,6 @@
 namespace rhi {
 
 namespace {
-
-// Frames recorded ahead of the GPU. Per-frame resources (command buffer,
-// acquire semaphore, fence) are duplicated this many times so the CPU never
-// waits on the frame it is recording. The Phase-5 snapshot seam already passes
-// render data by value, so deeper pipelining stays a scheduling choice.
-constexpr u32 kFramesInFlight = 2;
-
-// Timestamp slots reserved per frame-in-flight. The GPU-PERF HUD samples a
-// handful of scopes per frame; overflowing warns rather than corrupting.
-constexpr u32 kTimestampsPerFrame = 64;
-
-bool vkOk(VkResult result, const char* what) {
-    if (result != VK_SUCCESS) {
-        LOG_ERROR("Vulkan: {} failed (VkResult {})", what,
-                  static_cast<i32>(result));
-        return false;
-    }
-    return true;
-}
 
 bool hasExtension(const vector<VkExtensionProperties>& available,
                   const char* name) {
@@ -89,663 +56,6 @@ vector<VkExtensionProperties> deviceExtensionProperties(VkPhysicalDevice gpu) {
                        });
 }
 
-// --- Format / state conversion ----------------------------------------------
-
-VkFormat toVkFormat(TextureFormat format) {
-    switch (format) {
-    case TextureFormat::RGBA8:     return VK_FORMAT_R8G8B8A8_UNORM;
-    case TextureFormat::SRGBA8:    return VK_FORMAT_R8G8B8A8_SRGB;
-    case TextureFormat::RGBA16F:   return VK_FORMAT_R16G16B16A16_SFLOAT;
-    case TextureFormat::R16F:      return VK_FORMAT_R16_SFLOAT;
-    case TextureFormat::R32F:      return VK_FORMAT_R32_SFLOAT;
-    case TextureFormat::Depth32F:  return VK_FORMAT_D32_SFLOAT;
-    case TextureFormat::BC7_SRGB:  return VK_FORMAT_BC7_SRGB_BLOCK;
-    case TextureFormat::BC7_UNORM: return VK_FORMAT_BC7_UNORM_BLOCK;
-    case TextureFormat::BC5_UNORM: return VK_FORMAT_BC5_UNORM_BLOCK;
-    case TextureFormat::R16_UNORM: return VK_FORMAT_R16_UNORM;
-    }
-    return VK_FORMAT_R8G8B8A8_UNORM;
-}
-
-bool isDepthFormat(TextureFormat format) {
-    return format == TextureFormat::Depth32F;
-}
-
-// Bytes per texel, for staging uploads and readbacks. Block-compressed
-// formats are never sized per texel — their uploads go through
-// rhi::mipLevelBytes on the pixelsIncludeMips path.
-u32 bytesPerTexel(TextureFormat format) {
-    switch (format) {
-    case TextureFormat::RGBA8:
-    case TextureFormat::SRGBA8:    return 4;
-    case TextureFormat::RGBA16F:   return 8;
-    case TextureFormat::R16F:      return 2;
-    case TextureFormat::R32F:
-    case TextureFormat::Depth32F:  return 4;
-    case TextureFormat::R16_UNORM: return 2;
-    case TextureFormat::BC7_SRGB:
-    case TextureFormat::BC7_UNORM:
-    case TextureFormat::BC5_UNORM: return 0; // block formats: mipLevelBytes
-    }
-    return 4;
-}
-
-VkFilter toVkFilter(FilterMode filter) {
-    return filter == FilterMode::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-}
-
-VkSamplerAddressMode toVkAddressMode(AddressMode mode) {
-    return mode == AddressMode::Repeat ? VK_SAMPLER_ADDRESS_MODE_REPEAT
-                                       : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-}
-
-VkCompareOp toVkCompareOp(CompareFunc compare) {
-    switch (compare) {
-    case CompareFunc::Never:        return VK_COMPARE_OP_NEVER;
-    case CompareFunc::Less:         return VK_COMPARE_OP_LESS;
-    case CompareFunc::Equal:        return VK_COMPARE_OP_EQUAL;
-    case CompareFunc::LessEqual:    return VK_COMPARE_OP_LESS_OR_EQUAL;
-    case CompareFunc::Greater:      return VK_COMPARE_OP_GREATER;
-    case CompareFunc::NotEqual:     return VK_COMPARE_OP_NOT_EQUAL;
-    case CompareFunc::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-    case CompareFunc::Always:       return VK_COMPARE_OP_ALWAYS;
-    }
-    return VK_COMPARE_OP_NEVER;
-}
-
-VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
-    switch (usage) {
-    case BufferUsage::Vertex:  return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    case BufferUsage::Index:   return VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    case BufferUsage::Uniform: return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    case BufferUsage::Storage: return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    case BufferUsage::Indirect:
-        // SSBO-writable by design: the cull dispatch fills the commands.
-        return VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    }
-    return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-}
-
-// Access/stage masks for the layout transitions this backend performs. Kept
-// deliberately narrow: only the transitions the upload/mipmap/copy paths use.
-void layoutMasks(VkImageLayout layout, VkAccessFlags& access,
-                 VkPipelineStageFlags& stage) {
-    switch (layout) {
-    case VK_IMAGE_LAYOUT_UNDEFINED:
-        access = 0;
-        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        access = VK_ACCESS_TRANSFER_WRITE_BIT;
-        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        access = VK_ACCESS_TRANSFER_READ_BIT;
-        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        access = VK_ACCESS_SHADER_READ_BIT;
-        stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        // READ too: a loadOp LOAD reads the attachment (the load raced
-        // the transition when only WRITE was in scope).
-        access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-        stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        // LATE too: depth writes/stores happen in BOTH fragment-test
-        // stages — EARLY alone let the end-of-pass transition race the
-        // store (WAW on the CSM depth). READ for LOAD.
-        access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-        stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_GENERAL:
-        access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        break;
-    default:
-        access = 0;
-        stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        break;
-    }
-}
-
-// A barrier's stage masks must be supported by the queue family the
-// command buffer belongs to: the upload queue (transfer-only) and the
-// async-compute queue (no graphics) reject the shader stages layoutMasks
-// derives. Stages the family lacks are dropped; an empty mask becomes
-// ALL_COMMANDS (always legal, strictly conservative). Recording them
-// anyway was undefined behaviour — the validation layer flagged it on
-// every upload, and the driver's intermittent crash lived there.
-constexpr VkQueueFlags kAllQueueCaps =
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-
-VkPipelineStageFlags clampStagesToQueue(VkPipelineStageFlags stages,
-                                        VkQueueFlags caps) {
-    constexpr VkPipelineStageFlags kGraphicsOnly =
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-        VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
-        VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
-        VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT |
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-        VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
-    VkPipelineStageFlags out = stages;
-    if ((caps & VK_QUEUE_GRAPHICS_BIT) == 0) {
-        out &= ~kGraphicsOnly;
-        // Indirect reads are compute-legal too; the mask above dropped
-        // them with the graphics set.
-        if ((caps & VK_QUEUE_COMPUTE_BIT) != 0 &&
-            (stages & VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) != 0) {
-            out |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
-        }
-    }
-    if ((caps & VK_QUEUE_COMPUTE_BIT) == 0) {
-        out &= ~static_cast<VkPipelineStageFlags>(
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-    }
-    return out == 0 ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : out;
-}
-
-void transitionLayout(VkCommandBuffer cb, VkImage image,
-                      VkImageAspectFlags aspect, u32 baseMip, u32 mipCount,
-                      u32 layerCount, VkImageLayout oldLayout,
-                      VkImageLayout newLayout,
-                      VkQueueFlags queueCaps = kAllQueueCaps) {
-    VkImageMemoryBarrier barrier {};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = aspect;
-    barrier.subresourceRange.baseMipLevel = baseMip;
-    barrier.subresourceRange.levelCount = mipCount;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = layerCount;
-
-    VkPipelineStageFlags srcStage = 0;
-    VkPipelineStageFlags dstStage = 0;
-    layoutMasks(oldLayout, barrier.srcAccessMask, srcStage);
-    layoutMasks(newLayout, barrier.dstAccessMask, dstStage);
-    // A stage the family lacks takes its access bits with it (a shader
-    // read on a transfer queue is meaningless): the cross-queue
-    // visibility rides the timeline semaphore, not this barrier.
-    constexpr VkAccessFlags kAnyStageAccess =
-        VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
-        VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT |
-        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-    const VkPipelineStageFlags srcClamped = clampStagesToQueue(srcStage, queueCaps);
-    const VkPipelineStageFlags dstClamped = clampStagesToQueue(dstStage, queueCaps);
-    if (srcClamped != srcStage) {
-        barrier.srcAccessMask &= kAnyStageAccess;
-    }
-    if (dstClamped != dstStage) {
-        barrier.dstAccessMask &= kAnyStageAccess;
-    }
-    srcStage = srcClamped;
-    dstStage = dstClamped;
-
-    vkCmdPipelineBarrier(cb, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1,
-                         &barrier);
-}
-
-// --- Resource records --------------------------------------------------------
-
-struct VulkanBuffer {
-    VkBuffer buffer { VK_NULL_HANDLE };
-    VmaAllocation allocation { nullptr };
-    u64 size { 0 };
-    // Scopes the in-frame update barriers (recordHostUpdate) to the
-    // stages that can actually read this buffer.
-    BufferUsage usage { BufferUsage::Vertex };
-    // Persistently mapped when the buffer lives in host-visible memory
-    // (BufferDesc::dynamic or ::readback); nullptr means device-local, which
-    // is written/read through a staging copy instead.
-    void* mapped { nullptr };
-};
-
-struct VulkanTexture {
-    VkImage image { VK_NULL_HANDLE };
-    VmaAllocation allocation { nullptr };
-    VkImageView view { VK_NULL_HANDLE };
-    VkFormat format { VK_FORMAT_UNDEFINED };
-    VkExtent3D extent {};
-    u32 mipLevels { 1 };
-    u32 arrayLayers { 1 };
-    VkImageAspectFlags aspect { VK_IMAGE_ASPECT_COLOR_BIT };
-    // Created with pixelsIncludeMips: the offline chain is authoritative,
-    // generateMipmaps refuses to overwrite it.
-    bool offlineMips { false };
-    // Tracked so transitions know where they are coming from. One layout for
-    // the whole image: this backend never leaves mips in mixed layouts outside
-    // of generateMipmaps, which restores a uniform one before returning.
-    VkImageLayout layout { VK_IMAGE_LAYOUT_UNDEFINED };
-    // Built from TextureDesc::filter/wrap at creation. Used when a bind-group
-    // entry carries a texture WITHOUT a sampler — the RHI's legacy 2D
-    // contract ("the texture's own creation-time parameters apply"), which GL
-    // gets for free from glTexParameter and Vulkan has to spell out.
-    VkSampler defaultSampler { VK_NULL_HANDLE };
-    // Per-mip views, created lazily for storage-image bindings: a storage
-    // descriptor must view EXACTLY ONE mip (GL's glBindImageTexture(level)).
-    // Binding the whole-texture view silently made every hiz_down pass write
-    // mip 0 — mips 1..N stayed garbage and the Hi-Z cull ate distant chunks.
-    vector<VkImageView> mipViews;
-};
-
-// --- Descriptor binding remap --------------------------------------------------
-//
-// OpenGL gives UBOs, texture units, SSBOs and image units SEPARATE binding
-// namespaces, and the shader corpus relies on it: `binding = 0` is legitimately
-// both a UBO and a sampler in 11 shaders. Vulkan has ONE namespace per
-// descriptor set, so those declarations collide.
-//
-// Rather than edit the corpus (which would break the GL backend, where
-// `set=` is not even valid syntax), the Vulkan backend shifts each descriptor
-// type into its own range while translating the source. The same offsets are
-// applied when a BindGroupDesc is turned into a descriptor set, so callers
-// keep using the GL-style numbers and never see this.
-//
-// Ranges are 16 wide; the corpus currently peaks at UBO 5, sampler 11, SSBO 3,
-// image 0.
-enum class DescriptorClass { Uniform, Sampler, Storage, StorageImage };
-
-constexpr u32 kBindingRange = 16;
-
-u32 bindingOffset(DescriptorClass klass) {
-    switch (klass) {
-    case DescriptorClass::Uniform:      return 0 * kBindingRange;
-    case DescriptorClass::Sampler:      return 1 * kBindingRange;
-    case DescriptorClass::Storage:      return 2 * kBindingRange;
-    case DescriptorClass::StorageImage: return 3 * kBindingRange;
-    }
-    return 0;
-}
-
-VkDescriptorType toVkDescriptorType(DescriptorClass klass) {
-    switch (klass) {
-    case DescriptorClass::Uniform: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    case DescriptorClass::Sampler:
-        return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    case DescriptorClass::Storage: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    case DescriptorClass::StorageImage:
-        return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    }
-    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-}
-
-// One resource a shader declares, discovered while remapping its bindings.
-// This doubles as the reflection createPipeline needs to build its descriptor
-// set layout — parsing the GLSL we already rewrite is cheaper (and one fewer
-// dependency) than reflecting the SPIR-V afterwards.
-// Sampled-image dimensionality, from the GLSL type name. Binding NUMBERS are
-// reused with different meanings across shaders (GL semantics), so a group
-// replayed onto another pipeline may pair a 3D texture with a 2D binding —
-// pushGroup skips those writes (sampling them was undefined in GL too).
-enum class ImageDim { Any, T2D, T2DArray, T3D, Cube };
-
-struct ShaderResource {
-    u32 binding { 0 }; // already offset
-    DescriptorClass klass { DescriptorClass::Uniform };
-    // sampler*Shadow: needs the device's immutable PCF sampler (MoltenVK
-    // exposes no mutableComparisonSamplers, so a comparison sampler cannot
-    // be pushed as a normal descriptor).
-    bool comparison { false };
-    ImageDim dim { ImageDim::Any };
-};
-
-// A linked program in RHI terms: either a vertex+fragment pair or a lone
-// compute stage. Vulkan has no "program" object — the modules are combined at
-// pipeline creation — so this owns the modules plus the reflection.
-struct VulkanShader {
-    VkShaderModule vertex { VK_NULL_HANDLE };
-    VkShaderModule fragment { VK_NULL_HANDLE };
-    VkShaderModule compute { VK_NULL_HANDLE };
-    vector<ShaderResource> resources;
-};
-
-// Rewrites every `layout(... binding = N ...)` so each descriptor class lands
-// in its own range, and records what it found. The declarations in the corpus
-// are regular enough for this to be exact: a binding qualifier is always
-// followed by `uniform <Block|samplerX|imageX>` or `buffer <Block>`.
-// SPIR-V does not care which GLSL #version a source declares, but shaderc
-// gates features SYNTACTICALLY on it: explicit bindings are 420+, and the
-// dual-source 2D shaders declare 410 for the GL 4.1 driver's sake. Promote
-// everything to 460 (the corpus standard) before compiling — the GL backends
-// never see this rewrite.
-str promoteVersion(const str& source) {
-    const size_t at = source.find("#version");
-    if (at == str::npos) {
-        return source;
-    }
-    const size_t eol = source.find('\n', at);
-    if (eol == str::npos) {
-        return source;
-    }
-    str out = source;
-    out.replace(at, eol - at, "#version 460 core");
-    return out;
-}
-
-str remapBindings(const str& source, vector<ShaderResource>& resources) {
-    str out;
-    out.reserve(source.size() + 64);
-
-    size_t pos = 0;
-    while (true) {
-        const size_t layoutAt = source.find("layout(", pos);
-        if (layoutAt == str::npos) {
-            out.append(source, pos, str::npos);
-            break;
-        }
-        const size_t close = source.find(')', layoutAt);
-        if (close == str::npos) {
-            out.append(source, pos, str::npos);
-            break;
-        }
-        const str layout = source.substr(layoutAt, close - layoutAt + 1);
-        const size_t bindingAt = layout.find("binding");
-        if (bindingAt == str::npos) {
-            out.append(source, pos, close - pos + 1); // location=, std140-only…
-            pos = close + 1;
-            continue;
-        }
-
-        // Parse the binding number out of the qualifier list.
-        const size_t digit = layout.find_first_of("0123456789", bindingAt);
-        if (digit == str::npos) {
-            out.append(source, pos, close - pos + 1);
-            pos = close + 1;
-            continue;
-        }
-        size_t digitEnd = layout.find_first_not_of("0123456789", digit);
-        if (digitEnd == str::npos) {
-            digitEnd = layout.size();
-        }
-        const u32 original = static_cast<u32>(
-            std::stoul(layout.substr(digit, digitEnd - digit)));
-
-        // Classify from the declaration that follows the qualifier, by reading
-        // words until the `uniform` or `buffer` keyword: memory qualifiers
-        // (readonly/writeonly/coherent) may sit in between.
-        DescriptorClass klass = DescriptorClass::Uniform;
-        bool comparison = false;
-        ImageDim dim = ImageDim::Any;
-        size_t at = close + 1;
-        auto nextWord = [&]() -> str {
-            at = source.find_first_not_of(" \t\r\n", at);
-            if (at == str::npos) {
-                return {};
-            }
-            const size_t end = source.find_first_of(" \t\r\n;{(", at);
-            const str word = source.substr(
-                at, end == str::npos ? str::npos : end - at);
-            at = (end == str::npos) ? source.size() : end;
-            return word;
-        };
-        for (u32 guard = 0; guard < 4; ++guard) {
-            const str word = nextWord();
-            if (word.empty() || word == "buffer") {
-                klass = DescriptorClass::Storage;
-                break;
-            }
-            if (word == "uniform") {
-                // Memory qualifiers sit on EITHER side of `uniform`
-                // (`writeonly uniform image3D` and `uniform writeonly
-                // image3D` are both legal GLSL): skip them before reading
-                // the type, or a storage image classifies as a uniform
-                // block and its binding collides with the real UBOs
-                // (found the hard way on rc_inject.comp).
-                str type = nextWord();
-                for (u32 skip = 0; skip < 4; ++skip) {
-                    if (type == "readonly" || type == "writeonly" ||
-                        type == "coherent" || type == "volatile" ||
-                        type == "restrict") {
-                        type = nextWord();
-                        continue;
-                    }
-                    break;
-                }
-                // find(), not a prefix test: isampler/usampler/uimage/
-                // iimage must classify like their float cousins.
-                if (type.find("sampler") != str::npos ||
-                    type.find("texture") != str::npos) {
-                    klass = DescriptorClass::Sampler;
-                    comparison = type.find("Shadow") != str::npos;
-                    if (type.find("Cube") != str::npos) {
-                        dim = ImageDim::Cube;
-                    } else if (type.find("3D") != str::npos) {
-                        dim = ImageDim::T3D;
-                    } else if (type.find("2DArray") != str::npos) {
-                        dim = ImageDim::T2DArray;
-                    } else if (type.find("2D") != str::npos) {
-                        dim = ImageDim::T2D;
-                    }
-                } else if (type.find("image") != str::npos) {
-                    klass = DescriptorClass::StorageImage;
-                    if (type.find("3D") != str::npos) {
-                        dim = ImageDim::T3D;
-                    } else if (type.find("2D") != str::npos) {
-                        dim = ImageDim::T2D;
-                    }
-                } else {
-                    klass = DescriptorClass::Uniform; // uniform block
-                }
-                break;
-            }
-            // readonly / writeonly / coherent / restrict — keep looking.
-        }
-
-        const u32 shifted = original + bindingOffset(klass);
-        resources.push_back({ shifted, klass, comparison, dim });
-
-        // Emit the qualifier with the shifted number.
-        out.append(source, pos, layoutAt - pos);
-        out.append(layout, 0, digit);
-        out.append(std::to_string(shifted));
-        out.append(layout, digitEnd, str::npos);
-        pos = close + 1;
-    }
-    return out;
-}
-
-// Compiles one GLSL stage to SPIR-V. The sources are the SAME GLSL 460 the GL
-// backend consumes (ShaderLibrary has already expanded the #includes): the
-// corpus carries explicit layout(location=)/layout(binding=) everywhere, and
-// the only builtin that differs between the dialects is spelled through
-// compat.glsl, keyed on the VULKAN macro that shaderc/glslang predefines.
-bool compileToSpv(const str& source, shaderc_shader_kind kind,
-                  const str& debugName, vector<u32>& out) {
-    // One compiler + options for the whole process (shaderc compilation
-    // is thread-safe on a shared compiler): initializing per STAGE paid
-    // a full glslang bring-up on every stage of every shader, at boot
-    // and on each hot reload.
-    static shaderc_compiler_t compiler = shaderc_compiler_initialize();
-    static shaderc_compile_options_t options = [] {
-        shaderc_compile_options_t o = shaderc_compile_options_initialize();
-        shaderc_compile_options_set_target_env(
-            o, shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
-        shaderc_compile_options_set_optimization_level(
-            o, shaderc_optimization_level_performance);
-        return o;
-    }();
-
-    shaderc_compilation_result_t result =
-        shaderc_compile_into_spv(compiler, source.c_str(), source.size(), kind,
-                                 debugName.c_str(), "main", options);
-
-    const bool ok = shaderc_result_get_compilation_status(result) ==
-                    shaderc_compilation_status_success;
-    if (ok) {
-        const auto* bytes =
-            reinterpret_cast<const u32*>(shaderc_result_get_bytes(result));
-        const size_t words = shaderc_result_get_length(result) / sizeof(u32);
-        out.assign(bytes, bytes + words);
-    } else {
-        LOG_ERROR("Vulkan shader '{}' failed to compile:\n{}", debugName,
-                  shaderc_result_get_error_message(result));
-    }
-    shaderc_result_release(result);
-    return ok;
-}
-
-// Reflects the compiled SPIR-V, records what the stage declares (class,
-// image dim, depth-compare — all authoritative in SPIR-V, no GLSL text
-// parsing) and PATCHES each binding decoration up into its class range
-// (bindingOffset — GL's per-class namespaces do not survive into Vulkan).
-bool reflectAndShiftBindings(vector<u32>& spv,
-                             vector<ShaderResource>& resources,
-                             const str& debugName, const char* stage) {
-    SpvReflectShaderModule module {};
-    if (spvReflectCreateShaderModule(spv.size() * sizeof(u32), spv.data(),
-                                     &module) !=
-        SPV_REFLECT_RESULT_SUCCESS) {
-        LOG_ERROR("Vulkan shader '{}.{}': SPIR-V reflection failed",
-                  debugName, stage);
-        return false;
-    }
-    u32 count = 0;
-    spvReflectEnumerateDescriptorBindings(&module, &count, nullptr);
-    vector<SpvReflectDescriptorBinding*> bindings(count);
-    spvReflectEnumerateDescriptorBindings(&module, &count, bindings.data());
-    bool ok = true;
-    for (SpvReflectDescriptorBinding* b : bindings) {
-        DescriptorClass klass = DescriptorClass::Uniform;
-        ImageDim dim = ImageDim::Any;
-        bool comparison = false;
-        switch (b->descriptor_type) {
-        case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-            klass = DescriptorClass::Uniform;
-            break;
-        case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            klass = DescriptorClass::Storage;
-            break;
-        case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-            klass = DescriptorClass::Sampler;
-            comparison = b->image.depth == 1;
-            if (b->image.dim == SpvDimCube) {
-                dim = ImageDim::Cube;
-            } else if (b->image.dim == SpvDim3D) {
-                dim = ImageDim::T3D;
-            } else if (b->image.dim == SpvDim2D) {
-                dim = b->image.arrayed ? ImageDim::T2DArray : ImageDim::T2D;
-            }
-            break;
-        case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-            klass = DescriptorClass::StorageImage;
-            if (b->image.dim == SpvDim3D) {
-                dim = ImageDim::T3D;
-            } else if (b->image.dim == SpvDim2D) {
-                dim = ImageDim::T2D;
-            }
-            break;
-        default:
-            LOG_ERROR("Vulkan shader '{}.{}': unsupported descriptor type "
-                      "{} at binding {}",
-                      debugName, stage,
-                      static_cast<int>(b->descriptor_type), b->binding);
-            ok = false;
-            continue;
-        }
-        const u32 shifted = b->binding + bindingOffset(klass);
-        if (spvReflectChangeDescriptorBindingNumbers(
-                &module, b, shifted, SPV_REFLECT_SET_NUMBER_DONT_CHANGE) !=
-            SPV_REFLECT_RESULT_SUCCESS) {
-            LOG_ERROR("Vulkan shader '{}.{}': binding {} shift failed",
-                      debugName, stage, b->binding);
-            ok = false;
-            continue;
-        }
-        resources.push_back({ shifted, klass, comparison, dim });
-    }
-    if (ok) {
-        const u32* code = spvReflectGetCode(&module);
-        spv.assign(code, code + spvReflectGetCodeSize(&module) / sizeof(u32));
-    }
-    spvReflectDestroyShaderModule(&module);
-    return ok;
-}
-
-// An offscreen target. With dynamic rendering there is no VkFramebuffer: this
-// only owns the per-subresource image views (a FramebufferAttachment selects a
-// mip and a layer) and remembers the formats a pipeline must be built against.
-struct VulkanFramebuffer {
-    vector<VkImageView> colorViews;
-    vector<VkFormat> colorFormats;
-    vector<TextureHandle> colorTextures;
-    VkImageView depthView { VK_NULL_HANDLE };
-    VkFormat depthFormat { VK_FORMAT_UNDEFINED };
-    TextureHandle depthTexture {};
-    VkExtent2D extent {};
-};
-
-// PipelineDesc says nothing about the render target, but a VkPipeline must be
-// built against concrete attachment formats. So the state is kept here and the
-// VkPipeline is created lazily on first use with a given target, then cached.
-struct VulkanPipeline {
-    PipelineDesc desc;
-    bool compute { false };
-    // Bit i = the shader declares binding i (remapped bindings top out at 63:
-    // 4 descriptor classes x kBindingRange). setBindGroup filters against
-    // this — shared bind groups legitimately carry MORE entries than a given
-    // pipeline uses (frame group vs the caster pipelines), which GL ignores
-    // and a Vulkan push descriptor would reject.
-    u64 bindingMask { 0 };
-    // Bindings whose layout carries the immutable PCF sampler: the pushed
-    // write's sampler is ignored there, so pushGroup substitutes a plain one
-    // (a pushed COMPARISON sampler trips the portability validation).
-    u64 comparisonMask { 0 };
-    vector<ShaderResource> resources; // for push-time dim checks
-    VkDescriptorSetLayout setLayout { VK_NULL_HANDLE };
-    VkPipelineLayout layout { VK_NULL_HANDLE };
-    std::unordered_map<u64, VkPipeline> variants; // key = target formats
-    VkPipeline computePipeline { VK_NULL_HANDLE };
-};
-
-// Push descriptors mean a bind group never owns a VkDescriptorSet: it is just
-// the list of writes, replayed against whatever pipeline layout is bound.
-struct VulkanBindGroup {
-    vector<BindGroupEntry> entries;
-};
-
-// Identifies a render target by its attachment formats, which is exactly what
-// pipeline compatibility depends on under dynamic rendering.
-u64 targetKey(const vector<VkFormat>& colorFormats, VkFormat depthFormat) {
-    u64 key = 1469598103934665603ull; // FNV-1a
-    auto mix = [&key](u64 value) {
-        key = (key ^ value) * 1099511628211ull;
-    };
-    for (VkFormat f : colorFormats) {
-        mix(static_cast<u64>(f));
-    }
-    mix(static_cast<u64>(depthFormat) ^ 0x9e3779b9ull);
-    return key;
-}
-
-class VulkanCommandBuffer;
-
-} // namespace
-
-// --- Device state -------------------------------------------------------------
-
-// Validation message tally, filled by the debug-utils callback. File-
-// scope type so the C callback can name it (Impl is a private nested type).
-struct ValidationCounters {
-    u32 errors { 0 };
-    u32 warnings { 0 };
-};
-
 // Routes validation-layer messages into spdlog (they went to stdout before —
 // invisible in log captures) and counts them, so a run can be judged by two
 // numbers at teardown. Installed only when the validation layer is on.
@@ -764,1657 +74,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsCallback(
     return VK_FALSE;
 }
 
-struct VulkanDevice::Impl {
-    platform::Window* window { nullptr };
-
-    VkInstance instance { VK_NULL_HANDLE };
-    VkDebugUtilsMessengerEXT debugMessenger { VK_NULL_HANDLE };
-    ValidationCounters validationCounts;
-    VkSurfaceKHR surface { VK_NULL_HANDLE };
-    VkPhysicalDevice gpu { VK_NULL_HANDLE };
-    VkDevice device { VK_NULL_HANDLE };
-    VmaAllocator allocator { nullptr };
-
-    u32 graphicsFamily { 0 };
-    u32 presentFamily { 0 };
-    VkQueue graphicsQueue { VK_NULL_HANDLE };
-    VkQueue presentQueue { VK_NULL_HANDLE };
-
-    // Async compute (docs/RENDERING.md PG3): a compute-capable family
-    // DISTINCT from graphics (its own hardware queue — on MoltenVK a
-    // separate MTLCommandQueue, which Apple GPUs schedule concurrently).
-    // The chain: graphics N signals the timeline -> compute N waits it,
-    // runs, signals -> graphics N+1 waits that value at its consumer
-    // stages only. CB reuse is guarded CPU-side by waiting the slot's
-    // last signaled value (the graphics fence does not cover compute).
-    bool asyncComputeAvailable { false };
-    u32 computeFamily { 0 };
-    // What the async-compute / upload families can execute (barrier
-    // stage masks are clamped to them — clampStagesToQueue).
-    VkQueueFlags computeQueueFlags { kAllQueueCaps };
-    VkQueueFlags uploadQueueFlags { kAllQueueCaps };
-    VkQueue computeQueue { VK_NULL_HANDLE };
-    VkCommandPool computePool { VK_NULL_HANDLE };
-    std::array<VkCommandBuffer, kFramesInFlight> computeCbs {};
-    std::array<u64, kFramesInFlight> computeSlotValue {};
-    uptr<VulkanCommandBuffer> computeCmd;
-    bool computeRecording { false };
-    // The staged-update ROUTING window: only between asyncComputeCmd()
-    // and endAsyncCompute() do updateBuffer copies land on the compute
-    // CB — a later UI vertex update must stay on the graphics stream
-    // (sync-validation caught the cross-queue read).
-    bool computeRouting { false };
-    VkSemaphore timeline { VK_NULL_HANDLE };
-    u64 timelineNext { 0 };      // last value handed out
-    u64 computeDoneValue { 0 };  // what the next graphics submit waits
-
-    // Swapchain + everything sized by it (recreated together on resize).
-    VkSwapchainKHR swapchain { VK_NULL_HANDLE };
-    VkFormat colorFormat { VK_FORMAT_UNDEFINED };
-    VkExtent2D extent {};
-    vector<VkImage> images;
-    vector<VkImageView> imageViews;
-    // Signalled when the frame targeting this IMAGE is done; present waits on
-    // it. Per-image (not per-frame) so a semaphore is never reused while a
-    // previous present is still pending on it.
-    vector<VkSemaphore> renderFinished;
-
-    VkCommandPool commandPool { VK_NULL_HANDLE };
-
-    // Extension entry points (loaded in create()).
-    PFN_vkCmdBeginRenderingKHR cmdBeginRendering { nullptr };
-    PFN_vkCmdEndRenderingKHR cmdEndRendering { nullptr };
-    PFN_vkCmdPushDescriptorSetKHR cmdPushDescriptorSet { nullptr };
-    // Separate transient pool for the blocking upload/readback submits, so
-    // staging work never resets a frame's command buffer.
-    VkCommandPool transferPool { VK_NULL_HANDLE };
-
-    std::array<VkCommandBuffer, kFramesInFlight> commandBuffers {};
-    std::array<VkSemaphore, kFramesInFlight> imageAvailable {};
-    std::array<VkFence, kFramesInFlight> inFlight {};
-
-    u32 frame { 0 };            // frame-in-flight slot being recorded
-    u32 imageIndex { 0 };       // swapchain image acquired this frame
-    bool frameActive { false }; // false when acquire failed -> endFrame skips
-    u64 frameCounter { 0 };     // absolute, for the deferred-free queue
-
-    // Mini deletion queue ('vkDeviceWaitIdle in destroy*' is not
-    // enough): destroying mid-RECORDING is unsafe even after an idle —
-    // the commands referencing the resource are not submitted yet. Parked
-    // here and freed once the frame slot cycles (fence-proven done).
-    struct PendingTexture {
-        VkImage image; VmaAllocation alloc; VkImageView view;
-        VkSampler sampler; vector<VkImageView> mipViews; u64 frame;
-    };
-    struct PendingBuffer {
-        VkBuffer buffer; VmaAllocation alloc; u64 frame;
-    };
-    struct PendingCmd {
-        VkCommandBuffer cb; u64 frame;
-    };
-    struct PendingSampler {
-        VkSampler sampler; u64 frame;
-    };
-    struct PendingTarget {
-        vector<VkImageView> colorViews; VkImageView depthView; u64 frame;
-    };
-    struct PendingShader {
-        VkShaderModule vertex; VkShaderModule fragment; VkShaderModule compute;
-        u64 frame;
-    };
-    struct PendingPipeline {
-        vector<VkPipeline> variants; VkPipeline compute;
-        VkPipelineLayout layout; VkDescriptorSetLayout setLayout; u64 frame;
-    };
-    vector<PendingCmd> pendingCmds; // async transfer cbs (see immediateSubmit)
-    vector<PendingTexture> pendingTextures;
-    vector<PendingBuffer> pendingBuffers;
-    vector<PendingSampler> pendingSamplers;
-    vector<PendingTarget> pendingTargets;
-    vector<PendingShader> pendingShaders;
-    vector<PendingPipeline> pendingPipelines;
-
-    // Persistent-mapped staging ring, one per frame slot: in-frame buffer
-    // updates carve linear slices out of it instead of paying a VMA
-    // allocation (and a deletion-queue entry) per update. The slot's reset
-    // in beginFrame happens-after its fence + compute-timeline wait, so
-    // the GPU is provably done reading it. Growth parks the old buffer in
-    // the deletion queue — copies already recorded keep referencing it.
-    struct StagingRing {
-        VkBuffer buffer { VK_NULL_HANDLE };
-        VmaAllocation allocation { nullptr };
-        u8* mapped { nullptr };
-        u64 capacity { 0 };
-        u64 head { 0 };
-    };
-    std::array<StagingRing, kFramesInFlight> stagingRings {};
-    bool ringAlloc(u64 size, VkBuffer& outBuffer, u64& outOffset,
-                   void** outMapped);
-
-    // Dedicated upload (transfer) queue: in-frame DEVICE-LOCAL buffer
-    // uploads record into a per-slot transfer command buffer, submitted at
-    // endFrame BEFORE the graphics submit. On PC the transfer-only family
-    // is a real DMA engine; on MoltenVK it is a third generic queue (the
-    // sync topology is identical, so M1 validates the PC path).
-    // Ordering: the upload submit WAITS last frame's graphics value (WAR —
-    // the previous frame may still read the buffer being rewritten) and
-    // signals its OWN timeline (uploadTimeline: one signaler, values stay
-    // monotonic — interleaving a third queue on the shared timeline could
-    // signal out of order, which the spec forbids); the graphics submit
-    // waits that value at the stages that read uploaded data. The compute
-    // chain does NOT wait it: the rc chain reads no streamed buffer (extend
-    // the wait if that ever changes).
-    u32 transferFamily { 0 };
-    VkQueue transferQueue { VK_NULL_HANDLE };
-    VkCommandPool uploadPool { VK_NULL_HANDLE };
-    std::array<VkCommandBuffer, kFramesInFlight> uploadCbs {};
-    VkSemaphore uploadTimeline { VK_NULL_HANDLE };
-    bool uploadQueueAvailable { false };
-    bool uploadRecording { false };
-    u64 uploadNext { 0 };
-    u64 uploadDoneValue { 0 };
-    std::array<u64, kFramesInFlight> uploadSlotValue {};
-    u64 gfxDoneValue { 0 }; // last graphics timeline value (upload WAR wait)
-    bool recordImageUpload(VkImage image, VkImageAspectFlags aspect,
-                           u32 mipLevels, u32 arrayLayers, const void* data,
-                           u64 size, vector<VkBufferImageCopy> regions);
-    bool recordUpload(VkBuffer dst, const void* data, u64 size,
-                      u64 dstOffset);
-    // The frame a resource consumed by an UNFENCED async submit is parked
-    // under. Inside a frame, this frame's fence (submitted after it on
-    // the same queue) covers it. BETWEEN frames the last fence was
-    // already submitted: only the NEXT frame's fence orders behind it,
-    // so the park moves one frame later — freeing under the previous
-    // one raced the copy (the layer's "buffer in use" at every scene
-    // load, and a driver crash at exit).
-    u64 asyncParkFrame() const {
-        return frameActive ? frameCounter : frameCounter + 1;
-    }
-
-    bool multiDrawIndirect { false }; // device feature, mirrored in caps
-    bool textureCompressionBC { false }; // device feature, mirrored in caps
-
-    void flushPendingFrees(bool force) {
-        const auto done = [&](u64 parked) {
-            return force || frameCounter >= parked + kFramesInFlight;
-        };
-        std::erase_if(pendingTextures, [&](const PendingTexture& t) {
-            if (!done(t.frame)) { return false; }
-            for (VkImageView v : t.mipViews) {
-                if (v != VK_NULL_HANDLE) {
-                    vkDestroyImageView(device, v, nullptr);
-                }
-            }
-            vkDestroyImageView(device, t.view, nullptr);
-            if (t.sampler != VK_NULL_HANDLE) {
-                vkDestroySampler(device, t.sampler, nullptr);
-            }
-            vmaDestroyImage(allocator, t.image, t.alloc);
-            return true;
-        });
-        std::erase_if(pendingBuffers, [&](const PendingBuffer& b) {
-            if (!done(b.frame)) { return false; }
-            vmaDestroyBuffer(allocator, b.buffer, b.alloc);
-            return true;
-        });
-        std::erase_if(pendingCmds, [&](const PendingCmd& c) {
-            if (!done(c.frame)) { return false; }
-            vkFreeCommandBuffers(device, transferPool, 1, &c.cb);
-            return true;
-        });
-        std::erase_if(pendingSamplers, [&](const PendingSampler& p) {
-            if (!done(p.frame)) { return false; }
-            vkDestroySampler(device, p.sampler, nullptr);
-            return true;
-        });
-        std::erase_if(pendingTargets, [&](const PendingTarget& t) {
-            if (!done(t.frame)) { return false; }
-            for (VkImageView view : t.colorViews) {
-                vkDestroyImageView(device, view, nullptr);
-            }
-            if (t.depthView != VK_NULL_HANDLE) {
-                vkDestroyImageView(device, t.depthView, nullptr);
-            }
-            return true;
-        });
-        std::erase_if(pendingShaders, [&](const PendingShader& sh) {
-            if (!done(sh.frame)) { return false; }
-            vkDestroyShaderModule(device, sh.vertex, nullptr);
-            vkDestroyShaderModule(device, sh.fragment, nullptr);
-            vkDestroyShaderModule(device, sh.compute, nullptr);
-            return true;
-        });
-        std::erase_if(pendingPipelines, [&](const PendingPipeline& p) {
-            if (!done(p.frame)) { return false; }
-            for (VkPipeline variant : p.variants) {
-                vkDestroyPipeline(device, variant, nullptr);
-            }
-            if (p.compute != VK_NULL_HANDLE) {
-                vkDestroyPipeline(device, p.compute, nullptr);
-            }
-            vkDestroyPipelineLayout(device, p.layout, nullptr);
-            vkDestroyDescriptorSetLayout(device, p.setLayout, nullptr);
-            return true;
-        });
-    }
-
-    // Handle tables. Ids start at 1 so 0 stays the invalid handle (§ Rhi.hpp).
-    u32 nextId { 1 };
-    std::unordered_map<u32, VulkanBuffer> buffers;
-    std::unordered_map<u32, VulkanTexture> textures;
-    std::unordered_map<u32, VkSampler> samplers;
-    // Device-owned comparison sampler baked into layouts as IMMUTABLE for
-    // every sampler*Shadow binding (linear + LESS_OR_EQUAL: matches the
-    // ShadowMapper's and the key light's PCF samplers).
-    VkSampler pcfSampler { VK_NULL_HANDLE };
-    // Disk-persisted pipeline cache: MoltenVK compiles the Metal shader at
-    // FIRST pipeline use (10-100 ms stalls). Variants are created lazily per
-    // target-format set, so a fast camera pan during the first minutes walks
-    // through never-seen combinations — visible hitches that self-heal once
-    // everything compiled. Persisting the cache moves that cost to the first
-    // run only.
-    VkPipelineCache pipelineCache { VK_NULL_HANDLE };
-    static constexpr const char* kPipelineCacheFile =
-        "vulkan-pipeline-cache.bin";
-    // GL keeps SOMETHING bound on every unit; these stand in whenever a
-    // group entry cannot legally be pushed (declared-dim mismatch, texture
-    // busy as an attachment, or destroyed) so no descriptor stays unset.
-    TextureHandle dummy2D {};
-    TextureHandle dummyArray {};
-    TextureHandle dummy3D {};
-    TextureHandle dummyDepth {}; // comparison bindings need a depth format
-    BufferHandle dummyUniform {};
-    BufferHandle dummyStorage {};
-    std::unordered_map<u32, VulkanShader> shaders;
-    // GPU markers. A fence is signalled by an empty submit, which the spec
-    // says completes only after everything already submitted — exactly the
-    // "marker after all prior work" the RHI promises.
-    std::unordered_map<u32, VkFence> fences;
-
-    // Timestamps live in a per-frame region of one pool: vkCmdResetQueryPool
-    // is illegal inside a render pass, so a region can only be reset at
-    // beginFrame — by which point its results are two frames old and either
-    // polled or abandoned.
-    VkQueryPool queryPool { VK_NULL_HANDLE };
-    f32 timestampPeriod { 1.0f }; // nanoseconds per tick
-    u32 timestampCursor { 0 };    // next slot within the current region
-    // Bumped when a region is reset, so a handle from an older generation is
-    // recognised as stale instead of reading someone else's result.
-    std::array<u32, kFramesInFlight> regionGeneration {};
-    // Second pool for the ASYNC COMPUTE queue: a timestamp inserted while
-    // computeRouting is on must land in the COMPUTE command buffer — in the
-    // graphics stream it would bracket nothing (the rc* blindness). Its
-    // per-slot regions are reset at the top of the compute cb (same-queue
-    // ordering; a cross-queue reset would race the writes).
-    VkQueryPool computeQueryPool { VK_NULL_HANDLE };
-    u32 computeTimestampCursor { 0 };
-    std::array<u32, kFramesInFlight> computeRegionGeneration {};
-    struct PendingTimestamp {
-        u32 query { 0 };
-        u32 frameSlot { 0 };
-        u32 generation { 0 };
-        bool onComputePool { false };
-        // Harvested at slot-recycle time (see beginFrame): once the region
-        // resets, the pool result is gone, but the fence wait that precedes
-        // the reset proves the GPU finished — so the value is read into here
-        // first and timestampReady can still deliver it.
-        u64 cachedTicks { 0 };
-        bool cached { false };
-    };
-    std::unordered_map<u32, PendingTimestamp> timestamps;
-
-    std::unordered_map<u32, VulkanFramebuffer> targets;
-    std::unordered_map<u32, VulkanPipeline> pipelines;
-    std::unordered_map<u32, VulkanBindGroup> bindGroups;
-
-    VulkanShader* findShader(ShaderHandle handle) {
-        auto it = shaders.find(handle.id);
-        return it == shaders.end() ? nullptr : &it->second;
-    }
-    VulkanPipeline* findPipeline(PipelineHandle handle) {
-        auto it = pipelines.find(handle.id);
-        return it == pipelines.end() ? nullptr : &it->second;
-    }
-    VulkanFramebuffer* findTarget(FramebufferHandle handle) {
-        auto it = targets.find(handle.id);
-        return it == targets.end() ? nullptr : &it->second;
-    }
-
-    // Builds (or returns) the VkPipeline of `pipeline` for a target described
-    // by its attachment formats.
-    VkPipeline pipelineFor(VulkanPipeline& pipeline,
-                           const vector<VkFormat>& colorFormats,
-                           VkFormat depthFormat, VkFrontFace frontFace);
-
-    uptr<VulkanCommandBuffer> cmd;
-
-    bool createSwapchain();
-    void destroySwapchain();
-    bool recreateSwapchain();
-
-    // Records `record` into a one-shot command buffer and blocks until the GPU
-    // is done. Uploads and readbacks are rare and setup-time, so a simple
-    // blocking submit is the right trade; the async transfer queue (a reserved
-    // lever, docs/RENDERING.md) can replace it later without touching callers.
-    template <typename F>
-    bool immediateSubmit(F&& record, bool wait = true);
-
-    VulkanBuffer* findBuffer(BufferHandle handle) {
-        auto it = buffers.find(handle.id);
-        return it == buffers.end() ? nullptr : &it->second;
-    }
-    VulkanTexture* findTexture(TextureHandle handle) {
-        auto it = textures.find(handle.id);
-        return it == textures.end() ? nullptr : &it->second;
-    }
-
-    // Single-mip view for storage-image bindings (created on first use).
-    VkImageView textureMipView(VulkanTexture& tex, u32 mip) {
-        if (mip >= tex.mipLevels) {
-            mip = tex.mipLevels - 1;
-        }
-        if (tex.mipViews.empty()) {
-            tex.mipViews.resize(tex.mipLevels, VK_NULL_HANDLE);
-        }
-        if (tex.mipViews[mip] != VK_NULL_HANDLE) {
-            return tex.mipViews[mip];
-        }
-        VkImageViewCreateInfo info {};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        info.image = tex.image;
-        info.viewType = tex.extent.depth > 1  ? VK_IMAGE_VIEW_TYPE_3D
-                        : tex.arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
-                                              : VK_IMAGE_VIEW_TYPE_2D;
-        info.format = tex.format;
-        info.subresourceRange.aspectMask = tex.aspect;
-        info.subresourceRange.baseMipLevel = mip;
-        info.subresourceRange.levelCount = 1;
-        info.subresourceRange.layerCount = tex.arrayLayers;
-        vkOk(vkCreateImageView(device, &info, nullptr, &tex.mipViews[mip]),
-             "vkCreateImageView (storage mip)");
-        return tex.mipViews[mip];
-    }
-
-    // Allocates a host-visible scratch buffer for one upload/readback.
-    bool createStaging(u64 size, bool forRead, VkBuffer& out,
-                       VmaAllocation& outAlloc, void** outMapped);
-};
-
-namespace {
-
-// Records one frame. Unimplemented commands are no-ops rather than
-// asserts — callers must not be able to tell whether a
-// backend records or executes immediately (CommandBuffer contract).
-class VulkanCommandBuffer final : public CommandBuffer {
-public:
-    explicit VulkanCommandBuffer(VulkanDevice::Impl& device) : d_ { &device } {}
-    // The family this buffer records for: the compute one when it IS the
-    // device's async-compute buffer, graphics otherwise.
-    VkQueueFlags queueCaps() const {
-        return this == d_->computeCmd.get() ? d_->computeQueueFlags
-                                            : kAllQueueCaps;
-    }
-
-    void begin(VkCommandBuffer cb, VkImageView swapchainView,
-               VkFormat swapchainFormat, VkExtent2D extent) {
-        cb_ = cb;
-        swapchainView_ = swapchainView;
-        swapchainFormat_ = swapchainFormat;
-        swapchainExtent_ = extent;
-        inPass_ = false;
-        boundPipeline_ = nullptr;
-        boundGroups_ = {};
-        pushedMask_ = 0;
-    }
-
-    void beginRenderPass(const RenderPassDesc& desc) override;
-    void endRenderPass() override;
-
-    void copyBuffer(BufferHandle src, BufferHandle dst, u64 size, u64 srcOffset,
-                    u64 dstOffset) override;
-    void copyTexture(TextureHandle src, TextureHandle dst) override;
-
-    // Host-visible-buffer update routed through the FRAME command buffer:
-    // the barrier orders the copy after every read the in-flight frame may
-    // still be doing. updateBuffer's in-place memcpy raced that frame — its
-    // passes sampled values meant for the NEXT frame (the CSM matrices
-    // flipped mid-frame: flickering dark shadow plates on fast
-    // pans). Returns false inside a pass (copies are illegal there)
-    // or when nothing is being recorded.
-    bool recordHostUpdate(VkBuffer staging, u64 srcOffset, VkBuffer dst,
-                          u64 size, u64 dstOffset,
-                          VkPipelineStageFlags readStages,
-                          VkAccessFlags readAccess);
-    bool insidePass() const { return inPass_; }
-
-    void setViewport(u32 x, u32 y, u32 width, u32 height) override;
-    void setScissor(u32 x, u32 y, u32 width, u32 height) override;
-    void clearScissor() override;
-    void setFrontFace(FrontFace frontFace) override;
-    void setPipeline(PipelineHandle pipeline) override;
-    void setBindGroup(u32 index, BindGroupHandle group) override;
-    void pushGroup(BindGroupHandle group);
-    void bindMissingDummies();
-    void setPushConstants(const void* data, u32 size, u32 offset) override;
-    void setVertexBuffer(u32 slot, BufferHandle buffer, u64 offset) override;
-    void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
-    void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
-    void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
-                     u32 firstInstance) override;
-    void drawIndexedIndirect(BufferHandle args, u64 offset, u32 drawCount,
-                             u32 stride) override;
-    void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
-    void memoryBarrier(u32 dst) override;
-    void readBarrier(u32 src) override;
-
-private:
-    // The RHI's viewport origin is bottom-left (the GL convention). Vulkan's
-    // is top-left, so every viewport is submitted with a NEGATIVE height,
-    // which flips clip space back. Doing it here keeps the flip out of the
-    // shared shaders and out of gameplay.
-    void applyViewport();
-
-    VulkanDevice::Impl* d_ { nullptr };
-    VkCommandBuffer cb_ { VK_NULL_HANDLE };
-
-    // The frame's backbuffer (framebuffer handle 0 targets it).
-    VkImageView swapchainView_ { VK_NULL_HANDLE };
-    VkFormat swapchainFormat_ { VK_FORMAT_UNDEFINED };
-    VkExtent2D swapchainExtent_ {};
-
-    // Target currently being rendered into.
-    VkExtent2D extent_ {};
-    vector<VkFormat> colorFormats_;
-    VkFormat depthFormat_ { VK_FORMAT_UNDEFINED };
-    VulkanFramebuffer* target_ { nullptr }; // null = swapchain
-    bool inPass_ { false };
-
-    // Dynamic state, re-applied whenever a pipeline is bound.
-    VkViewport viewport_ {};
-    bool scissorSet_ { false };
-    VkRect2D scissor_ {};
-    VkFrontFace frontFace_ { VK_FRONT_FACE_COUNTER_CLOCKWISE };
-    // GL-meaning winding -> Vulkan winding for the CURRENT target. Offscreen
-    // renders through a positive viewport (Vulkan Y-down = one mirror vs GL
-    // clip space) so the winding inverts; the swapchain's negative-height
-    // viewport cancels that mirror and keeps the GL winding as-is —
-    // inverting unconditionally would be wrong on the swapchain.
-    VkFrontFace effectiveFrontFace() const {
-        if (target_ == nullptr) {
-            return frontFace_;
-        }
-        return frontFace_ == VK_FRONT_FACE_COUNTER_CLOCKWISE
-                   ? VK_FRONT_FACE_CLOCKWISE
-                   : VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    }
-    VulkanPipeline* boundPipeline_ { nullptr };
-    // Per RHI slot, for the setPipeline replay. Sized for the highest slot
-    // the renderer uses (main pass: 0 frame, 2 shadow, 3 clouds, 4 terrain
-    // light, 5 key shadow, 6 GI apply) — a slot beyond this array is
-    // silently NEVER replayed, which unbinds its descriptors on every
-    // pipeline change (the invisible-GI bug).
-    array<BindGroupHandle, 12> boundGroups_ {};
-    u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
-    // Scratch for pushGroup/bindMissingDummies — both run on the per-draw
-    // hot path, so the capacity is kept across calls instead of paying a
-    // heap allocation per push. The info vectors are RESERVED to the entry
-    // count before filling; .back() pointers stored in the writes rely on
-    // no reallocation happening mid-fill.
-    vector<VkWriteDescriptorSet> scratchWrites_;
-    vector<VkDescriptorBufferInfo> scratchBufferInfos_;
-    vector<VkDescriptorImageInfo> scratchImageInfos_;
-};
-
-VkAttachmentLoadOp toVkLoadOp(LoadOp op) {
-    switch (op) {
-    case LoadOp::Clear:    return VK_ATTACHMENT_LOAD_OP_CLEAR;
-    case LoadOp::Load:     return VK_ATTACHMENT_LOAD_OP_LOAD;
-    case LoadOp::DontCare: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    }
-    return VK_ATTACHMENT_LOAD_OP_CLEAR;
-}
-
-VkAttachmentStoreOp toVkStoreOp(StoreOp op) {
-    return op == StoreOp::DontCare ? VK_ATTACHMENT_STORE_OP_DONT_CARE
-                                   : VK_ATTACHMENT_STORE_OP_STORE;
-}
-
-void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
-    if (cb_ == VK_NULL_HANDLE || inPass_) {
-        return;
-    }
-    target_ = desc.framebuffer.id == 0 ? nullptr
-                                       : d_->findTarget(desc.framebuffer);
-    colorFormats_.clear();
-    depthFormat_ = VK_FORMAT_UNDEFINED;
-
-    vector<VkRenderingAttachmentInfo> colorAttachments;
-    VkRenderingAttachmentInfo depthAttachment {};
-    bool hasDepth = false;
-
-    VkClearValue clearColor {};
-    clearColor.color = { { desc.clearColor.r, desc.clearColor.g,
-                           desc.clearColor.b, desc.clearColor.a } };
-
-    if (target_ == nullptr) {
-        // Backbuffer: already moved to COLOR_ATTACHMENT_OPTIMAL by beginFrame.
-        extent_ = swapchainExtent_;
-        colorFormats_.push_back(swapchainFormat_);
-        VkRenderingAttachmentInfo color {};
-        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = swapchainView_;
-        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color.loadOp = toVkLoadOp(desc.loadOp);
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.clearValue = clearColor;
-        colorAttachments.push_back(color);
-    } else {
-        extent_ = target_->extent;
-        colorFormats_ = target_->colorFormats;
-        depthFormat_ = target_->depthFormat;
-        // Offscreen attachments live in SHADER_READ_ONLY between passes.
-        for (size_t i = 0; i < target_->colorViews.size(); ++i) {
-            VulkanTexture* tex = d_->findTexture(target_->colorTextures[i]);
-            if (tex != nullptr) {
-                transitionLayout(cb_, tex->image, tex->aspect, 0,
-                                 tex->mipLevels, tex->arrayLayers, tex->layout,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, queueCaps());
-                tex->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            }
-            VkRenderingAttachmentInfo color {};
-            color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            color.imageView = target_->colorViews[i];
-            color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            color.loadOp = toVkLoadOp(desc.loadOp);
-            color.storeOp = toVkStoreOp(desc.storeOp);
-            color.clearValue = clearColor;
-            colorAttachments.push_back(color);
-        }
-        if (target_->depthView != VK_NULL_HANDLE) {
-            VulkanTexture* tex = d_->findTexture(target_->depthTexture);
-            if (tex != nullptr) {
-                transitionLayout(
-                    cb_, tex->image, tex->aspect, 0, tex->mipLevels,
-                    tex->arrayLayers, tex->layout,
-                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, queueCaps());
-                tex->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            }
-            depthAttachment.sType =
-                VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            depthAttachment.imageView = target_->depthView;
-            depthAttachment.imageLayout =
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-            depthAttachment.loadOp = toVkLoadOp(desc.depthLoadOp);
-            depthAttachment.storeOp = toVkStoreOp(desc.depthStoreOp);
-            depthAttachment.clearValue.depthStencil = { desc.clearDepth, 0 };
-            hasDepth = true;
-        }
-    }
-
-    VkRenderingInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    info.renderArea.offset = { 0, 0 };
-    info.renderArea.extent = extent_;
-    info.layerCount = 1;
-    info.colorAttachmentCount = static_cast<u32>(colorAttachments.size());
-    info.pColorAttachments = colorAttachments.data();
-    info.pDepthAttachment = hasDepth ? &depthAttachment : nullptr;
-    d_->cmdBeginRendering(cb_, &info);
-    inPass_ = true;
-
-    // beginRenderPass resets the dynamic state (CommandBuffer contract).
-    boundPipeline_ = nullptr;
-    frontFace_ = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    scissorSet_ = false;
-    setViewport(0, 0, extent_.width, extent_.height);
-    clearScissor();
-}
-
-void VulkanCommandBuffer::endRenderPass() {
-    if (cb_ == VK_NULL_HANDLE || !inPass_) {
-        return;
-    }
-    d_->cmdEndRendering(cb_);
-    inPass_ = false;
-    boundPipeline_ = nullptr;
-
-    // Offscreen attachments are sampled by later passes: hand them back in the
-    // layout the rest of the backend expects to find them in.
-    if (target_ != nullptr) {
-        for (TextureHandle handle : target_->colorTextures) {
-            VulkanTexture* tex = d_->findTexture(handle);
-            if (tex != nullptr) {
-                transitionLayout(cb_, tex->image, tex->aspect, 0,
-                                 tex->mipLevels, tex->arrayLayers, tex->layout,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
-                tex->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            }
-        }
-        VulkanTexture* depth = d_->findTexture(target_->depthTexture);
-        if (depth != nullptr) {
-            transitionLayout(cb_, depth->image, depth->aspect, 0,
-                             depth->mipLevels, depth->arrayLayers,
-                             depth->layout,
-                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
-            depth->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        }
-    }
-    target_ = nullptr;
-}
-
-void VulkanCommandBuffer::applyViewport() {
-    if (cb_ != VK_NULL_HANDLE) {
-        vkCmdSetViewport(cb_, 0, 1, &viewport_);
-    }
-}
-
-void VulkanCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
-    // The negative-height flip applies ONLY to the swapchain pass. Offscreen
-    // passes render Vulkan-natural: GL clip content then lands in GL memory
-    // order (row 0 = scene bottom), so every GL-convention shader SAMPLING an
-    // offscreen target reads it correctly — flipping everywhere kept each
-    // pass upright but inverted the sampling convention, and an odd number
-    // of fullscreen hops (tonemap) put the whole image on screen upside
-    // down. Only the final swapchain pass needs the flip to turn GL memory
-    // order into what the surface presents.
-    viewport_.x = static_cast<f32>(x);
-    if (target_ == nullptr) {
-        viewport_.y = static_cast<f32>(y + height);
-        viewport_.height = -static_cast<f32>(height);
-    } else {
-        viewport_.y = static_cast<f32>(y);
-        viewport_.height = static_cast<f32>(height);
-    }
-    viewport_.width = static_cast<f32>(width);
-    viewport_.minDepth = 0.0f;
-    viewport_.maxDepth = 1.0f;
-    applyViewport();
-}
-
-void VulkanCommandBuffer::setScissor(u32 x, u32 y, u32 width, u32 height) {
-    // Same per-target rule as the viewport: offscreen rows are already
-    // bottom-origin (GL memory order), only the swapchain needs the flip.
-    const u32 top =
-        target_ != nullptr ? y
-        : extent_.height > (y + height) ? extent_.height - (y + height)
-                                        : 0u;
-    scissor_.offset = { static_cast<i32>(x), static_cast<i32>(top) };
-    scissor_.extent = { width, height };
-    scissorSet_ = true;
-    if (cb_ != VK_NULL_HANDLE) {
-        vkCmdSetScissor(cb_, 0, 1, &scissor_);
-    }
-}
-
-void VulkanCommandBuffer::clearScissor() {
-    scissor_.offset = { 0, 0 };
-    scissor_.extent = extent_;
-    scissorSet_ = false;
-    if (cb_ != VK_NULL_HANDLE) {
-        vkCmdSetScissor(cb_, 0, 1, &scissor_);
-    }
-}
-
-void VulkanCommandBuffer::setFrontFace(FrontFace frontFace) {
-    // vkCmdSetFrontFace is core only in Vulkan 1.3 (or via
-    // extended_dynamic_state), and this backend targets 1.2 — so winding is
-    // baked into the pipeline and selected through the variant cache instead,
-    // which costs nothing since that cache already exists for target formats.
-    const VkFrontFace wanted = frontFace == FrontFace::Clockwise
-                                   ? VK_FRONT_FACE_CLOCKWISE
-                                   : VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    if (wanted == frontFace_) {
-        return;
-    }
-    frontFace_ = wanted;
-    if (boundPipeline_ != nullptr && !boundPipeline_->compute) {
-        // Re-resolve the bound pipeline against the new winding.
-        VulkanPipeline* pipeline = boundPipeline_;
-        boundPipeline_ = nullptr;
-        const VkPipeline vk =
-            d_->pipelineFor(*pipeline, colorFormats_, depthFormat_,
-                            effectiveFrontFace());
-        if (vk != VK_NULL_HANDLE) {
-            vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, vk);
-            boundPipeline_ = pipeline;
-            applyViewport();
-            vkCmdSetScissor(cb_, 0, 1, &scissor_);
-        }
-    }
-}
-
-void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
-    VulkanPipeline* pipeline = d_->findPipeline(handle);
-    if (cb_ == VK_NULL_HANDLE || pipeline == nullptr) {
-        return;
-    }
-    if (pipeline->compute) {
-        if (pipeline->computePipeline != VK_NULL_HANDLE) {
-            vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_COMPUTE,
-                              pipeline->computePipeline);
-            boundPipeline_ = pipeline;
-            pushedMask_ = 0;
-            for (const BindGroupHandle g : boundGroups_) {
-                if (g.id != 0) {
-                    pushGroup(g);
-                }
-            }
-        }
-        return;
-    }
-    // Graphics pipelines are specialized per target format set.
-    const VkPipeline vk =
-        d_->pipelineFor(*pipeline, colorFormats_, depthFormat_,
-                        effectiveFrontFace());
-    if (vk == VK_NULL_HANDLE) {
-        return;
-    }
-    vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, vk);
-    boundPipeline_ = pipeline;
-    // Dynamic state does not survive a pipeline bind.
-    applyViewport();
-    vkCmdSetScissor(cb_, 0, 1, &scissor_);
-    pushedMask_ = 0;
-    for (const BindGroupHandle g : boundGroups_) {
-        if (g.id != 0) {
-            pushGroup(g);
-        }
-    }
-}
-
-void VulkanCommandBuffer::setPushConstants(const void* data, u32 size,
-                                           u32 offset) {
-    if (cb_ == VK_NULL_HANDLE || boundPipeline_ == nullptr || data == nullptr
-        || size == 0) {
-        return;
-    }
-    const u32 declared = boundPipeline_->desc.pushConstantSize;
-    if (offset + size > declared) {
-        LOG_ERROR("Vulkan setPushConstants: range {}+{} exceeds the pipeline's "
-                  "declared pushConstantSize {}",
-                  offset, size, declared);
-        return;
-    }
-    // Recorded INTO the command buffer, so the value sticks to the draws that
-    // follow it — the whole point (a UBO write would not).
-    vkCmdPushConstants(cb_, boundPipeline_->layout,
-                       boundPipeline_->compute ? VK_SHADER_STAGE_COMPUTE_BIT
-                                               : VK_SHADER_STAGE_ALL_GRAPHICS,
-                       offset, size, data);
-}
-
-void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
-    // Remembered per slot: push descriptors die with the pipeline layout
-    // they were pushed against, but the RHI contract (from GL) is that bind
-    // groups SURVIVE a pipeline change — RC binds its frame group once, then
-    // switches build/extend/merge pipelines. setPipeline replays these.
-    if (index < boundGroups_.size()) {
-        boundGroups_[index] = group;
-    } else {
-        // A slot beyond the replay array would bind now and silently
-        // VANISH on the next setPipeline — the failure mode that made the
-        // GI invisible. Scream instead.
-        LOG_ERROR("Vulkan setBindGroup: slot {} exceeds the replay "
-                  "capacity ({}) — its descriptors will drop on the next "
-                  "pipeline change",
-                  index, boundGroups_.size());
-    }
-    pushGroup(group);
-}
-
-void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
-    auto it = d_->bindGroups.find(group.id);
-    if (cb_ == VK_NULL_HANDLE || it == d_->bindGroups.end() ||
-        boundPipeline_ == nullptr) {
-        return;
-    }
-    const vector<BindGroupEntry>& entries = it->second.entries;
-
-    // Push descriptors: the writes go straight out against the bound
-    // pipeline's layout, so no VkDescriptorSet is ever allocated and there is
-    // no layout to match against (docs/RENDERING.md, push descriptors).
-    vector<VkWriteDescriptorSet>& writes = scratchWrites_;
-    vector<VkDescriptorBufferInfo>& bufferInfos = scratchBufferInfos_;
-    vector<VkDescriptorImageInfo>& imageInfos = scratchImageInfos_;
-    writes.clear();
-    bufferInfos.clear();
-    imageInfos.clear();
-    writes.reserve(entries.size());
-    bufferInfos.reserve(entries.size());
-    imageInfos.reserve(entries.size());
-
-    for (const BindGroupEntry& entry : entries) {
-        VkWriteDescriptorSet write {};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.descriptorCount = 1;
-
-        if (entry.buffer.id != 0) {
-            VulkanBuffer* buffer = d_->findBuffer(entry.buffer);
-            if (buffer == nullptr) {
-                continue;
-            }
-            const DescriptorClass klass = entry.storage
-                                              ? DescriptorClass::Storage
-                                              : DescriptorClass::Uniform;
-            bufferInfos.push_back({ buffer->buffer, 0, VK_WHOLE_SIZE });
-            write.dstBinding = entry.binding + bindingOffset(klass);
-            write.descriptorType = toVkDescriptorType(klass);
-            write.pBufferInfo = &bufferInfos.back();
-        } else if (entry.texture.id != 0) {
-            VulkanTexture* tex = d_->findTexture(entry.texture);
-            const DescriptorClass klass = entry.storageImage
-                                              ? DescriptorClass::StorageImage
-                                              : DescriptorClass::Sampler;
-            if (klass == DescriptorClass::Sampler) {
-                // Three situations where THIS texture cannot legally back the
-                // binding: it was destroyed; it is still bound as an
-                // attachment; or the binding's declared dimensionality
-                // differs (binding numbers are reused across shaders — a
-                // replayed group may pair a 3D texture with a 2D binding).
-                // GL sampled garbage silently in all three; here a dummy of
-                // the DECLARED shape stands in so no descriptor stays unset
-                // (an unset one is invalid the moment the shader statically
-                // reads it).
-                const u32 dst = entry.binding + bindingOffset(klass);
-                ImageDim declared = ImageDim::Any;
-                bool declaredComparison = false;
-                for (const ShaderResource& r : boundPipeline_->resources) {
-                    if (r.binding == dst) {
-                        declared = r.dim;
-                        declaredComparison = r.comparison;
-                        break;
-                    }
-                }
-                const bool busy =
-                    tex != nullptr &&
-                    (tex->layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
-                     tex->layout ==
-                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-                const ImageDim actual =
-                    tex == nullptr           ? ImageDim::Any
-                    : tex->extent.depth > 1  ? ImageDim::T3D
-                    : tex->arrayLayers > 1   ? ImageDim::T2DArray
-                                             : ImageDim::T2D;
-                const bool mismatch = tex != nullptr &&
-                                      declared != ImageDim::Any &&
-                                      actual != declared;
-                if (tex == nullptr || busy || mismatch) {
-                    const TextureHandle dummy =
-                        declaredComparison               ? d_->dummyDepth
-                        : declared == ImageDim::T3D      ? d_->dummy3D
-                        : declared == ImageDim::T2DArray ? d_->dummyArray
-                                                         : d_->dummy2D;
-                    tex = d_->findTexture(dummy);
-                    if (tex == nullptr) {
-                        continue; // device init itself — dummies not built yet
-                    }
-                }
-            } else if (tex == nullptr) {
-                continue;
-            }
-            VkDescriptorImageInfo image {};
-            image.imageView = tex->view;
-            if (klass == DescriptorClass::StorageImage) {
-                // First storage use moves the image to GENERAL. Legal here:
-                // compute runs outside render passes, where barriers are
-                // allowed (graphics never binds storage images).
-                if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
-                    transitionLayout(cb_, tex->image, tex->aspect, 0,
-                                     tex->mipLevels, tex->arrayLayers,
-                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL, queueCaps());
-                    tex->layout = VK_IMAGE_LAYOUT_GENERAL;
-                }
-                image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-                // ONE mip exactly (GL: glBindImageTexture(level)): with the
-                // whole-texture view, writes land in mip 0 whatever
-                // entry.imageMip says — the Hi-Z pyramid bug.
-                image.imageView = d_->textureMipView(*tex, entry.imageMip);
-            } else {
-                // The texture's ACTUAL layout, not an assumed one: GPU-written
-                // volumes (GI clipmaps, cascades) live in GENERAL for good and
-                // are legally sampled from it.
-                image.imageLayout = tex->layout;
-                auto sampler = d_->samplers.find(entry.sampler.id);
-                // No sampler in the entry -> the texture's creation-time
-                // parameters apply (legacy 2D contract).
-                image.sampler = sampler != d_->samplers.end()
-                                    ? sampler->second
-                                    : tex->defaultSampler;
-                const u32 dst = entry.binding + bindingOffset(klass);
-                if (dst < 64 &&
-                    ((boundPipeline_->comparisonMask >> dst) & 1ull) != 0) {
-                    // The layout's immutable PCF sampler wins; push a plain
-                    // sampler so the portability check never sees a mutable
-                    // comparison one.
-                    image.sampler = tex->defaultSampler;
-                }
-            }
-            imageInfos.push_back(image);
-            write.dstBinding = entry.binding + bindingOffset(klass);
-            write.descriptorType = toVkDescriptorType(klass);
-            write.pImageInfo = &imageInfos.back();
-        } else {
-            continue;
-        }
-        // GL semantics: entries the shader does not declare are ignored.
-        if (write.dstBinding >= 64 ||
-            ((boundPipeline_->bindingMask >> write.dstBinding) & 1ull) == 0) {
-            if (!bufferInfos.empty() && write.pBufferInfo != nullptr) {
-                bufferInfos.pop_back();
-            }
-            if (!imageInfos.empty() && write.pImageInfo != nullptr) {
-                imageInfos.pop_back();
-            }
-            continue;
-        }
-        writes.push_back(write);
-    }
-    if (writes.empty()) {
-        return;
-    }
-    for (const VkWriteDescriptorSet& w : writes) {
-        if (w.dstBinding < 64) {
-            pushedMask_ |= 1ull << w.dstBinding;
-        }
-    }
-    // Set 0 ALWAYS: the RHI's namespace is the (class-offset) binding
-    // number, not the group slot — the GL backend ignores `index` for the
-    // same reason (CommandBuffer.hpp), and every layout here has exactly one
-    // set. Slots 0/1/2 (frame / object / caster groups) merge into it.
-    d_->cmdPushDescriptorSet(
-        cb_,
-        boundPipeline_->compute ? VK_PIPELINE_BIND_POINT_COMPUTE
-                                : VK_PIPELINE_BIND_POINT_GRAPHICS,
-        boundPipeline_->layout, 0, static_cast<u32>(writes.size()),
-        writes.data());
-}
-
-// GL's contract: every statically-read binding is bound to SOMETHING (an
-// unbound unit reads garbage but is legal). Vulkan invalidates the whole
-// draw/dispatch instead. Any binding the pipeline declares that no group
-// pushed gets a dummy of the declared class/shape — GI-off sampling black,
-// optional textures, etc. keep working exactly as they did on GL.
-void VulkanCommandBuffer::bindMissingDummies() {
-    if (cb_ == VK_NULL_HANDLE || boundPipeline_ == nullptr) {
-        return;
-    }
-    const u64 missing = boundPipeline_->bindingMask & ~pushedMask_;
-    if (missing == 0) {
-        return;
-    }
-    vector<VkWriteDescriptorSet>& writes = scratchWrites_;
-    vector<VkDescriptorBufferInfo>& bufferInfos = scratchBufferInfos_;
-    vector<VkDescriptorImageInfo>& imageInfos = scratchImageInfos_;
-    const size_t count = boundPipeline_->resources.size();
-    writes.clear();
-    bufferInfos.clear();
-    imageInfos.clear();
-    writes.reserve(count);
-    bufferInfos.reserve(count);
-    imageInfos.reserve(count);
-    for (const ShaderResource& r : boundPipeline_->resources) {
-        if (r.binding >= 64 || ((missing >> r.binding) & 1ull) == 0) {
-            continue;
-        }
-        VkWriteDescriptorSet write {};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstBinding = r.binding;
-        write.descriptorCount = 1;
-        write.descriptorType = toVkDescriptorType(r.klass);
-        if (r.klass == DescriptorClass::Uniform ||
-            r.klass == DescriptorClass::Storage) {
-            VulkanBuffer* buf = d_->findBuffer(
-                r.klass == DescriptorClass::Uniform ? d_->dummyUniform
-                                                    : d_->dummyStorage);
-            if (buf == nullptr) {
-                continue;
-            }
-            VkDescriptorBufferInfo info {};
-            info.buffer = buf->buffer;
-            info.range = VK_WHOLE_SIZE;
-            bufferInfos.push_back(info);
-            write.pBufferInfo = &bufferInfos.back();
-        } else {
-            VulkanTexture* tex = d_->findTexture(
-                r.comparison                  ? d_->dummyDepth
-                : r.dim == ImageDim::T3D      ? d_->dummy3D
-                : r.dim == ImageDim::T2DArray ? d_->dummyArray
-                                              : d_->dummy2D);
-            if (tex == nullptr) {
-                continue;
-            }
-            VkDescriptorImageInfo image {};
-            image.imageView = tex->view;
-            if (r.klass == DescriptorClass::StorageImage) {
-                if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
-                    transitionLayout(cb_, tex->image, tex->aspect, 0,
-                                     tex->mipLevels, tex->arrayLayers,
-                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL, queueCaps());
-                    tex->layout = VK_IMAGE_LAYOUT_GENERAL;
-                }
-                image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-            } else {
-                image.imageLayout = tex->layout;
-                image.sampler = tex->defaultSampler;
-            }
-            imageInfos.push_back(image);
-            write.pImageInfo = &imageInfos.back();
-        }
-        pushedMask_ |= 1ull << r.binding;
-        writes.push_back(write);
-    }
-    if (writes.empty()) {
-        return;
-    }
-    d_->cmdPushDescriptorSet(
-        cb_,
-        boundPipeline_->compute ? VK_PIPELINE_BIND_POINT_COMPUTE
-                                : VK_PIPELINE_BIND_POINT_GRAPHICS,
-        boundPipeline_->layout, 0, static_cast<u32>(writes.size()),
-        writes.data());
-}
-
-void VulkanCommandBuffer::setVertexBuffer(u32 slot, BufferHandle handle,
-                                          u64 bufferOffset) {
-    VulkanBuffer* buffer = d_->findBuffer(handle);
-    if (cb_ == VK_NULL_HANDLE || buffer == nullptr) {
-        return;
-    }
-    const VkDeviceSize offset = bufferOffset;
-    vkCmdBindVertexBuffers(cb_, slot, 1, &buffer->buffer, &offset);
-}
-
-void VulkanCommandBuffer::setIndexBuffer(BufferHandle handle,
-                                         IndexFormat format) {
-    VulkanBuffer* buffer = d_->findBuffer(handle);
-    if (cb_ == VK_NULL_HANDLE || buffer == nullptr) {
-        return;
-    }
-    vkCmdBindIndexBuffer(cb_, buffer->buffer, 0,
-                         format == IndexFormat::U16 ? VK_INDEX_TYPE_UINT16
-                                                    : VK_INDEX_TYPE_UINT32);
-}
-
-void VulkanCommandBuffer::draw(u32 vertexCount, u32 instanceCount,
-                               u32 firstVertex) {
-    if (cb_ != VK_NULL_HANDLE) {
-        bindMissingDummies();
-        vkCmdDraw(cb_, vertexCount, instanceCount, firstVertex, 0);
-    }
-}
-
-void VulkanCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
-                                      u32 firstIndex, u32 firstInstance) {
-    if (cb_ != VK_NULL_HANDLE) {
-        bindMissingDummies();
-        // firstInstance is native here — no GL_ARB_base_instance dance.
-        vkCmdDrawIndexed(cb_, indexCount, instanceCount, firstIndex, 0,
-                         firstInstance);
-    }
-}
-
-void VulkanCommandBuffer::drawIndexedIndirect(BufferHandle args, u64 offset,
-                                              u32 drawCount, u32 stride) {
-    VulkanBuffer* buffer = d_->findBuffer(args);
-    if (cb_ == VK_NULL_HANDLE || buffer == nullptr || drawCount == 0) {
-        return;
-    }
-    bindMissingDummies();
-    if (d_->multiDrawIndirect || drawCount == 1) {
-        vkCmdDrawIndexedIndirect(cb_, buffer->buffer, offset, drawCount,
-                                 stride);
-        return;
-    }
-    // Feature absent: the per-draw loop is still GPU-driven (no readback),
-    // just more submission records.
-    for (u32 i = 0; i < drawCount; ++i) {
-        vkCmdDrawIndexedIndirect(cb_, buffer->buffer,
-                                 offset + u64(i) * stride, 1, stride);
-    }
-}
-
-void VulkanCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
-    if (cb_ != VK_NULL_HANDLE) {
-        bindMissingDummies();
-        vkCmdDispatch(cb_, groupsX, groupsY, groupsZ);
-    }
-}
-
-void VulkanCommandBuffer::memoryBarrier(u32 dst) {
-    if (cb_ == VK_NULL_HANDLE) {
-        return;
-    }
-    // The destination scope is the whole point (docs/RENDERING.md PG1):
-    // COMPUTE -> ALL_COMMANDS at every internal pass boundary is what kept
-    // the frame strictly serial. Scoped destinations leave later,
-    // independent stages free to overlap the compute that wrote nothing
-    // they read.
-    VkPipelineStageFlags dstStages = 0;
-    VkAccessFlags dstAccess = 0;
-    if (dst == BarrierStage_All) {
-        dstStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-        dstAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT |
-                    VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
-                    VK_ACCESS_TRANSFER_READ_BIT;
-    } else {
-        if (dst & BarrierStage_Compute) {
-            dstStages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
-                         VK_ACCESS_UNIFORM_READ_BIT;
-        }
-        if (dst & BarrierStage_Fragment) {
-            dstStages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
-                         VK_ACCESS_UNIFORM_READ_BIT;
-        }
-        if (dst & BarrierStage_Vertex) {
-            dstStages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
-                         VK_ACCESS_UNIFORM_READ_BIT;
-        }
-        if (dst & BarrierStage_Transfer) {
-            dstStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
-            dstAccess |= VK_ACCESS_TRANSFER_READ_BIT;
-        }
-        if (dst & BarrierStage_Indirect) {
-            dstStages |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
-            dstAccess |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-        }
-        if (dstStages == 0) {
-            return;
-        }
-    }
-    VkMemoryBarrier barrier {};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         clampStagesToQueue(dstStages, queueCaps()), 0, 1,
-                         &barrier, 0, nullptr, 0, nullptr);
-}
-
-void VulkanCommandBuffer::readBarrier(u32 src) {
-    if (cb_ == VK_NULL_HANDLE) {
-        return;
-    }
-    // Execution-only WAR fence: prior reads at `src` finish before later
-    // compute writes begin. No memory barrier — the reads consumed the
-    // old data, there is nothing to make visible.
-    VkPipelineStageFlags srcStages = 0;
-    if (src & BarrierStage_Compute) {
-        srcStages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-    }
-    if (src & BarrierStage_Fragment) {
-        srcStages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    if (src & BarrierStage_Vertex) {
-        srcStages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-    }
-    if (src & BarrierStage_Transfer) {
-        srcStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
-    }
-    if (srcStages == 0) {
-        return;
-    }
-    vkCmdPipelineBarrier(cb_, clampStagesToQueue(srcStages, queueCaps()),
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
-                         0, nullptr, 0, nullptr);
-}
-
-void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,
-                                     u64 size, u64 srcOffset, u64 dstOffset) {
-    VulkanBuffer* s = d_->findBuffer(src);
-    VulkanBuffer* t = d_->findBuffer(dst);
-    if (cb_ == VK_NULL_HANDLE || !s || !t) {
-        return;
-    }
-    VkBufferCopy region {};
-    region.srcOffset = srcOffset;
-    region.dstOffset = dstOffset;
-    region.size = size;
-    vkCmdCopyBuffer(cb_, s->buffer, t->buffer, 1, &region);
-}
-
-bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, u64 srcOffset,
-                                           VkBuffer dst, u64 size,
-                                           u64 dstOffset,
-                                           VkPipelineStageFlags readStages,
-                                           VkAccessFlags readAccess) {
-    if (cb_ == VK_NULL_HANDLE || inPass_) {
-        return false;
-    }
-    // readStages/readAccess are scoped to the buffer's declared usage
-    // (bufferReadScope): the barrier only orders against the stages that
-    // can actually read this buffer, leaving the rest of the frame free
-    // to overlap the copy.
-
-    // A pipeline barrier's execution dependency covers every command
-    // submitted earlier on the queue — i.e. the previous frame's reads of
-    // this buffer. WAR needs the execution ordering only, no source access.
-    VkBufferMemoryBarrier barrier {};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = dst;
-    barrier.offset = dstOffset;
-    barrier.size = size;
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    const VkPipelineStageFlags queueReadStages =
-        clampStagesToQueue(readStages, queueCaps());
-    vkCmdPipelineBarrier(cb_, queueReadStages, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0, 0, nullptr, 1, &barrier, 0, nullptr);
-
-    VkBufferCopy region {};
-    region.srcOffset = srcOffset;
-    region.dstOffset = dstOffset;
-    region.size = size;
-    vkCmdCopyBuffer(cb_, staging, dst, 1, &region);
-
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = readAccess;
-    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_TRANSFER_BIT, queueReadStages,
-                         0, 0, nullptr, 1, &barrier, 0, nullptr);
-    return true;
-}
-
-void VulkanCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
-    VulkanTexture* s = d_->findTexture(src);
-    VulkanTexture* t = d_->findTexture(dst);
-    if (cb_ == VK_NULL_HANDLE || !s || !t || inPass_) {
-        return; // must be called outside a render pass (CommandBuffer contract)
-    }
-    const VkImageLayout srcWas = s->layout;
-    const VkImageLayout dstWas = t->layout;
-    transitionLayout(cb_, s->image, s->aspect, 0, 1, s->arrayLayers, srcWas,
-                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, queueCaps());
-    transitionLayout(cb_, t->image, t->aspect, 0, 1, t->arrayLayers, dstWas,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, queueCaps());
-
-    VkImageCopy region {};
-    region.srcSubresource.aspectMask = s->aspect;
-    region.srcSubresource.layerCount = s->arrayLayers;
-    region.dstSubresource.aspectMask = t->aspect;
-    region.dstSubresource.layerCount = t->arrayLayers;
-    region.extent = s->extent;
-    vkCmdCopyImage(cb_, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    // Both are sampled again afterwards (the point of snapshotting).
-    transitionLayout(cb_, s->image, s->aspect, 0, 1, s->arrayLayers,
-                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
-    transitionLayout(cb_, t->image, t->aspect, 0, 1, t->arrayLayers,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, queueCaps());
-    s->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    t->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-}
-
 } // namespace
-
-// --- Transfer helpers ----------------------------------------------------------
-
-template <typename F>
-bool VulkanDevice::Impl::immediateSubmit(F&& record, bool wait) {
-    VkCommandBufferAllocateInfo alloc {};
-    alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    alloc.commandPool = transferPool;
-    alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc.commandBufferCount = 1;
-    VkCommandBuffer cb = VK_NULL_HANDLE;
-    if (!vkOk(vkAllocateCommandBuffers(device, &alloc, &cb),
-              "vkAllocateCommandBuffers(transfer)")) {
-        return false;
-    }
-
-    VkCommandBufferBeginInfo begin {};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cb, &begin);
-    record(cb);
-    vkEndCommandBuffer(cb);
-
-    VkSubmitInfo submit {};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &cb;
-
-    if (!wait) {
-        // Async path (buffer uploads): submission ORDER on the single queue
-        // already guarantees this copy executes before any later frame's
-        // submit, so nothing needs to block (a per-upload fence wait here
-        // would stall the streaming budget). The cb (and the caller's
-        // staging, parked in pendingBuffers) is freed once the frame slot
-        // cycles, which happens-after the copy by the same ordering.
-        const bool ok = vkOk(vkQueueSubmit(graphicsQueue, 1, &submit,
-                                           VK_NULL_HANDLE),
-                             "vkQueueSubmit(transfer)");
-        if (ok) {
-            pendingCmds.push_back({ cb, asyncParkFrame() });
-        } else {
-            vkFreeCommandBuffers(device, transferPool, 1, &cb);
-        }
-        return ok;
-    }
-
-    VkFenceCreateInfo fenceInfo {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    VkFence fence = VK_NULL_HANDLE;
-    vkCreateFence(device, &fenceInfo, nullptr, &fence);
-    const bool ok = vkOk(vkQueueSubmit(graphicsQueue, 1, &submit, fence),
-                         "vkQueueSubmit(transfer)");
-    if (ok) {
-        vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
-    }
-    vkDestroyFence(device, fence, nullptr);
-    vkFreeCommandBuffers(device, transferPool, 1, &cb);
-    return ok;
-}
-
-bool VulkanDevice::Impl::createStaging(u64 size, bool forRead, VkBuffer& out,
-                                       VmaAllocation& outAlloc,
-                                       void** outMapped) {
-    VkBufferCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = size;
-    info.usage = forRead ? VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                         : VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    // A staging src may be consumed by a copy routed onto the compute
-    // queue (async recording) or the upload queue — same CONCURRENT
-    // policy as resources.
-    const std::array<u32, 3> shareFamilies { graphicsFamily, computeFamily,
-                                             transferFamily };
-    if (asyncComputeAvailable) {
-        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = uploadQueueAvailable ? 3 : 2;
-        info.pQueueFamilyIndices = shareFamilies.data();
-    }
-
-    VmaAllocationCreateInfo alloc {};
-    alloc.usage = VMA_MEMORY_USAGE_AUTO;
-    alloc.flags =
-        VMA_ALLOCATION_CREATE_MAPPED_BIT |
-        (forRead ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
-                 : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-
-    VmaAllocationInfo allocInfo {};
-    if (!vkOk(vmaCreateBuffer(allocator, &info, &alloc, &out, &outAlloc,
-                              &allocInfo),
-              "vmaCreateBuffer(staging)")) {
-        return false;
-    }
-    *outMapped = allocInfo.pMappedData;
-    return true;
-}
-
-bool VulkanDevice::Impl::ringAlloc(u64 size, VkBuffer& outBuffer,
-                                   u64& outOffset, void** outMapped) {
-    StagingRing& ring = stagingRings[frame];
-    // 256-byte slices: comfortably above every alignment the copy or the
-    // flush could want, and cache-line friendly.
-    u64 offset = (ring.head + 255) & ~u64(255);
-    if (ring.buffer == VK_NULL_HANDLE || offset + size > ring.capacity) {
-        if (ring.buffer != VK_NULL_HANDLE) {
-            pendingBuffers.push_back(
-                { ring.buffer, ring.allocation, frameCounter });
-        }
-        u64 capacity = std::max<u64>(ring.capacity * 2, u64(1) << 20);
-        while (capacity < size) {
-            capacity *= 2;
-        }
-        ring = {};
-        void* mapped = nullptr;
-        if (!createStaging(capacity, false, ring.buffer, ring.allocation,
-                           &mapped)) {
-            ring = {};
-            return false;
-        }
-        ring.mapped = static_cast<u8*>(mapped);
-        ring.capacity = capacity;
-        offset = 0;
-    }
-    outBuffer = ring.buffer;
-    outOffset = offset;
-    *outMapped = ring.mapped + offset;
-    ring.head = offset + size;
-    return true;
-}
-
-bool VulkanDevice::Impl::recordUpload(VkBuffer dst, const void* data,
-                                      u64 size, u64 dstOffset) {
-    if (!uploadRecording) {
-        // Slot reuse is safe: beginFrame waited this slot's last upload
-        // value on uploadTimeline.
-        VkCommandBufferBeginInfo begin {};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        if (!vkOk(vkBeginCommandBuffer(uploadCbs[frame], &begin),
-                  "vkBeginCommandBuffer(upload)")) {
-            return false;
-        }
-        uploadRecording = true;
-    }
-    VkBuffer staging = VK_NULL_HANDLE;
-    u64 srcOffset = 0;
-    void* mapped = nullptr;
-    if (!ringAlloc(size, staging, srcOffset, &mapped)) {
-        return false;
-    }
-    std::memcpy(mapped, data, size);
-    vmaFlushAllocation(allocator, stagingRings[frame].allocation, srcOffset,
-                       size);
-    // WAW within the frame's own upload stream (two updates of the same
-    // range); cross-frame WAR and reader visibility ride the semaphores.
-    VkBufferMemoryBarrier barrier {};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = dst;
-    barrier.offset = dstOffset;
-    barrier.size = size;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier(uploadCbs[frame], VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1,
-                         &barrier, 0, nullptr);
-    VkBufferCopy region {};
-    region.srcOffset = srcOffset;
-    region.dstOffset = dstOffset;
-    region.size = size;
-    vkCmdCopyBuffer(uploadCbs[frame], staging, dst, 1, &region);
-    return true;
-}
-
-// Image counterpart of recordUpload: stage through the per-frame ring and
-// record transition + copy on the frame's upload command buffer — zero
-// submits and zero waits per texture. The endFrame submit chain already
-// orders the upload timeline before every reader of the frame.
-bool VulkanDevice::Impl::recordImageUpload(
-    VkImage image, VkImageAspectFlags aspect, u32 mipLevels, u32 arrayLayers,
-    const void* data, u64 size, vector<VkBufferImageCopy> regions) {
-    if (!uploadQueueAvailable || !frameActive || computeRouting) {
-        return false;
-    }
-    if (!uploadRecording) {
-        VkCommandBufferBeginInfo begin {};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        if (!vkOk(vkBeginCommandBuffer(uploadCbs[frame], &begin),
-                  "vkBeginCommandBuffer(upload)")) {
-            return false;
-        }
-        uploadRecording = true;
-    }
-    VkBuffer staging = VK_NULL_HANDLE;
-    u64 srcOffset = 0;
-    void* mapped = nullptr;
-    if (!ringAlloc(size, staging, srcOffset, &mapped)) {
-        return false;
-    }
-    std::memcpy(mapped, data, size);
-    vmaFlushAllocation(allocator, stagingRings[frame].allocation, srcOffset,
-                       size);
-    // Ring offsets are 256-aligned, so the per-mip block alignment the
-    // regions were built with still holds after the shift.
-    for (VkBufferImageCopy& region : regions) {
-        region.bufferOffset += srcOffset;
-    }
-    VkCommandBuffer cb = uploadCbs[frame];
-    transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
-                     VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uploadQueueFlags);
-    vkCmdCopyBufferToImage(cb, staging, image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           static_cast<u32>(regions.size()), regions.data());
-    transitionLayout(cb, image, aspect, 0, mipLevels, arrayLayers,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                     uploadQueueFlags);
-    return true;
-}
-
-// --- Swapchain ---------------------------------------------------------------
-
-bool VulkanDevice::Impl::createSwapchain() {
-    VkSurfaceCapabilitiesKHR caps {};
-    if (!vkOk(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu, surface, &caps),
-              "vkGetPhysicalDeviceSurfaceCapabilitiesKHR")) {
-        return false;
-    }
-
-    // A zero extent means the window is minimized: nothing to create yet.
-    extent = caps.currentExtent;
-    if (extent.width == 0xFFFFFFFFu) {
-        extent.width = std::clamp(static_cast<u32>(window->width()),
-                                  caps.minImageExtent.width,
-                                  caps.maxImageExtent.width);
-        extent.height = std::clamp(static_cast<u32>(window->height()),
-                                   caps.minImageExtent.height,
-                                   caps.maxImageExtent.height);
-    }
-    if (extent.width == 0 || extent.height == 0) {
-        return false;
-    }
-
-    u32 formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &formatCount, nullptr);
-    vector<VkSurfaceFormatKHR> formats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &formatCount,
-                                         formats.data());
-    if (formats.empty()) {
-        LOG_ERROR("Vulkan: surface reports no formats");
-        return false;
-    }
-    // Prefer a straight 8-bit BGRA UNORM target. The engine's color pipeline
-    // manages its own gamma, so an _SRGB swapchain would double-correct.
-    VkSurfaceFormatKHR chosen = formats[0];
-    for (const VkSurfaceFormatKHR& f : formats) {
-        if (f.format == VK_FORMAT_B8G8R8A8_UNORM &&
-            f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            chosen = f;
-            break;
-        }
-    }
-    colorFormat = chosen.format;
-
-    u32 imageCount = caps.minImageCount + 1;
-    if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount) {
-        imageCount = caps.maxImageCount;
-    }
-
-    VkSwapchainCreateInfoKHR info {};
-    info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    info.surface = surface;
-    info.minImageCount = imageCount;
-    info.imageFormat = chosen.format;
-    info.imageColorSpace = chosen.colorSpace;
-    info.imageExtent = extent;
-    info.imageArrayLayers = 1;
-    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                      VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    const std::array<u32, 2> families { graphicsFamily, presentFamily };
-    if (graphicsFamily != presentFamily) {
-        info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = 2;
-        info.pQueueFamilyIndices = families.data();
-    } else {
-        info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    }
-    info.preTransform = caps.currentTransform;
-    info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    // FIFO is the only mode guaranteed present everywhere (and is v-synced).
-    info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    info.clipped = VK_TRUE;
-    info.oldSwapchain = VK_NULL_HANDLE;
-
-    if (!vkOk(vkCreateSwapchainKHR(device, &info, nullptr, &swapchain),
-              "vkCreateSwapchainKHR")) {
-        return false;
-    }
-
-    u32 count = 0;
-    vkGetSwapchainImagesKHR(device, swapchain, &count, nullptr);
-    images.resize(count);
-    vkGetSwapchainImagesKHR(device, swapchain, &count, images.data());
-
-    imageViews.resize(count);
-    for (u32 i = 0; i < count; ++i) {
-        VkImageViewCreateInfo view {};
-        view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view.image = images[i];
-        view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view.format = colorFormat;
-        view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view.subresourceRange.levelCount = 1;
-        view.subresourceRange.layerCount = 1;
-        if (!vkOk(vkCreateImageView(device, &view, nullptr, &imageViews[i]),
-                  "vkCreateImageView")) {
-            return false;
-        }
-    }
-
-    // No VkRenderPass and no VkFramebuffer: with dynamic rendering the
-    // attachment, its load/store ops and its clear value are given straight to
-    // vkCmdBeginRendering. The layout transitions the render pass used to
-    // perform implicitly are issued as explicit barriers in beginFrame/endFrame.
-    renderFinished.resize(count);
-    for (u32 i = 0; i < count; ++i) {
-        VkSemaphoreCreateInfo sem {};
-        sem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        if (!vkOk(vkCreateSemaphore(device, &sem, nullptr, &renderFinished[i]),
-                  "vkCreateSemaphore(renderFinished)")) {
-            return false;
-        }
-    }
-    return true;
-}
-
-void VulkanDevice::Impl::destroySwapchain() {
-    if (device == VK_NULL_HANDLE) {
-        return;
-    }
-    for (VkSemaphore s : renderFinished) {
-        vkDestroySemaphore(device, s, nullptr);
-    }
-    renderFinished.clear();
-    for (VkImageView v : imageViews) {
-        vkDestroyImageView(device, v, nullptr);
-    }
-    imageViews.clear();
-    images.clear();
-    if (swapchain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(device, swapchain, nullptr);
-        swapchain = VK_NULL_HANDLE;
-    }
-}
-
-bool VulkanDevice::Impl::recreateSwapchain() {
-    vkDeviceWaitIdle(device);
-    destroySwapchain();
-    return createSwapchain();
-}
 
 // --- Lifetime ----------------------------------------------------------------
 
@@ -2573,1739 +233,118 @@ VulkanDevice::~VulkanDevice() {
     }
 }
 
-// --- Frame -------------------------------------------------------------------
-
-CommandBuffer& VulkanDevice::beginFrame() {
-    Impl& d = *impl;
-    d.frameActive = false;
-
-    vkWaitForFences(d.device, 1, &d.inFlight[d.frame], VK_TRUE, UINT64_MAX);
-    // The graphics fence proves nothing about the compute queue: wait
-    // (timeline) for this slot's last compute submission too, BEFORE the
-    // parked frees run — a staging consumed by that chain must not be
-    // destroyed while it still executes (sync-validation caught it).
-    if (d.asyncComputeAvailable && d.computeSlotValue[d.frame] != 0) {
-        VkSemaphoreWaitInfo wait {};
-        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        wait.semaphoreCount = 1;
-        wait.pSemaphores = &d.timeline;
-        wait.pValues = &d.computeSlotValue[d.frame];
-        vkOk(vkWaitSemaphores(d.device, &wait, UINT64_MAX),
-             "vkWaitSemaphores(compute slot)");
-    }
-    // Same proof for the upload queue: the slot's staging-ring slices and
-    // parked frees must outlive its last transfer submission.
-    if (d.uploadQueueAvailable && d.uploadSlotValue[d.frame] != 0) {
-        VkSemaphoreWaitInfo wait {};
-        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        wait.semaphoreCount = 1;
-        wait.pSemaphores = &d.uploadTimeline;
-        wait.pValues = &d.uploadSlotValue[d.frame];
-        vkOk(vkWaitSemaphores(d.device, &wait, UINT64_MAX),
-             "vkWaitSemaphores(upload slot)");
-    }
-    d.frameCounter++;
-    d.flushPendingFrees(false); // slot fence passed: old parked frees are safe
-    d.stagingRings[d.frame].head = 0; // same proof covers the slot's ring
-
-    VkResult acquired =
-        vkAcquireNextImageKHR(d.device, d.swapchain, UINT64_MAX,
-                              d.imageAvailable[d.frame], VK_NULL_HANDLE,
-                              &d.imageIndex);
-    if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
-        // Window resized/minimized: rebuild and sit this frame out. The
-        // acquire semaphore was not signalled, so nothing must be submitted.
-        d.recreateSwapchain();
-        return *d.cmd;
-    }
-    if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) {
-        vkOk(acquired, "vkAcquireNextImageKHR");
-        return *d.cmd;
-    }
-
-    vkResetFences(d.device, 1, &d.inFlight[d.frame]);
-    vkResetCommandBuffer(d.commandBuffers[d.frame], 0);
-
-    VkCommandBufferBeginInfo begin {};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (!vkOk(vkBeginCommandBuffer(d.commandBuffers[d.frame], &begin),
-              "vkBeginCommandBuffer")) {
-        return *d.cmd;
-    }
-
-    // A render pass used to transition the acquired image implicitly; with
-    // dynamic rendering it is an explicit barrier. UNDEFINED as the source is
-    // correct here — the previous contents are not preserved. NOT the generic
-    // transitionLayout: its UNDEFINED source stage is TOP_OF_PIPE, which does
-    // not chain to the acquire-semaphore wait (pWaitDstStageMask =
-    // COLOR_ATTACHMENT_OUTPUT at submit) — the layout write then races the
-    // presentation engine's read (WRITE_AFTER_READ vs
-    // vkAcquireNextImageKHR, caught by sync validation).
-    // Matching srcStage chains the barrier after the wait.
-    {
-        VkImageMemoryBarrier barrier {};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = d.images[d.imageIndex];
-        barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        vkCmdPipelineBarrier(d.commandBuffers[d.frame],
-                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-                             0, nullptr, 0, nullptr, 1, &barrier);
-    }
-
-    // Recycle this slot's timestamp region: reset is illegal inside a render
-    // pass, so it has to happen here, before any beginRenderPass. First,
-    // harvest every still-pending timestamp of this slot into its handle —
-    // the fence wait above proves the GPU retired the slot, so the results
-    // are available NOW and would be wiped by the reset (this was a 1-in-5
-    // vksmoke flake: a caller polling one frame too late lost the value).
-    if (d.queryPool != VK_NULL_HANDLE) {
-        for (auto& [id, pending] : d.timestamps) {
-            if (pending.cached || pending.frameSlot != d.frame) {
-                continue;
-            }
-            // Both pools harvest here: the fence wait covers the graphics
-            // stream, the timeline wait above covers the compute stream.
-            const u32 liveGeneration =
-                pending.onComputePool ? d.computeRegionGeneration[d.frame]
-                                      : d.regionGeneration[d.frame];
-            if (pending.generation != liveGeneration) {
-                continue;
-            }
-            const VkQueryPool pool =
-                pending.onComputePool ? d.computeQueryPool : d.queryPool;
-            u64 ticks = 0;
-            if (vkGetQueryPoolResults(d.device, pool, pending.query, 1,
-                                      sizeof(ticks), &ticks, sizeof(ticks),
-                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
-                pending.cachedTicks = ticks;
-                pending.cached = true;
-            }
-        }
-        vkCmdResetQueryPool(d.commandBuffers[d.frame], d.queryPool,
-                            d.frame * kTimestampsPerFrame, kTimestampsPerFrame);
-        ++d.regionGeneration[d.frame];
-        d.timestampCursor = 0;
-        // The compute region resets at the top of the compute cb
-        // (asyncComputeCmd) — same-queue ordering with its writes.
-    }
-
-    d.cmd->begin(d.commandBuffers[d.frame], d.imageViews[d.imageIndex],
-                 d.colorFormat, d.extent);
-    d.frameActive = true;
-    return *d.cmd;
-}
-
-CommandBuffer* VulkanDevice::asyncComputeCmd() {
-    Impl& d = *impl;
-    if (!d.asyncComputeAvailable || !d.frameActive) {
-        return nullptr;
-    }
-    if (!d.computeRecording) {
-        // Slot reuse is safe: beginFrame already waited this slot's last
-        // compute value on the timeline.
-        VkCommandBufferBeginInfo begin {};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        if (!vkOk(vkBeginCommandBuffer(d.computeCbs[d.frame], &begin),
-                  "vkBeginCommandBuffer(compute)")) {
-            return nullptr;
-        }
-        d.computeCmd->begin(d.computeCbs[d.frame], VK_NULL_HANDLE,
-                            VK_FORMAT_UNDEFINED, {});
-        d.computeRecording = true;
-        if (d.computeQueryPool != VK_NULL_HANDLE) {
-            // Recycle this slot's compute-timestamp region. Safe NOW: the
-            // beginFrame timeline wait proved the slot's last compute
-            // submission retired (and harvested its still-pending results).
-            vkCmdResetQueryPool(d.computeCbs[d.frame], d.computeQueryPool,
-                                d.frame * kTimestampsPerFrame,
-                                kTimestampsPerFrame);
-            ++d.computeRegionGeneration[d.frame];
-            d.computeTimestampCursor = 0;
-        }
-    }
-    d.computeRouting = true;
-    return d.computeCmd.get();
-}
-
-void VulkanDevice::endAsyncCompute() {
-    impl->computeRouting = false;
-}
-
-void VulkanDevice::endFrame() {
-    Impl& d = *impl;
-    if (!d.frameActive) {
-        return; // acquire failed this frame — nothing was recorded
-    }
-    // A caller that forgot endRenderPass would leave the pass open; closing it
-    // here keeps the command buffer valid rather than failing the submit.
-    d.cmd->endRenderPass();
-
-    VkCommandBuffer cb = d.commandBuffers[d.frame];
-    // Presentable layout — again explicit, since no render pass does it.
-    transitionLayout(cb, d.images[d.imageIndex], VK_IMAGE_ASPECT_COLOR_BIT, 0,
-                     1, 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-    if (!vkOk(vkEndCommandBuffer(cb), "vkEndCommandBuffer")) {
-        d.frameActive = false;
-        return;
-    }
-
-    const bool computePending = d.computeRecording;
-
-    // Upload submit FIRST: the graphics submit below waits its value, so
-    // every pass of this frame reads the uploaded data. WAR: waits last
-    // frame's graphics value at TRANSFER (the previous frame may still be
-    // reading a buffer being rewritten). Own timeline: see Impl notes.
-    if (d.uploadRecording) {
-        vkOk(vkEndCommandBuffer(d.uploadCbs[d.frame]),
-             "vkEndCommandBuffer(upload)");
-        const u64 uploadDone = ++d.uploadNext;
-        const VkPipelineStageFlags uploadWaitStage =
-            VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkTimelineSemaphoreSubmitInfo uploadTimelineInfo {};
-        uploadTimelineInfo.sType =
-            VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        uploadTimelineInfo.waitSemaphoreValueCount =
-            d.gfxDoneValue != 0 ? 1 : 0;
-        uploadTimelineInfo.pWaitSemaphoreValues = &d.gfxDoneValue;
-        uploadTimelineInfo.signalSemaphoreValueCount = 1;
-        uploadTimelineInfo.pSignalSemaphoreValues = &uploadDone;
-        VkSubmitInfo uploadSubmit {};
-        uploadSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        uploadSubmit.pNext = &uploadTimelineInfo;
-        uploadSubmit.waitSemaphoreCount = d.gfxDoneValue != 0 ? 1 : 0;
-        uploadSubmit.pWaitSemaphores = &d.timeline;
-        uploadSubmit.pWaitDstStageMask = &uploadWaitStage;
-        uploadSubmit.commandBufferCount = 1;
-        uploadSubmit.pCommandBuffers = &d.uploadCbs[d.frame];
-        uploadSubmit.signalSemaphoreCount = 1;
-        uploadSubmit.pSignalSemaphores = &d.uploadTimeline;
-        if (vkOk(vkQueueSubmit(d.transferQueue, 1, &uploadSubmit,
-                               VK_NULL_HANDLE),
-                 "vkQueueSubmit(upload)")) {
-            d.uploadDoneValue = uploadDone;
-            d.uploadSlotValue[d.frame] = uploadDone;
-        }
-        d.uploadRecording = false;
-    }
-
-    // Graphics submit. With async compute in flight (PG3): waits LAST
-    // frame's compute value at the CONSUMER stages only (fragment,
-    // compute dispatches, depth writes — the CSM rewrite is a WAR
-    // against the chain's shadow-map reads); vertex work and transfers
-    // run concurrently with the still-running chain. Signals its own
-    // timeline value so this frame's compute can wait the graphics work
-    // it reads (CSM, staging copies). With uploads pending, a third wait
-    // (uploadTimeline) covers every stage that reads uploaded buffers.
-    const u64 gfxDone = ++d.timelineNext;
-    std::array<VkSemaphore, 3> waitSems { d.imageAvailable[d.frame],
-                                          d.timeline, d.uploadTimeline };
-    std::array<u64, 3> waitValues { 0, d.computeDoneValue,
-                                    d.uploadDoneValue };
-    std::array<VkPipelineStageFlags, 3> waitStages {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-    };
-    std::array<VkSemaphore, 2> signalSems { d.renderFinished[d.imageIndex],
-                                            d.timeline };
-    std::array<u64, 2> signalValues { 0, gfxDone };
-    // Signal the timeline on EVERY graphics submit once it exists:
-    // gfxDoneValue is handed to the upload queue as a wait value, so a
-    // submit that skipped the signal would deadlock the first upload.
-    // A wait on value 0 is trivially satisfied, so the 3-entry form is
-    // safe even before the first compute submission.
-    const bool useTimeline = d.asyncComputeAvailable;
-    const bool waitUpload =
-        d.uploadQueueAvailable && d.uploadDoneValue != 0;
-    const u32 waitCount = waitUpload ? 3 : (useTimeline ? 2 : 1);
-    VkTimelineSemaphoreSubmitInfo timelineInfo {};
-    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-    timelineInfo.waitSemaphoreValueCount = waitCount;
-    timelineInfo.pWaitSemaphoreValues = waitValues.data();
-    timelineInfo.signalSemaphoreValueCount = 2;
-    timelineInfo.pSignalSemaphoreValues = signalValues.data();
-    VkSubmitInfo submit {};
-    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.waitSemaphoreCount = waitCount;
-    submit.pWaitSemaphores = waitSems.data();
-    submit.pWaitDstStageMask = waitStages.data();
-    submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &cb;
-    submit.signalSemaphoreCount = useTimeline || waitUpload ? 2 : 1;
-    submit.pSignalSemaphores = signalSems.data();
-    if (useTimeline || waitUpload) {
-        submit.pNext = &timelineInfo;
-    }
-    if (!vkOk(vkQueueSubmit(d.graphicsQueue, 1, &submit, d.inFlight[d.frame]),
-              "vkQueueSubmit")) {
-        d.frameActive = false;
-        return;
-    }
-    d.gfxDoneValue = gfxDone;
-
-    // Compute submit: waits this frame's graphics (CSM + staging copies
-    // it reads), signals its value for the NEXT graphics submit.
-    if (computePending) {
-        vkOk(vkEndCommandBuffer(d.computeCbs[d.frame]),
-             "vkEndCommandBuffer(compute)");
-        const u64 computeDone = ++d.timelineNext;
-        const VkPipelineStageFlags computeWaitStage =
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-            VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkTimelineSemaphoreSubmitInfo computeTimeline {};
-        computeTimeline.sType =
-            VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        computeTimeline.waitSemaphoreValueCount = 1;
-        computeTimeline.pWaitSemaphoreValues = &gfxDone;
-        computeTimeline.signalSemaphoreValueCount = 1;
-        computeTimeline.pSignalSemaphoreValues = &computeDone;
-        VkSubmitInfo computeSubmit {};
-        computeSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        computeSubmit.pNext = &computeTimeline;
-        computeSubmit.waitSemaphoreCount = 1;
-        computeSubmit.pWaitSemaphores = &d.timeline;
-        computeSubmit.pWaitDstStageMask = &computeWaitStage;
-        computeSubmit.commandBufferCount = 1;
-        computeSubmit.pCommandBuffers = &d.computeCbs[d.frame];
-        computeSubmit.signalSemaphoreCount = 1;
-        computeSubmit.pSignalSemaphores = &d.timeline;
-        if (vkOk(vkQueueSubmit(d.computeQueue, 1, &computeSubmit,
-                               VK_NULL_HANDLE),
-                 "vkQueueSubmit(compute)")) {
-            d.computeDoneValue = computeDone;
-            d.computeSlotValue[d.frame] = computeDone;
-        }
-        d.computeRecording = false;
-    }
-    d.computeRouting = false;
-
-    VkPresentInfoKHR present {};
-    present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores = &d.renderFinished[d.imageIndex];
-    present.swapchainCount = 1;
-    present.pSwapchains = &d.swapchain;
-    present.pImageIndices = &d.imageIndex;
-    const VkResult presented = vkQueuePresentKHR(d.presentQueue, &present);
-    if (presented == VK_ERROR_OUT_OF_DATE_KHR ||
-        presented == VK_SUBOPTIMAL_KHR) {
-        d.recreateSwapchain();
-    } else {
-        vkOk(presented, "vkQueuePresentKHR");
-    }
-
-    d.frame = (d.frame + 1) % kFramesInFlight;
-    d.frameActive = false;
-}
-
 u64 VulkanDevice::nativeTextureId(TextureHandle) const {
     // Not implemented: hand ImGui a VkDescriptorSet for the offscreen
     // target (docs/RENDERING.md).
     return 0;
 }
 
-// --- Buffers -------------------------------------------------------------------
-
-// The stages/accesses that can READ a buffer of this declared usage — the
-// scope of recordHostUpdate's two barriers.
-void bufferReadScope(BufferUsage usage, VkPipelineStageFlags& stages,
-                     VkAccessFlags& access) {
-    switch (usage) {
-    case BufferUsage::Indirect:
-        stages = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        access = VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
-                 VK_ACCESS_SHADER_READ_BIT;
-        return;
-    case BufferUsage::Vertex:
-        stages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-        access = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-        return;
-    case BufferUsage::Index:
-        stages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
-        access = VK_ACCESS_INDEX_READ_BIT;
-        return;
-    case BufferUsage::Uniform:
-        stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        access = VK_ACCESS_UNIFORM_READ_BIT;
-        return;
-    case BufferUsage::Storage:
-        stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        access = VK_ACCESS_SHADER_READ_BIT;
-        return;
-    }
-}
-
-// Stages `data` through the frame's staging ring and records the copy into
-// the currently recording command buffer (the compute chain during a
-// routing window, else the frame's). False when nothing is recording, a
-// pass is open, or the ring is full — the caller falls back.
-bool stageIntoFrameCb(VulkanDevice::Impl& d, VulkanBuffer& buffer,
-                      const void* data, u64 size, u64 offset) {
-    VulkanCommandBuffer* rec =
-        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
-    if (!d.frameActive || rec == nullptr || rec->insidePass()) {
-        return false;
-    }
-    VkPipelineStageFlags readStages = 0;
-    VkAccessFlags readAccess = 0;
-    bufferReadScope(buffer.usage, readStages, readAccess);
-    VkBuffer staging = VK_NULL_HANDLE;
-    u64 srcOffset = 0;
-    void* mapped = nullptr;
-    if (!d.ringAlloc(size, staging, srcOffset, &mapped)) {
-        return false;
-    }
-    std::memcpy(mapped, data, size);
-    vmaFlushAllocation(d.allocator, d.stagingRings[d.frame].allocation,
-                       srcOffset, size);
-    return rec->recordHostUpdate(staging, srcOffset, buffer.buffer, size,
-                                 offset, readStages, readAccess);
-}
-
-BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
-                                        const void* initialData) {
-    Impl& d = *impl;
-    if (desc.size == 0) {
-        LOG_ERROR("Vulkan createBuffer: zero size");
-        return {};
-    }
-    // Host-visible when the caller rewrites it every frame or reads it back;
-    // device-local otherwise, written through a staging copy.
-    const bool hostVisible = desc.dynamic || desc.readback;
-
-    VkBufferCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = desc.size;
-    info.usage = toVkBufferUsage(desc.usage) |
-                 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    // With async compute, any buffer may be read on the second queue (and
-    // written from the upload queue) — CONCURRENT skips per-resource
-    // ownership transfers (prototype simplicity over the minor bandwidth
-    // cost; Metal ignores it).
-    const std::array<u32, 3> shareFamilies { d.graphicsFamily,
-                                             d.computeFamily,
-                                             d.transferFamily };
-    if (d.asyncComputeAvailable) {
-        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = d.uploadQueueAvailable ? 3 : 2;
-        info.pQueueFamilyIndices = shareFamilies.data();
-    }
-
-    VmaAllocationCreateInfo alloc {};
-    alloc.usage = VMA_MEMORY_USAGE_AUTO;
-    if (hostVisible) {
-        alloc.flags =
-            VMA_ALLOCATION_CREATE_MAPPED_BIT |
-            (desc.readback
-                 ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
-                 : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    }
-
-    VulkanBuffer buffer {};
-    buffer.size = desc.size;
-    buffer.usage = desc.usage;
-    VmaAllocationInfo allocInfo {};
-    if (!vkOk(vmaCreateBuffer(d.allocator, &info, &alloc, &buffer.buffer,
-                              &buffer.allocation, &allocInfo),
-              "vmaCreateBuffer")) {
-        return {};
-    }
-    buffer.mapped = hostVisible ? allocInfo.pMappedData : nullptr;
-
-    const u32 id = d.nextId++;
-    d.buffers.emplace(id, buffer);
-    if (initialData != nullptr) {
-        updateBuffer({ id }, initialData, desc.size, 0);
-    }
-    return { id };
-}
-
-void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
-                                u64 offset) {
-    Impl& d = *impl;
-    VulkanBuffer* buffer = d.findBuffer(handle);
-    if (!buffer || data == nullptr || size == 0) {
-        return;
-    }
-    if (offset + size > buffer->size) {
-        LOG_ERROR("Vulkan updateBuffer: range {}+{} exceeds size {}", offset,
-                  size, buffer->size);
-        return;
-    }
-
-    if (buffer->mapped != nullptr) {
-        // The in-place memcpy races the frame still in flight
-        // (kFramesInFlight > 1): its passes then read values meant for the
-        // NEXT frame — the CSM matrices flipped mid-frame and cast
-        // flickering dark plates on fast pans (GL is immune,
-        // the driver versions buffer updates). While recording, route the
-        // update through a staged copy in the frame's own command buffer.
-        // In-place remains for init/tools (nothing consuming yet) and
-        // mid-pass updates (copies are illegal inside a pass — ImGui's
-        // vertex streams, which tolerate the race).
-        // Async recording routes the copy into the COMPUTE command
-        // buffer: it executes on the compute queue, ordered with the
-        // chain that reads it — and never races the next frame's
-        // graphics copies (docs/RENDERING.md PG3).
-        if (stageIntoFrameCb(d, *buffer, data, size, offset)) {
-            return; // ring slice — reclaimed when the slot cycles
-        }
-        std::memcpy(static_cast<u8*>(buffer->mapped) + offset, data, size);
-        vmaFlushAllocation(d.allocator, buffer->allocation, offset, size);
-        return;
-    }
-
-    // Device-local: stage then copy on the GPU. With the upload queue on,
-    // the copy records into the frame's TRANSFER command buffer — off the
-    // graphics stream entirely; the endFrame submit chain orders it before
-    // every reader (contract: the whole frame sees the NEW data). Inside a
-    // compute-routing window the update belongs to the compute chain's own
-    // stream and stays there.
-    if (d.uploadQueueAvailable && d.frameActive && !d.computeRouting &&
-        d.recordUpload(buffer->buffer, data, size, offset)) {
-        return;
-    }
-    // Fallback: the FRAME command buffer (recordHostUpdate) from a ring
-    // slice — same mechanism as the dynamic-UBO path. A bare async submit
-    // (immediateSubmit(wait=false)) carries no ordering against the
-    // frame's own draws: sync validation caught the frame reading vertex
-    // buffers still being written by the transfer (READ_AFTER_WRITE).
-    if (stageIntoFrameCb(d, *buffer, data, size, offset)) {
-        return;
-    }
-    // Outside a frame (init, tools): nothing ever waits, block as before
-    // with a dedicated staging.
-    VkBuffer staging = VK_NULL_HANDLE;
-    VmaAllocation stagingAlloc = nullptr;
-    void* mapped = nullptr;
-    if (!d.createStaging(size, false, staging, stagingAlloc, &mapped)) {
-        return;
-    }
-    std::memcpy(mapped, data, size);
-    vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-    d.immediateSubmit(
-        [&](VkCommandBuffer cb) {
-            VkBufferCopy region {};
-            region.dstOffset = offset;
-            region.size = size;
-            vkCmdCopyBuffer(cb, staging, buffer->buffer, 1, &region);
-        },
-        /*wait=*/true);
-    vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
-}
-
-// Destroying a resource still referenced by an in-flight command buffer is
-// undefined. During a frame the resource is parked in the deferred-free
-// queue (released once its frame slot recycles); out of frame nothing
-// tracks in-flight use, so a full drain first is the safe move — those
-// paths (hot reload, teardown, resize) are rare and never per-frame.
-void VulkanDevice::destroyBuffer(BufferHandle handle) {
-    Impl& d = *impl;
-    auto it = d.buffers.find(handle.id);
-    if (it == d.buffers.end()) {
-        return;
-    }
-    // ONE destruction policy (in-frame or not): park until the frame
-    // slots cycle past every submitted or still-recording reference —
-    // never a device-wide stall in a destroy.
-    d.pendingBuffers.push_back({ it->second.buffer, it->second.allocation,
-                                 d.frameCounter });
-    d.buffers.erase(it);
-}
-
-void VulkanDevice::readBuffer(BufferHandle handle, void* dst, u64 size,
-                              u64 offset) {
-    Impl& d = *impl;
-    VulkanBuffer* buffer = d.findBuffer(handle);
-    if (!buffer || dst == nullptr || size == 0) {
-        return;
-    }
-    if (offset + size > buffer->size) {
-        LOG_ERROR("Vulkan readBuffer: range {}+{} exceeds size {}", offset,
-                  size, buffer->size);
-        return;
-    }
-
-    if (buffer->mapped != nullptr) {
-        vmaInvalidateAllocation(d.allocator, buffer->allocation, offset, size);
-        std::memcpy(dst, static_cast<u8*>(buffer->mapped) + offset, size);
-        return;
-    }
-
-    // Device-local: copy into a host-visible staging buffer, then read.
-    // Callers that do this every frame should set BufferDesc::readback so the
-    // buffer is host-visible to begin with (§ Rhi.hpp).
-    VkBuffer staging = VK_NULL_HANDLE;
-    VmaAllocation stagingAlloc = nullptr;
-    void* mapped = nullptr;
-    if (!d.createStaging(size, true, staging, stagingAlloc, &mapped)) {
-        return;
-    }
-    d.immediateSubmit([&](VkCommandBuffer cb) {
-        VkBufferCopy region {};
-        region.srcOffset = offset;
-        region.size = size;
-        vkCmdCopyBuffer(cb, buffer->buffer, staging, 1, &region);
-    });
-    vmaInvalidateAllocation(d.allocator, stagingAlloc, 0, size);
-    std::memcpy(dst, mapped, size);
-    vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
-}
-
-// --- Textures ------------------------------------------------------------------
-
-TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
-                                          const void* pixels) {
-    Impl& d = *impl;
-    if (desc.width == 0 || desc.height == 0) {
-        LOG_ERROR("Vulkan createTexture: zero extent");
-        return {};
-    }
-    if (desc.depth > 1 && desc.arrayLayers > 1) {
-        LOG_ERROR("Vulkan createTexture: depth and arrayLayers are exclusive");
-        return {};
-    }
-    if (isBlockCompressed(desc.format)) {
-        if (!d.textureCompressionBC) {
-            LOG_ERROR("Vulkan createTexture: BC format without "
-                      "textureCompressionBC device feature");
-            return {};
-        }
-        if (!desc.pixelsIncludeMips || pixels == nullptr) {
-            LOG_ERROR("Vulkan createTexture: BC formats require initial "
-                      "pixels with the full mip chain (pixelsIncludeMips)");
-            return {};
-        }
-    }
-    if (desc.pixelsIncludeMips &&
-        (pixels == nullptr || desc.format == TextureFormat::R16F)) {
-        // R16F keeps its f32-to-half conversion contract, which the raw
-        // mip-chain memcpy below cannot honor.
-        LOG_ERROR("Vulkan createTexture: invalid pixelsIncludeMips request");
-        return {};
-    }
-
-    const bool volume = desc.depth > 1;
-    VulkanTexture tex {};
-    tex.format = toVkFormat(desc.format);
-    tex.extent = { desc.width, desc.height, volume ? desc.depth : 1u };
-    tex.mipLevels = std::max(1u, desc.mipLevels);
-    tex.arrayLayers = volume ? 1u : std::max(1u, desc.arrayLayers);
-    tex.aspect = isDepthFormat(desc.format) ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                            : VK_IMAGE_ASPECT_COLOR_BIT;
-
-    // SAMPLED unconditionally: in GL every texture is samplable, and the
-    // renderer relies on it (shadow depth, scene depth, Hi-Z source are all
-    // sampled whatever their declared usage). endRenderPass counts on it too
-    // (attachments hand back as SHADER_READ_ONLY).
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                              VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (desc.usage & TextureUsage_RenderAttachment) {
-        usage |= isDepthFormat(desc.format)
-                     ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-                     : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    }
-    // STORAGE wherever the format allows it (GL parity: compute writes 2D
-    // targets too — Hi-Z mips, snow mask, cloud bake — not just volumes).
-    // SRGB, depth and block-compressed formats do not support storage use.
-    if (desc.format != TextureFormat::SRGBA8 &&
-        !isDepthFormat(desc.format) && !isBlockCompressed(desc.format)) {
-        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    }
-
-    VkImageCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
-    info.format = tex.format;
-    info.extent = tex.extent;
-    info.mipLevels = tex.mipLevels;
-    info.arrayLayers = tex.arrayLayers;
-    info.samples = VK_SAMPLE_COUNT_1_BIT;
-    info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    info.usage = usage;
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // Same CONCURRENT policy as buffers (async compute reads/writes, the
-    // upload queue writes): an EXCLUSIVE image touched from the upload
-    // family without an ownership transfer is undefined.
-    const std::array<u32, 3> shareFamilies { d.graphicsFamily,
-                                             d.computeFamily,
-                                             d.transferFamily };
-    if (d.asyncComputeAvailable) {
-        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = d.uploadQueueAvailable ? 3 : 2;
-        info.pQueueFamilyIndices = shareFamilies.data();
-    }
-
-    VmaAllocationCreateInfo alloc {};
-    alloc.usage = VMA_MEMORY_USAGE_AUTO;
-    if (!vkOk(vmaCreateImage(d.allocator, &info, &alloc, &tex.image,
-                             &tex.allocation, nullptr),
-              "vmaCreateImage")) {
-        return {};
-    }
-
-    VkImageViewCreateInfo view {};
-    view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view.image = tex.image;
-    view.viewType = volume                ? VK_IMAGE_VIEW_TYPE_3D
-                    : tex.arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
-                                          : VK_IMAGE_VIEW_TYPE_2D;
-    view.format = tex.format;
-    view.subresourceRange.aspectMask = tex.aspect;
-    view.subresourceRange.levelCount = tex.mipLevels;
-    view.subresourceRange.layerCount = tex.arrayLayers;
-    if (!vkOk(vkCreateImageView(d.device, &view, nullptr, &tex.view),
-              "vkCreateImageView(texture)")) {
-        vmaDestroyImage(d.allocator, tex.image, tex.allocation);
-        return {};
-    }
-
-    // Upload the full offline mip chain (mip-major, layers contiguous per
-    // mip — see TextureDesc::pixelsIncludeMips): one staging buffer, one
-    // copy region per mip covering every layer.
-    if (pixels != nullptr && desc.pixelsIncludeMips) {
-        const u64 size = textureDataBytes(desc);
-        {
-            vector<VkBufferImageCopy> regions;
-            regions.reserve(tex.mipLevels);
-            u64 offset = 0;
-            u32 w = desc.width;
-            u32 h = desc.height;
-            for (u32 mip = 0; mip < tex.mipLevels; ++mip) {
-                // bufferOffset must be a multiple of the texel block size
-                // (and 4); holds by construction for BC (16-byte blocks)
-                // and R16_UNORM (power-of-two mip areas).
-                ENGINE_ASSERT(offset % std::max<u64>(
-                                  4, formatBlockBytes(desc.format)) == 0);
-                VkBufferImageCopy region {};
-                region.bufferOffset = offset;
-                region.imageSubresource.aspectMask = tex.aspect;
-                region.imageSubresource.mipLevel = mip;
-                region.imageSubresource.baseArrayLayer = 0;
-                region.imageSubresource.layerCount = tex.arrayLayers;
-                region.imageExtent = { w, h, 1 };
-                regions.push_back(region);
-                offset += mipLevelBytes(desc.format, w, h) * tex.arrayLayers;
-                w = w > 1 ? w / 2 : 1;
-                h = h > 1 ? h / 2 : 1;
-            }
-            // In-frame: the upload queue's ring + command buffer — zero
-            // submits, zero waits. Outside a frame (init, tools): a
-            // dedicated staging + async transfer submit, parked in the
-            // pendings until the slot cycles past the copy.
-            if (d.recordImageUpload(tex.image, tex.aspect, tex.mipLevels,
-                                    tex.arrayLayers, pixels, size,
-                                    regions)) {
-                tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                tex.offlineMips = true;
-            } else {
-                VkBuffer staging = VK_NULL_HANDLE;
-                VmaAllocation stagingAlloc = nullptr;
-                void* mapped = nullptr;
-                if (d.createStaging(size, false, staging, stagingAlloc,
-                                    &mapped)) {
-                    std::memcpy(mapped, pixels, size);
-                    vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-                    d.immediateSubmit(
-                        [&](VkCommandBuffer cb) {
-                            transitionLayout(
-                                cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                            vkCmdCopyBufferToImage(
-                                cb, staging, tex.image,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                static_cast<u32>(regions.size()),
-                                regions.data());
-                            transitionLayout(
-                                cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                tex.arrayLayers,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                        },
-                        /*wait=*/false);
-                    d.pendingBuffers.push_back(
-                        { staging, stagingAlloc, d.asyncParkFrame() });
-                    tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    tex.offlineMips = true;
-                }
-            }
-        }
-    }
-    // Upload the base mip of every layer (tightly packed, layer-major).
-    else if (pixels != nullptr) {
-        const u64 texelCount = static_cast<u64>(desc.width) * desc.height *
-                               tex.extent.depth * tex.arrayLayers;
-        const u64 size = texelCount * bytesPerTexel(desc.format);
-        VkBufferImageCopy baseRegion {};
-        baseRegion.imageSubresource.aspectMask = tex.aspect;
-        baseRegion.imageSubresource.mipLevel = 0;
-        baseRegion.imageSubresource.baseArrayLayer = 0;
-        baseRegion.imageSubresource.layerCount = tex.arrayLayers;
-        baseRegion.imageExtent = tex.extent;
-        // In-frame, non-converted formats ride the upload queue's ring
-        // (R16F needs its f32 -> f16 conversion into a dedicated staging).
-        // Runtime-mip textures may NOT: their generateMipmaps blits
-        // submit immediately, while the upload CB lands at endFrame —
-        // the ring would generate the chain from garbage (the magenta
-        // ferns/rocks). They keep the immediate async submit, whose
-        // queue order with the blits is guaranteed.
-        if (desc.format != TextureFormat::R16F && tex.mipLevels == 1 &&
-            d.recordImageUpload(tex.image, tex.aspect, tex.mipLevels,
-                                tex.arrayLayers, pixels, size,
-                                { baseRegion })) {
-            tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        } else if (VkBuffer staging = VK_NULL_HANDLE; true) {
-            VmaAllocation stagingAlloc = nullptr;
-            void* mapped = nullptr;
-            if (!d.createStaging(size, false, staging, stagingAlloc,
-                                 &mapped)) {
-                staging = VK_NULL_HANDLE;
-            }
-            if (staging != VK_NULL_HANDLE) {
-            if (desc.format == TextureFormat::R16F) {
-                // RHI contract (matches what the GL driver does with
-                // GL_FLOAT uploads): R16F initial data is packed f32 per
-                // texel, converted here. A raw memcpy would reinterpret
-                // f32 halves as f16 — the bug that fed the GI terrain
-                // tile (and the water pool map) garbage heights.
-                const f32* src = static_cast<const f32*>(pixels);
-                u16* dst = static_cast<u16*>(mapped);
-                for (u64 i = 0; i < texelCount; ++i) {
-                    dst[i] = glm::packHalf1x16(src[i]);
-                }
-            } else {
-                std::memcpy(mapped, pixels, size);
-            }
-            vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-            d.immediateSubmit(
-                [&](VkCommandBuffer cb) {
-                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                 tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                vkCmdCopyBufferToImage(cb, staging, tex.image,
-                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                                       &baseRegion);
-                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                                 tex.arrayLayers,
-                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                },
-                /*wait=*/false);
-            d.pendingBuffers.push_back(
-                { staging, stagingAlloc, d.asyncParkFrame() });
-            tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            }
-        }
-    } else {
-        // Render targets and GPU-written volumes start empty; move them out of
-        // UNDEFINED so the first barrier has a known source layout.
-        const VkImageLayout initial =
-            volume ? VK_IMAGE_LAYOUT_GENERAL
-                   : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        d.immediateSubmit([&](VkCommandBuffer cb) {
-            transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
-                             tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
-                             initial);
-        });
-        tex.layout = initial;
-    }
-
-    // The creation-time sampler for sampler-less bind entries (legacy 2D).
-    VkSamplerCreateInfo samplerInfo {};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.minFilter = toVkFilter(desc.filter);
-    samplerInfo.magFilter = toVkFilter(desc.filter);
-    samplerInfo.mipmapMode = desc.mipLevels > 1
-                                 ? VK_SAMPLER_MIPMAP_MODE_LINEAR
-                                 : VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    samplerInfo.addressModeU = toVkAddressMode(desc.wrap);
-    samplerInfo.addressModeV = toVkAddressMode(desc.wrap);
-    samplerInfo.addressModeW = toVkAddressMode(desc.wrap);
-    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-    vkOk(vkCreateSampler(d.device, &samplerInfo, nullptr, &tex.defaultSampler),
-         "vkCreateSampler (texture default)");
-
-    const u32 id = d.nextId++;
-    d.textures.emplace(id, tex);
-    return { id };
-}
-
-void VulkanDevice::destroyTexture(TextureHandle handle) {
-    Impl& d = *impl;
-    auto it = d.textures.find(handle.id);
-    if (it == d.textures.end()) {
-        return;
-    }
-    d.pendingTextures.push_back({ it->second.image, it->second.allocation,
-                                  it->second.view,
-                                  it->second.defaultSampler,
-                                  it->second.mipViews,
-                                  d.frameCounter });
-    d.textures.erase(it);
-}
-
-void VulkanDevice::generateMipmaps(TextureHandle handle) {
-    Impl& d = *impl;
-    VulkanTexture* tex = d.findTexture(handle);
-    if (!tex || tex->mipLevels <= 1) {
-        return;
-    }
-    if (tex->offlineMips) {
-        LOG_ERROR("Vulkan generateMipmaps: texture carries an offline mip "
-                  "chain (pixelsIncludeMips) — refusing to overwrite it");
-        return;
-    }
-    // Blitting requires the format to support linear filtering.
-    VkFormatProperties props {};
-    vkGetPhysicalDeviceFormatProperties(d.gpu, tex->format, &props);
-    if (!(props.optimalTilingFeatures &
-          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        LOG_ERROR("Vulkan generateMipmaps: format has no linear blit support");
-        return;
-    }
-
-    const VkImageLayout was = tex->layout;
-    // Async like the upload itself (no staging here — blits are
-    // image-to-image); the barriers order every later read on the queue.
-    d.immediateSubmit(
-        [&](VkCommandBuffer cb) {
-        // Level 0 becomes the blit source; the rest are transfer destinations.
-        transitionLayout(cb, tex->image, tex->aspect, 0, 1, tex->arrayLayers,
-                         was, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        transitionLayout(cb, tex->image, tex->aspect, 1, tex->mipLevels - 1,
-                         tex->arrayLayers, was,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-        i32 width = static_cast<i32>(tex->extent.width);
-        i32 height = static_cast<i32>(tex->extent.height);
-        i32 depth = static_cast<i32>(tex->extent.depth);
-        for (u32 level = 1; level < tex->mipLevels; ++level) {
-            const i32 nextW = std::max(1, width / 2);
-            const i32 nextH = std::max(1, height / 2);
-            const i32 nextD = std::max(1, depth / 2);
-
-            VkImageBlit blit {};
-            blit.srcSubresource.aspectMask = tex->aspect;
-            blit.srcSubresource.mipLevel = level - 1;
-            blit.srcSubresource.layerCount = tex->arrayLayers;
-            blit.srcOffsets[1] = { width, height, depth };
-            blit.dstSubresource.aspectMask = tex->aspect;
-            blit.dstSubresource.mipLevel = level;
-            blit.dstSubresource.layerCount = tex->arrayLayers;
-            blit.dstOffsets[1] = { nextW, nextH, nextD };
-            vkCmdBlitImage(cb, tex->image,
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex->image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
-                           VK_FILTER_LINEAR);
-
-            // This level becomes the next iteration's source.
-            transitionLayout(cb, tex->image, tex->aspect, level, 1,
-                             tex->arrayLayers,
-                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            width = nextW;
-            height = nextH;
-            depth = nextD;
-        }
-        // Every level is now TRANSFER_SRC; leave the whole image sampleable.
-        transitionLayout(cb, tex->image, tex->aspect, 0, tex->mipLevels,
-                         tex->arrayLayers,
-                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        },
-        /*wait=*/false);
-    tex->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-}
-
-// --- Samplers ------------------------------------------------------------------
-
-SamplerHandle VulkanDevice::createSampler(const SamplerDesc& desc) {
-    Impl& d = *impl;
-    VkSamplerCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    info.minFilter = toVkFilter(desc.minFilter);
-    info.magFilter = toVkFilter(desc.magFilter);
-    info.mipmapMode = desc.mipmapFilter ? VK_SAMPLER_MIPMAP_MODE_LINEAR
-                                        : VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    info.addressModeU = toVkAddressMode(desc.addressU);
-    info.addressModeV = toVkAddressMode(desc.addressV);
-    info.addressModeW = toVkAddressMode(desc.addressW);
-    info.maxLod = VK_LOD_CLAMP_NONE;
-    if (desc.maxAnisotropy > 1.0f) {
-        info.anisotropyEnable = VK_TRUE;
-        info.maxAnisotropy = desc.maxAnisotropy;
-    }
-    // CompareFunc::Never means "not a comparison sampler" (§ Rhi.hpp), which
-    // is why it maps to disabled rather than to VK_COMPARE_OP_NEVER.
-    if (desc.compare != CompareFunc::Never) {
-        info.compareEnable = VK_TRUE;
-        info.compareOp = toVkCompareOp(desc.compare);
-    }
-
-    VkSampler sampler = VK_NULL_HANDLE;
-    if (!vkOk(vkCreateSampler(d.device, &info, nullptr, &sampler),
-              "vkCreateSampler")) {
-        return {};
-    }
-    const u32 id = d.nextId++;
-    d.samplers.emplace(id, sampler);
-    return { id };
-}
-
-void VulkanDevice::destroySampler(SamplerHandle handle) {
-    Impl& d = *impl;
-    auto it = d.samplers.find(handle.id);
-    if (it == d.samplers.end()) {
-        return;
-    }
-    d.pendingSamplers.push_back({ it->second, d.frameCounter });
-    d.samplers.erase(it);
-}
-
-// --- Pipelines / bind groups / queries -----------------------------------------
-
-// --- Render targets -------------------------------------------------------
-
-FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
-    Impl& d = *impl;
-    VulkanFramebuffer target {};
-
-    // A FramebufferAttachment selects one mip of one layer, so each needs its
-    // own view rather than the texture's whole-resource view.
-    auto makeView = [&](const FramebufferAttachment& attachment,
-                        VkImageView& out, VkFormat& format,
-                        u32& width, u32& height) {
-        VulkanTexture* tex = d.findTexture(attachment.texture);
-        if (tex == nullptr) {
-            return false;
-        }
-        VkImageViewCreateInfo info {};
-        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        info.image = tex->image;
-        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        info.format = tex->format;
-        info.subresourceRange.aspectMask = tex->aspect;
-        info.subresourceRange.baseMipLevel = attachment.mipLevel;
-        info.subresourceRange.levelCount = 1;
-        info.subresourceRange.baseArrayLayer = attachment.arrayLayer;
-        info.subresourceRange.layerCount = 1;
-        if (!vkOk(vkCreateImageView(d.device, &info, nullptr, &out),
-                  "vkCreateImageView(attachment)")) {
-            return false;
-        }
-        format = tex->format;
-        width = std::max(1u, tex->extent.width >> attachment.mipLevel);
-        height = std::max(1u, tex->extent.height >> attachment.mipLevel);
-        return true;
-    };
-
-    // Failure after a partial build must release the views already created.
-    const auto bail = [&]() -> FramebufferHandle {
-        for (VkImageView view : target.colorViews) {
-            vkDestroyImageView(d.device, view, nullptr);
-        }
-        if (target.depthView != VK_NULL_HANDLE) {
-            vkDestroyImageView(d.device, target.depthView, nullptr);
-        }
-        return {};
-    };
-
-    u32 width = 0;
-    u32 height = 0;
-    for (const FramebufferAttachment& attachment : desc.colorAttachments) {
-        VkImageView view = VK_NULL_HANDLE;
-        VkFormat format = VK_FORMAT_UNDEFINED;
-        if (!makeView(attachment, view, format, width, height)) {
-            LOG_ERROR("Vulkan createFramebuffer: bad color attachment");
-            return bail();
-        }
-        target.colorViews.push_back(view);
-        target.colorFormats.push_back(format);
-        target.colorTextures.push_back(attachment.texture);
-    }
-    if (desc.depthAttachment.texture.id != 0) {
-        if (!makeView(desc.depthAttachment, target.depthView,
-                      target.depthFormat, width, height)) {
-            LOG_ERROR("Vulkan createFramebuffer: bad depth attachment");
-            return bail();
-        }
-        target.depthTexture = desc.depthAttachment.texture;
-    }
-    if (width == 0 || height == 0) {
-        LOG_ERROR("Vulkan createFramebuffer: no attachments");
-        return bail();
-    }
-    target.extent = { width, height };
-
-    const u32 id = d.nextId++;
-    d.targets.emplace(id, std::move(target));
-    return { id };
-}
-
-void VulkanDevice::destroyFramebuffer(FramebufferHandle handle) {
-    Impl& d = *impl;
-    auto it = d.targets.find(handle.id);
-    if (it == d.targets.end()) {
-        return;
-    }
-    d.pendingTargets.push_back({ it->second.colorViews,
-                                 it->second.depthView, d.frameCounter });
-    d.targets.erase(it);
-}
-
-// ShaderDesc::uniformBlocks / ::samplers are deliberately ignored here: they
-// exist so the GL backend can assign bindings AFTER link (GLSL 4.10 has no
-// layout(binding=)). The shader corpus already carries explicit binding
-// qualifiers, which SPIR-V reads directly — so on Vulkan there is nothing to
-// patch up.
-ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
-    Impl& d = *impl;
-    const bool isCompute = !desc.computeSource.empty();
-    if (isCompute &&
-        (!desc.vertexSource.empty() || !desc.fragmentSource.empty())) {
-        LOG_ERROR("Vulkan createShader '{}': compute excludes vertex/fragment",
-                  desc.debugName);
-        return {};
-    }
-    if (!isCompute &&
-        (desc.vertexSource.empty() || desc.fragmentSource.empty())) {
-        LOG_ERROR("Vulkan createShader '{}': needs vertex + fragment",
-                  desc.debugName);
-        return {};
-    }
-
-    VulkanShader shader {};
-
-    auto build = [&](const str& source, shaderc_shader_kind kind,
-                     const char* stage, VkShaderModule& module) {
-        // Compile the ORIGINAL source, then reflect the SPIR-V: the
-        // per-class binding shift (GL's separate namespaces do not
-        // survive into Vulkan) is patched into the decorations, and the
-        // pipeline-layout metadata comes from reflection, not from
-        // parsing GLSL text.
-        const size_t before = shader.resources.size();
-        vector<u32> spv;
-        if (!compileToSpv(promoteVersion(source), kind,
-                          desc.debugName + "." + stage, spv) ||
-            !reflectAndShiftBindings(spv, shader.resources, desc.debugName,
-                                     stage)) {
-            return false;
-        }
-        // Transitional cross-check: the retired GLSL text parser must
-        // agree with the reflection (order-insensitive). Remove with it
-        // once the corpus has cycled through a few releases.
-        vector<ShaderResource> legacy;
-        remapBindings(promoteVersion(source), legacy);
-        auto key = [](const ShaderResource& r) {
-            return (static_cast<u64>(r.binding) << 8) |
-                   (static_cast<u64>(r.klass) << 2) |
-                   (static_cast<u64>(r.comparison) << 1) |
-                   static_cast<u64>(r.dim == ImageDim::Any);
-        };
-        vector<u64> a;
-        for (size_t i = before; i < shader.resources.size(); ++i) {
-            a.push_back(key(shader.resources[i]));
-        }
-        vector<u64> b;
-        for (const ShaderResource& r : legacy) {
-            b.push_back(key(r));
-        }
-        std::sort(a.begin(), a.end());
-        std::sort(b.begin(), b.end());
-        // Subset check: the legacy parser lists DECLARED bindings, the
-        // optimizer strips the unused ones before reflection — smaller
-        // is expected. The alarm is a reflected resource the parser
-        // missed or classified differently.
-        if (!std::includes(b.begin(), b.end(), a.begin(), a.end())) {
-            LOG_ERROR("Vulkan shader '{}.{}': SPIR-V reflection found "
-                      "resources the legacy GLSL parser disagrees on "
-                      "({} reflected vs {} parsed)",
-                      desc.debugName, stage, a.size(), b.size());
-        }
-        VkShaderModuleCreateInfo info {};
-        info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        info.codeSize = spv.size() * sizeof(u32);
-        info.pCode = spv.data();
-        return vkOk(vkCreateShaderModule(d.device, &info, nullptr, &module),
-                    "vkCreateShaderModule");
-    };
-
-    bool ok = true;
-    if (isCompute) {
-        ok = build(desc.computeSource, shaderc_compute_shader, "comp",
-                   shader.compute);
-    } else {
-        ok = build(desc.vertexSource, shaderc_vertex_shader, "vert",
-                   shader.vertex) &&
-             build(desc.fragmentSource, shaderc_fragment_shader, "frag",
-                   shader.fragment);
-    }
-    if (!ok) {
-        // Partial success still leaves a module behind; drop it.
-        vkDestroyShaderModule(d.device, shader.vertex, nullptr);
-        vkDestroyShaderModule(d.device, shader.fragment, nullptr);
-        vkDestroyShaderModule(d.device, shader.compute, nullptr);
-        return {};
-    }
-
-    // Vertex and fragment legitimately declare the same resource (FrameUbo…):
-    // collapse duplicates, then assert the remap actually separated the
-    // classes. A leftover clash would only surface as an invalid descriptor
-    // set layout much later, so it is caught loudly here instead.
-    std::sort(shader.resources.begin(), shader.resources.end(),
-              [](const ShaderResource& a, const ShaderResource& b) {
-                  return a.binding < b.binding;
-              });
-    shader.resources.erase(
-        std::unique(shader.resources.begin(), shader.resources.end(),
-                    [](const ShaderResource& a, const ShaderResource& b) {
-                        return a.binding == b.binding && a.klass == b.klass;
-                    }),
-        shader.resources.end());
-    for (size_t i = 1; i < shader.resources.size(); ++i) {
-        if (shader.resources[i].binding == shader.resources[i - 1].binding) {
-            LOG_ERROR("Vulkan createShader '{}': binding {} claimed by two "
-                      "descriptor classes after remap",
-                      desc.debugName, shader.resources[i].binding);
-            vkDestroyShaderModule(d.device, shader.vertex, nullptr);
-            vkDestroyShaderModule(d.device, shader.fragment, nullptr);
-            vkDestroyShaderModule(d.device, shader.compute, nullptr);
-            return {};
-        }
-    }
-
-    const u32 id = d.nextId++;
-    d.shaders.emplace(id, shader);
-    return { id };
-}
-
-void VulkanDevice::destroyShader(ShaderHandle handle) {
-    Impl& d = *impl;
-    auto it = d.shaders.find(handle.id);
-    if (it == d.shaders.end()) {
-        return;
-    }
-    d.pendingShaders.push_back({ it->second.vertex, it->second.fragment,
-                                 it->second.compute, d.frameCounter });
-    d.shaders.erase(it);
-}
-
-// --- Pipelines --------------------------------------------------------------
-
-namespace {
-
-VkPrimitiveTopology toVkTopology(PrimitiveTopology topology) {
-    switch (topology) {
-    case PrimitiveTopology::Triangles:
-        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    case PrimitiveTopology::TriangleStrip:
-        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-    case PrimitiveTopology::Lines: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-    }
-    return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-}
-
-VkFormat toVkVertexFormat(VertexFormat format) {
-    switch (format) {
-    case VertexFormat::F32x1: return VK_FORMAT_R32_SFLOAT;
-    case VertexFormat::F32x2: return VK_FORMAT_R32G32_SFLOAT;
-    case VertexFormat::F32x3: return VK_FORMAT_R32G32B32_SFLOAT;
-    case VertexFormat::F32x4: return VK_FORMAT_R32G32B32A32_SFLOAT;
-    }
-    return VK_FORMAT_R32G32B32A32_SFLOAT;
-}
-
-VkCullModeFlags toVkCullMode(CullMode cull) {
-    switch (cull) {
-    case CullMode::None:  return VK_CULL_MODE_NONE;
-    case CullMode::Back:  return VK_CULL_MODE_BACK_BIT;
-    case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
-    }
-    return VK_CULL_MODE_NONE;
-}
-
-void applyBlend(BlendMode mode, VkPipelineColorBlendAttachmentState& state) {
-    state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    state.blendEnable = mode == BlendMode::Opaque ? VK_FALSE : VK_TRUE;
-    state.colorBlendOp = VK_BLEND_OP_ADD;
-    state.alphaBlendOp = VK_BLEND_OP_ADD;
-    state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    switch (mode) {
-    case BlendMode::Opaque:
-        break;
-    case BlendMode::Alpha:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        break;
-    case BlendMode::Additive:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        break;
-    case BlendMode::PremultipliedAlpha:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        break;
-    }
-}
-
-} // namespace
-
-VkPipeline VulkanDevice::Impl::pipelineFor(VulkanPipeline& pipeline,
-                                           const vector<VkFormat>& colorFormats,
-                                           VkFormat depthFormat,
-                                           VkFrontFace frontFace) {
-    const u64 key = targetKey(colorFormats, depthFormat) ^
-                    (frontFace == VK_FRONT_FACE_CLOCKWISE ? 0x5bf03635ull : 0);
-    auto cached = pipeline.variants.find(key);
-    if (cached != pipeline.variants.end()) {
-        return cached->second;
-    }
-
-    VulkanShader* shader = findShader(pipeline.desc.shader);
-    if (shader == nullptr || shader->vertex == VK_NULL_HANDLE) {
-        LOG_ERROR("Vulkan pipeline: shader has no graphics stages");
-        return VK_NULL_HANDLE;
-    }
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> stages {};
-    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = shader->vertex;
-    stages[0].pName = "main";
-    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = shader->fragment;
-    stages[1].pName = "main";
-
-    vector<VkVertexInputBindingDescription> bindings;
-    vector<VkVertexInputAttributeDescription> attributes;
-    for (size_t slot = 0; slot < pipeline.desc.vertexBuffers.size(); ++slot) {
-        const VertexBufferLayout& layout = pipeline.desc.vertexBuffers[slot];
-        VkVertexInputBindingDescription binding {};
-        binding.binding = static_cast<u32>(slot);
-        binding.stride = layout.stride;
-        binding.inputRate = layout.stepMode == VertexStepMode::Instance
-                                ? VK_VERTEX_INPUT_RATE_INSTANCE
-                                : VK_VERTEX_INPUT_RATE_VERTEX;
-        bindings.push_back(binding);
-        for (const VertexAttribute& attr : layout.attributes) {
-            VkVertexInputAttributeDescription a {};
-            a.location = attr.location;
-            a.binding = static_cast<u32>(slot);
-            a.format = toVkVertexFormat(attr.format);
-            a.offset = attr.offset;
-            attributes.push_back(a);
-        }
-    }
-
-    VkPipelineVertexInputStateCreateInfo vertexInput {};
-    vertexInput.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInput.vertexBindingDescriptionCount = static_cast<u32>(bindings.size());
-    vertexInput.pVertexBindingDescriptions = bindings.data();
-    vertexInput.vertexAttributeDescriptionCount =
-        static_cast<u32>(attributes.size());
-    vertexInput.pVertexAttributeDescriptions = attributes.data();
-
-    VkPipelineInputAssemblyStateCreateInfo assembly {};
-    assembly.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    assembly.topology = toVkTopology(pipeline.desc.topology);
-
-    VkPipelineViewportStateCreateInfo viewportState {};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
-    VkPipelineRasterizationStateCreateInfo raster {};
-    raster.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    raster.polygonMode = pipeline.desc.wireframe ? VK_POLYGON_MODE_LINE
-                                                 : VK_POLYGON_MODE_FILL;
-    raster.cullMode = toVkCullMode(pipeline.desc.cull);
-    // Already the EFFECTIVE winding (per-target mirror folded in by
-    // effectiveFrontFace() at the call sites).
-    raster.frontFace = frontFace;
-    raster.lineWidth = 1.0f;
-    if (pipeline.desc.depthBias != 0.0f ||
-        pipeline.desc.depthBiasSlope != 0.0f) {
-        raster.depthBiasEnable = VK_TRUE;
-        raster.depthBiasConstantFactor = pipeline.desc.depthBias;
-        raster.depthBiasSlopeFactor = pipeline.desc.depthBiasSlope;
-    }
-
-    VkPipelineMultisampleStateCreateInfo multisample {};
-    multisample.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineDepthStencilStateCreateInfo depthStencil {};
-    depthStencil.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable =
-        pipeline.desc.depth.testEnable ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable =
-        pipeline.desc.depth.writeEnable ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp = toVkCompareOp(pipeline.desc.depth.compare);
-
-    vector<VkPipelineColorBlendAttachmentState> blendStates(
-        std::max<size_t>(1, colorFormats.size()));
-    for (VkPipelineColorBlendAttachmentState& state : blendStates) {
-        applyBlend(pipeline.desc.blend, state);
-    }
-    VkPipelineColorBlendStateCreateInfo blend {};
-    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend.attachmentCount = static_cast<u32>(colorFormats.size());
-    blend.pAttachments = blendStates.data();
-
-    const std::array<VkDynamicState, 2> dynamicStates {
-        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR
-    };
-    VkPipelineDynamicStateCreateInfo dynamic {};
-    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic.dynamicStateCount = static_cast<u32>(dynamicStates.size());
-    dynamic.pDynamicStates = dynamicStates.data();
-
-    // Dynamic rendering replaces the render pass: the pipeline is told the
-    // attachment formats directly.
-    VkPipelineRenderingCreateInfo rendering {};
-    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = static_cast<u32>(colorFormats.size());
-    rendering.pColorAttachmentFormats = colorFormats.data();
-    rendering.depthAttachmentFormat = depthFormat;
-
-    VkGraphicsPipelineCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.pNext = &rendering;
-    info.stageCount = 2;
-    info.pStages = stages.data();
-    info.pVertexInputState = &vertexInput;
-    info.pInputAssemblyState = &assembly;
-    info.pViewportState = &viewportState;
-    info.pRasterizationState = &raster;
-    info.pMultisampleState = &multisample;
-    info.pDepthStencilState = &depthStencil;
-    info.pColorBlendState = &blend;
-    info.pDynamicState = &dynamic;
-    info.layout = pipeline.layout;
-
-    VkPipeline vk = VK_NULL_HANDLE;
-    if (!vkOk(vkCreateGraphicsPipelines(device, pipelineCache, 1, &info,
-                                        nullptr, &vk),
-              "vkCreateGraphicsPipelines")) {
-        return VK_NULL_HANDLE;
-    }
-    pipeline.variants.emplace(key, vk);
-    return vk;
-}
-
-// Builds the descriptor set layout + pipeline layout from the shader's
-// reflection. PUSH_DESCRIPTOR_BIT is what lets setBindGroup write through it
-// without ever allocating a VkDescriptorSet.
-bool buildLayouts(VkDevice device, VkSampler pcfSampler,
-                  const VulkanShader& shader, VulkanPipeline& pipeline) {
-    pipeline.resources = shader.resources;
-    vector<VkDescriptorSetLayoutBinding> bindings;
-    bindings.reserve(shader.resources.size());
-    for (const ShaderResource& resource : shader.resources) {
-        VkDescriptorSetLayoutBinding binding {};
-        binding.binding = resource.binding;
-        binding.descriptorType = toVkDescriptorType(resource.klass);
-        binding.descriptorCount = 1;
-        binding.stageFlags = VK_SHADER_STAGE_ALL;
-        if (resource.comparison && pcfSampler != VK_NULL_HANDLE) {
-            // Immutable: MoltenVK cannot take comparison samplers as pushed
-            // descriptors (mutableComparisonSamplers unsupported on M1).
-            binding.pImmutableSamplers = &pcfSampler;
-            if (resource.binding < 64) {
-                pipeline.comparisonMask |= 1ull << resource.binding;
-            }
-        }
-        bindings.push_back(binding);
-        if (resource.binding < 64) {
-            pipeline.bindingMask |= 1ull << resource.binding;
-        }
-    }
-
-    VkDescriptorSetLayoutCreateInfo setInfo {};
-    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    setInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    setInfo.bindingCount = static_cast<u32>(bindings.size());
-    setInfo.pBindings = bindings.data();
-    if (!vkOk(vkCreateDescriptorSetLayout(device, &setInfo, nullptr,
-                                          &pipeline.setLayout),
-              "vkCreateDescriptorSetLayout")) {
-        return false;
-    }
-
-    VkPipelineLayoutCreateInfo layoutInfo {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &pipeline.setLayout;
-    // The range must be declared here: unlike a descriptor, push-constant
-    // storage is part of the layout itself.
-    VkPushConstantRange pushRange {};
-    if (pipeline.desc.pushConstantSize > 0) {
-        // The RHI does not model per-stage visibility, so every stage of the
-        // pipeline's own kind sees the range.
-        pushRange.stageFlags = pipeline.compute ? VK_SHADER_STAGE_COMPUTE_BIT
-                                                : VK_SHADER_STAGE_ALL_GRAPHICS;
-        pushRange.offset = 0;
-        pushRange.size = pipeline.desc.pushConstantSize;
-        layoutInfo.pushConstantRangeCount = 1;
-        layoutInfo.pPushConstantRanges = &pushRange;
-    }
-    return vkOk(vkCreatePipelineLayout(device, &layoutInfo, nullptr,
-                                       &pipeline.layout),
-                "vkCreatePipelineLayout");
-}
-
-PipelineHandle VulkanDevice::createPipeline(const PipelineDesc& desc) {
-    Impl& d = *impl;
-    VulkanShader* shader = d.findShader(desc.shader);
-    if (shader == nullptr || shader->vertex == VK_NULL_HANDLE) {
-        LOG_ERROR("Vulkan createPipeline: invalid or non-graphics shader");
-        return {};
-    }
-    VulkanPipeline pipeline {};
-    pipeline.desc = desc;
-    if (!buildLayouts(d.device, d.pcfSampler, *shader, pipeline)) {
-        return {};
-    }
-    // The VkPipeline itself waits for the first setPipeline, when the target's
-    // attachment formats are known (PipelineDesc does not carry them).
-    const u32 id = d.nextId++;
-    d.pipelines.emplace(id, std::move(pipeline));
-    return { id };
-}
-
-PipelineHandle VulkanDevice::createComputePipeline(
-    const ComputePipelineDesc& desc) {
-    Impl& d = *impl;
-    VulkanShader* shader = d.findShader(desc.shader);
-    if (shader == nullptr || shader->compute == VK_NULL_HANDLE) {
-        LOG_ERROR("Vulkan createComputePipeline: shader has no compute stage");
-        return {};
-    }
-    VulkanPipeline pipeline {};
-    pipeline.compute = true;
-    pipeline.desc.shader = desc.shader;
-    pipeline.desc.pushConstantSize = desc.pushConstantSize;
-    if (!buildLayouts(d.device, d.pcfSampler, *shader, pipeline)) {
-        return {};
-    }
-
-    VkPipelineShaderStageCreateInfo stage {};
-    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    stage.module = shader->compute;
-    stage.pName = "main";
-
-    VkComputePipelineCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    info.stage = stage;
-    info.layout = pipeline.layout;
-    if (!vkOk(vkCreateComputePipelines(d.device, d.pipelineCache, 1, &info,
-                                       nullptr, &pipeline.computePipeline),
-              "vkCreateComputePipelines")) {
-        vkDestroyPipelineLayout(d.device, pipeline.layout, nullptr);
-        vkDestroyDescriptorSetLayout(d.device, pipeline.setLayout, nullptr);
-        return {};
-    }
-
-    const u32 id = d.nextId++;
-    d.pipelines.emplace(id, std::move(pipeline));
-    return { id };
-}
-
-void VulkanDevice::destroyPipeline(PipelineHandle handle) {
-    Impl& d = *impl;
-    auto it = d.pipelines.find(handle.id);
-    if (it == d.pipelines.end()) {
-        return;
-    }
-    VulkanDevice::Impl::PendingPipeline pending { {}, it->second.computePipeline,
-                              it->second.layout, it->second.setLayout,
-                              d.frameCounter };
-    pending.variants.reserve(it->second.variants.size());
-    for (auto& [key, variant] : it->second.variants) {
-        pending.variants.push_back(variant);
-    }
-    d.pendingPipelines.push_back(std::move(pending));
-    d.pipelines.erase(it);
-}
-
-// --- GPU markers ------------------------------------------------------------
-
-FenceHandle VulkanDevice::insertFence() {
-    Impl& d = *impl;
-    VkFenceCreateInfo info {};
-    info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    VkFence fence = VK_NULL_HANDLE;
-    if (!vkOk(vkCreateFence(d.device, &info, nullptr, &fence),
-              "vkCreateFence(marker)")) {
-        return {};
-    }
-    // An empty submit signals only once every previously submitted command has
-    // completed — the GL sync-object semantics the RHI describes.
-    if (!vkOk(vkQueueSubmit(d.graphicsQueue, 0, nullptr, fence),
-              "vkQueueSubmit(fence marker)")) {
-        vkDestroyFence(d.device, fence, nullptr);
-        return {};
-    }
-    const u32 id = d.nextId++;
-    d.fences.emplace(id, fence);
-    return { id };
-}
-
-bool VulkanDevice::fenceReady(FenceHandle handle) {
-    Impl& d = *impl;
-    auto it = d.fences.find(handle.id);
-    if (it == d.fences.end()) {
-        return true; // unknown or already consumed
-    }
-    // Polling only: never block the frame thread (Phase-5 completion queue).
-    if (vkGetFenceStatus(d.device, it->second) != VK_SUCCESS) {
-        return false;
-    }
-    vkDestroyFence(d.device, it->second, nullptr); // handles are single-use
-    d.fences.erase(it);
-    return true;
-}
-
-void VulkanDevice::destroyFence(FenceHandle handle) {
-    Impl& d = *impl;
-    auto it = d.fences.find(handle.id);
-    if (it == d.fences.end()) {
-        return;
-    }
-    vkDestroyFence(d.device, it->second, nullptr);
-    d.fences.erase(it);
-}
-
-TimestampHandle VulkanDevice::insertTimestamp() {
-    Impl& d = *impl;
-    if (d.queryPool == VK_NULL_HANDLE || !d.frameActive) {
-        return {}; // only meaningful while a frame is recording
-    }
-    // Route to the stream actually being recorded: a scope taken while
-    // computeRouting is on brackets compute-queue work.
-    const bool onCompute = d.computeRouting && d.computeRecording &&
-                           d.computeQueryPool != VK_NULL_HANDLE;
-    u32& cursor = onCompute ? d.computeTimestampCursor : d.timestampCursor;
-    if (cursor >= kTimestampsPerFrame) {
-        LOG_WARN("Vulkan: more than {} timestamps in one frame — dropping",
-                 kTimestampsPerFrame);
-        return {};
-    }
-    const u32 query = d.frame * kTimestampsPerFrame + cursor++;
-    // BOTTOM_OF_PIPE: the clock is taken when the stream REACHES this point.
-    vkCmdWriteTimestamp(onCompute ? d.computeCbs[d.frame]
-                                  : d.commandBuffers[d.frame],
-                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                        onCompute ? d.computeQueryPool : d.queryPool, query);
-    const u32 id = d.nextId++;
-    d.timestamps.emplace(
-        id, Impl::PendingTimestamp { query, d.frame,
-                                     onCompute
-                                         ? d.computeRegionGeneration[d.frame]
-                                         : d.regionGeneration[d.frame],
-                                     onCompute });
-    return { id };
-}
-
-bool VulkanDevice::timestampReady(TimestampHandle handle, u64& nanos) {
-    Impl& d = *impl;
-    auto it = d.timestamps.find(handle.id);
-    if (it == d.timestamps.end()) {
-        return false;
-    }
-    const Impl::PendingTimestamp pending = it->second;
-    if (pending.cached) { // harvested at slot recycle, before the pool reset
-        nanos = static_cast<u64>(static_cast<f64>(pending.cachedTicks) *
-                                 d.timestampPeriod);
-        d.timestamps.erase(it);
-        return true;
-    }
-    // Its region has been recycled since: the result is gone for good, so
-    // release the handle rather than reporting another frame's number.
-    const u32 liveGeneration =
-        pending.onComputePool ? d.computeRegionGeneration[pending.frameSlot]
-                              : d.regionGeneration[pending.frameSlot];
-    if (pending.generation != liveGeneration) {
-        d.timestamps.erase(it);
-        return false;
-    }
-    u64 ticks = 0;
-    const VkResult result = vkGetQueryPoolResults(
-        d.device, pending.onComputePool ? d.computeQueryPool : d.queryPool,
-        pending.query, 1, sizeof(ticks), &ticks, sizeof(ticks),
-        VK_QUERY_RESULT_64_BIT);
-    if (result != VK_SUCCESS) {
-        return false; // VK_NOT_READY — poll again next frame, never block
-    }
-    nanos = static_cast<u64>(static_cast<f64>(ticks) * d.timestampPeriod);
-    d.timestamps.erase(it); // single-use, like fences
-    return true;
-}
-
-void VulkanDevice::destroyTimestamp(TimestampHandle handle) {
-    impl->timestamps.erase(handle.id);
-}
-
-// Push descriptors mean there is nothing to allocate here: a bind group is the
-// list of writes, replayed against whatever pipeline layout is bound.
-BindGroupHandle VulkanDevice::createBindGroup(const BindGroupDesc& desc) {
-    Impl& d = *impl;
-    const u32 id = d.nextId++;
-    d.bindGroups.emplace(id, VulkanBindGroup { desc.entries });
-    return { id };
-}
-
-void VulkanDevice::destroyBindGroup(BindGroupHandle handle) {
-    impl->bindGroups.erase(handle.id);
+u32 VulkanDevice::validationMessageCount() const {
+    return impl->validationCounts.errors + impl->validationCounts.warnings;
 }
 
 // --- Creation ----------------------------------------------------------------
 
-uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
-    auto self = uptr<VulkanDevice> { new VulkanDevice() };
-    Impl& d = *self->impl;
-    d.window = &window;
+namespace {
 
-    // --- Instance ---
+using Impl = VulkanDevice::Impl;
+
+// The queue families one physical device offers, resolved once from a
+// single vkGetPhysicalDeviceQueueFamilyProperties list. Three picks over
+// that list: graphics + present (device eligibility), a compute family
+// DISTINCT from graphics (async compute, docs/RENDERING.md PG3 — its own
+// hardware queue; MoltenVK exposes several, each a separate
+// MTLCommandQueue, which Apple GPUs schedule concurrently —
+// MVK_CONFIG_SPECIALIZED_QUEUE_FAMILIES marks dedicated ones), and a
+// transfer family distinct from both (the upload queue — a real DMA engine
+// on PC; MoltenVK exposes generic families, a third queue there keeps the
+// sync topology identical for PC validation). A pick with no distinct
+// family falls back to the graphics family, which reads as "lane off".
+struct QueueFamilies {
+    vector<VkQueueFamilyProperties> props;
+    bool graphicsFound { false };
+    bool presentFound { false };
+    u32 graphics { 0 };
+    u32 present { 0 };
+    u32 compute { 0 };
+    u32 upload { 0 };
+
+    bool complete() const { return graphicsFound && presentFound; }
+    VkQueueFlags flags(u32 family) const { return props[family].queueFlags; }
+    bool timestamps(u32 family) const {
+        return family < props.size() && props[family].timestampValidBits > 0;
+    }
+};
+
+QueueFamilies pickQueueFamilies(VkPhysicalDevice gpu, VkSurfaceKHR surface) {
+    QueueFamilies q;
+    u32 count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(gpu, &count, nullptr);
+    q.props.resize(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(gpu, &count, q.props.data());
+
+    // First graphics-capable and first present-capable family.
+    for (u32 i = 0; i < count; ++i) {
+        if (!q.graphicsFound &&
+            (q.props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            q.graphics = i;
+            q.graphicsFound = true;
+        }
+        VkBool32 supported = VK_FALSE;
+        vkGetPhysicalDeviceSurfaceSupportKHR(gpu, i, surface, &supported);
+        if (!q.presentFound && supported) {
+            q.present = i;
+            q.presentFound = true;
+        }
+    }
+    if (!q.complete()) {
+        return q;
+    }
+
+    // Highest score wins, the first family in enumeration order on a tie;
+    // a negative score excludes the family. Nothing eligible: graphics.
+    const auto pick = [&](auto score) {
+        u32 best = q.graphics;
+        i32 bestScore = -1;
+        for (u32 i = 0; i < count; ++i) {
+            const i32 s = score(i, q.props[i].queueFlags);
+            if (s > bestScore) {
+                bestScore = s;
+                best = i;
+            }
+        }
+        return best;
+    };
+    // Async compute: compute-capable, not the graphics family; a
+    // specialized (non-graphics) family over a generic one.
+    q.compute = pick([&](u32 i, VkQueueFlags flags) -> i32 {
+        if (i == q.graphics || (flags & VK_QUEUE_COMPUTE_BIT) == 0) {
+            return -1;
+        }
+        return (flags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2 : 1;
+    });
+    // Upload: transfer-capable (graphics/compute imply it), distinct from
+    // both; transfer-only first, then compute-only, then generic.
+    q.upload = pick([&](u32 i, VkQueueFlags flags) -> i32 {
+        if (i == q.graphics || i == q.compute ||
+            (flags & (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT |
+                      VK_QUEUE_COMPUTE_BIT)) == 0) {
+            return -1;
+        }
+        return (flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) == 0
+                   ? 3
+               : (flags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2
+                                                      : 1;
+    });
+    return q;
+}
+
+// Instance, validation layer (debug builds, sync validation per run) and
+// the debug-utils messenger. False when no usable loader/instance exists.
+bool createInstance(Impl& d) {
     vector<const char*> extensions = platform::vulkanInstanceExtensions();
     if (extensions.empty()) {
-        return nullptr;
+        return false;
     }
     const vector<VkExtensionProperties> availableExt =
         instanceExtensionProperties();
@@ -4369,7 +408,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     }
     if (!vkOk(vkCreateInstance(&instanceInfo, nullptr, &d.instance),
               "vkCreateInstance")) {
-        return nullptr;
+        return false;
     }
     if (debugUtils) {
         auto createMessenger =
@@ -4391,20 +430,19 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
             createMessenger(d.instance, &msgInfo, nullptr, &d.debugMessenger);
         }
     }
+    return true;
+}
 
-    // --- Surface ---
-    d.surface = reinterpret_cast<VkSurfaceKHR>(
-        platform::createVulkanSurface(window, d.instance));
-    if (d.surface == VK_NULL_HANDLE) {
-        return nullptr;
-    }
-
-    // --- Physical device ---
+// Best GPU that can present to the surface with a swapchain (discrete
+// preferred; on the M1 there is only the integrated one), together with
+// its queue families. The queue flags of the compute/upload picks are
+// recorded on the device whether or not the lanes end up created.
+bool pickPhysicalDevice(Impl& d, QueueFamilies& families) {
     u32 gpuCount = 0;
     vkEnumeratePhysicalDevices(d.instance, &gpuCount, nullptr);
     if (gpuCount == 0) {
         LOG_ERROR("Vulkan: no physical device found");
-        return nullptr;
+        return false;
     }
     vector<VkPhysicalDevice> gpus(gpuCount);
     vkEnumeratePhysicalDevices(d.instance, &gpuCount, gpus.data());
@@ -4416,36 +454,13 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         if (!hasExtension(devExtProps, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
             continue;
         }
-        u32 familyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &familyCount,
-                                                 nullptr);
-        vector<VkQueueFamilyProperties> families(familyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &familyCount,
-                                                 families.data());
-        bool haveGraphics = false;
-        bool havePresent = false;
-        u32 graphics = 0;
-        u32 present = 0;
-        for (u32 i = 0; i < familyCount; ++i) {
-            if (!haveGraphics &&
-                (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-                graphics = i;
-                haveGraphics = true;
-            }
-            VkBool32 supported = VK_FALSE;
-            vkGetPhysicalDeviceSurfaceSupportKHR(candidate, i, d.surface,
-                                                 &supported);
-            if (!havePresent && supported) {
-                present = i;
-                havePresent = true;
-            }
-        }
-        if (!haveGraphics || !havePresent) {
+        QueueFamilies candidateFamilies =
+            pickQueueFamilies(candidate, d.surface);
+        if (!candidateFamilies.complete()) {
             continue;
         }
         VkPhysicalDeviceProperties candidateProps {};
         vkGetPhysicalDeviceProperties(candidate, &candidateProps);
-        // Prefer a discrete GPU; on the M1 there is only the integrated one.
         const i32 score =
             candidateProps.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                 ? 2
@@ -4453,83 +468,28 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         if (score > bestScore) {
             bestScore = score;
             d.gpu = candidate;
-            d.graphicsFamily = graphics;
-            d.presentFamily = present;
+            families = std::move(candidateFamilies);
         }
     }
     if (d.gpu == VK_NULL_HANDLE) {
         LOG_ERROR("Vulkan: no device with graphics + present + swapchain");
-        return nullptr;
+        return false;
     }
+    d.graphicsFamily = families.graphics;
+    d.presentFamily = families.present;
+    d.computeQueueFlags = families.flags(families.compute);
+    d.uploadQueueFlags = families.flags(families.upload);
+    return true;
+}
 
-    VkPhysicalDeviceProperties props {};
-    vkGetPhysicalDeviceProperties(d.gpu, &props);
-    VkPhysicalDeviceFeatures features {};
-    vkGetPhysicalDeviceFeatures(d.gpu, &features);
-
-    // Async-compute family (docs/RENDERING.md PG3): compute-capable and
-    // DISTINCT from graphics — its own hardware queue. Prefer a
-    // specialized (non-graphics) family; MoltenVK exposes several
-    // (each a separate MTLCommandQueue, which Apple GPUs schedule
-    // concurrently — MVK_CONFIG_SPECIALIZED_QUEUE_FAMILIES marks
-    // dedicated ones).
-    u32 asyncFamily = d.graphicsFamily;
-    {
-        u32 familyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
-                                                 nullptr);
-        vector<VkQueueFamilyProperties> families(familyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
-                                                 families.data());
-        i32 bestAsync = -1;
-        for (u32 i = 0; i < familyCount; ++i) {
-            if (i == d.graphicsFamily ||
-                (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) == 0) {
-                continue;
-            }
-            const i32 asyncScore =
-                (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2
-                                                                      : 1;
-            if (asyncScore > bestAsync) {
-                bestAsync = asyncScore;
-                asyncFamily = i;
-            }
-        }
-        d.computeQueueFlags = families[asyncFamily].queueFlags;
-    }
-    // Upload (transfer) family: transfer-capable and distinct from both
-    // graphics and compute. Prefer a TRANSFER-ONLY family (a real DMA
-    // engine on PC); MoltenVK exposes generic families — a third queue
-    // there keeps the sync topology identical for PC validation.
-    u32 uploadFamily = d.graphicsFamily;
-    {
-        u32 familyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
-                                                 nullptr);
-        vector<VkQueueFamilyProperties> families(familyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
-                                                 families.data());
-        i32 bestUpload = -1;
-        for (u32 i = 0; i < familyCount; ++i) {
-            const VkQueueFlags flags = families[i].queueFlags;
-            if (i == d.graphicsFamily || i == asyncFamily ||
-                (flags & (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT |
-                          VK_QUEUE_COMPUTE_BIT)) == 0) {
-                continue; // graphics/compute imply transfer capability
-            }
-            const i32 uploadScore =
-                (flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) == 0
-                    ? 3
-                : (flags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2
-                                                       : 1;
-            if (uploadScore > bestUpload) {
-                bestUpload = uploadScore;
-                uploadFamily = i;
-            }
-        }
-        d.uploadQueueFlags = families[uploadFamily].queueFlags;
-    }
-
+// Logical device: required extensions, the opt-in features the GPU has,
+// one queue per distinct family in use. Reports which extra lanes the
+// device was created for (async compute needs timeline semaphores and a
+// distinct compute family; the upload lane rides the same timeline
+// feature and needs a family distinct from both).
+bool createLogicalDevice(Impl& d, const QueueFamilies& q,
+                         const VkPhysicalDeviceFeatures& features,
+                         bool& wantAsyncCompute, bool& wantUploadQueue) {
     // Timeline semaphores (core 1.2, an enable-gated feature) are the
     // cross-queue sync primitive; without them async compute stays off.
     VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeature {};
@@ -4541,11 +501,9 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         timelineQuery.pNext = &timelineFeature;
         vkGetPhysicalDeviceFeatures2(d.gpu, &timelineQuery);
     }
-    const bool wantAsyncCompute = asyncFamily != d.graphicsFamily &&
-                                  timelineFeature.timelineSemaphore ==
-                                      VK_TRUE;
+    wantAsyncCompute = q.compute != q.graphics &&
+                       timelineFeature.timelineSemaphore == VK_TRUE;
 
-    // --- Logical device ---
     vector<const char*> deviceExtensions { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     const vector<VkExtensionProperties> devExt =
         deviceExtensionProperties(d.gpu);
@@ -4575,7 +533,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         !hasExtension(devExt, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
         LOG_ERROR("Vulkan: device lacks dynamic_rendering and/or "
                   "push_descriptor — both are required by this backend");
-        return nullptr;
+        return false;
     }
     deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
@@ -4596,28 +554,27 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     vector<VkDeviceQueueCreateInfo> queueInfos;
     VkDeviceQueueCreateInfo graphicsQueueInfo {};
     graphicsQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    graphicsQueueInfo.queueFamilyIndex = d.graphicsFamily;
+    graphicsQueueInfo.queueFamilyIndex = q.graphics;
     graphicsQueueInfo.queueCount = 1;
     graphicsQueueInfo.pQueuePriorities = &priority;
     queueInfos.push_back(graphicsQueueInfo);
-    if (d.presentFamily != d.graphicsFamily) {
+    if (q.present != q.graphics) {
         VkDeviceQueueCreateInfo presentQueueInfo = graphicsQueueInfo;
-        presentQueueInfo.queueFamilyIndex = d.presentFamily;
+        presentQueueInfo.queueFamilyIndex = q.present;
         queueInfos.push_back(presentQueueInfo);
     }
-    if (wantAsyncCompute && asyncFamily != d.presentFamily) {
+    if (wantAsyncCompute && q.compute != q.present) {
         VkDeviceQueueCreateInfo computeQueueInfo = graphicsQueueInfo;
-        computeQueueInfo.queueFamilyIndex = asyncFamily;
+        computeQueueInfo.queueFamilyIndex = q.compute;
         queueInfos.push_back(computeQueueInfo);
     }
     // Gated on the same timeline feature as async compute — the upload
     // chain is pure timeline sync.
-    const bool wantUploadQueue =
-        wantAsyncCompute && uploadFamily != d.graphicsFamily &&
-        uploadFamily != asyncFamily;
-    if (wantUploadQueue && uploadFamily != d.presentFamily) {
+    wantUploadQueue = wantAsyncCompute && q.upload != q.graphics &&
+                      q.upload != q.compute;
+    if (wantUploadQueue && q.upload != q.present) {
         VkDeviceQueueCreateInfo uploadQueueInfo = graphicsQueueInfo;
-        uploadQueueInfo.queueFamilyIndex = uploadFamily;
+        uploadQueueInfo.queueFamilyIndex = q.upload;
         queueInfos.push_back(uploadQueueInfo);
     }
 
@@ -4644,87 +601,97 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     deviceInfo.pEnabledFeatures = &enabled;
     if (!vkOk(vkCreateDevice(d.gpu, &deviceInfo, nullptr, &d.device),
               "vkCreateDevice")) {
-        return nullptr;
+        return false;
     }
-    vkGetDeviceQueue(d.device, d.graphicsFamily, 0, &d.graphicsQueue);
-    vkGetDeviceQueue(d.device, d.presentFamily, 0, &d.presentQueue);
-    if (wantAsyncCompute) {
-        d.computeFamily = asyncFamily;
-        vkGetDeviceQueue(d.device, asyncFamily, 0, &d.computeQueue);
-        VkCommandPoolCreateInfo computePoolInfo {};
-        computePoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        computePoolInfo.flags =
-            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        computePoolInfo.queueFamilyIndex = asyncFamily;
-        VkSemaphoreTypeCreateInfo timelineType {};
-        timelineType.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        timelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        timelineType.initialValue = 0;
-        VkSemaphoreCreateInfo timelineSem {};
-        timelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        timelineSem.pNext = &timelineType;
-        if (vkOk(vkCreateCommandPool(d.device, &computePoolInfo, nullptr,
-                                     &d.computePool),
-                 "vkCreateCommandPool(compute)") &&
-            vkOk(vkCreateSemaphore(d.device, &timelineSem, nullptr,
-                                   &d.timeline),
-                 "vkCreateSemaphore(timeline)")) {
-            VkCommandBufferAllocateInfo computeAlloc {};
-            computeAlloc.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            computeAlloc.commandPool = d.computePool;
-            computeAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            computeAlloc.commandBufferCount = kFramesInFlight;
-            if (vkOk(vkAllocateCommandBuffers(d.device, &computeAlloc,
-                                              d.computeCbs.data()),
-                     "vkAllocateCommandBuffers(compute)")) {
-                d.computeCmd = std::make_unique<VulkanCommandBuffer>(d);
-                d.asyncComputeAvailable = true;
-                LOG_INFO("Vulkan: async compute on queue family {} "
-                         "(graphics on {})",
-                         asyncFamily, d.graphicsFamily);
-            }
-        }
-    }
-    if (wantUploadQueue && d.asyncComputeAvailable) {
-        d.transferFamily = uploadFamily;
-        vkGetDeviceQueue(d.device, uploadFamily, 0, &d.transferQueue);
-        VkCommandPoolCreateInfo uploadPoolInfo {};
-        uploadPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        uploadPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        uploadPoolInfo.queueFamilyIndex = uploadFamily;
-        VkSemaphoreTypeCreateInfo uploadTimelineType {};
-        uploadTimelineType.sType =
-            VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        uploadTimelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-        uploadTimelineType.initialValue = 0;
-        VkSemaphoreCreateInfo uploadTimelineSem {};
-        uploadTimelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        uploadTimelineSem.pNext = &uploadTimelineType;
-        if (vkOk(vkCreateCommandPool(d.device, &uploadPoolInfo, nullptr,
-                                     &d.uploadPool),
-                 "vkCreateCommandPool(upload)") &&
-            vkOk(vkCreateSemaphore(d.device, &uploadTimelineSem, nullptr,
-                                   &d.uploadTimeline),
-                 "vkCreateSemaphore(uploadTimeline)")) {
-            VkCommandBufferAllocateInfo uploadAlloc {};
-            uploadAlloc.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-            uploadAlloc.commandPool = d.uploadPool;
-            uploadAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            uploadAlloc.commandBufferCount = kFramesInFlight;
-            if (vkOk(vkAllocateCommandBuffers(d.device, &uploadAlloc,
-                                              d.uploadCbs.data()),
-                     "vkAllocateCommandBuffers(upload)")) {
-                d.uploadQueueAvailable = true;
-                LOG_INFO("Vulkan: upload queue on family {} (compute on {}, "
-                         "graphics on {})",
-                         uploadFamily, asyncFamily, d.graphicsFamily);
-            }
-        }
-    }
+    vkGetDeviceQueue(d.device, q.graphics, 0, &d.graphicsQueue);
+    vkGetDeviceQueue(d.device, q.present, 0, &d.presentQueue);
+    return true;
+}
 
-    // Extension entry points are not exported by the loader's static symbols.
+// Async-compute lane: its queue, command pool, the shared timeline
+// semaphore and one command buffer per frame slot. Any failure leaves the
+// lane off (asyncComputeAvailable false) — the frame then runs single-queue.
+void createComputeLane(Impl& d, const QueueFamilies& q) {
+    d.computeFamily = q.compute;
+    vkGetDeviceQueue(d.device, q.compute, 0, &d.computeQueue);
+    VkCommandPoolCreateInfo computePoolInfo {};
+    computePoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    computePoolInfo.flags =
+        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    computePoolInfo.queueFamilyIndex = q.compute;
+    VkSemaphoreTypeCreateInfo timelineType {};
+    timelineType.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineType.initialValue = 0;
+    VkSemaphoreCreateInfo timelineSem {};
+    timelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    timelineSem.pNext = &timelineType;
+    if (vkOk(vkCreateCommandPool(d.device, &computePoolInfo, nullptr,
+                                 &d.computePool),
+             "vkCreateCommandPool(compute)") &&
+        vkOk(vkCreateSemaphore(d.device, &timelineSem, nullptr,
+                               &d.timeline),
+             "vkCreateSemaphore(timeline)")) {
+        VkCommandBufferAllocateInfo computeAlloc {};
+        computeAlloc.sType =
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        computeAlloc.commandPool = d.computePool;
+        computeAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        computeAlloc.commandBufferCount = kFramesInFlight;
+        if (vkOk(vkAllocateCommandBuffers(d.device, &computeAlloc,
+                                          d.computeCbs.data()),
+                 "vkAllocateCommandBuffers(compute)")) {
+            d.computeCmd = std::make_unique<VulkanCommandBuffer>(d);
+            d.asyncComputeAvailable = true;
+            LOG_INFO("Vulkan: async compute on queue family {} "
+                     "(graphics on {})",
+                     q.compute, d.graphicsFamily);
+        }
+    }
+}
+
+// Upload lane: its queue, command pool, its OWN timeline semaphore (Impl
+// notes) and one command buffer per frame slot. Failure leaves the lane off.
+void createUploadLane(Impl& d, const QueueFamilies& q) {
+    d.transferFamily = q.upload;
+    vkGetDeviceQueue(d.device, q.upload, 0, &d.transferQueue);
+    VkCommandPoolCreateInfo uploadPoolInfo {};
+    uploadPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    uploadPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    uploadPoolInfo.queueFamilyIndex = q.upload;
+    VkSemaphoreTypeCreateInfo uploadTimelineType {};
+    uploadTimelineType.sType =
+        VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    uploadTimelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    uploadTimelineType.initialValue = 0;
+    VkSemaphoreCreateInfo uploadTimelineSem {};
+    uploadTimelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    uploadTimelineSem.pNext = &uploadTimelineType;
+    if (vkOk(vkCreateCommandPool(d.device, &uploadPoolInfo, nullptr,
+                                 &d.uploadPool),
+             "vkCreateCommandPool(upload)") &&
+        vkOk(vkCreateSemaphore(d.device, &uploadTimelineSem, nullptr,
+                               &d.uploadTimeline),
+             "vkCreateSemaphore(uploadTimeline)")) {
+        VkCommandBufferAllocateInfo uploadAlloc {};
+        uploadAlloc.sType =
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        uploadAlloc.commandPool = d.uploadPool;
+        uploadAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        uploadAlloc.commandBufferCount = kFramesInFlight;
+        if (vkOk(vkAllocateCommandBuffers(d.device, &uploadAlloc,
+                                          d.uploadCbs.data()),
+                 "vkAllocateCommandBuffers(upload)")) {
+            d.uploadQueueAvailable = true;
+            LOG_INFO("Vulkan: upload queue on family {} (compute on {}, "
+                     "graphics on {})",
+                     q.upload, q.compute, d.graphicsFamily);
+        }
+    }
+}
+
+// Extension entry points are not exported by the loader's static symbols.
+bool loadExtensionEntryPoints(Impl& d) {
     d.cmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
         vkGetDeviceProcAddr(d.device, "vkCmdBeginRenderingKHR"));
     d.cmdEndRendering = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(
@@ -4734,23 +701,26 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     if (!d.cmdBeginRendering || !d.cmdEndRendering || !d.cmdPushDescriptorSet) {
         LOG_ERROR("Vulkan: could not load dynamic-rendering / push-descriptor "
                   "entry points");
-        return nullptr;
+        return false;
     }
+    return true;
+}
 
-    // --- Allocator ---
+bool createAllocator(Impl& d) {
     VmaAllocatorCreateInfo allocatorInfo {};
     allocatorInfo.physicalDevice = d.gpu;
     allocatorInfo.device = d.device;
     allocatorInfo.instance = d.instance;
     allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
-    if (!vkOk(vmaCreateAllocator(&allocatorInfo, &d.allocator),
-              "vmaCreateAllocator")) {
-        return nullptr;
-    }
+    return vkOk(vmaCreateAllocator(&allocatorInfo, &d.allocator),
+                "vmaCreateAllocator");
+}
 
-    // --- Swapchain + per-frame objects ---
+// Swapchain, the graphics command pool + transient transfer pool, and the
+// per-frame-slot command buffers, acquire semaphores and fences.
+bool createFrameObjects(Impl& d) {
     if (!d.createSwapchain()) {
-        return nullptr;
+        return false;
     }
 
     VkCommandPoolCreateInfo poolInfo {};
@@ -4759,14 +729,14 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     poolInfo.queueFamilyIndex = d.graphicsFamily;
     if (!vkOk(vkCreateCommandPool(d.device, &poolInfo, nullptr, &d.commandPool),
               "vkCreateCommandPool")) {
-        return nullptr;
+        return false;
     }
     VkCommandPoolCreateInfo transferPoolInfo = poolInfo;
     transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     if (!vkOk(vkCreateCommandPool(d.device, &transferPoolInfo, nullptr,
                                   &d.transferPool),
               "vkCreateCommandPool(transfer)")) {
-        return nullptr;
+        return false;
     }
 
     VkCommandBufferAllocateInfo alloc {};
@@ -4777,7 +747,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     if (!vkOk(vkAllocateCommandBuffers(d.device, &alloc,
                                        d.commandBuffers.data()),
               "vkAllocateCommandBuffers")) {
-        return nullptr;
+        return false;
     }
 
     for (u32 i = 0; i < kFramesInFlight; ++i) {
@@ -4786,7 +756,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         if (!vkOk(vkCreateSemaphore(d.device, &sem, nullptr,
                                     &d.imageAvailable[i]),
                   "vkCreateSemaphore(imageAvailable)")) {
-            return nullptr;
+            return false;
         }
         // Created signalled so the first beginFrame does not block forever.
         VkFenceCreateInfo fence {};
@@ -4794,71 +764,68 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         if (!vkOk(vkCreateFence(d.device, &fence, nullptr, &d.inFlight[i]),
                   "vkCreateFence")) {
-            return nullptr;
+            return false;
         }
     }
+    return true;
+}
 
-    // Timestamps need a non-zero timestampPeriod and a queue that supports
-    // them; both are reported per-device, so caps().timerQueries follows.
-    u32 familyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount, nullptr);
-    vector<VkQueueFamilyProperties> families(familyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
-                                             families.data());
-    const bool timestampsUsable =
-        props.limits.timestampPeriod > 0.0f &&
-        d.graphicsFamily < familyCount &&
-        families[d.graphicsFamily].timestampValidBits > 0;
-    if (timestampsUsable) {
-        d.timestampPeriod = props.limits.timestampPeriod;
-        VkQueryPoolCreateInfo queryInfo {};
-        queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        queryInfo.queryCount = kFramesInFlight * kTimestampsPerFrame;
-        if (!vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
-                                    &d.queryPool),
-                  "vkCreateQueryPool")) {
-            return nullptr;
-        }
-        // Per-queue timestamps: the async compute stream gets its own pool
-        // (scopes recorded there measured nothing on the graphics pool).
-        if (d.asyncComputeAvailable &&
-            d.computeFamily < familyCount &&
-            families[d.computeFamily].timestampValidBits > 0) {
-            vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
-                                   &d.computeQueryPool),
-                 "vkCreateQueryPool(compute)");
-        }
-    } else {
+// Timestamps need a non-zero timestampPeriod and a queue that supports
+// them; both are reported per-device, so caps().timerQueries follows.
+// False only when the graphics pool itself cannot be created.
+bool createQueryPools(Impl& d, const QueueFamilies& q,
+                      const VkPhysicalDeviceProperties& props,
+                      bool& timestampsUsable) {
+    timestampsUsable = props.limits.timestampPeriod > 0.0f &&
+                       q.timestamps(d.graphicsFamily);
+    if (!timestampsUsable) {
         LOG_WARN("Vulkan: GPU timestamps unavailable on this queue");
+        return true;
     }
-
-    d.cmd = std::make_unique<VulkanCommandBuffer>(d);
-
-    // Now that resources, shaders and pipelines are real, the
-    // caps go on as a set — renderer systems gate on these to decide whether
-    // to run, so advertising one whose path is still a no-op would be worse
-    // than reporting false.
-    {
-        std::ifstream in(Impl::kPipelineCacheFile,
-                         std::ios::binary | std::ios::ate);
-        std::string blob;
-        if (in) {
-            blob.resize(static_cast<size_t>(in.tellg()));
-            in.seekg(0);
-            in.read(blob.data(), static_cast<std::streamsize>(blob.size()));
-        }
-        VkPipelineCacheCreateInfo cacheInfo {};
-        cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-        // Vulkan validates the blob header itself (device/driver UUID):
-        // a stale or foreign file is simply ignored.
-        cacheInfo.initialDataSize = blob.size();
-        cacheInfo.pInitialData = blob.empty() ? nullptr : blob.data();
-        vkOk(vkCreatePipelineCache(d.device, &cacheInfo, nullptr,
-                                   &d.pipelineCache),
-             "vkCreatePipelineCache");
+    d.timestampPeriod = props.limits.timestampPeriod;
+    VkQueryPoolCreateInfo queryInfo {};
+    queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryInfo.queryCount = kFramesInFlight * kTimestampsPerFrame;
+    if (!vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
+                                &d.queryPool),
+              "vkCreateQueryPool")) {
+        return false;
     }
+    // Per-queue timestamps: the async compute stream gets its own pool
+    // (scopes recorded there measured nothing on the graphics pool).
+    if (d.asyncComputeAvailable && q.timestamps(d.computeFamily)) {
+        vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
+                               &d.computeQueryPool),
+             "vkCreateQueryPool(compute)");
+    }
+    return true;
+}
 
+// Seeds the pipeline cache from the previous run's blob (Impl notes on
+// why it is persisted). Vulkan validates the blob header itself
+// (device/driver UUID): a stale or foreign file is simply ignored.
+void loadPipelineCache(Impl& d) {
+    std::ifstream in(Impl::kPipelineCacheFile,
+                     std::ios::binary | std::ios::ate);
+    std::string blob;
+    if (in) {
+        blob.resize(static_cast<size_t>(in.tellg()));
+        in.seekg(0);
+        in.read(blob.data(), static_cast<std::streamsize>(blob.size()));
+    }
+    VkPipelineCacheCreateInfo cacheInfo {};
+    cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheInfo.initialDataSize = blob.size();
+    cacheInfo.pInitialData = blob.empty() ? nullptr : blob.data();
+    vkOk(vkCreatePipelineCache(d.device, &cacheInfo, nullptr,
+                               &d.pipelineCache),
+         "vkCreatePipelineCache");
+}
+
+// The device-owned comparison sampler baked into layouts as IMMUTABLE for
+// every sampler*Shadow binding (Impl::pcfSampler).
+void createPcfSampler(Impl& d) {
     VkSamplerCreateInfo pcfInfo {};
     pcfInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     pcfInfo.minFilter = VK_FILTER_LINEAR;
@@ -4870,7 +837,80 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     pcfInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     vkOk(vkCreateSampler(d.device, &pcfInfo, nullptr, &d.pcfSampler),
          "vkCreateSampler (immutable PCF)");
+}
 
+// The stand-ins pushGroup/bindMissingDummies fall back on (Impl::dummy*).
+// Created through the public API once the device is complete.
+void createDummyResources(VulkanDevice& device, Impl& d) {
+    const u32 white[2] = { 0xffffffffu, 0xffffffffu };
+    d.dummy2D = device.createTexture({ .width = 1, .height = 1 }, white);
+    d.dummyArray = device.createTexture(
+        { .width = 1, .height = 1, .arrayLayers = 2 }, white);
+    d.dummy3D = device.createTexture(
+        { .width = 1, .height = 1, .depth = 2 }, nullptr);
+    d.dummyDepth = device.createTexture(
+        { .width = 1, .height = 1, .format = TextureFormat::Depth32F },
+        nullptr);
+    d.dummyUniform = device.createBuffer(
+        { .usage = BufferUsage::Uniform, .size = 256 }, nullptr);
+    d.dummyStorage = device.createBuffer(
+        { .usage = BufferUsage::Storage, .size = 256 }, nullptr);
+}
+
+} // namespace
+
+uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
+    auto self = uptr<VulkanDevice> { new VulkanDevice() };
+    Impl& d = *self->impl;
+    d.window = &window;
+
+    if (!createInstance(d)) {
+        return nullptr;
+    }
+    d.surface = reinterpret_cast<VkSurfaceKHR>(
+        platform::createVulkanSurface(window, d.instance));
+    if (d.surface == VK_NULL_HANDLE) {
+        return nullptr;
+    }
+    QueueFamilies families;
+    if (!pickPhysicalDevice(d, families)) {
+        return nullptr;
+    }
+    VkPhysicalDeviceProperties props {};
+    vkGetPhysicalDeviceProperties(d.gpu, &props);
+    VkPhysicalDeviceFeatures features {};
+    vkGetPhysicalDeviceFeatures(d.gpu, &features);
+
+    bool wantAsyncCompute = false;
+    bool wantUploadQueue = false;
+    if (!createLogicalDevice(d, families, features, wantAsyncCompute,
+                             wantUploadQueue)) {
+        return nullptr;
+    }
+    if (wantAsyncCompute) {
+        createComputeLane(d, families);
+    }
+    if (wantUploadQueue && d.asyncComputeAvailable) {
+        createUploadLane(d, families);
+    }
+    if (!loadExtensionEntryPoints(d) || !createAllocator(d) ||
+        !createFrameObjects(d)) {
+        return nullptr;
+    }
+    bool timestampsUsable = false;
+    if (!createQueryPools(d, families, props, timestampsUsable)) {
+        return nullptr;
+    }
+
+    d.cmd = std::make_unique<VulkanCommandBuffer>(d);
+
+    loadPipelineCache(d);
+    createPcfSampler(d);
+
+    // Now that resources, shaders and pipelines are real, the
+    // caps go on as a set — renderer systems gate on these to decide whether
+    // to run, so advertising one whose path is still a no-op would be worse
+    // than reporting false.
     self->caps_ = { .offscreenTargets = true,
                     .textureArrays = true,
                     .hdrFormats = true,
@@ -4884,21 +924,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                     .multiDrawIndirect = d.multiDrawIndirect,
                     .textureCompressionBC = d.textureCompressionBC };
 
-    {
-        const u32 white[2] = { 0xffffffffu, 0xffffffffu };
-        d.dummy2D = self->createTexture({ .width = 1, .height = 1 }, white);
-        d.dummyArray = self->createTexture(
-            { .width = 1, .height = 1, .arrayLayers = 2 }, white);
-        d.dummy3D = self->createTexture(
-            { .width = 1, .height = 1, .depth = 2 }, nullptr);
-        d.dummyDepth = self->createTexture(
-            { .width = 1, .height = 1, .format = TextureFormat::Depth32F },
-            nullptr);
-        d.dummyUniform = self->createBuffer(
-            { .usage = BufferUsage::Uniform, .size = 256 }, nullptr);
-        d.dummyStorage = self->createBuffer(
-            { .usage = BufferUsage::Storage, .size = 256 }, nullptr);
-    }
+    createDummyResources(*self, d);
 
     LOG_INFO("Vulkan device ready: {} — {}x{}, {} swapchain images",
              props.deviceName, d.extent.width, d.extent.height,

@@ -12,6 +12,7 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Hash.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
@@ -129,12 +130,12 @@ std::filesystem::path cacheDirCopy() {
 u64 networkFileKey(const ProceduralControls& controls,
                    const MacroParams& macro,
                    const MasterNetworkParams& params) {
-    u64 h = 1469598103934665603ull;
+    u64 h = core::kFnv64Basis;
     const auto mix = [&](const void* data, size_t size) {
         const auto* bytes = static_cast<const unsigned char*>(data);
         for (size_t i = 0; i < size; ++i) {
             h ^= bytes[i];
-            h *= 1099511628211ull;
+            h *= core::kFnv64Prime;
         }
     };
     const auto mix64 = [&](u64 v) { mix(&v, sizeof(v)); };

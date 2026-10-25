@@ -57,8 +57,9 @@ public:
     // Every form whose type isA(typeId) — the whole inheritance chain is
     // bucketed at add, so base-type queries are one lookup.
     const vector<FormHandle>& handlesByType(u32 typeId) const;
-    // Every form whose reflected `parent` guid field equals `parent` (the
-    // child-record convention).
+    // Every form whose reflected `parent` guid field, or any Guid field
+    // flagged reflect::ParentLink, equals `parent` (the child-record
+    // convention and its named-owner variants).
     const vector<FormHandle>& childHandles(const core::Guid& parent) const;
     // Re-derives both indexes from the entries.
     void rebuildIndexes();

@@ -215,6 +215,21 @@ inline f32 edgeWeight(const TerrainRegion& r, f32 x, f32 z) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+// The mask grid's texel size (meters per texel, per axis): the mask
+// spans the region with maskWidth x maskHeight samples, edge to edge.
+// Requires maskWidth, maskHeight >= 2.
+inline Vec2 maskTexelSize(const TerrainRegion& r) {
+    return { r.spanX() / static_cast<f32>(r.maskWidth - 1),
+             r.spanZ() / static_cast<f32>(r.maskHeight - 1) };
+}
+
+// A world point in continuous mask-texel coordinates, UNCLAMPED: the
+// one mapping every mask reader (bilinear, nearest, footprint) builds on.
+inline Vec2 maskTexelOf(const TerrainRegion& r, f32 x, f32 z) {
+    const Vec2 texel = maskTexelSize(r);
+    return { (x - r.originX) / texel.x, (z - r.originZ) / texel.y };
+}
+
 // Bilinear sample of a u8 mask channel in [0, 1]; `fallback` where the
 // channel is not baked.
 inline f32 maskSample(const TerrainRegion& r, const vector<u8>& channel,
@@ -222,12 +237,9 @@ inline f32 maskSample(const TerrainRegion& r, const vector<u8>& channel,
     if (channel.empty() || r.maskWidth < 2 || r.maskHeight < 2) {
         return fallback;
     }
-    const f32 texel = r.spanX() / static_cast<f32>(r.maskWidth - 1);
-    const f32 u = glm::clamp((x - r.originX) / texel, 0.0f,
-                             static_cast<f32>(r.maskWidth - 1));
-    const f32 texelZ = r.spanZ() / static_cast<f32>(r.maskHeight - 1);
-    const f32 v = glm::clamp((z - r.originZ) / texelZ, 0.0f,
-                             static_cast<f32>(r.maskHeight - 1));
+    const Vec2 uv = maskTexelOf(r, x, z);
+    const f32 u = glm::clamp(uv.x, 0.0f, static_cast<f32>(r.maskWidth - 1));
+    const f32 v = glm::clamp(uv.y, 0.0f, static_cast<f32>(r.maskHeight - 1));
     const u32 u0 = glm::min(static_cast<u32>(u), r.maskWidth - 2);
     const u32 v0 = glm::min(static_cast<u32>(v), r.maskHeight - 2);
     const f32 tu = u - static_cast<f32>(u0);

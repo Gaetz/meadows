@@ -27,6 +27,62 @@ class MeshCache;
 
 namespace game {
 
+// Which world the scene is in. Decided in ONE place (the scene's
+// decideWorldKind, fed by the world entry / travel path); every per-world
+// gate reads the kind or its policy instead of re-deriving it from the
+// streamer, the sandbox params or the interior flag.
+enum class WorldKind : u8 {
+    AuthoredCells, // the authored exterior over the legacy terrain
+    SandboxMap,    // a bounded generated map, its tiles streamed by the baker
+    Interior,      // an interior worldspace: no terrain, sky, water or weather
+};
+
+// What a world kind affords — one flat table (worldPolicy), read by the
+// gates of the frame instead of the kind's ingredients.
+struct WorldPolicy {
+    // The height field is the ground: footstep material, terrain and
+    // vegetation collision, ground-rise throws, the swimmer's water.
+    bool snapsToTerrain;
+    // The tile streamer runs and its ring completion gates the veil.
+    bool streamsBakes;
+    // Sea, lakes and rivers exist: floaters, swimming, river dressing.
+    bool hasWaterBodies;
+    // Wind and rain reach the props (torch snuff).
+    bool hasWeather;
+    // The spirit fields (fire, flame jet, igniters, water jets) act on
+    // the ground and the actors.
+    bool allowsSpirits;
+    // A map rim exists (the ocean's turn-back current past it).
+    bool hasBoundedMap;
+};
+
+constexpr WorldPolicy worldPolicy(WorldKind kind) {
+    switch (kind) {
+    case WorldKind::AuthoredCells:
+        return WorldPolicy { .snapsToTerrain = true,
+                             .streamsBakes = false,
+                             .hasWaterBodies = true,
+                             .hasWeather = true,
+                             .allowsSpirits = true,
+                             .hasBoundedMap = false };
+    case WorldKind::SandboxMap:
+        return WorldPolicy { .snapsToTerrain = true,
+                             .streamsBakes = true,
+                             .hasWaterBodies = true,
+                             .hasWeather = true,
+                             .allowsSpirits = true,
+                             .hasBoundedMap = true };
+    case WorldKind::Interior:
+        break;
+    }
+    return WorldPolicy { .snapsToTerrain = false,
+                         .streamsBakes = false,
+                         .hasWaterBodies = false,
+                         .hasWeather = false,
+                         .allowsSpirits = false,
+                         .hasBoundedMap = false };
+}
+
 // The scene systems the cell-streaming fixups touch, bundled so the streaming
 // bookkeeping (ground snap, static-collider cook, nav obstacles) is decoupled
 // from LandscapeScene. The scene rebuilds it each frame from its
@@ -42,6 +98,8 @@ struct StreamingContext {
     Vec3 focus;                 // player/camera position — cook nearest first
     bool fastCook;              // travel fade holds a black screen -> uncap cook
     bool editorOwnsTransforms;  // Edit mode: skip the ground snap
+    WorldKind worldKind;        // the active world, decided by the scene
+    WorldPolicy policy;         // what it affords (worldPolicy(worldKind))
 };
 
 // Cell-streaming bookkeeping extracted from LandscapeScene: the

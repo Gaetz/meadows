@@ -1,5 +1,6 @@
 #include "engine/terrain/generation/PoiPlan.hpp"
 
+#include <iterator>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -8,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
@@ -23,18 +25,72 @@ const char* poiCharacterName(PoiCharacter c) {
     return kNames[static_cast<size_t>(c)];
 }
 
-const char* poiTypeName(PoiType type) {
-    static const char* kNames[] = {
-        "summit",    "needle",   "ridge",     "mesa",      "butte",
-        "escarpment", "canyon",  "col",       "hoodoos",   "karst-towers",
-        "boulders",  "crater",   "cirque",    "waterfall", "plain-lake",
-        "tarn",      "spring",   "oasis",     "confluence", "headland",
-        "sea-cliff", "sea-stack", "cove",     "fjord",     "islet",
-        "lone-tree", "grove",    "city-pad",
-    };
-    static_assert(sizeof(kNames) / sizeof(kNames[0]) ==
-                  static_cast<size_t>(PoiType::Count));
-    return kNames[static_cast<size_t>(type)];
+namespace {
+
+// One row per PoiType (enum order). The numbers are the hand-tuned
+// sculpting values; the shapes are documented on KernelShape.
+constexpr PoiTypeTraits kPoiTypes[] = {
+    { .name = "summit", .family = PoiFamily::Relief, .shape = KernelShape::Cone },
+    { .name = "needle", .family = PoiFamily::Relief, .shape = KernelShape::Cone,
+      .needleCone = true },
+    { .name = "ridge", .family = PoiFamily::Relief, .shape = KernelShape::Ridge },
+    { .name = "mesa", .family = PoiFamily::Relief, .shape = KernelShape::Mesa },
+    { .name = "butte", .family = PoiFamily::Relief, .shape = KernelShape::Cone },
+    { .name = "escarpment", .family = PoiFamily::Relief,
+      .shape = KernelShape::Step, .stepHeightCap = 120.0f },
+    { .name = "canyon", .family = PoiFamily::Relief, .shape = KernelShape::Trench,
+      .waterCourse = true, .alongCourse = true, .dryFallback = PoiType::Ridge },
+    { .name = "col", .family = PoiFamily::Relief, .shape = KernelShape::Ridge,
+      .saddle = true },
+    { .name = "hoodoos", .family = PoiFamily::Relief, .shape = KernelShape::Field,
+      .fieldCell = 45.0f, .fieldHeight = 20.0f },
+    { .name = "karst-towers", .family = PoiFamily::Relief,
+      .shape = KernelShape::Field, .fieldCell = 90.0f, .fieldHeight = 60.0f },
+    { .name = "boulders", .family = PoiFamily::Relief, .shape = KernelShape::Field,
+      .fieldCell = 25.0f, .fieldHeight = 6.0f },
+    { .name = "crater", .family = PoiFamily::Relief, .shape = KernelShape::Crater },
+    { .name = "cirque", .family = PoiFamily::Relief, .shape = KernelShape::Cirque,
+      // The rim's own height; the kernel digs the tarn from it.
+      .height = PoiRange { 120.0f, 200.0f }, .radius = PoiRange { 300.0f, 600.0f } },
+    { .name = "waterfall", .family = PoiFamily::Water, .shape = KernelShape::Step,
+      .waterCourse = true, .dryFallback = PoiType::Butte, .stepHeightCap = 60.0f },
+    { .name = "plain-lake", .family = PoiFamily::Water, .shape = KernelShape::Basin,
+      .depth = PoiRange { 5.0f, 15.0f } },
+    { .name = "tarn", .family = PoiFamily::Water, .shape = KernelShape::Basin,
+      .depth = PoiRange { 5.0f, 15.0f }, .radius = PoiRange { 100.0f, 300.0f } },
+    { .name = "spring", .family = PoiFamily::Water, .shape = KernelShape::Mound,
+      // A marker: the water comes with the peuplement, no relief.
+      .heightCap = 12.0f, .radiusCap = 60.0f },
+    { .name = "oasis", .family = PoiFamily::Water, .shape = KernelShape::Mound,
+      .moundBasin = 3.0f },
+    { .name = "confluence", .family = PoiFamily::Water, .shape = KernelShape::Pad,
+      .waterCourse = true, .dryFallback = PoiType::LoneTree,
+      .height = PoiRange { 0.0f, 0.0f }, .radius = PoiRange { 150.0f, 300.0f } },
+    { .name = "headland", .family = PoiFamily::Coast, .shape = KernelShape::Cone,
+      .coneAspect = 2.2f },
+    { .name = "sea-cliff", .family = PoiFamily::Coast, .shape = KernelShape::Step,
+      .stepHeightCap = 120.0f },
+    { .name = "sea-stack", .family = PoiFamily::Coast, .shape = KernelShape::Cone,
+      .heightCap = 80.0f, .radiusCap = 300.0f },
+    { .name = "cove", .family = PoiFamily::Coast, .shape = KernelShape::Basin,
+      .depth = PoiRange { 5.0f, 15.0f } },
+    { .name = "fjord", .family = PoiFamily::Coast, .shape = KernelShape::Trench },
+    { .name = "islet", .family = PoiFamily::Coast, .shape = KernelShape::Cone,
+      .heightCap = 80.0f, .radiusCap = 300.0f },
+    { .name = "lone-tree", .family = PoiFamily::Vegetation,
+      .shape = KernelShape::Mound, .heightCap = 12.0f, .radiusCap = 60.0f,
+      .moundLift = true },
+    { .name = "grove", .family = PoiFamily::Vegetation, .shape = KernelShape::Mound,
+      .moundLift = true },
+    { .name = "city-pad", .family = PoiFamily::Site, .shape = KernelShape::Pad,
+      .height = PoiRange { 0.0f, 0.0f }, .radius = PoiRange { 150.0f, 300.0f } },
+};
+static_assert(std::size(kPoiTypes) == static_cast<size_t>(PoiType::Count));
+
+} // namespace
+
+const PoiTypeTraits& poiTraits(PoiType type) {
+    return kPoiTypes[static_cast<size_t>(type)];
 }
 
 namespace {
@@ -167,15 +223,9 @@ PoiType drawType(PoiTier tier, const WorldSample& w, u32 hash,
     return pick(t, 10, r);
 }
 
-bool basinType(PoiType type) {
-    return type == PoiType::PlainLake || type == PoiType::Tarn ||
-           type == PoiType::Cove;
-}
+bool basinType(PoiType type) { return poiTraits(type).depth.has_value(); }
 
-bool waterCourseType(PoiType type) {
-    return type == PoiType::Waterfall || type == PoiType::Canyon ||
-           type == PoiType::Confluence;
-}
+bool waterCourseType(PoiType type) { return poiTraits(type).waterCourse; }
 
 // The nearest master course to (x, z), read on the PLAN-FREE analytic
 // (rhythm.plan off: the network must not read the plan it types for —
@@ -298,7 +348,7 @@ CellSite placeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
     s.hash = core::hashU32(salt ^ core::hashU32(static_cast<u32>(cx) ^
                                                  (static_cast<u32>(cz) *
                                                   0x85ebca6bu)));
-    s.theta = roll01(s.hash, 6) * 3.14159265f;
+    s.theta = roll01(s.hash, 6) * core::kPi;
     // The start cell's grand stands clear of the spawn (the probe lands
     // on the meadow, never on its flank): pushed away along the ray.
     if (tier == PoiTier::Grand) {
@@ -307,7 +357,7 @@ CellSite placeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
         const f32 d = std::hypot(dx, dz);
         if (d < plan.grandStartClearance) {
             const f32 ang = d > 1.0f ? std::atan2(dz, dx)
-                                     : jitter(2) * 6.2831853f;
+                                     : jitter(2) * core::kTau;
             s.x = world.startX + std::cos(ang) * plan.grandStartClearance;
             s.z = world.startZ + std::sin(ang) * plan.grandStartClearance;
         }
@@ -339,24 +389,22 @@ void sizeSite(const PoiPlanParams& plan, PoiSite& s) {
                             s.hash, 4);
         break;
     }
-    if (basinType(s.type)) {
-        s.height = -lerpHash(5.0f, 15.0f, s.hash, 5); // depth
-        if (s.type == PoiType::Tarn) {
-            s.radius = lerpHash(100.0f, 300.0f, s.hash, 3);
-        }
-    } else if (s.type == PoiType::Cirque) {
-        // The rim's own height; the kernel digs the tarn from it.
-        s.height = lerpHash(120.0f, 200.0f, s.hash, 4);
-        s.radius = lerpHash(300.0f, 600.0f, s.hash, 3);
-    } else if (s.type == PoiType::CityPad || s.type == PoiType::Confluence) {
-        s.height = 0.0f;
-        s.radius = lerpHash(150.0f, 300.0f, s.hash, 3);
-    } else if (s.type == PoiType::LoneTree || s.type == PoiType::Spring) {
-        s.height = glm::min(s.height, 12.0f);
-        s.radius = glm::min(s.radius, 60.0f);
-    } else if (s.type == PoiType::Islet || s.type == PoiType::SeaStack) {
-        s.height = glm::min(s.height, 80.0f);
-        s.radius = glm::min(s.radius, 300.0f);
+    // The type's rules over the tier draw (PoiTypeTraits columns).
+    const PoiTypeTraits& t = poiTraits(s.type);
+    if (t.depth) {
+        s.height = -lerpHash(t.depth->lo, t.depth->hi, s.hash, 5);
+    }
+    if (t.height) {
+        s.height = lerpHash(t.height->lo, t.height->hi, s.hash, 4);
+    }
+    if (t.radius) {
+        s.radius = lerpHash(t.radius->lo, t.radius->hi, s.hash, 3);
+    }
+    if (t.heightCap > 0.0f) {
+        s.height = glm::min(s.height, t.heightCap);
+    }
+    if (t.radiusCap > 0.0f) {
+        s.radius = glm::min(s.radius, t.radiusCap);
     }
 }
 
@@ -572,13 +620,11 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 if (hit.found && hit.dist <= plan.waterPoiReach) {
                     s.x = hit.x;
                     s.z = hit.z;
-                    s.theta = s.type == PoiType::Canyon
+                    s.theta = poiTraits(s.type).alongCourse
                                   ? std::atan2(hit.dirZ, hit.dirX)
                                   : std::atan2(hit.dirX, -hit.dirZ);
                 } else {
-                    s.type = s.type == PoiType::Waterfall  ? PoiType::Butte
-                             : s.type == PoiType::Canyon   ? PoiType::Ridge
-                                                           : PoiType::LoneTree;
+                    s.type = poiTraits(s.type).dryFallback;
                 }
             }
         }
@@ -643,18 +689,13 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
     KernelOut k;
     const f32 h = glm::max(s.height, 0.0f);
     const f32 depth = glm::max(-s.height, 0.0f);
-    switch (s.type) {
-    case PoiType::Summit:
-    case PoiType::Needle:
-    case PoiType::Butte:
-    case PoiType::Headland:
-    case PoiType::Islet:
-    case PoiType::SeaStack: {
-        const f32 r = s.type == PoiType::Needle
+    const PoiTypeTraits& traits = poiTraits(s.type);
+    switch (traits.shape) {
+    case KernelShape::Cone: {
+        const f32 r = traits.needleCone
                           ? glm::max(h / std::tan(0.7f), 20.0f) // ~40 deg
                           : coneRadius(plan, s, h);
-        const f32 aspect = s.type == PoiType::Headland ? 2.2f : 1.0f;
-        const Frame f = frameOf(s, r, aspect, x, z);
+        const Frame f = frameOf(s, r, traits.coneAspect, x, z);
         if (f.n < 1.0f) {
             // Rounded tip (C1 over the last 8 %), linear flank below.
             const f32 t = 1.0f - f.n;
@@ -664,13 +705,12 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
                                      tip * 0.5f
                                : t;
             k.lift = h * kk *
-                     (s.type == PoiType::Needle ? 1.0f
-                                                : coneHeightScale(plan, s));
+                     (traits.needleCone ? 1.0f : coneHeightScale(plan, s));
             k.flank = ss(0.05f, 0.3f, kk) * (1.0f - ss(0.85f, 1.0f, kk));
         }
         break;
     }
-    case PoiType::Crater: {
+    case KernelShape::Crater: {
         const f32 r = coneRadius(plan, s, h);
         const Frame f = frameOf(s, r, 1.0f, x, z);
         if (f.n < 1.0f) {
@@ -683,7 +723,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Mesa: {
+    case KernelShape::Mesa: {
         const Frame f = frameOf(s, s.radius, 1.0f + 0.4f * roll01(s.hash, 8),
                                 x, z);
         if (f.n < 1.0f) {
@@ -696,14 +736,13 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Ridge:
-    case PoiType::Col: {
+    case KernelShape::Ridge: {
         const f32 aspect = glm::mix(2.8f, 4.5f, roll01(s.hash, 8));
         const Frame f = frameOf(s, s.radius, aspect, x, z);
         if (f.n < 1.0f) {
             const f32 kk = 1.0f - f.n;
             f32 mod = 1.0f;
-            if (s.type == PoiType::Ridge) {
+            if (!traits.saddle) {
                 mod = glm::mix(0.55f, 1.0f,
                                noise::fbm(s.hash ^ 0x51d9ec01u, x, z,
                                           1.0f / 1300.0f, 2, 2.0f, 0.5f));
@@ -717,15 +756,12 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Escarpment:
-    case PoiType::SeaCliff:
-    case PoiType::Waterfall: {
+    case KernelShape::Step: {
         // A step across the footprint: the uphill half-plane rises.
         const f32 r = s.radius * 2.0f;
         const Frame f = frameOf(s, r, 1.0f, x, z);
         if (f.n < 1.0f) {
-            const f32 hs = s.type == PoiType::Waterfall ? glm::min(h, 60.0f)
-                                                        : glm::min(h, 120.0f);
+            const f32 hs = glm::min(h, traits.stepHeightCap);
             const f32 edge = 1.0f - ss(0.6f, 1.0f, f.n);
             const f32 e = glm::mix(0.12f, 0.05f, plan.verticality);
             k.lift = hs * ss(-e, e, f.v) * edge;
@@ -733,8 +769,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Canyon:
-    case PoiType::Fjord: {
+    case KernelShape::Trench: {
         const f32 aspect = glm::mix(3.0f, 5.0f, roll01(s.hash, 8));
         const Frame f = frameOf(s, s.radius, aspect, x, z);
         if (f.n < 1.0f) {
@@ -744,7 +779,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Cirque: {
+    case KernelShape::Cirque: {
         // An amphitheatre: a rim on three sides, open along +u.
         const Frame f = frameOf(s, s.radius, 1.0f, x, z);
         if (f.n < 1.0f) {
@@ -756,9 +791,7 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::PlainLake:
-    case PoiType::Tarn:
-    case PoiType::Cove: {
+    case KernelShape::Basin: {
         const Frame f = frameOf(s, s.radius, 1.0f + 0.5f * roll01(s.hash, 8),
                                 x, z);
         if (f.n < 1.0f) {
@@ -766,17 +799,11 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Hoodoos:
-    case PoiType::KarstTowers:
-    case PoiType::Boulders: {
+    case KernelShape::Field: {
         // A field of small cones on a jittered lattice inside the
         // footprint (towers are tall and thin, boulders squat).
-        const f32 cell = s.type == PoiType::Boulders ? 25.0f
-                         : s.type == PoiType::Hoodoos ? 45.0f
-                                                      : 90.0f;
-        const f32 hc = s.type == PoiType::Boulders ? 6.0f
-                       : s.type == PoiType::Hoodoos ? 20.0f
-                                                    : 60.0f;
+        const f32 cell = traits.fieldCell;
+        const f32 hc = traits.fieldHeight;
         const Frame f = frameOf(s, s.radius, 1.0f, x, z);
         if (f.n < 1.0f) {
             const i32 cx = static_cast<i32>(std::floor(x / cell));
@@ -803,33 +830,25 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
         }
         break;
     }
-    case PoiType::Grove:
-    case PoiType::LoneTree:
-    case PoiType::Spring:
-    case PoiType::Oasis: {
+    case KernelShape::Mound: {
         const Frame f = frameOf(s, s.radius, 1.0f, x, z);
         if (f.n < 1.0f) {
             const f32 kk = (1.0f - f.n * f.n) * (1.0f - f.n * f.n);
-            if (s.type == PoiType::Oasis) {
-                k.basin = 3.0f * kk;
-            } else if (s.type == PoiType::Spring) {
-                k.basin = 0.0f; // a marker: the water comes with the peuplement
-            } else {
+            if (traits.moundBasin > 0.0f) {
+                k.basin = traits.moundBasin * kk;
+            } else if (traits.moundLift) {
                 k.lift = glm::min(h, 12.0f) * kk;
             }
         }
         break;
     }
-    case PoiType::CityPad:
-    case PoiType::Confluence: {
+    case KernelShape::Pad: {
         const Frame f = frameOf(s, s.radius, 1.0f, x, z);
         if (f.n < 1.0f) {
             k.padFlat = 1.0f - ss(0.7f, 1.0f, f.n);
         }
         break;
     }
-    default:
-        break;
     }
     (void)world;
     return k;
@@ -869,12 +888,12 @@ constexpr CharacterStyle kCharacters[] = {
 } // namespace
 
 u64 hashParams(const PoiPlanParams& p) {
-    u64 h = 1469598103934665603ull;
+    u64 h = core::kFnv64Basis;
     const auto mix = [&](const void* data, size_t size) {
         const auto* bytes = static_cast<const unsigned char*>(data);
         for (size_t i = 0; i < size; ++i) {
             h ^= bytes[i];
-            h *= 1099511628211ull;
+            h *= core::kFnv64Prime;
         }
     };
     const auto f = [&](f32 v) { mix(&v, sizeof(v)); };

@@ -1,7 +1,9 @@
 #include "gameplay/stats/StatsTuning.hpp"
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormQuery.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/stats/Injuries.hpp" // registerInjuryTags
 #include "gameplay/stats/Survival.hpp" // registerSurvivalTags
 
@@ -27,37 +29,34 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
     // life state, the combat statuses, the ten buildup tags, exhaustion,
     // plus the stats runtime tags (injuries, survival). Registration is
     // idempotent, so scenes freely add their own vocabulary on top.
-    for (const char* tag :
-         { "State.Dead", "State.Staggered", "State.Paralyzed",
-           "State.Downed",       // 0 HP under protection
-           "Follower.Protected", // the followerActive mirror routing
-                                 // 0 HP to Downed (updateLifeState)
-           "State.Exhausted", "State.Shaken", "State.CriticalWeakness",
-           "State.Blocking",  // the raised guard
-           "State.Dodging",   // dodge i-frames (grantedTag — a tag the
-                              // registry doesn't know is granted SILENTLY
-                              // as nothing)
-           "State.Resting",   // furniture effects (SeatRest...)
-           "State.Sneaking",  // sneak toggle (detection + step audio)
-           "Cooldown.Dodge", "Cooldown.Attack" }) {
+    for (std::string_view tag :
+         { tags::Dead, tags::Staggered, tags::Paralyzed,
+           tags::Downed,            // 0 HP under protection
+           tags::FollowerProtected, // the followerActive mirror routing
+                                    // 0 HP to Downed (updateLifeState)
+           tags::Exhausted, tags::Shaken, tags::CriticalWeakness,
+           tags::Blocking,  // the raised guard
+           tags::Dodging,   // dodge i-frames (grantedTag — a tag the
+                            // registry doesn't know is granted SILENTLY
+                            // as nothing)
+           tags::Resting,   // furniture effects (SeatRest...)
+           tags::Sneaking,  // sneak toggle (detection + step audio)
+           std::string_view { "Cooldown.Dodge" },
+           std::string_view { "Cooldown.Attack" } }) {
         tags.registerTag(tag);
     }
-    for (const char* statusTag :
-         { "Status.Poisoned", "Status.Bleeding", "Status.Mental",
-           "Status.Diseased", "Status.Cursed", "Status.Dying",
-           "Status.HarmonyBroken", "Status.Ignited", "Status.Glaciated",
-           "Status.Electrocuted" }) {
+    for (std::string_view statusTag :
+         { tags::Poisoned, tags::Bleeding, tags::Mental,
+           tags::Diseased, tags::Cursed, tags::Dying,
+           tags::HarmonyBroken, tags::Ignited, tags::Glaciated,
+           tags::Electrocuted }) {
         tags.registerTag(statusTag);
     }
     registerStatsRuntimeTags(tags);
 }
 
 StatsTuningForm resolveStatsTuning(const data::FormDatabase& forms) {
-    if (const StatsTuningForm* tuning =
-            forms.find<StatsTuningForm>(kStatsTuningGuid)) {
-        return *tuning;
-    }
-    return StatsTuningForm {};
+    return data::resolveSingleton<StatsTuningForm>(forms, kStatsTuningGuid);
 }
 
 } // namespace gameplay

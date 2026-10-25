@@ -74,6 +74,7 @@ private:
 using UniqueBuffer = Unique<BufferHandle>;
 using UniqueTexture = Unique<TextureHandle>;
 using UniqueSampler = Unique<SamplerHandle>;
+using UniqueShader = Unique<ShaderHandle>;
 using UniquePipeline = Unique<PipelineHandle>;
 using UniqueBindGroup = Unique<BindGroupHandle>;
 using UniqueFramebuffer = Unique<FramebufferHandle>;

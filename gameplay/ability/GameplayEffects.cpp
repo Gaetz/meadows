@@ -2,35 +2,23 @@
 
 #include <algorithm>
 
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/stats/StatusBuildup.hpp" // for buildupType routing
 
 namespace gameplay {
 
 namespace {
 
+// The loader already rejected values outside the tables; the fallbacks
+// only cover records that bypassed it (hand-built forms in code).
 ModifierOp parseOp(const str& op) {
-    if (op == "multiply") {
-        return ModifierOp::Multiply;
-    }
-    if (op == "override") {
-        return ModifierOp::Override;
-    }
-    return ModifierOp::Add;
+    return reflect::parseEnum<ModifierOp>(kModifierOps, op)
+        .value_or(ModifierOp::Add);
 }
 
-enum class DurationPolicy { Instant, Duration, Infinite, Periodic };
-
 DurationPolicy parseDuration(const str& duration) {
-    if (duration == "duration") {
-        return DurationPolicy::Duration;
-    }
-    if (duration == "infinite") {
-        return DurationPolicy::Infinite;
-    }
-    if (duration == "periodic") {
-        return DurationPolicy::Periodic;
-    }
-    return DurationPolicy::Instant;
+    return reflect::parseEnum<DurationPolicy>(kDurationPolicies, duration)
+        .value_or(DurationPolicy::Instant);
 }
 
 void applyModifierToBase(AttributeSet& set, u32 attrId, ModifierOp op, f32 mag) {
@@ -84,9 +72,20 @@ void clampBasePair(AttributeSet& set, const AbilitySystem& system,
 }
 
 void clampBaseVitals(AttributeSet& set, const AbilitySystem& system) {
-    clampBasePair(set, system, attr("health"), attr("maxHealth"));
-    clampBasePair(set, system, attr("energy"), attr("maxEnergy"));
-    clampBasePair(set, system, attr("essence"), attr("maxEssence"));
+    for (const VitalPair& vital : kVitals) {
+        clampBasePair(set, system, attr(vital.value), attr(vital.max));
+    }
+}
+
+// Whether `attrId` is the vital whose spending arms the regen delay (the
+// kVitals column), so the rule has no attribute name of its own here.
+bool spendPausesRegen(u32 attrId) {
+    for (const VitalPair& vital : kVitals) {
+        if (vital.spendPausesRegen && attr(vital.value) == attrId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Aggregates the non-periodic effect modifiers (plus any continuous `extra`
@@ -147,9 +146,9 @@ void clampVitalsCurrent(AbilitySystem& system) {
                                        std::max(max->second, 0.0f));
         }
     };
-    clampCurrent(attr("health"), attr("maxHealth"));
-    clampCurrent(attr("energy"), attr("maxEnergy"));
-    clampCurrent(attr("essence"), attr("maxEssence"));
+    for (const VitalPair& vital : kVitals) {
+        clampCurrent(attr(vital.value), attr(vital.max));
+    }
 }
 
 // Removes the granted tag for an expired effect (if any) and erases it.
@@ -255,7 +254,7 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     // Duration is a constant for now (→ StatsTuningForm later, like the exhaustion
     // gate). Refreshes (max) so back-to-back spends don't shorten the pause.
     if (!effect.bypassEnergyRegenDelay && op == ModifierOp::Add &&
-        effect.magnitude < 0.0f && attrId == attr("energy")) {
+        effect.magnitude < 0.0f && spendPausesRegen(attrId)) {
         constexpr f32 kEnergyRegenDelay = 1.0f;
         system.energyRegenDelay = std::max(system.energyRegenDelay, kEnergyRegenDelay);
     }
@@ -394,7 +393,7 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
 
 void updateExhaustion(const AttributeSet& set, AbilitySystem& system,
                       const GameplayTagRegistry& registry, f32 recoverFraction) {
-    const auto exhausted = registry.find("State.Exhausted");
+    const auto exhausted = registry.find(tags::Exhausted);
     if (!exhausted) {
         return; // gate not in this scene's vocabulary → nothing to do
     }

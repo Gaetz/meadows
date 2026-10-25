@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
 #include "engine/terrain/generation/MapGrid.hpp"
@@ -29,6 +31,33 @@ struct GridSpec {
     f32 x(u32 col) const { return originX + static_cast<f32>(col) * texelSize; }
     f32 z(u32 row) const { return originZ + static_cast<f32>(row) * texelSize; }
     size_t cells() const { return static_cast<size_t>(n) * n; }
+
+    // The nearest cell of a world point (unclamped: callers test the
+    // bounds they care about).
+    struct Cell {
+        i32 col;
+        i32 row;
+    };
+    Cell cellOf(f32 wx, f32 wz) const {
+        return { static_cast<i32>(std::lround((wx - originX) / texelSize)),
+                 static_cast<i32>(std::lround((wz - originZ) / texelSize)) };
+    }
+    // The cells a world rect can touch: floor of the min corner, ceil of
+    // the max corner, unclamped (the loops clamp to [0, n)).
+    struct CellRange {
+        i32 c0;
+        i32 c1;
+        i32 r0;
+        i32 r1;
+    };
+    CellRange cellRange(f32 minX, f32 minZ, f32 maxX, f32 maxZ) const {
+        return {
+            static_cast<i32>(std::floor((minX - originX) / texelSize)),
+            static_cast<i32>(std::ceil((maxX - originX) / texelSize)),
+            static_cast<i32>(std::floor((minZ - originZ) / texelSize)),
+            static_cast<i32>(std::ceil((maxZ - originZ) / texelSize)),
+        };
+    }
 };
 
 struct ControlSample {
@@ -118,8 +147,10 @@ public:
     // derives from cheap fields override this so the synthesis can ask
     // PER TEXEL; the default pays one full sample (painted/test sources
     // are lookup-cheap anyway).
-    virtual u8 biomeIdAt(f32 x, f32 z, f32 tier) const {
-        (void)tier;
+    // `corridor` is the texel's refined corridor (refineFloor's), so the
+    // floor the id's altitude rules read is the floor the texel got.
+    virtual u8 biomeIdAt(f32 x, f32 z, f32 corridor) const {
+        (void)corridor;
         return at(x, z).biome;
     }
     // The floor PER TEXEL: the plateaus' escarpments are ~100 m wide,
@@ -231,7 +262,7 @@ public:
     // macroHeightAnalytic needs the continent value again for its
     // shore distance. One evaluation, bit-identical to calling both.
     ControlSample at(f32 x, f32 z, WorldSample& outWorld) const;
-    u8 biomeIdAt(f32 x, f32 z, f32 tier) const override; // climate only
+    u8 biomeIdAt(f32 x, f32 z, f32 corridor) const override; // climate only
     void refineFloor(f32 x, f32 z, ControlSample& s) const override;
 
     const ProceduralControlParams& params() const { return p; }

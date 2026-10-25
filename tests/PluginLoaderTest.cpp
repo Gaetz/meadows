@@ -138,3 +138,41 @@ dependencies = ["11111111-1111-4111-8111-111111111111", "garbage"]
     CHECK(plugin->records.empty());
     CHECK(plugin->dependencies.size() == 1); // garbage logged and dropped
 }
+
+TEST_CASE("plugin loader: a value outside the field's vocabulary is dropped") {
+    const auto types = makeTypes();
+    const auto plugin = data::parsePluginToml(R"toml(
+[plugin]
+id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+name = "vocab"
+
+[[records]]
+form = "22222222-2222-4222-8222-222222222222"
+type = "WeaponForm"
+[records.fields]
+buildupType = "acid"
+damage = 3.0
+
+[[records]]
+form = "22222222-2222-4222-8222-222222222223"
+type = "WeaponForm"
+[records.fields]
+buildupType = "poison"
+
+[[records]]
+form = "22222222-2222-4222-8222-222222222224"
+type = "ArmorForm"
+[records.fields]
+slot = ""
+)toml",
+                                              types, "test");
+    REQUIRE(plugin.has_value());
+    REQUIRE(plugin->records.size() == 3);
+    // "acid" is not a status type: the field is skipped, the record kept.
+    CHECK(plugin->records[0].fields.size() == 1);
+    CHECK(plugin->records[0].fields.contains(core::fnv1a("damage")));
+    // A canonical value passes...
+    CHECK(plugin->records[1].fields.contains(core::fnv1a("buildupType")));
+    // ...and "" only where the table allows it (slot does not).
+    CHECK(plugin->records[2].fields.empty());
+}

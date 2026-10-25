@@ -1,10 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 
-#include "engine/core/ConcurrentQueue.hpp"
+#include "engine/core/BakeMailbox.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/GpuProbe.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
@@ -18,8 +20,6 @@ class Device;
 }
 
 namespace render {
-
-class ShaderLibrary;
 
 // Which indirect-lighting technique the surface shaders use
 // (docs/RENDERING.md). Classic = the flat sky ambient ×
@@ -227,9 +227,58 @@ private:
         Vec2 center {};
         u64 gen { 0 };
     };
+    // Everything the tile bake reads, copied on the main thread when the
+    // bake is kicked: the worker owns its inputs and never touches `this`.
+    struct TileInputs {
+        TerrainParams params;
+        Vec2 focus {};             // tile center (world XZ)
+        f32 span { 0.0f };         // meters covered by kTileSize texels
+        f32 tintStrength { 0.0f }; // macro tint folded into the albedo
+        bool gridNormals { false };
+    };
+    // The worker: analytic height / normal / albedo of one tile, headless
+    // (no GPU, no member access — testable on its own). Polls `stop` per
+    // row; a stopped bake returns a partial tile the mailbox drops.
+    static BakedTile bakeTile(const TileInputs& in,
+                              const std::atomic<bool>& stop);
+
+    // Snaps this frame's clip origins and per-cascade lattice origins
+    // around the camera from the APPLIED structural knobs (see
+    // cascadeOrigins below). prepare() calls it on inject frames; update()
+    // re-calls it right after a volume recreate.
+    void snapOrigins(const Vec3& cameraPos);
+
+    // update()'s stages, in recording order. All record on `cmd` (the
+    // async-compute buffer when routed there, the frame buffer otherwise).
+    void logApplyState();
+    void uploadUniforms(rhi::Device& device, u32 res,
+                        const vector<RcBox>& boxes,
+                        const vector<RcLight>& lights);
+    void recordInject(rhi::CommandBuffer& cmd, u32 res, bool onAsyncQueue,
+                      rhi::BindGroupHandle frameBindGroup,
+                      rhi::BindGroupHandle shadowBindGroup,
+                      rhi::BindGroupHandle terrainLightGroup,
+                      rhi::Device* probeDevice, GpuProbe* probe);
+    void recordBuild(rhi::CommandBuffer& cmd,
+                     rhi::BindGroupHandle frameBindGroup,
+                     rhi::Device* probeDevice, GpuProbe* probe);
+    void recordExtend(rhi::CommandBuffer& cmd,
+                      rhi::BindGroupHandle frameBindGroup,
+                      rhi::Device* probeDevice, GpuProbe* probe);
+    void recordMerge(rhi::CommandBuffer& cmd,
+                     rhi::BindGroupHandle frameBindGroup,
+                     rhi::Device* probeDevice, GpuProbe* probe);
+    void recordProbe(rhi::Device& device, rhi::CommandBuffer& cmd,
+                     rhi::BindGroupHandle frameBindGroup);
+    // Push-constant block of the per-cascade passes (defined in the .cpp,
+    // the std140 mirror of RcCascadeUbo).
+    struct CascadeUniforms;
+    CascadeUniforms levelUniforms(size_t i, f32 flagB) const;
+    // Interval-extension eligibility of level i at this frame's knobs.
+    bool extendedLevel(size_t i) const;
 
     core::JobSystem* jobs { nullptr };
-    std::shared_ptr<core::ConcurrentQueue<BakedTile>> baked;
+    core::BakeMailbox<BakedTile> tiles;
     rhi::UniqueTexture heightTex;  // R32F — GPU-side terrain height
     rhi::UniqueTexture normalTex;  // RGBA8 — analytic surface normal xz
     rhi::UniqueTexture albedoTex;  // RGBA8 — material proxy colors
@@ -242,10 +291,9 @@ private:
     // the live value below; a change re-bakes the tile.
     f32 bakedTintStrength { -1.0f };
     bool bakedGridNormals { false };
-    bool tileInFlight { false };
+    // A tile is on the GPU: a landed bake or the placeholder.
     bool tileUploaded { false };
     bool tileIsPlaceholder { true }; // "no terrain" tile (interiors/boot)
-    u64 tileGeneration { 0 };
 
     rhi::UniqueTexture clipFine;   // res³ RGBA16F: rgb radiance, a occupancy
     rhi::UniqueTexture clipCoarse;
@@ -253,16 +301,13 @@ private:
     rhi::UniqueBuffer boxBuffer;   // G3: SSBO of RcBox, kMaxBoxes
     rhi::UniqueBindGroup injectGroup;
     rhi::UniqueBindGroup debugGroup;
-    rhi::UniquePipeline injectPipeline;
-    u64 injectGeneration { 0 };
-    rhi::UniquePipeline debugPipeline;
-    u64 debugGeneration { 0 };
-    rhi::UniquePipeline buildPipeline;  // G4
-    u64 buildGeneration { 0 };
-    rhi::UniquePipeline mergePipeline;  // G5
-    u64 mergeGeneration { 0 };
-    rhi::UniquePipeline extendPipeline; // G7c
-    u64 extendGeneration { 0 };
+    // Compute chain + debug view; each pipeline hot-reloads its own
+    // program through refreshPipelines().
+    WatchedPipeline injectPipeline;
+    WatchedPipeline debugPipeline;
+    WatchedPipeline buildPipeline;  // G4
+    WatchedPipeline mergePipeline;  // G5
+    WatchedPipeline extendPipeline; // G7c
 
     // G4/G5: one texture + one build group per cascade; merge groups pair
     // level i (image) with level i+1 (sampled src). Level layouts per
@@ -305,7 +350,7 @@ private:
     bool havePrev { false };
     // GI health probe (rc_probe.comp): one-shot readback of the merged
     // cascade 0, logged at boot.
-    rhi::UniquePipeline probePipeline;
+    WatchedPipeline probePipeline;
     rhi::UniqueBuffer probeBuffer;
     rhi::UniqueBindGroup probeGroup;
     bool probeLogged { false };

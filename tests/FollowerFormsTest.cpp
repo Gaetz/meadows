@@ -37,7 +37,7 @@ new = true
 [records.fields]
 editorId = "WarCryWarrior"
 displayName = "War-cry warrior"
-combatStyle = "berserk"
+combatStyle = "melee"
 strengthBase = 8.0
 strengthPerLevel = 0.5
 insightBase = 1.0
@@ -119,7 +119,7 @@ TEST_CASE("follower forms: class perks are ordinary childrenOf records") {
         db, "WarCryWarrior");
     REQUIRE(cls != nullptr);
     CHECK(cls->displayName == "War-cry warrior");
-    CHECK(cls->combatStyle == "berserk");
+    CHECK(cls->combatStyle == "melee");
     CHECK(cls->strengthBase == doctest::Approx(8.0f));
 
     // Only the class's own perks come back, in plugin/creation order (§8).

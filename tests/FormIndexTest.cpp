@@ -5,6 +5,7 @@
 #include "data/forms/FormTypeRegistry.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "engine/core/Hash.hpp"
+#include "quest/Quest.hpp"
 
 // Secondary FormDatabase indexes: parity with
 // full scans — same forms, same order — and the §5 case
@@ -106,4 +107,51 @@ TEST_CASE("form indexes: scan parity, and patches re-parent children") {
     // Unknown parents/types return empty, never scan.
     CHECK(db.childHandles(kClip).empty());
     CHECK(db.handlesByType(core::fnv1a("NoSuchType")).empty());
+}
+
+TEST_CASE("form indexes: a ParentLink field buckets children like `parent`") {
+    data::FormTypeRegistry types;
+    quest::registerQuestFormTypes(types);
+
+    const Guid questId = *Guid::fromString("bb220000-0000-4000-8000-000000000010");
+    const Guid stateId = *Guid::fromString("bb220000-0000-4000-8000-000000000011");
+    const Guid branchA = *Guid::fromString("bb220000-0000-4000-8000-000000000012");
+    const Guid branchB = *Guid::fromString("bb220000-0000-4000-8000-000000000013");
+    const Guid taskId = *Guid::fromString("bb220000-0000-4000-8000-000000000014");
+
+    data::Plugin base;
+    base.id = *Guid::fromString("bb220000-0000-4000-8000-0000000000b2");
+    base.name = "quests";
+    base.records.push_back(
+        makeRecord(questId, quest::QuestForm::staticTypeInfo().id, true));
+    auto state = makeRecord(stateId, quest::QuestStateForm::staticTypeInfo().id, true);
+    state.fields[core::fnv1a("quest")] = reflect::Value { questId };
+    base.records.push_back(std::move(state));
+    for (const Guid& branchId : { branchA, branchB }) {
+        auto branch = makeRecord(
+            branchId, quest::QuestBranchForm::staticTypeInfo().id, true);
+        branch.fields[core::fnv1a("state")] = reflect::Value { stateId };
+        base.records.push_back(std::move(branch));
+    }
+    auto task = makeRecord(taskId, quest::QuestTaskForm::staticTypeInfo().id, true);
+    task.fields[core::fnv1a("branch")] = reflect::Value { branchA };
+    base.records.push_back(std::move(task));
+
+    data::FormDatabase db;
+    data::resolve({ &base }, types, db);
+    REQUIRE(db.count() == 5);
+
+    // `state` and `branch` are flagged reflect::ParentLink: the generic
+    // parent index serves them without a private quest index.
+    const auto branches =
+        data::collectChildren<quest::QuestBranchForm>(db, stateId);
+    REQUIRE(branches.size() == 2);
+    CHECK(branches[0]->id == branchA);
+    CHECK(branches[1]->id == branchB);
+    const auto tasks = data::collectChildren<quest::QuestTaskForm>(db, branchA);
+    REQUIRE(tasks.size() == 1);
+    CHECK(tasks[0]->id == taskId);
+    CHECK(data::collectChildren<quest::QuestTaskForm>(db, branchB).empty());
+    // `quest` on the state is an ordinary Guid: it is NOT a parent link.
+    CHECK(db.childHandles(questId).empty());
 }

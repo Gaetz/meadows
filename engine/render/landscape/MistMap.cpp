@@ -1,6 +1,7 @@
 #include "engine/render/landscape/MistMap.hpp"
 
 #include <cmath>
+#include <utility>
 
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
@@ -47,20 +48,19 @@ void boxBlurAxis(const vector<f32>& src, vector<f32>& dst, u32 size,
 
 void MistMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
     mailbox.create(jobSystem, "mistMap");
-    sampler = device.createSampler({});
+    sampler = { device, device.createSampler({}) };
     // The texture is (re)created per landed bake — the RHI has no texture
     // update, and a rebuild every ~500 m of travel costs nothing.
-    (void)device;
 }
 
 void MistMap::destroy(rhi::Device& device) {
-    mailbox.reset(); // orphan in-flight bakes
-    device.destroyBindGroup(group);
-    device.destroySampler(sampler);
-    device.destroyTexture(texture);
-    group = {};
-    sampler = {};
-    texture = {};
+    (void)device;
+    // Orphan in-flight bakes: the mailbox generation must keep moving
+    // ACROSS the reset (a fresh mailbox would restart it at zero).
+    core::BakeMailbox<Baked> saved = std::move(mailbox);
+    saved.reset();
+    *this = MistMap {}; // the owning handles release themselves
+    mailbox = std::move(saved);
 }
 
 void MistMap::update(rhi::Device& device, const TerrainParams& params,
@@ -68,21 +68,18 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
                      sptr<const HeightField::Snapshot> field) {
     // 1. Land a finished bake (fresh texture + group).
     mailbox.drain([&](Baked& done) {
-        if (texture.id != 0) {
-            device.destroyBindGroup(group);
-            device.destroyTexture(texture);
-        }
-        texture = device.createTexture(
+        // Re-assignment releases the previous bake's texture and group.
+        texture = { device, device.createTexture(
             { .width = kSize,
               .height = kSize,
               .format = rhi::TextureFormat::RGBA8,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled },
-            done.pixels.data());
-        group = device.createBindGroup(
+            done.pixels.data()) };
+        group = { device, device.createBindGroup(
             { .entries = { { .binding = 8,
                              .texture = texture,
-                             .sampler = sampler } } });
+                             .sampler = sampler } } }) };
         center = done.center;
         maxTop = done.maxTop;
         bakedSeed = done.seed;
@@ -97,8 +94,7 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
     // 2. Kick a re-bake when the camera leaves the inner quarter of the
     // map or the terrain inputs change (the WaterSystem staleness keys).
     const Vec2 camXz { focus.x, focus.z };
-    const bool stale = !mailbox.ready() ||
-                       glm::distance(camXz, center) > kSpan * 0.25f ||
+    const bool stale = mailbox.strayed(center, camXz, kSpan * 0.25f) ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel;
     if (!stale) {

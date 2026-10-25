@@ -9,6 +9,7 @@
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -46,16 +47,16 @@ struct RcUniforms {
                    // w = its probe spacing — where uRcPrev's content is
 };
 
+} // namespace
+
 // std140 mirror of RcCascadeUbo (rc_build/rc_merge/rc_extend.comp).
-struct RcCascadeUniforms {
+struct RadianceCascades::CascadeUniforms {
     Vec4 a; // x = cascade index, y = probes/axis, z/w = dir grid W/H
     Vec4 b; // build: x = interval0, y = march step, z = spacing, w = dirMajor
             // merge: x = interval0, y = sky flag,   z = spacing, w = dirMajor
     Vec4 c; // build: x = marched interval fraction (G7c)
             // extend: x = this pass's shift distance (m)
 };
-
-} // namespace
 
 void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem) {
@@ -65,9 +66,9 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
         return;
     }
     jobs = &jobSystem;
-    baked = std::make_shared<core::ConcurrentQueue<BakedTile>>();
+    tiles.create(jobSystem, "rcTile");
 
-    shaders.loadCompute(kInjectShader, { { "FrameUbo", 0 }, { "RcUbo", 2 } },
+    shaders.loadCompute(kInjectShader, { render::kFrameUbo, render::kRcUbo },
                         { { "uShadowMap", 1 },
                           { "uTerrainLight", 7 },
                           { "uRcHeight", 8 },
@@ -75,24 +76,24 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                           { "uRcPrev", 10 },
                           { "uRcNormal", 12 } });
     shaders.loadCompute(kBuildShader,
-                        { { "FrameUbo", 0 }, { "RcUbo", 2 },
-                          { "RcCascadeUbo", 4 } },
+                        { render::kFrameUbo, render::kRcUbo,
+                          render::kRcCascadeUbo },
                         { { "uRcClipFineS", 5 },
                           { "uRcClipCoarseS", 6 },
                           { "uRcHeight", 8 } });
     shaders.loadCompute(kMergeShader,
-                        { { "FrameUbo", 0 }, { "RcUbo", 2 },
-                          { "RcCascadeUbo", 4 } },
+                        { render::kFrameUbo, render::kRcUbo,
+                          render::kRcCascadeUbo },
                         { { "uRcSrc", 7 } });
     shaders.loadCompute(kExtendShader,
-                        { { "FrameUbo", 0 }, { "RcUbo", 2 },
-                          { "RcCascadeUbo", 4 } },
+                        { render::kFrameUbo, render::kRcUbo,
+                          render::kRcCascadeUbo },
                         { { "uRcSrc", 7 } });
-    shaders.load(kDebugShader, { { "FrameUbo", 0 }, { "RcUbo", 2 } },
+    shaders.load(kDebugShader, { render::kFrameUbo, render::kRcUbo },
                  { { "uRcClipFine", 5 }, { "uRcClipCoarse", 6 },
                    { "uRcCascade0", 10 } },
                  kFullscreenVert);
-    shaders.loadCompute(kProbeShader, { { "FrameUbo", 0 } },
+    shaders.loadCompute(kProbeShader, { render::kFrameUbo },
                         { { "uGiCascade0", 11 } });
 
     tileSampler = { device, device.createSampler(
@@ -116,28 +117,16 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
 
 void RadianceCascades::destroy(rhi::Device& device) {
     (void)device; // Unique handles free through their device
-    mergePipeline.reset();
-    buildPipeline.reset();
-    debugPipeline.reset();
-    injectPipeline.reset();
-    applyGroup_.reset();
-    levels.clear();
-    debugGroup.reset();
-    injectGroup.reset();
-    boxBuffer.reset();
-    rcUbo.reset();
-    clipCoarse.reset();
-    clipFine.reset();
-    albedoTex.reset();
-    normalTex.reset();
-    heightTex.reset();
-    volumeSampler.reset();
-    tileSampler.reset();
-    baked.reset();
-    jobs = nullptr;
-    tileUploaded = false;
-    tileInFlight = false;
-    appliedResolution = 0;
+    // Reset to a fresh instance rather than a hand-kept member list (a
+    // list drifts: a new handle or flag is forgotten and survives into
+    // the next create). The knobs are identity, not state: the panel owns
+    // tuning, WorldRenderer syncs the tint — both survive. In-flight tile
+    // bakes capture the queue by value, so dropping ours orphans them.
+    const RcTuning savedTuning = tuning;
+    const f32 savedTint = terrainTintStrength;
+    *this = RadianceCascades {};
+    tuning = savedTuning;
+    terrainTintStrength = savedTint;
 }
 
 void RadianceCascades::refreshPipelines(rhi::Device& device,
@@ -145,41 +134,31 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
     if (!jobs) {
         return; // create() bailed (no caps)
     }
-    if (shaders.generation(kInjectShader) != injectGeneration) {
-        injectPipeline = { device, device.createComputePipeline(
-            { shaders.get(kInjectShader) }) };
-        injectGeneration = shaders.generation(kInjectShader);
-    }
-    if (shaders.generation(kBuildShader) != buildGeneration) {
-        buildPipeline = { device, device.createComputePipeline(
-            { .shader = shaders.get(kBuildShader),
-              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
-        buildGeneration = shaders.generation(kBuildShader);
-    }
-    if (shaders.generation(kMergeShader) != mergeGeneration) {
-        mergePipeline = { device, device.createComputePipeline(
-            { .shader = shaders.get(kMergeShader),
-              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
-        mergeGeneration = shaders.generation(kMergeShader);
-    }
-    if (shaders.generation(kExtendShader) != extendGeneration) {
-        extendPipeline = { device, device.createComputePipeline(
-            { .shader = shaders.get(kExtendShader),
-              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
-        extendGeneration = shaders.generation(kExtendShader);
-    }
-    if (probePipeline.id() == 0) {
-        probePipeline = { device, device.createComputePipeline(
-            { shaders.get(kProbeShader) }) };
-    }
-    if (shaders.generation(kDebugShader) != debugGeneration) {
-        debugPipeline = { device, device.createPipeline(
+    injectPipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kInjectShader) });
+    });
+    // The per-cascade passes take the level's layout as push constants.
+    const auto cascadePass = [&](WatchedPipeline& pipeline,
+                                 const char* shader) {
+        pipeline.ensure(device, shaders, [&] {
+            return device.createComputePipeline(
+                { .shader = shaders.get(shader),
+                  .pushConstantSize = sizeof(CascadeUniforms) });
+        });
+    };
+    cascadePass(buildPipeline, kBuildShader);
+    cascadePass(mergePipeline, kMergeShader);
+    cascadePass(extendPipeline, kExtendShader);
+    probePipeline.ensure(device, shaders, [&] {
+        return device.createComputePipeline({ shaders.get(kProbeShader) });
+    });
+    debugPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
             { .shader = shaders.get(kDebugShader),
               .blend = rhi::BlendMode::Alpha,
-              .depth = { .testEnable = false, .writeEnable = false },
-              .cull = rhi::CullMode::None }) };
-        debugGeneration = shaders.generation(kDebugShader);
-    }
+              .depth = render::kDepthOff,
+              .cull = rhi::CullMode::None });
+    });
 }
 
 void RadianceCascades::makePlaceholderTile(rhi::Device& device) {
@@ -379,11 +358,7 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
     // textures are recreated with initial pixels (no updateTexture in
     // the RHI), then rebuildTileGroups rebinds the groups that reference
     // them.
-    BakedTile tile;
-    while (baked->tryPop(tile)) {
-        if (tile.gen != tileGeneration) {
-            continue; // stale (params/knobs changed since the kick)
-        }
+    tiles.drain([&](BakedTile& tile) {
         heightTex = { device, device.createTexture(
             { .width = kTileSize, .height = kTileSize,
               .format = rhi::TextureFormat::R16F },
@@ -400,159 +375,167 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
         // cascade radiance survives the landing.
         rebuildTileGroups(device);
         tileCenter = tile.center;
-        tileInFlight = false;
         tileUploaded = true;
         tileIsPlaceholder = false;
-    }
+    });
 
     // Kick a re-bake when the camera strays from the tile center.
     const f32 span =
         static_cast<f32>(tuning.resolution) * tuning.coarseVoxel * 1.25f;
     const Vec2 focus { cameraPos.x, cameraPos.z };
     const bool spanChanged = glm::abs(span - tileSpan) > 0.01f;
-    if (!tileInFlight &&
+    if (!tiles.busy() &&
         (spanChanged ||
          glm::abs(terrainTintStrength - bakedTintStrength) > 0.001f ||
          bakedGridNormals != tuning.gridNormals ||
          glm::distance(focus, tileCenter) >
              span * glm::clamp(tuning.tileRebakeDrift, 0.05f, 0.5f))) {
         tileSpan = span;
-        tileInFlight = true;
         bakedTintStrength = terrainTintStrength;
         bakedGridNormals = tuning.gridNormals;
-        const u64 gen = ++tileGeneration;
-        auto queue = baked;
-        const TerrainParams paramsCopy = params;
-        jobs->enqueue([queue, paramsCopy, focus, span, gen,
-                       tintStrength = terrainTintStrength,
-                       gridNormals = tuning.gridNormals,
-                       jobsRef = jobs] {
-            if (jobsRef->isStopping()) {
-                return; // abandonable at shutdown
-            }
-            core::JobProbe::Scope probe { &jobsRef->probe(), "rcTile" };
-            BakedTile out;
-            out.center = focus;
+        // The worker's inputs are copied HERE, at kick time: the live
+        // tint / knobs may move while the bake runs.
+        const TileInputs inputs { .params = params, .focus = focus,
+                                  .span = span,
+                                  .tintStrength = terrainTintStrength,
+                                  .gridNormals = tuning.gridNormals };
+        tiles.kick([inputs](BakedTile& out,
+                            const std::atomic<bool>& stop) {
+            // kick() stamped out.gen before calling us; drain() checks it.
+            const u64 gen = out.gen;
+            out = bakeTile(inputs, stop);
             out.gen = gen;
-            out.height.resize(kTileSize * kTileSize);
-            out.normal.resize(kTileSize * kTileSize * 4);
-            out.albedo.resize(kTileSize * kTileSize * 4);
-            const f32 texel = span / static_cast<f32>(kTileSize);
-            // Grid-normals experiment: heights on a +-2-texel APRON so
-            // the wide stencil below never clamps at the tile edge.
-            constexpr i32 kApron = 2;
-            constexpr u32 kApronSize = kTileSize + 2 * kApron;
-            vector<f32> apron;
-            if (gridNormals) {
-                apron.resize(static_cast<size_t>(kApronSize) *
-                             kApronSize);
-            }
-            const auto worldX = [&](i32 tx) {
-                return focus.x + (static_cast<f32>(tx) + 0.5f -
-                                  kTileSize * 0.5f) * texel;
-            };
-            const auto worldZ = [&](i32 ty) {
-                return focus.y + (static_cast<f32>(ty) + 0.5f -
-                                  kTileSize * 0.5f) * texel;
-            };
-            for (i32 ty = -kApron;
-                 ty < static_cast<i32>(kTileSize) + kApron; ++ty) {
-                if (jobsRef->isStopping()) {
-                    return; // partial tile: never lands
-                }
-                for (i32 tx = -kApron;
-                     tx < static_cast<i32>(kTileSize) + kApron; ++tx) {
-                    const bool interior =
-                        tx >= 0 && tx < static_cast<i32>(kTileSize) &&
-                        ty >= 0 && ty < static_cast<i32>(kTileSize);
-                    if (!gridNormals && !interior) {
-                        continue;
-                    }
-                    const f32 h = terrain::height(paramsCopy, worldX(tx),
-                                                  worldZ(ty));
-                    if (interior) {
-                        out.height[static_cast<u32>(ty) * kTileSize +
-                                   static_cast<u32>(tx)] = h;
-                    }
-                    if (gridNormals) {
-                        apron[static_cast<size_t>(ty + kApron) *
-                                  kApronSize +
-                              static_cast<size_t>(tx + kApron)] = h;
-                    }
-                }
-            }
-            for (u32 ty = 0; ty < kTileSize; ++ty) {
-                if (jobsRef->isStopping()) {
-                    return; // partial tile: never lands
-                }
-                for (u32 tx = 0; tx < kTileSize; ++tx) {
-                    const u32 i = ty * kTileSize + tx;
-                    const f32 h = out.height[i];
-                    const f32 wx = focus.x +
-                                   (static_cast<f32>(tx) + 0.5f -
-                                    kTileSize * 0.5f) * texel;
-                    const f32 wz = focus.y +
-                                   (static_cast<f32>(ty) + 0.5f -
-                                    kTileSize * 0.5f) * texel;
-                    // ANALYTIC normal (smooth) by default — per-facet
-                    // texel differences banded the grazing-sun bounce
-                    // along slopes. The experiment: a WIDE +-2-texel
-                    // stencil over the apron grid (smooth across
-                    // facets), 4 array reads instead of 4 height().
-                    Vec3 n;
-                    if (gridNormals) {
-                        const auto at = [&](i32 col, i32 row) {
-                            return apron[static_cast<size_t>(row +
-                                                             kApron) *
-                                             kApronSize +
-                                         static_cast<size_t>(col +
-                                                             kApron)];
-                        };
-                        const i32 cx = static_cast<i32>(tx);
-                        const i32 cy = static_cast<i32>(ty);
-                        const f32 step = 2.0f * texel;
-                        n = glm::normalize(Vec3 {
-                            at(cx - 2, cy) - at(cx + 2, cy),
-                            2.0f * step,
-                            at(cx, cy - 2) - at(cx, cy + 2) });
-                    } else {
-                        n = terrain::normal(paramsCopy, wx, wz);
-                    }
-                    out.normal[i * 4 + 0] = static_cast<u8>(
-                        glm::clamp(n.x * 0.5f + 0.5f, 0.0f, 1.0f) *
-                        255.0f);
-                    out.normal[i * 4 + 1] = static_cast<u8>(
-                        glm::clamp(n.z * 0.5f + 0.5f, 0.0f, 1.0f) *
-                        255.0f);
-                    out.normal[i * 4 + 2] = 0;
-                    out.normal[i * 4 + 3] = 255;
-                    const terrain::MaterialWeights w =
-                        terrain::materialWeights(paramsCopy, h, n);
-                    Vec3 albedo = kGrassAlbedo * w.grass +
-                                  kRockAlbedo * w.rock +
-                                  kSandAlbedo * w.sand +
-                                  kSnowAlbedo * w.snow;
-                    const f32 sum =
-                        glm::max(w.grass + w.rock + w.sand + w.snow, 1e-3f);
-                    albedo /= sum;
-                    // The same macro tint the terrain shader applies: the
-                    // bounce carries the tinted ground color.
-                    albedo *= glm::mix(
-                        Vec3 { 1.0f },
-                        terrain::regionShadingAt(paramsCopy, wx, wz).tint,
-                        tintStrength);
-                    out.albedo[i * 4 + 0] = static_cast<u8>(
-                        glm::clamp(albedo.x, 0.0f, 1.0f) * 255.0f);
-                    out.albedo[i * 4 + 1] = static_cast<u8>(
-                        glm::clamp(albedo.y, 0.0f, 1.0f) * 255.0f);
-                    out.albedo[i * 4 + 2] = static_cast<u8>(
-                        glm::clamp(albedo.z, 0.0f, 1.0f) * 255.0f);
-                    out.albedo[i * 4 + 3] = 255;
-                }
-            }
-            queue->push(std::move(out));
         });
     }
+}
+
+RadianceCascades::BakedTile
+RadianceCascades::bakeTile(const TileInputs& in,
+                           const std::atomic<bool>& stop) {
+    const TerrainParams& params = in.params;
+    const Vec2 focus = in.focus;
+    const f32 span = in.span;
+    const f32 tintStrength = in.tintStrength;
+    const bool gridNormals = in.gridNormals;
+    BakedTile out;
+    out.center = focus;
+    out.height.resize(kTileSize * kTileSize);
+    out.normal.resize(kTileSize * kTileSize * 4);
+    out.albedo.resize(kTileSize * kTileSize * 4);
+    const f32 texel = span / static_cast<f32>(kTileSize);
+    // Grid-normals experiment: heights on a +-2-texel APRON so
+    // the wide stencil below never clamps at the tile edge.
+    constexpr i32 kApron = 2;
+    constexpr u32 kApronSize = kTileSize + 2 * kApron;
+    vector<f32> apron;
+    if (gridNormals) {
+        apron.resize(static_cast<size_t>(kApronSize) *
+                     kApronSize);
+    }
+    const auto worldX = [&](i32 tx) {
+        return focus.x + (static_cast<f32>(tx) + 0.5f -
+                          kTileSize * 0.5f) * texel;
+    };
+    const auto worldZ = [&](i32 ty) {
+        return focus.y + (static_cast<f32>(ty) + 0.5f -
+                          kTileSize * 0.5f) * texel;
+    };
+    for (i32 ty = -kApron;
+         ty < static_cast<i32>(kTileSize) + kApron; ++ty) {
+        if (stop.load(std::memory_order_relaxed)) {
+            return out; // partial tile: never lands
+        }
+        for (i32 tx = -kApron;
+             tx < static_cast<i32>(kTileSize) + kApron; ++tx) {
+            const bool interior =
+                tx >= 0 && tx < static_cast<i32>(kTileSize) &&
+                ty >= 0 && ty < static_cast<i32>(kTileSize);
+            if (!gridNormals && !interior) {
+                continue;
+            }
+            const f32 h = terrain::height(params, worldX(tx),
+                                          worldZ(ty));
+            if (interior) {
+                out.height[static_cast<u32>(ty) * kTileSize +
+                           static_cast<u32>(tx)] = h;
+            }
+            if (gridNormals) {
+                apron[static_cast<size_t>(ty + kApron) *
+                          kApronSize +
+                      static_cast<size_t>(tx + kApron)] = h;
+            }
+        }
+    }
+    for (u32 ty = 0; ty < kTileSize; ++ty) {
+        if (stop.load(std::memory_order_relaxed)) {
+            return out; // partial tile: never lands
+        }
+        for (u32 tx = 0; tx < kTileSize; ++tx) {
+            const u32 i = ty * kTileSize + tx;
+            const f32 h = out.height[i];
+            const f32 wx = focus.x +
+                           (static_cast<f32>(tx) + 0.5f -
+                            kTileSize * 0.5f) * texel;
+            const f32 wz = focus.y +
+                           (static_cast<f32>(ty) + 0.5f -
+                            kTileSize * 0.5f) * texel;
+            // ANALYTIC normal (smooth) by default — per-facet
+            // texel differences banded the grazing-sun bounce
+            // along slopes. The experiment: a WIDE +-2-texel
+            // stencil over the apron grid (smooth across
+            // facets), 4 array reads instead of 4 height().
+            Vec3 n;
+            if (gridNormals) {
+                const auto at = [&](i32 col, i32 row) {
+                    return apron[static_cast<size_t>(row +
+                                                     kApron) *
+                                     kApronSize +
+                                 static_cast<size_t>(col +
+                                                     kApron)];
+                };
+                const i32 cx = static_cast<i32>(tx);
+                const i32 cy = static_cast<i32>(ty);
+                const f32 step = 2.0f * texel;
+                n = glm::normalize(Vec3 {
+                    at(cx - 2, cy) - at(cx + 2, cy),
+                    2.0f * step,
+                    at(cx, cy - 2) - at(cx, cy + 2) });
+            } else {
+                n = terrain::normal(params, wx, wz);
+            }
+            out.normal[i * 4 + 0] = static_cast<u8>(
+                glm::clamp(n.x * 0.5f + 0.5f, 0.0f, 1.0f) *
+                255.0f);
+            out.normal[i * 4 + 1] = static_cast<u8>(
+                glm::clamp(n.z * 0.5f + 0.5f, 0.0f, 1.0f) *
+                255.0f);
+            out.normal[i * 4 + 2] = 0;
+            out.normal[i * 4 + 3] = 255;
+            const terrain::MaterialWeights w =
+                terrain::materialWeights(params, h, n);
+            Vec3 albedo = kGrassAlbedo * w.grass +
+                          kRockAlbedo * w.rock +
+                          kSandAlbedo * w.sand +
+                          kSnowAlbedo * w.snow;
+            const f32 sum =
+                glm::max(w.grass + w.rock + w.sand + w.snow, 1e-3f);
+            albedo /= sum;
+            // The same macro tint the terrain shader applies: the
+            // bounce carries the tinted ground color.
+            albedo *= glm::mix(
+                Vec3 { 1.0f },
+                terrain::regionShadingAt(params, wx, wz).tint,
+                tintStrength);
+            out.albedo[i * 4 + 0] = static_cast<u8>(
+                glm::clamp(albedo.x, 0.0f, 1.0f) * 255.0f);
+            out.albedo[i * 4 + 1] = static_cast<u8>(
+                glm::clamp(albedo.y, 0.0f, 1.0f) * 255.0f);
+            out.albedo[i * 4 + 2] = static_cast<u8>(
+                glm::clamp(albedo.z, 0.0f, 1.0f) * 255.0f);
+            out.albedo[i * 4 + 3] = 255;
+        }
+    }
+    return out;
 }
 
 void RadianceCascades::prepare(const Vec3& cameraPos) {
@@ -567,6 +550,10 @@ void RadianceCascades::prepare(const Vec3& cameraPos) {
     if (!injectThisFrame) {
         return; // origins keep matching the volumes' last inject
     }
+    snapOrigins(cameraPos);
+}
+
+void RadianceCascades::snapOrigins(const Vec3& cameraPos) {
     const u32 res = static_cast<u32>(appliedResolution);
     // CENTERED snap (round, not floor): the lattice sits within
     // anchor/2 of the camera-centered span on BOTH sides. With floor,
@@ -622,34 +609,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         tuning.pipelined && tuning.asyncCompute ? device.asyncComputeCmd()
                                                 : nullptr;
     rhi::CommandBuffer& cmd = asyncCmd ? *asyncCmd : frameCmd;
-    // Pipeline value trace: one line whenever the APPLY state flips or a
-    // live knob moves (throttled) — the ground truth for "does this
-    // slider reach the shader" questions, straight from the values the
-    // frame UBO will carry.
-    {
-        const Vec4 info = giInfo();
-        const bool active = info.x > 0.5f;
-        if (active != lastLoggedActive || ++knobLogThrottle >= 30) {
-            knobLogThrottle = 0;
-            if (active != lastLoggedActive ||
-                tuning.intensity != lastLoggedIntensity ||
-                tuning.skyFactor != lastLoggedSkyFactor ||
-                tuning.giFloor != lastLoggedFloor) {
-                const Vec4 grid = giGridInfo();
-                LOG_INFO("RC apply {}: ready={} levels={} uGiInfo=({:.2f}, "
-                         "{:.2f}, {:.1f}, {:.0f}) grid=({:.1f}, {:.1f}, "
-                         "{:.1f} | {:.2f}) skyFactor={:.2f} floor={:.2f}",
-                         active ? "ACTIVE" : "INACTIVE", ready(),
-                         levels.size(), info.x, info.y, info.z, info.w,
-                         grid.x, grid.y, grid.z, grid.w, tuning.skyFactor,
-                         tuning.giFloor);
-                lastLoggedActive = active;
-                lastLoggedIntensity = tuning.intensity;
-                lastLoggedSkyFactor = tuning.skyFactor;
-                lastLoggedFloor = tuning.giFloor;
-            }
-        }
-    }
+    logApplyState();
     if (bakeTerrain) {
         pumpTileBake(device, params, cameraPos);
     } else if (!tileIsPlaceholder) {
@@ -677,33 +637,62 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         // prepare() snapped with the PREVIOUS applied values (boot / knob
         // change): re-snap. The frame UBO is one frame stale here — a
         // single-frame glitch on the knob-change frame, accepted.
-        const u32 r = static_cast<u32>(appliedResolution);
-        const auto snap = [&](f32 half, f32 anchor) {
-            return Vec3 {
-                std::round((cameraPos.x - half) / anchor) * anchor,
-                std::round((cameraPos.y - half) / anchor) * anchor,
-                std::round((cameraPos.z - half) / anchor) * anchor
-            };
-        };
-        // Same per-cascade CENTERED snap as prepare() — see there.
-        const f32 fineHalf =
-            static_cast<f32>(r) * appliedFineVoxel * 0.5f;
-        lastFineOrigin = snap(fineHalf, appliedFineVoxel);
-        for (i32 i = 0; i < appliedCascadeCount &&
-                        i < static_cast<i32>(cascadeOrigins.size());
-             ++i) {
-            cascadeOrigins[static_cast<size_t>(i)] =
-                i == 0
-                    ? lastFineOrigin
-                    : snap(fineHalf,
-                           appliedFineVoxel * static_cast<f32>(1 << i));
-        }
-        lastCoarseOrigin =
-            snap(static_cast<f32>(r) * appliedCoarseVoxel * 0.5f,
-                 appliedCoarseVoxel);
+        snapOrigins(cameraPos);
     }
 
     const u32 res = static_cast<u32>(appliedResolution);
+    uploadUniforms(device, res, boxes, lights);
+    recordInject(cmd, res, asyncCmd != nullptr, frameBindGroup,
+                 shadowBindGroup, terrainLightGroup, probeDevice, probe);
+    recordBuild(cmd, frameBindGroup, probeDevice, probe);
+    recordExtend(cmd, frameBindGroup, probeDevice, probe);
+    recordMerge(cmd, frameBindGroup, probeDevice, probe);
+
+    // The merged cascade 0 now holds THIS inject's world — next frame's
+    // injection may feed it back as the extra bounce.
+    prevFineOrigin = lastFineOrigin;
+    prevFineSpacing = appliedFineVoxel;
+    havePrev = true;
+
+    recordProbe(device, cmd, frameBindGroup);
+
+    if (asyncCmd) {
+        device.endAsyncCompute(); // close the update-routing window
+    }
+}
+
+void RadianceCascades::logApplyState() {
+    // Pipeline value trace: one line whenever the APPLY state flips or a
+    // live knob moves (throttled) — the ground truth for "does this
+    // slider reach the shader" questions, straight from the values the
+    // frame UBO will carry.
+    const Vec4 info = giInfo();
+    const bool active = info.x > 0.5f;
+    if (active != lastLoggedActive || ++knobLogThrottle >= 30) {
+        knobLogThrottle = 0;
+        if (active != lastLoggedActive ||
+            tuning.intensity != lastLoggedIntensity ||
+            tuning.skyFactor != lastLoggedSkyFactor ||
+            tuning.giFloor != lastLoggedFloor) {
+            const Vec4 grid = giGridInfo();
+            LOG_INFO("RC apply {}: ready={} levels={} uGiInfo=({:.2f}, "
+                     "{:.2f}, {:.1f}, {:.0f}) grid=({:.1f}, {:.1f}, "
+                     "{:.1f} | {:.2f}) skyFactor={:.2f} floor={:.2f}",
+                     active ? "ACTIVE" : "INACTIVE", ready(),
+                     levels.size(), info.x, info.y, info.z, info.w,
+                     grid.x, grid.y, grid.z, grid.w, tuning.skyFactor,
+                     tuning.giFloor);
+            lastLoggedActive = active;
+            lastLoggedIntensity = tuning.intensity;
+            lastLoggedSkyFactor = tuning.skyFactor;
+            lastLoggedFloor = tuning.giFloor;
+        }
+    }
+}
+
+void RadianceCascades::uploadUniforms(rhi::Device& device, u32 res,
+                                      const vector<RcBox>& boxes,
+                                      const vector<RcLight>& lights) {
     RcUniforms uniforms {};
     // The CHAIN builds at this frame's snapped origins; the frame UBO
     // (giGridInfo) deliberately carries the PREVIOUS inject's origin —
@@ -749,172 +738,188 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         device.updateBuffer(boxBuffer, boxes.data(),
                             boxCount * sizeof(RcBox), 0);
     }
+}
 
-    {
-        GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
-        // Pipelined (docs/RENDERING.md PG2): the chain records at the END
-        // of the frame and OVERWRITES what the frame just sampled — the
-        // WAR fence lets every prior read (surfaces, volumetric, froxels)
-        // finish before the first write. Async (PG3): the compute
-        // submission WAITS the whole graphics frame instead (fragment
-        // stages do not exist on the compute queue).
-        if (tuning.pipelined && !asyncCmd) {
-            cmd.readBarrier(rhi::BarrierStage_Fragment |
-                            rhi::BarrierStage_Compute);
-        }
-        cmd.setPipeline(injectPipeline);
-        cmd.setBindGroup(0, frameBindGroup);
-        if (shadowBindGroup.id != 0) {
-            cmd.setBindGroup(2, shadowBindGroup);
-        }
-        if (terrainLightGroup.id != 0) {
-            cmd.setBindGroup(4, terrainLightGroup);
-        }
-        cmd.setBindGroup(1, injectGroup);
-        cmd.dispatch((res + 3) / 4, (res + 3) / 4, (res * 2 + 3) / 4);
-        // Clips visible to the cascade builds — compute only, the raster
-        // recorded after this chain owes it nothing yet.
-        cmd.memoryBarrier(rhi::BarrierStage_Compute);
+void RadianceCascades::recordInject(rhi::CommandBuffer& cmd, u32 res,
+                                    bool onAsyncQueue,
+                                    rhi::BindGroupHandle frameBindGroup,
+                                    rhi::BindGroupHandle shadowBindGroup,
+                                    rhi::BindGroupHandle terrainLightGroup,
+                                    rhi::Device* probeDevice,
+                                    GpuProbe* probe) {
+    GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
+    // Pipelined (docs/RENDERING.md PG2): the chain records at the END
+    // of the frame and OVERWRITES what the frame just sampled — the
+    // WAR fence lets every prior read (surfaces, volumetric, froxels)
+    // finish before the first write. Async (PG3): the compute
+    // submission WAITS the whole graphics frame instead (fragment
+    // stages do not exist on the compute queue).
+    if (tuning.pipelined && !onAsyncQueue) {
+        cmd.readBarrier(rhi::BarrierStage_Fragment |
+                        rhi::BarrierStage_Compute);
     }
+    cmd.setPipeline(injectPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    if (terrainLightGroup.id != 0) {
+        cmd.setBindGroup(4, terrainLightGroup);
+    }
+    cmd.setBindGroup(1, injectGroup);
+    cmd.dispatch((res + 3) / 4, (res + 3) / 4, (res * 2 + 3) / 4);
+    // Clips visible to the cascade builds — compute only, the raster
+    // recorded after this chain owes it nothing yet.
+    cmd.memoryBarrier(rhi::BarrierStage_Compute);
+}
 
+RadianceCascades::CascadeUniforms
+RadianceCascades::levelUniforms(size_t i, f32 flagB) const {
     // Per-level dispatch parameters, carried by push constants. They used to
     // be ONE ubo rewritten between dispatches, which only worked because GL
     // executes immediately: on Vulkan every recorded dispatch would have read
     // the LAST level's parameters. Push constants are captured into the
     // command stream, so each dispatch keeps its own.
-    const auto levelUniforms = [&](size_t i, f32 flagB) {
+    const CascadeLevel& level = levels[i];
+    CascadeUniforms cu;
+    cu.a = { static_cast<f32>(i), static_cast<f32>(level.probes),
+             static_cast<f32>(level.dirsW),
+             static_cast<f32>(level.dirsH) };
+    cu.b = { tuning.interval0, flagB,
+             appliedFineVoxel * static_cast<f32>(1 << i),
+             i == 0 ? 1.0f : 0.0f };
+    // c.yzw defaults to this cascade's lattice origin (rc_build);
+    // the merge loop overwrites it with the dst->src lattice offset.
+    const Vec3& origin =
+        cascadeOrigins[glm::min(i, cascadeOrigins.size() - 1)];
+    cu.c = Vec4 { 1.0f, origin.x, origin.y, origin.z };
+    return cu;
+}
+
+bool RadianceCascades::extendedLevel(size_t i) const {
+    // Decided per frame (interval0 is a live knob): extend the levels
+    // whose FULL march would take >= 8 steps.
+    if (!appliedExtension || extendPipeline.id() == 0) {
+        return false;
+    }
+    const f32 step = i <= 1 ? appliedFineVoxel : appliedCoarseVoxel;
+    const f32 length = tuning.interval0 * static_cast<f32>(1u << i);
+    return length / step >= 8.0f;
+}
+
+void RadianceCascades::recordBuild(rhi::CommandBuffer& cmd,
+                                   rhi::BindGroupHandle frameBindGroup,
+                                   rhi::Device* probeDevice,
+                                   GpuProbe* probe) {
+    // Build every cascade (each marches the fresh clipmap; levels are
+    // independent — one barrier after the batch). Extended levels march
+    // only a QUARTER of their interval; recordExtend doubles it twice.
+    GpuProbe::Scope gpu { probe, probeDevice, "rcBuild" };
+    cmd.setPipeline(buildPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    for (size_t i = 0; i < levels.size(); ++i) {
         const CascadeLevel& level = levels[i];
-        RcCascadeUniforms cu;
-        cu.a = { static_cast<f32>(i), static_cast<f32>(level.probes),
-                 static_cast<f32>(level.dirsW),
-                 static_cast<f32>(level.dirsH) };
-        cu.b = { tuning.interval0, flagB,
-                 appliedFineVoxel * static_cast<f32>(1 << i),
-                 i == 0 ? 1.0f : 0.0f };
-        // c.yzw defaults to this cascade's lattice origin (rc_build);
-        // the merge loop overwrites it with the dst->src lattice offset.
-        const Vec3& origin =
-            cascadeOrigins[glm::min(i, cascadeOrigins.size() - 1)];
-        cu.c = Vec4 { 1.0f, origin.x, origin.y, origin.z };
-        return cu;
-    };
-    // G7c eligibility, per frame (interval0 is a live knob): extend the
-    // levels whose FULL march would take >= 8 steps.
-    const auto extendedLevel = [&](size_t i) {
-        if (!appliedExtension || extendPipeline.id() == 0) {
-            return false;
-        }
-        const f32 step = i <= 1 ? appliedFineVoxel : appliedCoarseVoxel;
-        const f32 length = tuning.interval0 * static_cast<f32>(1u << i);
-        return length / step >= 8.0f;
-    };
+        // b.y = march step: fine voxels near, coarse for far levels.
+        CascadeUniforms cu = levelUniforms(
+            i, i <= 1 ? appliedFineVoxel : appliedCoarseVoxel);
+        cu.c.x = extendedLevel(i) ? 0.25f : 1.0f;
+        cmd.setPushConstants(&cu, sizeof(cu));
+        cmd.setBindGroup(1, level.buildGroup);
+        cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
+                     (level.depth + 3) / 4);
+    }
+    cmd.memoryBarrier(rhi::BarrierStage_Compute); // extend/merge read
+}
 
-    // G4: build every cascade (each marches the fresh clipmap; levels are
-    // independent — one barrier after the batch). G7c levels march only
-    // a QUARTER of their interval; the extension doubles it twice below.
-    {
-        GpuProbe::Scope gpu { probe, probeDevice, "rcBuild" };
-        cmd.setPipeline(buildPipeline);
-        cmd.setBindGroup(0, frameBindGroup);
-        for (size_t i = 0; i < levels.size(); ++i) {
-            const CascadeLevel& level = levels[i];
-            // b.y = march step: fine voxels near, coarse for far levels.
-            RcCascadeUniforms cu = levelUniforms(
-                i, i <= 1 ? appliedFineVoxel : appliedCoarseVoxel);
-            cu.c.x = extendedLevel(i) ? 0.25f : 1.0f;
+void RadianceCascades::recordExtend(rhi::CommandBuffer& cmd,
+                                    rhi::BindGroupHandle frameBindGroup,
+                                    rhi::Device* probeDevice,
+                                    GpuProbe* probe) {
+    // Interval extension: shift+merge the short fields with themselves,
+    // twice (x4 — texture -> scratch -> texture, barrier between passes).
+    GpuProbe::Scope gpu { probe, probeDevice, "rcExtend" };
+    bool any = false;
+    for (size_t i = 0; i < levels.size(); ++i) {
+        if (!extendedLevel(i)) {
+            continue;
+        }
+        if (!any) {
+            cmd.setPipeline(extendPipeline);
+            cmd.setBindGroup(0, frameBindGroup);
+            any = true;
+        }
+        const CascadeLevel& level = levels[i];
+        const f32 length =
+            tuning.interval0 * static_cast<f32>(1u << i);
+        const f32 shortLen = length * 0.25f;
+        for (u32 pass = 0; pass < 2; ++pass) {
+            CascadeUniforms cu = levelUniforms(i, 0.0f);
+            cu.c.x = shortLen * static_cast<f32>(1u << pass);
             cmd.setPushConstants(&cu, sizeof(cu));
-            cmd.setBindGroup(1, level.buildGroup);
-            cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
+            cmd.setBindGroup(1, pass == 0 ? level.extendToScratch
+                                          : level.extendToTexture);
+            cmd.dispatch((level.width + 3) / 4,
+                         (level.height + 3) / 4,
                          (level.depth + 3) / 4);
-        }
-        cmd.memoryBarrier(rhi::BarrierStage_Compute); // extend/merge read
-    }
-
-    // G7c: shift+merge the short fields with themselves, twice (x4 —
-    // texture -> scratch -> texture, barrier between passes).
-    {
-        GpuProbe::Scope gpu { probe, probeDevice, "rcExtend" };
-        bool any = false;
-        for (size_t i = 0; i < levels.size(); ++i) {
-            if (!extendedLevel(i)) {
-                continue;
-            }
-            if (!any) {
-                cmd.setPipeline(extendPipeline);
-                cmd.setBindGroup(0, frameBindGroup);
-                any = true;
-            }
-            const CascadeLevel& level = levels[i];
-            const f32 length =
-                tuning.interval0 * static_cast<f32>(1u << i);
-            const f32 shortLen = length * 0.25f;
-            for (u32 pass = 0; pass < 2; ++pass) {
-                RcCascadeUniforms cu = levelUniforms(i, 0.0f);
-                cu.c.x = shortLen * static_cast<f32>(1u << pass);
-                cmd.setPushConstants(&cu, sizeof(cu));
-                cmd.setBindGroup(1, pass == 0 ? level.extendToScratch
-                                              : level.extendToTexture);
-                cmd.dispatch((level.width + 3) / 4,
-                             (level.height + 3) / 4,
-                             (level.depth + 3) / 4);
-                // Pass 2 / merge reads this write.
-                cmd.memoryBarrier(rhi::BarrierStage_Compute);
-            }
+            // Pass 2 / merge reads this write.
+            cmd.memoryBarrier(rhi::BarrierStage_Compute);
         }
     }
+}
 
-    // G5: merge top -> 0. The top absorbs the SKY; each level below
+void RadianceCascades::recordMerge(rhi::CommandBuffer& cmd,
+                                   rhi::BindGroupHandle frameBindGroup,
+                                   rhi::Device* probeDevice,
+                                   GpuProbe* probe) {
+    // Merge top -> 0. The top absorbs the SKY; each level below
     // absorbs the already-merged level above (barrier between steps).
-    {
-        GpuProbe::Scope gpu { probe, probeDevice, "rcMerge" };
-        cmd.setPipeline(mergePipeline);
-        cmd.setBindGroup(0, frameBindGroup);
-        for (i32 i = static_cast<i32>(levels.size()) - 1; i >= 0; --i) {
-            const CascadeLevel& level = levels[static_cast<size_t>(i)];
-            const bool top = i == static_cast<i32>(levels.size()) - 1;
-            RcCascadeUniforms cu =
-                levelUniforms(static_cast<size_t>(i), top ? 1.0f : 0.0f);
-            if (!top) {
-                // c.yzw = dst->src lattice offset in PARENT-probe units
-                // (per-cascade origins): the parent lookup adds it to
-                // the index-space coordinate.
-                const f32 srcSpacing =
-                    appliedFineVoxel * static_cast<f32>(2 << i);
-                const Vec3 off =
-                    (cascadeOrigins[static_cast<size_t>(i)] -
-                     cascadeOrigins[static_cast<size_t>(i) + 1]) /
-                    srcSpacing;
-                cu.c = { 0.0f, off.x, off.y, off.z };
-            }
-            cmd.setPushConstants(&cu, sizeof(cu));
-            cmd.setBindGroup(1, level.mergeGroup);
-            cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
-                         (level.depth + 3) / 4);
-            // The level below (compute) reads this one; the FINAL merge
-            // (cascade 0) is what the surface shaders, the volumetric and
-            // the froxel inject consume — fragment joins the scope there.
-            // Pipelined: NO final barrier at all — the consumers live in
-            // the next frame, whose fence (WorldRenderer, before the
-            // first GI reader) orders and publishes the write; anything
-            // recorded in between overlaps the chain.
-            if (i > 0) {
-                cmd.memoryBarrier(rhi::BarrierStage_Compute);
-            } else if (!tuning.pipelined) {
-                cmd.memoryBarrier(rhi::BarrierStage_Compute |
-                                  rhi::BarrierStage_Fragment);
-            }
+    GpuProbe::Scope gpu { probe, probeDevice, "rcMerge" };
+    cmd.setPipeline(mergePipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    for (i32 i = static_cast<i32>(levels.size()) - 1; i >= 0; --i) {
+        const CascadeLevel& level = levels[static_cast<size_t>(i)];
+        const bool top = i == static_cast<i32>(levels.size()) - 1;
+        CascadeUniforms cu =
+            levelUniforms(static_cast<size_t>(i), top ? 1.0f : 0.0f);
+        if (!top) {
+            // c.yzw = dst->src lattice offset in PARENT-probe units
+            // (per-cascade origins): the parent lookup adds it to
+            // the index-space coordinate.
+            const f32 srcSpacing =
+                appliedFineVoxel * static_cast<f32>(2 << i);
+            const Vec3 off =
+                (cascadeOrigins[static_cast<size_t>(i)] -
+                 cascadeOrigins[static_cast<size_t>(i) + 1]) /
+                srcSpacing;
+            cu.c = { 0.0f, off.x, off.y, off.z };
+        }
+        cmd.setPushConstants(&cu, sizeof(cu));
+        cmd.setBindGroup(1, level.mergeGroup);
+        cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
+                     (level.depth + 3) / 4);
+        // The level below (compute) reads this one; the FINAL merge
+        // (cascade 0) is what the surface shaders, the volumetric and
+        // the froxel inject consume — fragment joins the scope there.
+        // Pipelined: NO final barrier at all — the consumers live in
+        // the next frame, whose fence (WorldRenderer, before the
+        // first GI reader) orders and publishes the write; anything
+        // recorded in between overlaps the chain.
+        if (i > 0) {
+            cmd.memoryBarrier(rhi::BarrierStage_Compute);
+        } else if (!tuning.pipelined) {
+            cmd.memoryBarrier(rhi::BarrierStage_Compute |
+                              rhi::BarrierStage_Fragment);
         }
     }
+}
 
-    // G7a: the merged cascade 0 now holds THIS inject's world — next
-    // frame's injection may feed it back as the extra bounce.
-    prevFineOrigin = lastFineOrigin;
-    prevFineSpacing = appliedFineVoxel;
-    havePrev = true;
-
+void RadianceCascades::recordProbe(rhi::Device& device,
+                                   rhi::CommandBuffer& cmd,
+                                   rhi::BindGroupHandle frameBindGroup) {
     // GI health probe: a one-shot sample of the merged cascade 0 at the
     // volume center, logged at boot — the objective "does the chain
     // produce radiance" check (all-zero in daylight = build/merge broken).
+    // The readback six frames later BLOCKS on the device, once, at boot.
     if (!probeLogged && probePipeline.id() != 0 && probeGroup.id() != 0) {
         ++probeFrame;
         if (probeFrame == 120) {
@@ -949,10 +954,6 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
                      slabs[8].w);
             probeLogged = true;
         }
-    }
-
-    if (asyncCmd) {
-        device.endAsyncCompute(); // close the update-routing window
     }
 }
 

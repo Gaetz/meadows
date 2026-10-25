@@ -11,6 +11,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/inventory/Inventory.hpp" // grave capture gate
 #include "world/scene/Components.hpp"
@@ -48,7 +49,7 @@ std::optional<data::Record> materializeReference(
         // from the default so it is already carried — this is just belt
         // and braces for a default change.
         record.fields.emplace(
-            world::ReferenceForm::staticTypeInfo().findField("enabled")->id,
+            reflect::fieldId(world::ReferenceForm::staticTypeInfo(), "enabled"),
             reflect::Value { false });
     }
     return record;
@@ -86,7 +87,7 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
         }
     }
     if (liveCell != reference->cell) {
-        record.fields.emplace(type.findField("cell")->id,
+        record.fields.emplace(reflect::fieldId(type, "cell"),
                               reflect::Value { liveCell });
     }
 
@@ -96,11 +97,11 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
         entity.has<world::Transform>()) {
         const auto& transform = entity.get<world::Transform>();
         if (transform.position != reference->position) {
-            record.fields.emplace(type.findField("position")->id,
+            record.fields.emplace(reflect::fieldId(type, "position"),
                                   reflect::Value { transform.position });
         }
         if (transform.rotation != reference->rotation) {
-            record.fields.emplace(type.findField("rotation")->id,
+            record.fields.emplace(reflect::fieldId(type, "rotation"),
                                   reflect::Value { transform.rotation });
         }
     }
@@ -112,11 +113,11 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
                              entity.get<world::Displaced>().groundOffsetY,
                              transform.position.z };
         if (snapped != reference->position) {
-            record.fields.emplace(type.findField("position")->id,
+            record.fields.emplace(reflect::fieldId(type, "position"),
                                   reflect::Value { snapped });
         }
         if (transform.rotation != reference->rotation) {
-            record.fields.emplace(type.findField("rotation")->id,
+            record.fields.emplace(reflect::fieldId(type, "rotation"),
                                   reflect::Value { transform.rotation });
         }
     }
@@ -126,7 +127,7 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
     if (entity.has<world::Transform>()) {
         const auto& transform = entity.get<world::Transform>();
         if (transform.scale != reference->scale) {
-            record.fields.emplace(type.findField("scale")->id,
+            record.fields.emplace(reflect::fieldId(type, "scale"),
                                   reflect::Value { transform.scale });
         }
     }
@@ -212,7 +213,7 @@ void PendingSaveLayer::disableReference(const core::Guid& referenceId,
     patch.typeId = world::ReferenceForm::staticTypeInfo().id;
     patch.creates = false;
     patch.fields.emplace(
-        world::ReferenceForm::staticTypeInfo().findField("enabled")->id,
+        reflect::fieldId(world::ReferenceForm::staticTypeInfo(), "enabled"),
         reflect::Value { false });
     entry.referencePatch = std::move(patch);
 }
@@ -253,7 +254,7 @@ bool PendingSaveLayer::isRehomed(const core::Guid& referenceId) const {
         return false;
     }
     const u32 cellFieldId =
-        world::ReferenceForm::staticTypeInfo().findField("cell")->id;
+        reflect::fieldId(world::ReferenceForm::staticTypeInfo(), "cell");
     return it->second.referencePatch->fields.contains(cellFieldId);
 }
 

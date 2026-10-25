@@ -1,7 +1,9 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -37,13 +39,12 @@ public:
     // frame bind group (FrameUbo + LightsUbo + the cluster SSBO).
     void run(rhi::CommandBuffer& cmd);
 
-    bool ready() const { return pipeline.id != 0 && buffer.id != 0; }
+    bool ready() const { return pipeline.id() != 0 && buffer.id() != 0; }
     rhi::BufferHandle clusterBuffer() const { return buffer; }
 
 private:
-    rhi::BufferHandle buffer {};
-    rhi::PipelineHandle pipeline {};
-    u64 generation { 0 };
+    rhi::UniqueBuffer buffer;
+    WatchedPipeline pipeline;
 };
 
 } // namespace render

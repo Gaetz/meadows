@@ -7,6 +7,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 
 namespace fx {
 
@@ -70,7 +71,7 @@ void ParticleSim::spawnOne(const EmitterParams& params, const Vec3& origin,
                              params.shapeRadius;
         break;
     case EmitterShape::Disc: {
-        const f32 angle = rng.next() * 6.2831853f;
+        const f32 angle = rng.next() * core::kTau;
         const f32 radius = std::sqrt(rng.next()) * params.shapeRadius;
         particle.position += Vec3 { std::cos(angle) * radius, 0.0f,
                                     std::sin(angle) * radius };

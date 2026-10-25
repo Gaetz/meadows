@@ -5,9 +5,11 @@
 #include "engine/core/FrameProbe.hpp"
 #include "engine/core/SettleTimer.hpp"
 #include "engine/render/Camera3D.hpp"
+#include "engine/render/FrameComposer.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/render/GpuProbe.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/WatchedPipeline.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
@@ -17,6 +19,7 @@
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/FarTerrain.hpp"
+#include "engine/render/landscape/FrameDecisions.hpp"
 #include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
@@ -26,6 +29,7 @@
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/render/landscape/FxRenderer.hpp"
+#include "engine/render/landscape/SsdmChain.hpp"
 #include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
@@ -211,18 +215,18 @@ public:
     render::SkySystem& skySystem() { return sky; }
     render::TerrainSystem& terrainSystem() { return terrain; }
     // The active horizon distance: the farthest standing geometry (the
-    // far mesh when ready, else the streaming ring). The camera's
-    // farPlane and the fog's horizon closure both derive from it — one
-    // source of truth, so the closure always finishes before the clip.
+    // farthest enabled far ring that is ready — 24 192 m for the
+    // horizon ring — else the streaming ring). The camera's farPlane
+    // and the fog's horizon closure both derive from it — one source
+    // of truth, so the closure always finishes before the clip.
     f32 horizonReach() const {
-        if (tuning.farTerrain && tuning.farHorizon &&
-            farHorizon.ready()) {
-            return farHorizon.reach(); // 24 192 m
+        for (u32 ring = kFarRingCount; ring-- > 0;) {
+            if (farRingEnabled(ring) && farRings[ring].ready()) {
+                return farRings[ring].reach();
+            }
         }
-        return tuning.farTerrain && farTerrain.ready()
-                   ? farTerrain.reach()
-                   : static_cast<f32>(terrain.viewRadius) *
-                         render::TerrainSystem::kChunkSize;
+        return static_cast<f32>(terrain.viewRadius) *
+               render::TerrainSystem::kChunkSize;
     }
     render::VegetationSystem& vegetationSystem() { return vegetation; }
     render::WaterSystem& waterSystem() { return water; }
@@ -254,12 +258,10 @@ public:
     void setStreamingHold(bool hold) { streamingHold = hold; }
     void setStreamingBoost(bool boost) { streamingBoost = boost; }
 
-    // The lights-UBO capacity (the extract collects this many selected
-    // LightSource entities into the snapshot). The full budget is only
-    // consumable through the clustered path (docs/RENDERING.md §5); with
-    // clustered off, the per-pixel loop clamps to kFallbackLights.
-    static constexpr u32 kMaxLights = 64;
-    static constexpr u32 kFallbackLights = 24;
+    // The lights-UBO capacity (FrameDecisions.hpp holds the values; the
+    // extract and the scene read them through here).
+    static constexpr u32 kMaxLights = render::kMaxLights;
+    static constexpr u32 kFallbackLights = render::kFallbackLights;
 
     // Every live tuning knob in ONE public struct: the dev panels
     // (game/ui/RenderTuningPanels) and the Forms<->flat-params seam
@@ -393,13 +395,61 @@ private:
 
     RendererConfig cfg {};
 
+    // Config AND device capability, resolved once in create() — the
+    // only mount test the frame code performs afterwards. A flag off
+    // means the system was never created: no GPU resource, no tick,
+    // no pass. The cfg flags alone stay in `cfg` for config().
+    struct Mounted {
+        bool terrain { false };      // + height pyramid, light/shade
+                                     //   maps, fire scorch, far rings
+        bool mist { false };         // mist map + noise volume
+                                     //   (terrain && postFx)
+        bool occlusion { false };    // CPU height-horizon culling
+        bool gi { false };           // radiance cascades
+        bool grass { false };
+        bool vegetation { false };
+        bool sky { false };          // dome + cloud bake + rain
+        bool shadows { false };      // CSM (offscreen + texture arrays)
+        bool fx { false };           // particle pass (copyTexture)
+        bool water { false };        // sea, reflection, composite
+                                     //   (cfg && copyTexture)
+        bool postFx { false };       // bloom/rays/mist/SSAO/auto-expo
+                                     //   (cfg && offscreen && HDR && copy)
+        bool froxels { false };      // froxel fog inside postFx (cfg)
+        bool gpuOcclusion { false }; // Hi-Z compute cull (cfg && compute
+                                     //   && copy && offscreen)
+        bool clusters { false };     // clustered light lists (compute)
+        bool offscreen { false };    // HDR scene target, tonemap
+                                     //   composite, SSDM (offscreen caps)
+        bool sceneCopy { false };    // pre-water color/depth snapshots
+                                     //   (copyTexture)
+    };
+    static Mounted resolveMounted(const RendererConfig& cfg,
+                                  const rhi::DeviceCaps& caps);
+    Mounted mounted {};
+
+    // One mounted subsystem and its lifecycle verbs. The steps are
+    // plain function pointers (captureless lambdas in the table
+    // definition — no virtual dispatch, no std::function); a null step
+    // is a system without that verb. kSystems (the .cpp) lists them in
+    // creation order, the dependencies written on the table.
+    struct SystemEntry {
+        const char* name;
+        bool Mounted::*mounted;
+        void (*create)(WorldRenderer&, rhi::Device&, core::JobSystem&);
+        void (*destroy)(WorldRenderer&, rhi::Device&);
+        void (*refresh)(WorldRenderer&, rhi::Device&);
+        void (*regenerate)(WorldRenderer&, rhi::Device&);
+    };
+    static const SystemEntry kSystems[];
+
     // Offscreen color+depth target at window size, recreated on resize.
     void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
     void destroyOffscreenTarget(rhi::Device& device);
-    void rebuildBlitPipeline(rhi::Device& device);
-    void buildMeshPipeline(rhi::Device& device);
-    void buildSkinnedPipeline(rhi::Device& device);
-    void buildCasterPipelines(rhi::Device& device);
+    // Pipeline recipes too long to read inline at their draw site; each
+    // is a WatchedPipeline::ensure (first build + shader hot reload).
+    void ensureSkinnedPipeline(rhi::Device& device);
+    void ensureCasterPipelines(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame,
                          const render::RenderSnapshot& snapshot,
                          const RenderView& view,
@@ -426,18 +476,34 @@ private:
                          const RenderView& view,
                          rhi::BindGroupHandle casterGroup, bool refreshUbos,
                          const render::Frustum* cull = nullptr);
-    // One selected key-shadow light: its anchor (the UBO match key —
-    // the light's original position) and the tile's perspective matrix.
-    struct KeyShadowPick {
-        Vec3 anchor;
-        Mat4 viewProj;
-    };
-    // render()'s pass sequence, one method per pass (pure code motion):
-    // render() itself reads as the frame's table of contents and owns
-    // only the per-frame decisions (cascade fit, key-light picks, the
-    // uniform composition) that the passes consume.
+    // render()'s pass sequence, one method per pass: render() itself
+    // reads as the frame's table of contents and owns only the
+    // per-frame decisions (cascade fit, key-light picks, the uniform
+    // composition) that the passes consume — the pure ones live in
+    // landscape/FrameDecisions.hpp.
+    void logBudgetOnce();
     void pumpPipelinesAndRequests(engine::FrameContext& frame);
     void pumpStreaming(engine::FrameContext& frame, const RenderView& view);
+    // The sun hysteresis + the CSM round-robin: which cascades
+    // re-render this frame and with which matrices (updates the
+    // cascade UBOs; `cascades`/`cascadeDue` come out ready to record).
+    void fitShadowCascades(
+        engine::FrameContext& frame, const render::Camera3D& camera,
+        const Vec3& sunDirection, f32 shadowStrength,
+        render::ShadowMapper::Cascades& cascades,
+        array<bool, render::ShadowMapper::kCascadeCount>& cascadeDue);
+    // Planar reflection this frame: above the surface, mirror target
+    // present, and (auto-skip) some sea actually in view.
+    bool reflectionWanted(const RenderView& view,
+                          const render::Frustum& viewFrustum);
+    // Everything the frame UBO is composed from (FrameComposer.hpp):
+    // the view, the tuning knobs and the subsystems' per-frame lanes.
+    render::FrameComposerInputs composerInputs(
+        engine::FrameContext& frame, const render::RenderSnapshot& snapshot,
+        const RenderView& view, const Mat4& viewProj,
+        const render::SkySystem::SkyState& skyState,
+        const render::ShadowMapper::Cascades& cascades, f32 shadowStrength,
+        bool reflectionsActive);
     void recordKeyShadowTiles(engine::FrameContext& frame,
                               const render::RenderSnapshot& snapshot,
                               const RenderView& view,
@@ -468,6 +534,10 @@ private:
     void recordPostFx(engine::FrameContext& frame, const RenderView& view,
                       const render::FrameUniforms& frameData,
                       bool useOffscreen);
+    // Tonemap composite into the backbuffer (game UI included), or the
+    // UI alone when no offscreen target exists.
+    void recordComposite(engine::FrameContext& frame, const RenderView& view,
+                         bool useOffscreen);
     // The water surface the camera sits under (submersion input).
     f32 effectiveWaterSurfaceY(const render::RenderSnapshot& snapshot,
                                const RenderView& view) const;
@@ -509,9 +579,21 @@ private:
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;
     render::FireScorchMap fireScorch;
-    // Distant landscape silhouettes beyond the streaming ring (§3.6).
-    render::FarTerrain farTerrain;
-    render::FarTerrain farHorizon; // the 57.6 km HORIZON ring
+    // Distant landscape silhouettes beyond the streaming ring (§3.6):
+    // two camera-centered rings of the same machinery, the 18 km inner
+    // ring (with tree impostors) and the 57.6 km horizon ring (§6.0c)
+    // ridden 16 m under it. Index order = distance order; the configs
+    // are kFarRingConfigs in the .cpp.
+    static constexpr u32 kInnerRing = 0;
+    static constexpr u32 kHorizonRing = 1;
+    static constexpr u32 kFarRingCount = 2;
+    array<render::FarTerrain, kFarRingCount> farRings;
+    // The inner ring follows the far-terrain toggle alone; the horizon
+    // ring needs its own toggle on top.
+    bool farRingEnabled(u32 ring) const {
+        return tuning.farTerrain &&
+               (ring == kInnerRing || tuning.farHorizon);
+    }
     // Worker-baked valley data for the ground-mist raymarch (§3.5).
     render::MistMap mistMap;
     // Shared tileable Perlin-Worley volume (mist + sky-cloud erosion).
@@ -562,8 +644,7 @@ private:
         rhi::UniqueBindGroup casterGroup; // ubo at binding 4
     };
     vector<MeshDraw> meshDraws;
-    rhi::UniquePipeline meshPipeline;
-    u64 meshShaderGeneration { 0 };
+    WatchedPipeline meshPipeline;
 
     // Per-NPC draw state, keyed by entity id, mark/swept against
     // snapshot.skinned (mark/sweep by entity id).
@@ -576,8 +657,7 @@ private:
         rhi::UniqueBindGroup casterGroup {}; // ubo b4 + palette b2
     };
     vector<SkinnedDraw> skinnedDraws;
-    rhi::UniquePipeline skinnedPipeline;
-    u64 skinnedShaderGeneration { 0 };
+    WatchedPipeline skinnedPipeline;
 
     // Placed water volumes — one alpha-blended
     // surface quad per volume.
@@ -601,12 +681,10 @@ private:
         rhi::UniqueBindGroup group {};
     };
     vector<WaterMeshSlot> waterMeshSlots;
-    rhi::UniquePipeline waterVolumePipeline;
-    u64 waterVolumeShaderGeneration { 0 };
+    WatchedPipeline waterVolumePipeline;
     // Procedural rain streaks + the top-down
     // occlusion depth (no rain under roofs) + global wetness.
-    rhi::UniquePipeline rainPipeline;
-    u64 rainShaderGeneration { 0 };
+    WatchedPipeline rainPipeline;
     rhi::UniqueTexture rainOcclusionTex;
     rhi::UniqueFramebuffer rainOcclusionFb;
     rhi::UniqueSampler rainSampler;
@@ -617,9 +695,8 @@ private:
     // Meshes + skinned NPCs cast into the sun cascades
     // (depth-only pipelines; the model UBOs are re-used, one frame behind
     // for NPCs — invisible at shadow resolution).
-    rhi::UniquePipeline meshCasterPipeline;
-    rhi::UniquePipeline skinnedCasterPipeline;
-    ShaderLibrary::Watch casterShaderWatch;
+    WatchedPipeline meshCasterPipeline;
+    WatchedPipeline skinnedCasterPipeline;
     // The interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
     // Key-shadow ATLAS (docs/RENDERING.md §5 B6): one 2048^2 depth target,
@@ -641,29 +718,11 @@ private:
     rhi::UniqueTexture sceneColorCopy;
     rhi::UniqueTexture sceneDepthCopy;
     rhi::UniqueBindGroup waterSceneBindGroup;
-    // SSDM scatter chain (ssdm_*.frag — Lobel 2008): flow (per-pixel
-    // displacement + displaced depth) -> bounds quadtree (5 levels) ->
-    // resolve (nearest-wins, gather fallback) into the offscreen target.
-    static constexpr u32 kSsdmLevels = 5;
-    rhi::UniquePipeline ssdmFlowPipeline;
-    rhi::UniquePipeline ssdmBounds0Pipeline;
-    rhi::UniquePipeline ssdmDownPipeline;
-    rhi::UniquePipeline ssdmResolvePipeline;
-    rhi::UniqueTexture ssdmFlowTex;
-    rhi::UniqueFramebuffer ssdmFlowFb;
-    rhi::UniqueBindGroup ssdmFlowGroup;
-    array<rhi::UniqueTexture, kSsdmLevels> ssdmBoundsTex;
-    array<rhi::UniqueFramebuffer, kSsdmLevels> ssdmBoundsFb;
-    array<rhi::UniqueBindGroup, kSsdmLevels> ssdmBoundsGroup;
-    rhi::UniqueBindGroup ssdmResolveGroup;
-    // Half mode (tuning.ssdmMode == 1): the resolve lands in this chain-res
-    // intermediate (alpha = moved flag), then the upsample rewrites the
-    // touched full-res pixels only.
-    rhi::UniquePipeline ssdmResolveHalfPipeline;
-    rhi::UniquePipeline ssdmUpsamplePipeline;
-    rhi::UniqueTexture ssdmHalfTex;
-    rhi::UniqueFramebuffer ssdmHalfFb;
-    rhi::UniqueBindGroup ssdmUpsampleGroup;
+    // SSDM scatter chain (landscape/SsdmChain.hpp) over the scene
+    // copies; its targets follow the offscreen target, so a mode change
+    // is one of the target's recreation keys (the reflectionScale
+    // pattern).
+    render::SsdmChain ssdm;
     i32 appliedSsdmMode { -1 };
     // Half-res mirrored scene for the water's planar reflection.
     rhi::UniqueTexture reflectionColor;
@@ -677,8 +736,7 @@ private:
     // exposure texture the tonemap taps); [0] doubles as the only group
     // on the no-postFx fallback path.
     array<rhi::UniqueBindGroup, 2> blitBindGroups;
-    rhi::UniquePipeline blitPipeline;
-    u64 blitShaderGeneration { 0 };
+    WatchedPipeline blitPipeline;
     u32 offscreenWidth { 0 };
     u32 offscreenHeight { 0 };
 };

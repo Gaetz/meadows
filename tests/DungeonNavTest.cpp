@@ -211,22 +211,24 @@ TEST_CASE("dungeon nav: every gameplay anchor stands on a walkable floor") {
         const i32 iz = static_cast<i32>(column / r.navGrid.width);
         return !r.navGrid.wallAdjacent(ix, iz, p.y);
     };
-    REQUIRE_FALSE(r.enemySpawns.empty());
-    for (size_t i = 0; i < r.enemySpawns.size(); ++i) {
+    const auto enemies = r.anchorsOf(AnchorKind::EnemySpawn);
+    const auto npcs = r.anchorsOf(AnchorKind::NpcSpawn);
+    REQUIRE_FALSE(enemies.empty());
+    for (size_t i = 0; i < enemies.size(); ++i) {
         INFO("enemy " << i);
-        CHECK(standable(r.enemySpawns[i].position));
+        CHECK(standable(enemies[i].position));
     }
-    for (size_t i = 0; i < r.npcSpawns.size(); ++i) {
+    for (size_t i = 0; i < npcs.size(); ++i) {
         INFO("npc " << i);
-        CHECK(standable(r.npcSpawns[i].position));
+        CHECK(standable(npcs[i].position));
     }
-    checkFamily("enemy", r.enemySpawns);
-    checkFamily("lever", r.levers);
-    checkFamily("chest", r.chests);
-    checkFamily("vein", r.oreVeins);
-    checkFamily("npc", r.npcSpawns);
-    checkFamily("patrol", r.patrolPoints);
-    checkFamily("barrier", r.barriers);
+    checkFamily("enemy", enemies);
+    checkFamily("lever", r.anchorsOf(AnchorKind::Lever));
+    checkFamily("chest", r.anchorsOf(AnchorKind::Chest));
+    checkFamily("vein", r.anchorsOf(AnchorKind::OreVein));
+    checkFamily("npc", npcs);
+    checkFamily("patrol", r.anchorsOf(AnchorKind::PatrolPoint));
+    checkFamily("barrier", r.anchorsOf(AnchorKind::Barrier));
 }
 
 TEST_CASE("dungeon nav: a baked mine is walkable from entrance to goal") {

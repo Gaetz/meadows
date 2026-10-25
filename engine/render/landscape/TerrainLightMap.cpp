@@ -1,8 +1,10 @@
 #include "engine/render/landscape/TerrainLightMap.hpp"
 
 #include <cmath>
+#include <utility>
 
 #include "engine/core/Jobs.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -50,7 +52,7 @@ void bakeTexel(const TerrainParams& params,
     // G — sky openness: 8 azimuth horizon angles, ~200 m reach.
     f32 openness = 0.0f;
     for (u32 a = 0; a < 8; ++a) {
-        const f32 angle = static_cast<f32>(a) * (6.2831853f / 8.0f);
+        const f32 angle = static_cast<f32>(a) * (core::kTau / 8.0f);
         const f32 dx = std::cos(angle);
         const f32 dz = std::sin(angle);
         f32 maxSlope = 0.0f;
@@ -74,20 +76,19 @@ void bakeTexel(const TerrainParams& params,
 
 void TerrainLightMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
     mailbox.create(jobSystem, "terrainLightMap");
-    sampler = device.createSampler({});
+    sampler = { device, device.createSampler({}) };
     // The texture is (re)created per landed bake — the RHI has no
     // texture update, and a rebuild every ~8 s costs nothing.
-    (void)device;
 }
 
 void TerrainLightMap::destroy(rhi::Device& device) {
-    mailbox.reset(); // orphan in-flight bakes
-    device.destroyBindGroup(group);
-    device.destroySampler(sampler);
-    device.destroyTexture(texture);
-    group = {};
-    sampler = {};
-    texture = {};
+    (void)device;
+    // Orphan in-flight bakes: the mailbox generation must keep moving
+    // ACROSS the reset (a fresh mailbox would restart it at zero).
+    core::BakeMailbox<Baked> saved = std::move(mailbox);
+    saved.reset();
+    *this = TerrainLightMap {}; // the owning handles release themselves
+    mailbox = std::move(saved);
 }
 
 void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
@@ -96,21 +97,18 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
     // 1. Land a finished bake (fresh texture + group — no RHI texture
     // update; a rebuild every sun step is negligible).
     mailbox.drain([&](Baked& done) {
-        if (texture.id != 0) {
-            device.destroyBindGroup(group);
-            device.destroyTexture(texture);
-        }
-        texture = device.createTexture(
+        // Re-assignment releases the previous bake's texture and group.
+        texture = { device, device.createTexture(
             { .width = kSize,
               .height = kSize,
               .format = rhi::TextureFormat::RGBA8,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled },
-            done.pixels.data());
-        group = device.createBindGroup(
+            done.pixels.data()) };
+        group = { device, device.createBindGroup(
             { .entries = { { .binding = 7,
                              .texture = texture,
-                             .sampler = sampler } } });
+                             .sampler = sampler } } }) };
         center = done.center;
         bakedSun = done.sun;
         LOG_INFO("terrain light map baked: center ({:.0f}, {:.0f})",
@@ -124,8 +122,7 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
     // focus left the inner half of the map.
     const Vec2 want { focus.x, focus.z };
     const bool sunMoved = glm::dot(bakedSun, sunDirection) < 0.99995f;
-    const bool strayed =
-        !mailbox.ready() || glm::distance(want, center) > kSpan * 0.25f;
+    const bool strayed = mailbox.strayed(center, want, kSpan * 0.25f);
     if (!sunMoved && !strayed) {
         return;
     }

@@ -331,7 +331,7 @@ TEST_CASE("procedural biomeIdAt agrees with the full control sample") {
             const f32 x = static_cast<f32>(gx) * 1730.0f;
             const f32 z = static_cast<f32>(gz) * 1730.0f;
             const ControlSample s = controls.at(x, z);
-            CHECK(controls.biomeIdAt(x, z, s.tier) == s.biome);
+            CHECK(controls.biomeIdAt(x, z, s.corridor) == s.biome);
         }
     }
 }

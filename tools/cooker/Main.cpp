@@ -11,7 +11,8 @@
 //   cooker validate   <plugin.toml...>       mod lint: loads
 //                     the plugins IN ARGUMENT ORDER, resolves, and reports
 //                     orphan patches, dependency violations, dangling guid
-//                     references (reflection sweep) and field conflicts
+//                     references (reflection sweep), event names nothing
+//                     fires or listens to (warning) and field conflicts
 //                     (informational — §5 layering). Exit 1 on errors.
 
 #include <algorithm>
@@ -21,11 +22,13 @@
 #include <filesystem>
 #include <fstream>
 #include <string_view>
+#include <unordered_set>
 
 #include "TextureCook.hpp"
 #include "data/plugins/BinaryFormat.hpp"
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
+#include "data/plugins/Resolver.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "BakeMapTool.hpp"
 #include "ErosionBench.hpp"
@@ -39,7 +42,12 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "game/AllForms.hpp" // registerAllFormTypes — the single registration site
 #include "game/WeaponMeshes.hpp" // runtimeMeshGuids (validate whitelist)
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRule/CommentForm
+#include "gameplay/event/EventBus.hpp"       // isKnownEvent (validate)
+#include "quest/Dialogue.hpp"                // DialogueNodeForm
+#include "quest/Quest.hpp"                   // QuestForm / QuestTaskForm
 #include "world/terrain/TerrainPatches.hpp"
+#include "world/worldspace/WorldForms.hpp"   // TriggerForm
 
 namespace {
 
@@ -56,8 +64,9 @@ int usage() {
         "     to <height> m (3 m smooth blend ring), demo seed/params\n"
         "  cooker validate <plugin.toml...>\n"
         "     mod lint: resolve the plugins in argument order and report\n"
-        "     orphan patches, dependency violations, dangling guid refs\n"
-        "     and field conflicts (informational). Exit 1 on errors\n"
+        "     orphan patches, dependency violations, dangling guid refs,\n"
+        "     unknown event names (warning) and field conflicts\n"
+        "     (informational). Exit 1 on errors\n"
         "  cooker cook-terrain-materials <manifest.toml> <outDir>\n"
         "     PNG material maps -> the four terrain .mtex arrays\n"
         "     (albedo BC7, normal BC5, ORM BC7, height R16), 512^2,\n"
@@ -65,16 +74,18 @@ int usage() {
         "  cooker terrain-map <seed> <centerX> <centerZ> <spanMeters> "
         "<out.png> [sizePx=1000] [poi] [noplan]\n"
         "     top-down PNG of the analytic sandbox macro (hypsometric\n"
-        "     tints, hillshade, master rivers, center cross); carrier*\n"
-        "     overrides the continental-carrier experiment knobs\n"
-        "  cooker bake-map <gameDir> <mapX> <mapZ> [tilesPerSide=6]\n"
-        "                  [--] [--export-plugin <name>]\n"
+        "     tints, hillshade, master rivers, center cross); poi draws\n"
+        "     the sites + walks, noplan is the A/B reference without the\n"
+        "     composition plan\n"
+        "  cooker bake-map <gameDir> <mapX> <mapZ> [tilesPerSide=2]\n"
+        "                  [--] [--export-plugin <name>] [--pair <px> <pz>]\n"
         "     bakes one bounded map (ONE global erosion, slices +\n"
         "     manifest under terrain-cache/<seed>/map_<mx>_<mz>/) and\n"
         "     reports the interior border divergence; -- disables the\n"
         "     border transitions; --export-plugin also ships the map\n"
         "     as an ordinary par.5 mod (data/mods/<name>.toml +\n"
-        "     terrain assets)\n"
+        "     terrain assets); --pair also bakes the ADJACENT map\n"
+        "     (px,pz) and reports the water seam between the two\n"
         "  cooker pre-bake <gameDir> <x0> <z0> <x1> <z1>\n"
         "  cooker pre-bake <gameDir> <centerX> <centerZ> <radius>\n"
         "  cooker landscape-report <gameDir> [mapX mapZ]\n"
@@ -247,6 +258,96 @@ int importCsv(const char* inPath, const char* outPath, const char* typeName,
     return 0;
 }
 
+// A (type, field) pair holding an EventBus event name. Listeners wait for
+// a name, emitters fire one; the bus matches them by hash, so a misspelt
+// name on either side is a silently mute rule.
+struct EventField {
+    const reflect::TypeInfo& type;
+    const char* field;
+};
+
+// The event name `slot` holds on `form`, "" when the form is not of that
+// type or the field is unset.
+str eventNameOf(const data::Form& form, const reflect::TypeInfo& type,
+                const EventField& slot) {
+    if (!type.isA(slot.type.id)) {
+        return {};
+    }
+    const reflect::FieldInfo* field = type.findField(slot.field);
+    if (!field) {
+        return {};
+    }
+    const reflect::Value value = field->get(&form);
+    const str* name = std::get_if<str>(&value);
+    return name ? *name : str {};
+}
+
+// Event-name lint, warnings only: a listener whose name no C++ site and no
+// emitter record fires, an emitter whose name no C++ site and no listener
+// record waits for. Known C++ names = gameplay::kEventNames; data mints
+// its own events on top (dialogue nodes wired to quest tasks), so an
+// absent name can never be an error.
+void reportUnknownEvents(const data::FormDatabase& forms) {
+    const EventField listeners[] = {
+        { quest::QuestTaskForm::staticTypeInfo(), "event" },
+        { quest::QuestForm::staticTypeInfo(), "startEvent" },
+        { gameplay::AffinityRuleForm::staticTypeInfo(), "event" },
+        { gameplay::CommentForm::staticTypeInfo(), "event" },
+    };
+    const EventField emitters[] = {
+        { quest::DialogueNodeForm::staticTypeInfo(), "event" },
+        { world::TriggerForm::staticTypeInfo(), "event" },
+    };
+    std::unordered_set<str> fired;
+    std::unordered_set<str> awaited;
+    for (u32 i = 1; i <= forms.count(); ++i) {
+        const data::FormHandle handle { i };
+        const data::Form* form = forms.get(handle);
+        const reflect::TypeInfo* type = forms.typeOf(handle);
+        if (!form || !type) {
+            continue;
+        }
+        for (const EventField& slot : emitters) {
+            if (str name = eventNameOf(*form, *type, slot); !name.empty()) {
+                fired.insert(std::move(name));
+            }
+        }
+        for (const EventField& slot : listeners) {
+            if (str name = eventNameOf(*form, *type, slot); !name.empty()) {
+                awaited.insert(std::move(name));
+            }
+        }
+    }
+    const auto check = [&](const data::Form& form,
+                           const reflect::TypeInfo& type,
+                           const EventField& slot,
+                           const std::unordered_set<str>& otherSide,
+                           const char* what) {
+        const str name = eventNameOf(form, type, slot);
+        if (name.empty() || gameplay::isKnownEvent(name) ||
+            otherSide.contains(name)) {
+            return;
+        }
+        LOG_WARN("  event: {} ({}) field '{}' = '{}' is not a known C++ "
+                 "event nor {} by any record",
+                 form.id.toString(), type.name, slot.field, name, what);
+    };
+    for (u32 i = 1; i <= forms.count(); ++i) {
+        const data::FormHandle handle { i };
+        const data::Form* form = forms.get(handle);
+        const reflect::TypeInfo* type = forms.typeOf(handle);
+        if (!form || !type) {
+            continue;
+        }
+        for (const EventField& slot : listeners) {
+            check(*form, *type, slot, fired, "fired");
+        }
+        for (const EventField& slot : emitters) {
+            check(*form, *type, slot, awaited, "listened to");
+        }
+    }
+}
+
 // Mod lint: the reusable data::validatePlugins
 // pass behind a CLI a mod CI can gate on.
 int validate(int argc, char** argv, const data::FormTypeRegistry& types) {
@@ -292,6 +393,23 @@ int validate(int argc, char** argv, const data::FormTypeRegistry& types) {
         LOG_ERROR("  dangling ref: {} ({}) field '{}' -> {}",
                   ref.form.toString(), ref.typeName, ref.fieldName,
                   ref.target.toString());
+    }
+    for (const data::VocabularyError& bad : report.vocabularyErrors) {
+        LOG_ERROR("  vocabulary: {} ({}) field '{}' = '{}' is not allowed",
+                  bad.form.toString(), bad.typeName, bad.fieldName,
+                  bad.value);
+    }
+    for (const data::DeprecatedWrite& old : report.deprecatedWrites) {
+        LOG_WARN("  deprecated: {} ({}) writes '{}'", old.form.toString(),
+                 old.typeName, old.fieldName);
+    }
+    // The event lint needs the resolved forms, which the validation report
+    // does not carry: re-run the same deterministic resolution (cheap for
+    // a lint; its own findings are the ones already printed above).
+    {
+        data::FormDatabase forms;
+        data::resolve(loadOrder, types, forms);
+        reportUnknownEvents(forms);
     }
     // Conflicts are §5 layering facts, not errors — the synthesis tool
     // (§5.1) arbitrates them; here they are surfaced for information.
@@ -415,7 +533,7 @@ int main(int argc, char** argv) {
     if (command == "landscape-report" && (argc == 3 || argc == 5)) {
         return cooker::landscapeReport(argv, argc);
     }
-    if (command == "bake-map" && argc >= 5 && argc <= 9) {
+    if (command == "bake-map" && argc >= 5) { // bakeMapCmd parses the flags
         return cooker::bakeMapCmd(argv, argc);
     }
     return usage();

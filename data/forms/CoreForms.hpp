@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "data/forms/Vocabularies.hpp"
 
 // The core item/actor form types (weapons, armor, consumables, misc
 // items, actors). New kinds of behavior come from effects/scripts, not
@@ -10,11 +11,29 @@ namespace data {
 
 class FormTypeRegistry;
 
-struct WeaponForm : Form {
+// What every carryable shares: unit weight (encumbrance), trade value
+// (barter) and the follower base-kit lock — an `unremovable` item cannot be
+// transferred out of its owner's inventory (docs/FOLLOWERS.md §5). Not a
+// record type of its own: the four item types derive from it so a lookup
+// by ItemForm (FormDatabase::find checks isA) answers for all of them.
+// Each derived type's constructor sets its own default weight.
+struct ItemForm : Form {
+    f32 weight { 0.1f };
+    i32 goldValue { 0 };
+    bool unremovable { false };
+
+    REFLECT_BEGIN(ItemForm, Form)
+        REFLECT_FIELD(weight)
+        REFLECT_FIELD(goldValue)
+        REFLECT_FIELD(unremovable)
+    REFLECT_END()
+};
+
+struct WeaponForm : ItemForm {
+    WeaponForm() { weight = 1.0f; }
+
     str displayName;
     f32 damage { 10.0f };
-    f32 weight { 1.0f };
-    i32 goldValue { 0 };
     bool twoHanded { false };
     core::Guid sprite; // asset reference, resolved through the asset DB
 
@@ -54,18 +73,14 @@ struct WeaponForm : Form {
     // AI pause between attacks, seconds.
     // 0 = the C++ fallback (2.2 ranged / 1.6 melee) for unmodded weapons.
     f32 attackCooldown { 0.0f };
-    // A follower's BASE-KIT
-    // item cannot be transferred out of his inventory (docs/FOLLOWERS.md
-    // §5); `upgradesTo` names the next tier the forge dialogue swaps it
-    // for (§2.2: Forms never mutate — an upgrade IS a different Form).
-    bool unremovable { false };
+    // `upgradesTo` names the next tier the forge dialogue swaps a
+    // follower's base-kit item for (§2.2: Forms never mutate — an upgrade
+    // IS a different Form).
     core::Guid upgradesTo;
 
-    REFLECT_BEGIN(WeaponForm, Form)
+    REFLECT_BEGIN(WeaponForm, ItemForm)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(damage)
-        REFLECT_FIELD(weight)
-        REFLECT_FIELD(goldValue)
         REFLECT_FIELD(twoHanded)
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(slashAttack)
@@ -76,7 +91,7 @@ struct WeaponForm : Form {
         REFLECT_FIELD(scalingAttribute)
         REFLECT_FIELD(scalingK)
         REFLECT_FIELD(postureDamage)
-        REFLECT_FIELD(buildupType)
+        REFLECT_FIELD_ENUM(buildupType, vocab::kStatusTypes)
         REFLECT_FIELD(buildupAmount)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
@@ -89,7 +104,6 @@ struct WeaponForm : Form {
         REFLECT_FIELD(projectileSpeed)
         REFLECT_FIELD(ammo)
         REFLECT_FIELD(attackCooldown)
-        REFLECT_FIELD(unremovable)
         REFLECT_FIELD(upgradesTo)
     REFLECT_END()
 };
@@ -98,7 +112,9 @@ struct WeaponForm : Form {
 // it contributes its mitigation % to the derived stats (via StatModifiers) and
 // its weight to encumbrance (later). Exposure fields back the temperature loop
 // (later). A new C++ Form type (§2.7), extended by data.
-struct ArmorForm : Form {
+struct ArmorForm : ItemForm {
+    ArmorForm() { weight = 2.0f; }
+
     str displayName;
     str slot { "torso" };
     f32 armorSlash { 0.0f };
@@ -108,7 +124,6 @@ struct ArmorForm : Form {
     f32 resistLightning { 0.0f };
     f32 coldExposure { 0.0f }; // exposure reduction — temperature loop (later)
     f32 heatExposure { 0.0f };
-    f32 weight { 2.0f };
     core::Guid sprite;
     // The remaining elemental resistances (docs/STATS.md §3). resistCold
     // completes the core trio; sonic/chemical/psychic/holy/dark/ether
@@ -129,14 +144,10 @@ struct ArmorForm : Form {
     f32 enduranceDisease { 0.0f };
     f32 enduranceCurse { 0.0f };
     f32 enduranceDeath { 0.0f };
-    // Trade value (barter).
-    i32 goldValue { 0 };
-    // Follower base-kit lock — see WeaponForm.
-    bool unremovable { false };
 
-    REFLECT_BEGIN(ArmorForm, Form)
+    REFLECT_BEGIN(ArmorForm, ItemForm)
         REFLECT_FIELD(displayName)
-        REFLECT_FIELD(slot)
+        REFLECT_FIELD_ENUM(slot, vocab::kArmorSlots)
         REFLECT_FIELD(armorSlash)
         REFLECT_FIELD(armorBlunt)
         REFLECT_FIELD(armorPierce)
@@ -144,7 +155,6 @@ struct ArmorForm : Form {
         REFLECT_FIELD(resistLightning)
         REFLECT_FIELD(coldExposure)
         REFLECT_FIELD(heatExposure)
-        REFLECT_FIELD(weight)
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(resistCold)
         REFLECT_FIELD(resistSonic)
@@ -159,8 +169,6 @@ struct ArmorForm : Form {
         REFLECT_FIELD(enduranceDisease)
         REFLECT_FIELD(enduranceCurse)
         REFLECT_FIELD(enduranceDeath)
-        REFLECT_FIELD(goldValue)
-        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 
@@ -168,56 +176,41 @@ struct ArmorForm : Form {
 // guid) when used; the drug/treatment semantics (harmony break, aftershock,
 // injury cure) are wired by the status mechanics that consume it
 // (docs/STATS.md).
-struct ConsumableForm : Form {
+struct ConsumableForm : ItemForm {
     str displayName;
     str category { "food" }; // food | drug | treatment
     core::Guid effect;       // the GameplayEffect applied on use
-    f32 weight { 0.1f };
     // 3D world visual.
     core::Guid model;
     core::Guid material;
     // Survival restoration on use (needs are
-    // component fields, not attributes — the sleep()/rest precedent) and
-    // trade value for the barter screen.
+    // component fields, not attributes — the sleep()/rest precedent).
     f32 restoreHunger { 0.0f };
     f32 restoreThirst { 0.0f };
-    i32 goldValue { 0 };
-    // Follower base-kit lock — see WeaponForm.
-    bool unremovable { false };
 
-    REFLECT_BEGIN(ConsumableForm, Form)
+    REFLECT_BEGIN(ConsumableForm, ItemForm)
         REFLECT_FIELD(displayName)
-        REFLECT_FIELD(category)
+        REFLECT_FIELD_ENUM(category, vocab::kConsumableCategories)
         REFLECT_FIELD(effect)
-        REFLECT_FIELD(weight)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
         REFLECT_FIELD(restoreHunger)
         REFLECT_FIELD(restoreThirst)
-        REFLECT_FIELD(goldValue)
-        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 
 // A plain tradable/carryable item with no behavior — Skyrim's MISC
 // record: gold coins, trinkets, crafting junk. New kinds of behavior
 // come from effects/scripts, not new component types (§2.7).
-struct MiscItemForm : Form {
+struct MiscItemForm : ItemForm {
     str displayName;
-    f32 weight { 0.1f };
-    i32 goldValue { 0 };
     core::Guid model;
     core::Guid material;
-    // Follower base-kit lock — see WeaponForm.
-    bool unremovable { false };
 
-    REFLECT_BEGIN(MiscItemForm, Form)
+    REFLECT_BEGIN(MiscItemForm, ItemForm)
         REFLECT_FIELD(displayName)
-        REFLECT_FIELD(weight)
-        REFLECT_FIELD(goldValue)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
-        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 

@@ -28,7 +28,39 @@ enum class EdgeKind : u8 {
     Locked,    // requires the key holding the matching lockId
     Hidden,    // secret passage (findable, so traversable for solvability)
     Dangerous, // hazard arc: steep drop, unstable gallery, ambush
+    Count,
 };
+
+// Everything the later stages read "per edge kind", one row per EdgeKind in
+// enum order (pinned by static_assert). Adding a kind = one enum value + one
+// row; the `kind == …` tests this replaced across the stages cannot come
+// back. The lock topology itself (isSolvable) is not a trait: Locked IS the
+// lock.
+struct EdgeKindTraits {
+    bool shareable;       // corridor may share grid cells (SpaceGraph routing)
+    f32 radiusScale;      // tunnel radius multiplier (DensityField)
+    bool lit;             // torch anchors along the corridor (DungeonBake)
+    bool spawnsEnemy;     // an enemy at the corridor's middle (populate)
+    bool barred;          // a barrier + lever pair on the corridor (populate)
+    const char* dotStyle; // Graphviz attributes, leading space (toDot)
+};
+
+inline constexpr EdgeKindTraits kEdgeKinds[] = {
+    // Passage
+    { true, 1.0f, true, false, false, "" },
+    // Locked (toDot appends the lock label)
+    { false, 1.0f, true, false, true, " color=red" },
+    // Hidden
+    { false, 0.7f, false, false, false, " style=dashed" },
+    // Dangerous
+    { true, 1.0f, true, true, false, " color=orange" },
+};
+static_assert(sizeof(kEdgeKinds) / sizeof(kEdgeKinds[0]) ==
+              static_cast<size_t>(EdgeKind::Count));
+
+inline constexpr const EdgeKindTraits& edgeTraits(EdgeKind kind) {
+    return kEdgeKinds[static_cast<size_t>(kind)];
+}
 
 // Cycle vocabulary (the ~12 Unexplored patterns); v1 builds the subset mines
 // need. The enum keeps names ahead of implementation so params/data can quote

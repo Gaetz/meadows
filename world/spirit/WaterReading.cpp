@@ -1,5 +1,7 @@
 #include "world/spirit/WaterReading.hpp"
 
+#include "engine/core/Math.hpp"
+
 #include <cmath>
 #include <deque>
 
@@ -289,7 +291,7 @@ const char* compassCode(const Vec2& dir) {
     // above, in eighths.
     const f32 angle = std::atan2(-dir.y, dir.x); // -pi..pi, 0 = east
     const i32 eighth =
-        (static_cast<i32>(std::lround(angle / (3.1415927f / 4.0f))) + 8) % 8;
+        (static_cast<i32>(std::lround(angle / (core::kPi / 4.0f))) + 8) % 8;
     static const char* const codes[8] = { "E",  "NE", "N", "NW",
                                           "W",  "SW", "S", "SE" };
     return codes[eighth];

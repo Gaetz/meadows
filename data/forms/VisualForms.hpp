@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "data/forms/Vocabularies.hpp"
 
 // Visual/presentation Forms. Pure data — the engine
 // runtimes consume flat param structs; the world/runtime layer maps these
@@ -106,7 +107,7 @@ struct LightForm : Form {
     f32 radius { 8.0f };     // meters (falloff reach)
     f32 spotAngle { 45.0f }; // degrees, spot only
     f32 flicker { 0.0f };    // 0 = steady; else amplitude of flame flicker
-    bool castsShadow { false }; // budget: few key lights per interior
+    bool castsShadow { false }; // deprecated alias of shadowMode = "key"
     // `sunLinked` re-derives the direction/color from the (quantized)
     // sun every frame — window lights follow the time of day.
     bool sunLinked { false };
@@ -123,15 +124,15 @@ struct LightForm : Form {
     f32 windowHalfHeight { 0.0f };
 
     REFLECT_BEGIN(LightForm, Form)
-        REFLECT_FIELD(kind)
+        REFLECT_FIELD_ENUM(kind, vocab::kLightKinds)
         REFLECT_FIELD(color)
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(radius)
         REFLECT_FIELD(spotAngle)
         REFLECT_FIELD(flicker)
-        REFLECT_FIELD(castsShadow)
+        REFLECT_FIELD_FLAGS(castsShadow, reflect::Deprecated)
         REFLECT_FIELD(sunLinked)
-        REFLECT_FIELD(shadowMode)
+        REFLECT_FIELD_ENUM(shadowMode, vocab::kShadowModes)
         REFLECT_FIELD(windowHalfWidth)
         REFLECT_FIELD(windowHalfHeight)
     REFLECT_END()
@@ -192,7 +193,7 @@ struct ParticleForm : Form {
     f32 windDrag { 0.0f };   // 0 = the wind ignores it; 1 = carried within ~1 s
 
     REFLECT_BEGIN(ParticleForm, Form)
-        REFLECT_FIELD(shape)
+        REFLECT_FIELD_ENUM(shape, vocab::kEmitterShapes)
         REFLECT_FIELD(shapeRadius)
         REFLECT_FIELD(rate)
         REFLECT_FIELD(burst)
@@ -211,7 +212,7 @@ struct ParticleForm : Form {
         REFLECT_FIELD(flipbookFps)
         REFLECT_FIELD(flipbookAspect)
         REFLECT_FIELD(windDrag)
-        REFLECT_FIELD(blend)
+        REFLECT_FIELD_ENUM(blend, vocab::kParticleBlends)
         REFLECT_FIELD(duration)
     REFLECT_END()
 };

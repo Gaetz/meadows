@@ -10,6 +10,13 @@ class Window;
 
 namespace rhi {
 
+// Backend-agnostic rules every createTexture/createBindGroup enforces
+// before touching its API (the backends add only their own limits).
+// Logs the first violation and returns false.
+bool validateTextureDesc(const TextureDesc& desc, bool hasPixels,
+                         const DeviceCaps& caps);
+bool validateBindGroupDesc(const BindGroupDesc& desc);
+
 // Owns the GPU: context/swapchain, resources, frame submission. One per
 // application. Everything that talks to the graphics API goes through here
 // or through the CommandBuffer it hands out (§2.1).
@@ -110,14 +117,21 @@ public:
     // insertTimestamp records the GPU clock when the stream REACHES this
     // point; timestampReady polls WITHOUT blocking and, once available,
     // writes the time (nanoseconds) and releases the handle (single-use,
-    // like fences). destroyTimestamp abandons a pending one (teardown).
-    // Gate on caps().timerQueries.
+    // like fences). An unknown handle, or one whose result was lost (its
+    // query region recycled before it was read), returns false and is dead:
+    // callers abandon it rather than poll it again. destroyTimestamp
+    // abandons a pending one (teardown). Gate on caps().timerQueries.
     virtual TimestampHandle insertTimestamp() = 0;
     virtual bool timestampReady(TimestampHandle handle, u64& nanos) = 0;
     virtual void destroyTimestamp(TimestampHandle handle) = 0;
 
     virtual BindGroupHandle createBindGroup(const BindGroupDesc& desc) = 0;
     virtual void destroyBindGroup(BindGroupHandle handle) = 0;
+
+    // Validation-layer messages (errors + warnings) counted since creation;
+    // stays 0 when the backend runs without a validation layer. Lets a
+    // harness judge a recorded sequence by "no new message".
+    virtual u32 validationMessageCount() const { return 0; }
 };
 
 } // namespace rhi

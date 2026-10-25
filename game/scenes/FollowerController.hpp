@@ -6,7 +6,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"  // the anti-repeat clock map keys
 #include "engine/ecs/World.hpp" // ecs::Entity, ecs::World
-#include "gameplay/actors/Followers.hpp" // FollowerStance, CommentClock
+#include "gameplay/actors/FollowerParty.hpp" // FollowerStance, CommentClock, PartyCounts
 
 namespace core {
 class Rng;

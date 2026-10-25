@@ -4,7 +4,8 @@
 
 namespace render {
 
-// The terrain splat array: layer indices match terrain.frag.
+// The terrain splat array: layer indices match shaders/splat_layers.glsl
+// (the GLSL mirror of this table — change both together).
 enum SplatLayer : u32 {
     SplatLayer_Grass = 0,
     SplatLayer_Rock = 1,
@@ -71,6 +72,37 @@ constexpr u32 sandVariantLayer(u32 variant) {
 constexpr u32 cliffVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Cliff : 16 + variant;
 }
+
+// The family an array layer belongs to: the inverse of the variant tables
+// above plus the deposit layers (scree is sand-family; frost, heath and
+// steppe grass-family). Per-family rules (the placeholder materials, the
+// grass bake's base colors) read THIS, never the ordinal ranges.
+constexpr SplatLayer splatFamilyOf(u32 layer) {
+    if (layer < SplatLayer_Count) {
+        return static_cast<SplatLayer>(layer);
+    }
+    if (layer <= 7 || layer == kFrostGrassLayer || layer == kHeathLayerA ||
+        layer == kHeathLayerB || layer == kSteppeGrassLayer) {
+        return SplatLayer_Grass;
+    }
+    if (layer <= 10 || layer == 19) {
+        return SplatLayer_Rock;
+    }
+    if (layer <= 12 || layer == 20) {
+        return SplatLayer_Snow;
+    }
+    if (layer <= kScreeLayer) {
+        return SplatLayer_Sand;
+    }
+    return SplatLayer_Cliff; // 17, 18
+}
+static_assert(splatFamilyOf(grassVariantLayer(3)) == SplatLayer_Grass);
+static_assert(splatFamilyOf(rockVariantLayer(4)) == SplatLayer_Rock);
+static_assert(splatFamilyOf(snowVariantLayer(3)) == SplatLayer_Snow);
+static_assert(splatFamilyOf(sandVariantLayer(3)) == SplatLayer_Sand);
+static_assert(splatFamilyOf(kScreeLayer) == SplatLayer_Sand);
+static_assert(splatFamilyOf(cliffVariantLayer(2)) == SplatLayer_Cliff);
+static_assert(splatFamilyOf(kSteppeGrassLayer) == SplatLayer_Grass);
 
 // The grass's ±1% luminance drift alone (mean 1) — the blade root
 // bake multiplies it over the ACTIVE material set's per-variant mean

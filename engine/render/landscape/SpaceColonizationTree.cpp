@@ -4,7 +4,9 @@
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/render/MeshBuilder.hpp"
+#include "engine/render/landscape/PropEncoding.hpp"
 
 // Runions et al. 2007, "Modeling Trees with a Space Colonization
 // Algorithm", with SDF-shaded billboard-card foliage (metaball SDF at
@@ -76,22 +78,14 @@ Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p,
 // One BILLBOARD leaf card (a single camera-facing card reads better
 // than a mechanical fixed 60° cross). The mesh stores a
 // DEGENERATE quad — four vertices at the cluster center — and encodes
-// the corner in uv: uv.x = -10 + cornerX·halfSize (the -10 bias is the
-// card FLAG, unambiguous against wood/lobe uv in [0,1]), uv.y =
-// cornerY·halfSize. tree.vert expands toward the camera at render time
-// (shadow_prop.vert toward the light), and the LIGHTING normal stays the
-// SDF gradient — the whole point of the technique.
-constexpr f32 kCardFlagBias = -10.0f;
-// The atlas SLOT rides the bias in -20 steps (-10, -30, -50, ... for
-// slots 0..7): tree.vert / shadow_prop.vert decode the slot and route
-// the card to its tile of the leaf-mask atlas.
-constexpr f32 kCardSlotStep = -20.0f;
-
+// the corner and the leaf-mask atlas slot in uv (PropEncoding.hpp).
+// tree.vert expands toward the camera at render time (shadow_prop.vert
+// toward the light), and the LIGHTING normal stays the SDF gradient —
+// the whole point of the technique.
 void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
                          const Vec3& normal, const Vec3& color,
                          i32 slot = 0) {
-    const f32 bias =
-        kCardFlagBias + kCardSlotStep * static_cast<f32>(glm::clamp(slot, 0, 7));
+    const f32 bias = propenc::cardSlotBias(slot);
     const u32 base = static_cast<u32>(mesh.vertices.size());
     for (const Vec2 corner : { Vec2 { -1.0f, -1.0f }, Vec2 { 1.0f, -1.0f },
                                Vec2 { 1.0f, 1.0f }, Vec2 { -1.0f, 1.0f } }) {
@@ -408,8 +402,8 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
     const f32 flareLobes =
         static_cast<f32>(glm::clamp(params.flareLobes, 1, 8));
     HashRng flareRng { hashU32(seed ^ 0xf1a2e001u) };
-    const f32 flarePhase1 = flareRng.next() * 6.2831853f;
-    const f32 flarePhase2 = flareRng.next() * 6.2831853f;
+    const f32 flarePhase1 = flareRng.next() * core::kTau;
+    const f32 flarePhase2 = flareRng.next() * core::kTau;
     const f32 flareBaseY = nodes[0].position.y;
     const auto flareMult = [&](const Vec3& center, const Vec3& dir) {
         const f32 h =
@@ -722,9 +716,9 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         MeshVertex& vertex = mesh.vertices[i];
         const f32 height01 =
             glm::clamp(vertex.position.y / totalHeight, 0.0f, 1.0f);
-        // uv.y < -0.5 flags BARK (triplanar in tree.frag); nothing else
-        // reads the lane for non-card wood.
-        vertex.uv = { height01 * 0.30f, -1.0f };
+        // The bark flag (triplanar in tree.frag); nothing else reads
+        // the lane for non-card wood.
+        vertex.uv = { height01 * 0.30f, propenc::kBarkUvY };
     }
     return mesh;
 }
@@ -769,7 +763,7 @@ vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
         // leaf stays inside the card (no straight clip at the border).
         const f32 maxRadius = std::max(0.0f, 0.5f - length * 0.55f);
         const f32 radius = std::sqrt(rng.next()) * maxRadius;
-        const f32 angle = rng.next() * 6.2831853f;
+        const f32 angle = rng.next() * core::kTau;
         const Vec2 center { 0.5f + std::cos(angle) * radius,
                             0.5f + std::sin(angle) * radius };
         // Leaves lean outward from the cluster center, with jitter — reads
@@ -799,7 +793,7 @@ vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
                 }
                 // Outline profile along the axis, per shape family.
                 const f32 t = lx / length;
-                const f32 arc = std::sin(t * 3.1415927f);
+                const f32 arc = std::sin(t * core::kPi);
                 f32 profile = std::pow(arc, 0.75f); // pointed ellipse
                 if (shape == 2) {
                     profile = std::pow(arc, 0.35f); // rounded, blunt

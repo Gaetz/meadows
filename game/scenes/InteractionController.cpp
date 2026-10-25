@@ -46,20 +46,24 @@ const data::ActorForm* followerActor(const InteractionContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
-// The furniture CATEGORY routes special furniture off
-// the rest/sleep path — "grave" (homage on [E], the dead follower's
-// inventory on [F]) and "mount" (v1: ride it).
-bool furnitureCategoryIs(const InteractionContext& ctx,
-                         const data::FormHandle& base,
-                         std::string_view category) {
+// The base form as furniture; null when the handle is not a FurnitureForm.
+const gameplay::FurnitureForm* furnitureOf(const InteractionContext& ctx,
+                                           const data::FormHandle& base) {
     const reflect::TypeInfo* type = ctx.forms.typeOf(base);
     if (!type ||
         !type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
-        return false;
+        return nullptr;
     }
-    const auto* furniture =
-        static_cast<const gameplay::FurnitureForm*>(ctx.forms.get(base));
-    return furniture && furniture->category == category;
+    return static_cast<const gameplay::FurnitureForm*>(ctx.forms.get(base));
+}
+
+// The interaction the base form offers (gameplay::furnitureInteraction);
+// Use for anything that is not a FurnitureForm.
+gameplay::FurnitureInteraction furnitureInteractionOf(
+    const InteractionContext& ctx, const data::FormHandle& base) {
+    const gameplay::FurnitureForm* furniture = furnitureOf(ctx, base);
+    return furniture ? gameplay::furnitureInteraction(*furniture)
+                     : gameplay::FurnitureInteraction::Use;
 }
 
 } // namespace
@@ -127,21 +131,29 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                                       : PromptKind::Actor,
                              reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
-                    // A grave prompts homage, a mount prompts
-                    // the ride — neither ever the rest path.
-                    consider(e, transform.position,
-                             furnitureCategoryIs(ctx, refId.base, "grave")
-                                 ? PromptKind::Grave
-                             : furnitureCategoryIs(ctx, refId.base,
-                                                   "mount")
-                                 ? PromptKind::Mount
-                             : furnitureCategoryIs(ctx, refId.base,
-                                                   "container")
-                                 ? PromptKind::Container
-                             : furnitureCategoryIs(ctx, refId.base,
-                                                   "lever")
-                                 ? PromptKind::Lever
-                                 : PromptKind::Furniture,
+                    // The furniture's interaction picks the prompt: a
+                    // grave prompts homage, a mount the ride, a container
+                    // the loot, a lever the pull — only Use takes the
+                    // rest/screen path.
+                    PromptKind kind = PromptKind::Furniture;
+                    switch (furnitureInteractionOf(ctx, refId.base)) {
+                    case gameplay::FurnitureInteraction::Grave:
+                        kind = PromptKind::Grave;
+                        break;
+                    case gameplay::FurnitureInteraction::Mount:
+                        kind = PromptKind::Mount;
+                        break;
+                    case gameplay::FurnitureInteraction::Container:
+                        kind = PromptKind::Container;
+                        break;
+                    case gameplay::FurnitureInteraction::Lever:
+                        kind = PromptKind::Lever;
+                        break;
+                    case gameplay::FurnitureInteraction::Use:
+                    case gameplay::FurnitureInteraction::Count:
+                        break;
+                    }
+                    consider(e, transform.position, kind,
                              reach * (2.4f / 3.0f));
                 }
             });
@@ -298,7 +310,8 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 }
                 break;
             case PromptKind::Furniture: {
-                // Beds sleep 8h, seats rest 1h — both through
+                // The furniture's rest hours (beds sleep, seats nap —
+                // gameplay::furnitureRestHours) run through
                 // gameplay::sleep() at the black of the fade.
                 // A WORKSTATION opens its UI screen instead
                 // (FurnitureForm.screen — crafting tables are furniture +
@@ -308,14 +321,9 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
                 str screen;
-                if (const reflect::TypeInfo* type =
-                        ctx.forms.typeOf(ref.base);
-                    type &&
-                    type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
-                    const auto* furniture =
-                        static_cast<const gameplay::FurnitureForm*>(
-                            ctx.forms.get(ref.base));
-                    if (furniture->category == "bed") { hours = 8.0f; }
+                if (const gameplay::FurnitureForm* furniture =
+                        furnitureOf(ctx, ref.base)) {
+                    hours = gameplay::furnitureRestHours(*furniture);
                     screen = furniture->screen;
                 }
                 if (screen.empty() || !ctx.tryShowScreen(screen)) {

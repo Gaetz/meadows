@@ -3,7 +3,9 @@
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Math.hpp"
 #include "engine/render/MeshBuilder.hpp"
+#include "engine/render/landscape/PropEncoding.hpp"
 
 namespace render {
 
@@ -67,7 +69,7 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
                                       static_cast<f32>(branchCount);
         const Vec3 branchBase = up * (trunkHeight * along);
         const f32 azimuth = (static_cast<f32>(i) + rng.next() * 0.6f) /
-                                static_cast<f32>(branchCount) * 6.2831853f;
+                                static_cast<f32>(branchCount) * core::kTau;
         const f32 tilt = 0.55f + rng.next() * 0.55f; // rad above horizontal
         const Vec3 dir = glm::normalize(
             Vec3 { std::cos(azimuth) * std::cos(tilt), std::sin(tilt),
@@ -136,8 +138,8 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
         const bool isTrunk = i < trunkVertexCount;
         const f32 sway = isTrunk ? height01 * 0.25f
                                  : 0.5f + height01 * 0.5f;
-        // Trunk uv.y < -0.5 = bark flag (triplanar in tree.frag).
-        vertex.uv = { sway, isTrunk ? -1.0f : height01 };
+        // Trunk: the bark flag (triplanar in tree.frag).
+        vertex.uv = { sway, isTrunk ? propenc::kBarkUvY : height01 };
         if (!isTrunk) {
             vertex.color *= 1.0f + 0.25f * height01;
         }

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iterator>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -25,6 +26,7 @@
 #include "engine/rhi/Device.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "engine/render/FrameComposer.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -78,27 +80,237 @@ bool instanceVisible(const Frustum* frustum, const Mat4& transform,
 // transform, no scale): torso anchor + reach for limbs and weapon.
 constexpr f32 kSkinnedCasterRadius = 3.0f;
 
-// std140 LightsUbo mirror (binding 5 — mirrors locallights.glsl).
-struct LightsUniforms {
-    Vec4 count { 0.0f };
-    Vec4 positionRadius[WorldRenderer::kMaxLights] {};
-    Vec4 colorIntensity[WorldRenderer::kMaxLights] {};
-    // xyz = spot direction, w = cos(half angle); w = -2 marks a point
-    // light, w = -3 a WINDOW projector (xyz = the window's into-room
-    // normal — docs/RENDERING.md §3).
-    Vec4 directionAngle[WorldRenderer::kMaxLights] {};
-    // Window projector half extents (xy); zw free. APPEND-only UBO.
-    Vec4 windowInfo[WorldRenderer::kMaxLights] {};
+// The two far rings (docs/RENDERING.md §3.6, §6.0c), indexed by
+// WorldRenderer::kInnerRing / kHorizonRing. The inner ring is
+// FarTerrain's default (18 km, tree impostors); the horizon ring is the
+// same machinery at world scale — no impostors (the canopy raise is the
+// trees out there), sampled off the L3 pyramid level, ridden 16 m under
+// the inner ring so the two never z-fight. The sea quad spans the
+// farthest enabled ring: its half span derives from these.
+constexpr FarTerrain::Config kFarRingConfigs[] = {
+    {},
+    { .span = 57600.0f,
+      .gridN = 256,
+      .treeFar = 0.0f,
+      .extraSink = 16.0f,
+      .minTexel = 256.0f,
+      .probeName = "farHorizon" },
+};
+static_assert(std::size(kFarRingConfigs) == 2);
+
+// What both far rings bake from, gathered once per frame: the real-tree
+// silhouette is a measurement over the whole scatter (not free), the
+// layer albedos the painted ground means, the pyramid the half-cell
+// grid samples.
+struct FarRingInputs {
+    VegetationSystem::TreeSilhouette trees {};
+    array<Vec3, 5> layerAlbedos {};
+    sptr<const HeightField::Snapshot> field;
 };
 
 } // namespace
 
-// H3 (docs/RENDERING.md): 0 below the worldspace's buried threshold,
-// 1 above, 4 m fade band — sun-linked lights and the daylight coupling
-// fade out per POSITION. Threshold -1e9 = the rule is off (always 1).
-static f32 aboveBuried(f32 y, f32 threshold) {
-    return glm::smoothstep(threshold - 2.0f, threshold + 2.0f, y);
+WorldRenderer::Mounted WorldRenderer::resolveMounted(
+    const RendererConfig& cfg, const rhi::DeviceCaps& caps) {
+    Mounted m;
+    m.terrain = cfg.terrain;
+    m.mist = cfg.terrain && cfg.postFx;
+    m.occlusion = cfg.occlusion;
+    m.gi = cfg.gi;
+    m.grass = cfg.grass;
+    m.vegetation = cfg.vegetation;
+    m.sky = cfg.sky;
+    m.shadows = caps.offscreenTargets && caps.textureArrays;
+    m.fx = caps.copyTexture;
+    m.water = cfg.water && caps.copyTexture;
+    m.postFx = cfg.postFx && caps.offscreenTargets && caps.hdrFormats &&
+               caps.copyTexture;
+    m.froxels = cfg.froxels;
+    m.gpuOcclusion = cfg.occlusion && caps.computeShaders &&
+                     caps.copyTexture && caps.offscreenTargets;
+    m.clusters = caps.computeShaders;
+    m.offscreen = caps.offscreenTargets;
+    m.sceneCopy = caps.copyTexture;
+    return m;
 }
+
+// The mounted subsystems in creation order; create() and
+// refresh/regenerate walk it forwards, destroy() backwards. The order
+// carries the dependencies:
+//  - the cluster SSBO is created BEFORE the frame bind group (it rides
+//    binding 4 of that group) by create() itself; the table entry only
+//    builds its pipeline, last, once every shader is loaded;
+//  - `terrain` before `vegetation` (the scatter seeds from
+//    terrain.params.seed) and before the far rings and the mist map
+//    (they bake the same TerrainParams and the shared height pyramid);
+//  - `ssdm` before `postFx`: both load fullscreen programs into the
+//    shared library, in this order.
+// Everything the always-on core owns (frame UBOs, mesh/skinned/rain/key-
+// shadow resources, the tonemap) stays hand-written in create().
+const WorldRenderer::SystemEntry WorldRenderer::kSystems[] = {
+    { "terrain", &Mounted::terrain,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.terrain.create(d, *r.shaders, j,
+                           { .albedo = r.cfg.terrainAlbedoPath,
+                             .normal = r.cfg.terrainNormalPath,
+                             .orm = r.cfg.terrainOrmPath,
+                             .height = r.cfg.terrainHeightPath });
+          r.heightField.create(j);
+          r.terrainLightMap.create(d, j);
+          r.terrainShadeMap.create(d, j);
+          r.fireScorch.create(d);
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.terrainLightMap.destroy(d);
+          r.terrainShadeMap.destroy(d);
+          r.fireScorch.destroy(d);
+          r.terrain.destroy(d);
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.terrain.refreshPipeline(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.terrain.regenerate(d); } },
+    { "farRings", &Mounted::terrain,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          for (u32 ring = 0; ring < WorldRenderer::kFarRingCount; ++ring) {
+              r.farRings[ring].create(d, *r.shaders, j,
+                                      kFarRingConfigs[ring]);
+          }
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          for (FarTerrain& ring : r.farRings) {
+              ring.destroy(d);
+          }
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          for (FarTerrain& ring : r.farRings) {
+              ring.refreshPipeline(d, *r.shaders);
+          }
+      },
+      nullptr },
+    { "mist", &Mounted::mist,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.mistMap.create(d, j);
+          r.noiseVolume.create(d, *r.shaders); // no-op without caps
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.mistMap.destroy(d);
+          r.noiseVolume.destroy(d);
+      },
+      nullptr, nullptr },
+    { "occlusion", &Mounted::occlusion,
+      [](WorldRenderer& r, rhi::Device&, core::JobSystem& j) {
+          r.occlusion.create(j);
+      },
+      nullptr, nullptr, nullptr },
+    { "gi", &Mounted::gi,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.radianceCascades.create(d, *r.shaders, j);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.radianceCascades.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.radianceCascades.refreshPipelines(d, *r.shaders);
+      },
+      nullptr },
+    { "grass", &Mounted::grass,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.grass.create(d, *r.shaders, j);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.grass.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.grass.refreshPipeline(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.grass.regenerate(d); } },
+    // Rock variants: the scene overrides every rock slot with its
+    // scanned meshes (LandscapeScene); the procedural placeholder only
+    // shows in tool scenes that scatter no rocks.
+    { "vegetation", &Mounted::vegetation,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.vegetation.create(d, *r.shaders, j, r.terrain.params.seed);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.vegetation.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.vegetation.refreshPipeline(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.vegetation.regenerate(d, r.terrain.params.seed);
+      } },
+    { "sky", &Mounted::sky,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.sky.create(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.sky.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.sky.refreshPipeline(d, *r.shaders);
+      },
+      nullptr },
+    { "shadows", &Mounted::shadows,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.shadows.create(d);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.shadows.destroy(d); },
+      nullptr, nullptr },
+    { "fx", &Mounted::fx,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.fx.create(d, *r.shaders); // the particle pass
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.fx.destroy(d); },
+      nullptr, nullptr },
+    { "water", &Mounted::water,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
+          r.water.create(d, *r.shaders, j);
+          r.reflectionUbo = { d, d.createBuffer(
+              { .usage = rhi::BufferUsage::Uniform,
+                .size = sizeof(render::FrameUniforms),
+                .dynamic = true },
+              nullptr) };
+          r.reflectionBindGroup = { d, d.createBindGroup(
+              { .entries = { { .binding = 0,
+                               .buffer = r.reflectionUbo } } }) };
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.water.destroy(d);
+          r.reflectionBindGroup.reset();
+          r.reflectionUbo.reset();
+      },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.water.refreshPipeline(d, *r.shaders);
+      },
+      nullptr },
+    { "ssdm", &Mounted::offscreen,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.ssdm.create(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.ssdm.destroy(d); },
+      nullptr, nullptr },
+    { "postFx", &Mounted::postFx,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.postFx.create(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.postFx.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.postFx.refreshPipelines(d, *r.shaders);
+      },
+      nullptr },
+    { "gpuOcclusion", &Mounted::gpuOcclusion,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.gpuOcclusion.create(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.gpuOcclusion.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.gpuOcclusion.refreshPipelines(d, *r.shaders);
+      },
+      nullptr },
+    { "clusters", &Mounted::clusters,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.lightClusters.createPipeline(d, *r.shaders);
+      },
+      [](WorldRenderer& r, rhi::Device& d) { r.lightClusters.destroy(d); },
+      [](WorldRenderer& r, rhi::Device& d) {
+          r.lightClusters.refreshPipeline(d, *r.shaders);
+      },
+      nullptr },
+};
 
 void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                                const RendererConfig& config) {
@@ -107,9 +319,10 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
     if (!cfg.postFx) {
         cfg.froxels = false; // froxel fog lives in the postFx chain
     }
-    if (!cfg.froxels) {
-        postFx.froxelFog = false;
-    }
+    mounted = resolveMounted(cfg, device.caps());
+    // The fog knob follows the mount on every create (PostFx::destroy keeps
+    // the other tuning knobs across a re-create; this one is a mount fact).
+    postFx.froxelFog = mounted.froxels;
     frameUbo = { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
@@ -126,7 +339,7 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
         nullptr) };
     // The cluster SSBO (docs/RENDERING.md §5) rides binding 4 of the frame
     // group so every pass sees the lists — created BEFORE the group.
-    if (device.caps().computeShaders) {
+    if (mounted.clusters) {
         lightClusters.createBuffer(device);
     }
     rhi::BindGroupDesc frameGroupDesc {
@@ -146,76 +359,36 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
     // library would save recompiles but couple instance lifetimes; the
     // persisted pipeline cache already amortizes the compile cost.
     shaders = std::make_unique<render::ShaderLibrary>(device);
-    if (cfg.terrain) {
-        terrain.create(device, *shaders, jobs,
-                       { .albedo = cfg.terrainAlbedoPath,
-                         .normal = cfg.terrainNormalPath,
-                         .orm = cfg.terrainOrmPath,
-                         .height = cfg.terrainHeightPath });
-        heightField.create(jobs);
-        terrainLightMap.create(device, jobs);
-        terrainShadeMap.create(device, jobs);
-        fireScorch.create(device);
-        farTerrain.create(device, *shaders, jobs, {});
-        // The HORIZON ring (chantier HORIZON, docs/RENDERING.md
-        // §6.0c): same machinery at world scale — no impostors (the
-        // canopy raise is the trees out there), sampled off the L3
-        // pyramid level, ridden 16 m under the inner ring.
-        farHorizon.create(device, *shaders, jobs,
-                          { .span = 57600.0f,
-                            .gridN = 256,
-                            .treeFar = 0.0f,
-                            .extraSink = 16.0f,
-                            .minTexel = 256.0f,
-                            .probeName = "farHorizon" });
-        if (cfg.postFx) {
-            mistMap.create(device, jobs);
-            noiseVolume.create(device, *shaders); // no-op without caps
-        }
-    }
-    if (cfg.occlusion) {
-        occlusion.create(jobs);
-    }
-    if (cfg.gi) {
-        radianceCascades.create(device, *shaders, jobs);
-    }
-    if (cfg.grass) {
-        grass.create(device, *shaders, jobs);
-    }
-    if (cfg.vegetation) {
-        vegetation.create(device, *shaders, jobs,
-                          terrain.params.seed);
-    }
 
-    // (The mesh/texture residency caches stay SCENE-owned — the editor and
-    // streaming share them; the view hands them in per frame.)
+    // The always-on core: meshes + skinned NPCs + key shadows + the
+    // tonemap composite. (The mesh/texture residency caches stay
+    // SCENE-owned — the editor and streaming share them; the view hands
+    // them in per frame.)
     const u32 white = 0xFFFFFFFF;
     whiteTexture = { device, device.createTexture(
         { .width = 1, .height = 1, .format = rhi::TextureFormat::SRGBA8 },
         &white) };
     meshSampler = { device, device.createSampler({}) };
     shaders->load("mesh",
-                  { { "FrameUbo", 0 }, { "ModelUbo", 1 },
-                    { "LightsUbo", 5 } },
+                  { render::kFrameUbo, { "ModelUbo", 1 },
+                    render::kLightsUbo },
                   { { "uAlbedo", 0 } });
-    buildMeshPipeline(device);
     // The depth-only caster variants (sun cascades).
     shaders->load("shadow_mesh",
-                  { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
+                  { render::kShadowUbo, { "CasterModelUbo", 4 } });
     shaders->load("shadow_skinned",
-                  { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
-    buildCasterPipelines(device);
+                  { render::kShadowUbo, { "CasterModelUbo", 4 } });
     // Placed water surfaces.
     shaders->load("watervolume",
-                  { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
+                  { render::kFrameUbo, { "WaterVolumeUbo", 1 } });
     // (No volumetric cumulonimbus pass — cost over look. The cloud MAP
     // keeps the sky alive; stormFront still drives rain/wetness via
     // stormInfo.y.)
 
     // Rain — procedural streaks (no buffers) + the top-down
     // occlusion depth so roofs keep the drops out.
-    if (cfg.sky) {
-        shaders->load("rain", { { "FrameUbo", 0 } },
+    if (mounted.sky) {
+        shaders->load("rain", { render::kFrameUbo },
                       { { "uRainOcclusion", 9 } });
         rainOcclusionTex = { device, device.createTexture(
             { .width = 512,
@@ -271,40 +444,12 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                          .sampler = keyShadowSampler } } }) };
 
     shaders->load("skinned",
-                  { { "FrameUbo", 0 }, { "ModelUbo", 1 },
-                    { "LightsUbo", 5 } },
+                  { render::kFrameUbo, { "ModelUbo", 1 },
+                    render::kLightsUbo },
                   { { "uAlbedo", 0 } });
-    // Rock variants: the scene overrides every rock slot with its
-    // scanned meshes (LandscapeScene); the procedural placeholder only
-    // shows in tool scenes that scatter no rocks.
-    if (cfg.sky) {
-        sky.create(device, *shaders);
-    }
-    if (device.caps().offscreenTargets && device.caps().textureArrays) {
-        shadows.create(device);
-    }
-    if (device.caps().copyTexture) {
-        fx.create(device, *shaders); // the particle pass
-        // The depth copy's sampler — Hi-Z and postFx read it too, so it
-        // lives outside the water gate.
-        depthSampler = { device, device.createSampler(
-            { .minFilter = rhi::FilterMode::Nearest,
-              .magFilter = rhi::FilterMode::Nearest }) };
-    }
-    if (cfg.water && device.caps().copyTexture) {
-        water.create(device, *shaders, jobs);
-        reflectionUbo =
-            { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
-                                  .size = sizeof(render::FrameUniforms),
-                                  .dynamic = true },
-                                nullptr) };
-        reflectionBindGroup = { device, device.createBindGroup(
-            { .entries = { { .binding = 0, .buffer = reflectionUbo } } }) };
-    }
-
-    if (device.caps().offscreenTargets) {
+    if (mounted.offscreen) {
         blitSampler = { device, device.createSampler({}) }; // linear, clamp — identity
-        shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
+        shaders->load(kTonemapShader, { render::kFrameUbo },
                       { { "uSceneColor", 0 },
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
@@ -315,55 +460,31 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                         { "uSkyClouds", 7 },  // volumetric clouds
                         { "uSceneDepth", 8 },   // bilateral weights
                         { "uSsao", 9 } });
-        shaders->load("ssdm_flow", { { "FrameUbo", 0 } },
-                      { { "uSceneColor", 0 }, { "uSceneDepth", 1 } },
-                      "fullscreen");
-        shaders->load("ssdm_bounds0", { { "FrameUbo", 0 } },
-                      { { "uFlow", 0 } }, "fullscreen");
-        shaders->load("ssdm_bounds_down", { { "FrameUbo", 0 } },
-                      { { "uPrev", 0 } }, "fullscreen");
-        shaders->load("ssdm_resolve_half", { { "FrameUbo", 0 } },
-                      { { "uSceneColor", 0 },
-                        { "uSceneDepth", 1 },
-                        { "uFlow", 2 },
-                        { "uBounds0", 3 },
-                        { "uBounds1", 4 },
-                        { "uBounds2", 5 },
-                        { "uBounds3", 6 },
-                        { "uBounds4", 7 } },
-                      "fullscreen");
-        shaders->load("ssdm_upsample", { { "FrameUbo", 0 } },
-                      { { "uHalf", 0 }, { "uSceneColor", 1 } },
-                      "fullscreen");
-        shaders->load("ssdm_resolve", { { "FrameUbo", 0 } },
-                      { { "uSceneColor", 0 },
-                        { "uSceneDepth", 1 },
-                        { "uFlow", 2 },
-                        { "uBounds0", 3 },
-                        { "uBounds1", 4 },
-                        { "uBounds2", 5 },
-                        { "uBounds3", 6 },
-                        { "uBounds4", 7 } },
-                      "fullscreen");
-        rebuildBlitPipeline(device);
     }
-    if (cfg.postFx && device.caps().offscreenTargets &&
-        device.caps().hdrFormats && device.caps().copyTexture) {
-        postFx.create(device, *shaders);
+    if (mounted.sceneCopy) {
+        // The depth copy's sampler — Hi-Z, water and postFx read it, so
+        // it lives outside the water gate.
+        depthSampler = { device, device.createSampler(
+            { .minFilter = rhi::FilterMode::Nearest,
+              .magFilter = rhi::FilterMode::Nearest }) };
     }
-    if (cfg.occlusion && device.caps().computeShaders &&
-        device.caps().copyTexture && device.caps().offscreenTargets) {
-        gpuOcclusion.create(device, *shaders);
-    }
-    if (lightClusters.clusterBuffer().id != 0) {
-        lightClusters.createPipeline(device, *shaders);
+
+    // The mounted subsystems, in the table's dependency order.
+    for (const SystemEntry& system : kSystems) {
+        if (system.create && mounted.*(system.mounted)) {
+            system.create(*this, device, jobs);
+        }
     }
 }
 
 void WorldRenderer::destroy(rhi::Device& device) {
-    // Every handle is an rhi::Unique — clearing/resetting frees it
-    // through its device; there is no manual destroy mirror to keep in
-    // sync. Must run while the device is alive (wrapper contract).
+    // Every GPU handle here is an rhi::Unique (WatchedPipeline included),
+    // so reset() frees it through its device and nothing is destroyed by
+    // hand. The resets below are still required: they force the frees to
+    // happen NOW, while the device is alive (the Unique lifetime
+    // contract), not at the WorldRenderer destructor. Every Unique member
+    // must be reset here, in destroyOffscreenTarget() or by its system's
+    // destroy step.
     gpuProbe.shutdown(device); // abandon in-flight timestamps
     destroyOffscreenTarget(device);
     blitPipeline.reset();
@@ -375,6 +496,7 @@ void WorldRenderer::destroy(rhi::Device& device) {
     meshCasterPipeline.reset();
     skinnedCasterPipeline.reset();
     waterQuads.clear();
+    waterMeshSlots.clear();
     waterVolumePipeline.reset();
     rainPipeline.reset();
     rainReceiverGroup.reset();
@@ -393,30 +515,17 @@ void WorldRenderer::destroy(rhi::Device& device) {
     keyShadowTex.reset();
     skinnedDraws.clear();
     skinnedPipeline.reset();
-    skinnedShaderGeneration = 0;
     meshSampler.reset();
     whiteTexture.reset();
-    lightClusters.destroy(device);
-    gpuOcclusion.destroy(device);
-    terrainLightMap.destroy(device);
-    terrainShadeMap.destroy(device);
-    fireScorch.destroy(device);
-    farTerrain.destroy(device);
-    farHorizon.destroy(device);
-    mistMap.destroy(device);
-    noiseVolume.destroy(device);
-    radianceCascades.destroy(device);
-    postFx.destroy(device);
-    water.destroy(device);
-    fx.destroy(device);
-    reflectionBindGroup.reset();
-    reflectionUbo.reset();
+    // The subsystems in reverse creation order — unconditionally: a
+    // system never created frees nothing, and destroy() must not
+    // depend on `mounted` (destroy before create is legal).
+    for (size_t i = std::size(kSystems); i-- > 0;) {
+        if (kSystems[i].destroy) {
+            kSystems[i].destroy(*this, device);
+        }
+    }
     depthSampler.reset();
-    shadows.destroy(device);
-    sky.destroy(device);
-    vegetation.destroy(device);
-    grass.destroy(device);
-    terrain.destroy(device);
     shaders.reset(); // destroys the library's shader programs
     frameBindGroup.reset();
     lightsUbo.reset();
@@ -455,7 +564,7 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     offscreenFb = { device, device.createFramebuffer(
         { .colorAttachments = { { .texture = offscreenColor } },
           .depthAttachment = { .texture = offscreenDepth } }) };
-    if (device.caps().copyTexture) {
+    if (mounted.sceneCopy) {
         sceneColorCopy = { device, device.createTexture(
             { .width = width,
               .height = height,
@@ -470,7 +579,7 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
             nullptr) };
-        if (cfg.water) {
+        if (mounted.water) {
             // The reflection resolution is a knob (docs/RENDERING.md) —
             // 0.5 = half res, 0.25 = quarter res (blurrier mirror).
             const u32 reflectionWidth = glm::max(
@@ -504,8 +613,7 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         }
     }
 
-    if (cfg.postFx && device.caps().offscreenTargets &&
-        device.caps().hdrFormats && device.caps().copyTexture) {
+    if (mounted.postFx) {
         postFx.resize(device, width, height, offscreenColor, sceneColorCopy,
                       sceneDepthCopy);
     }
@@ -513,7 +621,7 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     // After postFx.resize: the water shader reprojects the sky-cloud
     // display buffer into the mirror, so the group must reference the
     // freshly (re)created texture.
-    if (cfg.water && reflectionColor.id() != 0) {
+    if (mounted.water && reflectionColor.id() != 0) {
         rhi::BindGroupDesc desc { .entries = {
             { .binding = 0,
               .texture = sceneColorCopy,
@@ -531,111 +639,10 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         }
         waterSceneBindGroup = { device, device.createBindGroup(desc) };
     }
-    // SSDM chain targets: flow + the halving bounds pyramid, at the
-    // mode's resolution (full / half of the scene target / a token 4x4
-    // when off — the memory is not free at Retina sizes).
-    const u32 chainW = tuning.ssdmMode == 2   ? width
-                       : tuning.ssdmMode == 1 ? glm::max(width / 2, 8u)
-                                         : 4u;
-    const u32 chainH = tuning.ssdmMode == 2   ? height
-                       : tuning.ssdmMode == 1 ? glm::max(height / 2, 8u)
-                                         : 4u;
-    ssdmFlowTex = { device, device.createTexture(
-        { .width = chainW,
-          .height = chainH,
-          .format = rhi::TextureFormat::RGBA16F,
-          .filter = rhi::FilterMode::Nearest,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    ssdmFlowFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = ssdmFlowTex.get() } } }) };
-    ssdmFlowGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = sceneColorCopy,
-                         .sampler = blitSampler },
-                       { .binding = 1,
-                         .texture = sceneDepthCopy,
-                         .sampler = blitSampler } } }) };
-    u32 levelW = chainW;
-    u32 levelH = chainH;
-    for (u32 i = 0; i < kSsdmLevels; ++i) {
-        ssdmBoundsTex[i] = { device, device.createTexture(
-            { .width = levelW,
-              .height = levelH,
-              .format = rhi::TextureFormat::RGBA16F,
-              .filter = rhi::FilterMode::Nearest,
-              .usage = rhi::TextureUsage_Sampled |
-                       rhi::TextureUsage_RenderAttachment },
-            nullptr) };
-        ssdmBoundsFb[i] = { device, device.createFramebuffer(
-            { .colorAttachments = { { .texture =
-                                          ssdmBoundsTex[i].get() } } }) };
-        ssdmBoundsGroup[i] = { device, device.createBindGroup(
-            { .entries = { { .binding = 0,
-                             .texture = i == 0 ? ssdmFlowTex.get()
-                                               : ssdmBoundsTex[i - 1]
-                                                     .get(),
-                             .sampler = blitSampler } } }) };
-        levelW = std::max(levelW / 2, 1u);
-        levelH = std::max(levelH / 2, 1u);
-    }
-    ssdmResolveGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = sceneColorCopy,
-                         .sampler = blitSampler },
-                       { .binding = 1,
-                         .texture = sceneDepthCopy,
-                         .sampler = blitSampler },
-                       { .binding = 2,
-                         .texture = ssdmFlowTex.get(),
-                         .sampler = blitSampler },
-                       { .binding = 3,
-                         .texture = ssdmBoundsTex[0].get(),
-                         .sampler = blitSampler },
-                       { .binding = 4,
-                         .texture = ssdmBoundsTex[1].get(),
-                         .sampler = blitSampler },
-                       { .binding = 5,
-                         .texture = ssdmBoundsTex[2].get(),
-                         .sampler = blitSampler },
-                       { .binding = 6,
-                         .texture = ssdmBoundsTex[3].get(),
-                         .sampler = blitSampler },
-                       { .binding = 7,
-                         .texture = ssdmBoundsTex[4].get(),
-                         .sampler = blitSampler } } }) };
-    ssdmHalfTex = { device, device.createTexture(
-        { .width = chainW,
-          .height = chainH,
-          .format = rhi::TextureFormat::RGBA16F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    ssdmHalfFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = ssdmHalfTex.get() } } }) };
-    ssdmUpsampleGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = ssdmHalfTex.get(),
-                         .sampler = blitSampler },
-                       { .binding = 1,
-                         .texture = sceneColorCopy,
-                         .sampler = blitSampler } } }) };
-    if (shaders) {
-        const auto pipe = [&](rhi::UniquePipeline& p, const char* name) {
-            p = { device,
-                  device.createPipeline(
-                      { .shader = shaders->get(name),
-                        .blend = rhi::BlendMode::Opaque }) };
-        };
-        pipe(ssdmFlowPipeline, "ssdm_flow");
-        pipe(ssdmBounds0Pipeline, "ssdm_bounds0");
-        pipe(ssdmDownPipeline, "ssdm_bounds_down");
-        pipe(ssdmResolvePipeline, "ssdm_resolve");
-        pipe(ssdmResolveHalfPipeline, "ssdm_resolve_half");
-        pipe(ssdmUpsamplePipeline, "ssdm_upsample");
-    }
+    // The SSDM chain follows the scene target (its targets at the mode's
+    // resolution, its groups over the fresh scene copies).
+    ssdm.resize(device, tuning.ssdmMode, width, height, sceneColorCopy,
+                sceneDepthCopy, blitSampler);
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
     // One group per adaptation ping-pong side (binding 5).
@@ -693,6 +700,7 @@ void WorldRenderer::destroyOffscreenTarget(rhi::Device& device) {
     reflectionFb.reset();
     reflectionDepth.reset();
     reflectionColor.reset();
+    ssdm.destroyTargets(device);
     sceneDepthCopy.reset();
     sceneColorCopy.reset();
     blitBindGroups[0].reset();
@@ -704,13 +712,6 @@ void WorldRenderer::destroyOffscreenTarget(rhi::Device& device) {
     offscreenHeight = 0;
 }
 
-void WorldRenderer::rebuildBlitPipeline(rhi::Device& device) {
-    // The assignment frees the previous pipeline through the wrapper.
-    blitPipeline = { device, device.createPipeline(
-                                 { .shader = shaders->get(kTonemapShader) }) };
-    blitShaderGeneration = shaders->generation(kTonemapShader);
-}
-
 void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
                                         const render::RenderSnapshot& snapshot,
                                         const RenderView& view,
@@ -718,9 +719,13 @@ void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
     if (snapshot.meshes.empty()) {
         return;
     }
-    if (shaders->generation("mesh") != meshShaderGeneration) {
-        buildMeshPipeline(frame.device);
-    }
+    meshPipeline.ensure(frame.device, *shaders, [&] {
+        return frame.device.createPipeline(
+            { .shader = shaders->get("mesh"),
+              .vertexBuffers = { render::meshVertexLayout() },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::Back });
+    });
     // meshDraws is indexed by SNAPSHOT POSITION, and the caster pass
     // recorded into these UBOs earlier this frame under the same
     // indexing: any reorder/filter of snapshot.meshes between the two
@@ -792,9 +797,7 @@ void WorldRenderer::drawSkinned(engine::FrameContext& frame,
     if (snapshot.skinned.empty() && skinnedDraws.empty()) {
         return;
     }
-    if (shaders->generation("skinned") != skinnedShaderGeneration) {
-        buildSkinnedPipeline(frame.device);
-    }
+    ensureSkinnedPipeline(frame.device);
     for (SkinnedDraw& draw : skinnedDraws) {
         draw.seen = false;
     }
@@ -862,37 +865,36 @@ void WorldRenderer::drawSkinned(engine::FrameContext& frame,
     }
 }
 
-void WorldRenderer::buildSkinnedPipeline(rhi::Device& device) {
-    skinnedPipeline = { device, device.createPipeline(
-        { .shader = shaders->get("skinned"),
-          .vertexBuffers =
-              { { .stride = sizeof(render::SkinnedVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset =
-                              offsetof(render::SkinnedVertex, position) },
-                        { .location = 1,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::SkinnedVertex, normal) },
-                        { .location = 2,
-                          .format = rhi::VertexFormat::F32x2,
-                          .offset = offsetof(render::SkinnedVertex, uv) },
-                        { .location = 3,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::SkinnedVertex, color) },
-                        { .location = 4,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = offsetof(render::SkinnedVertex, joints) },
-                        { .location = 5,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset =
-                              offsetof(render::SkinnedVertex, weights) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back }) };
-    skinnedShaderGeneration = shaders->generation("skinned");
+void WorldRenderer::ensureSkinnedPipeline(rhi::Device& device) {
+    skinnedPipeline.ensure(device, *shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders->get("skinned"),
+              .vertexBuffers =
+                  { { .stride = sizeof(render::SkinnedVertex),
+                      .attributes =
+                          { { .location = 0,
+                              .format = rhi::VertexFormat::F32x3,
+                              .offset =
+                                  offsetof(render::SkinnedVertex, position) },
+                            { .location = 1,
+                              .format = rhi::VertexFormat::F32x3,
+                              .offset = offsetof(render::SkinnedVertex, normal) },
+                            { .location = 2,
+                              .format = rhi::VertexFormat::F32x2,
+                              .offset = offsetof(render::SkinnedVertex, uv) },
+                            { .location = 3,
+                              .format = rhi::VertexFormat::F32x3,
+                              .offset = offsetof(render::SkinnedVertex, color) },
+                            { .location = 4,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(render::SkinnedVertex, joints) },
+                            { .location = 5,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset =
+                                  offsetof(render::SkinnedVertex, weights) } } } },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::Back });
+    });
 }
 
 f32 WorldRenderer::effectiveWaterSurfaceY(
@@ -933,9 +935,8 @@ f32 WorldRenderer::effectiveWaterSurfaceY(
 
 void WorldRenderer::drawWaterVolumes(
     engine::FrameContext& frame, const render::RenderSnapshot& snapshot) {
-    if (shaders->generation("watervolume") != waterVolumeShaderGeneration ||
-        waterVolumePipeline.id() == 0) {
-        waterVolumePipeline = { frame.device, frame.device.createPipeline(
+    waterVolumePipeline.ensure(frame.device, *shaders, [&] {
+        return frame.device.createPipeline(
             { .shader = shaders->get("watervolume"),
               .vertexBuffers =
                   { { .stride = 3 * sizeof(f32),
@@ -943,12 +944,9 @@ void WorldRenderer::drawWaterVolumes(
                                         .format = rhi::VertexFormat::F32x3,
                                         .offset = 0 } } } },
               .blend = rhi::BlendMode::Alpha,
-              .depth = { .testEnable = true,
-                         .writeEnable = false,
-                         .compare = rhi::CompareFunc::Greater }, // reversed-Z
-              .cull = rhi::CullMode::None }) };
-        waterVolumeShaderGeneration = shaders->generation("watervolume");
-    }
+              .depth = render::kDepthReadOnly,
+              .cull = rhi::CullMode::None });
+    });
     for (WaterQuad& quad : waterQuads) {
         quad.seen = false;
     }
@@ -1076,38 +1074,36 @@ void WorldRenderer::drawWaterVolumes(
     }
 }
 
-void WorldRenderer::buildCasterPipelines(rhi::Device& device) {
-    shaders->beginWatch();
+void WorldRenderer::ensureCasterPipelines(rhi::Device& device) {
     // Position-only attributes over the FULL vertex strides (same buffers
     // as the lit pass); depth state mirrors terrain/vegetation casters.
-    meshCasterPipeline = { device, device.createPipeline(
-        { .shader = shaders->get("shadow_mesh"),
-          .vertexBuffers = { render::meshVertexPositionLayout() },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back }) };
-    skinnedCasterPipeline = { device, device.createPipeline(
-        { .shader = shaders->get("shadow_skinned"),
-          .vertexBuffers =
-              { { .stride = sizeof(render::SkinnedVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset =
-                              offsetof(render::SkinnedVertex, position) },
-                        { .location = 4,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = offsetof(render::SkinnedVertex, joints) },
-                        { .location = 5,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset =
-                              offsetof(render::SkinnedVertex, weights) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back }) };
-    casterShaderWatch = shaders->endWatch();
+    meshCasterPipeline.ensure(device, *shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders->get("shadow_mesh"),
+              .vertexBuffers = { render::meshVertexPositionLayout() },
+              .depth = render::kDepthCaster,
+              .cull = rhi::CullMode::Back });
+    });
+    skinnedCasterPipeline.ensure(device, *shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders->get("shadow_skinned"),
+              .vertexBuffers =
+                  { { .stride = sizeof(render::SkinnedVertex),
+                      .attributes =
+                          { { .location = 0,
+                              .format = rhi::VertexFormat::F32x3,
+                              .offset =
+                                  offsetof(render::SkinnedVertex, position) },
+                            { .location = 4,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset = offsetof(render::SkinnedVertex, joints) },
+                            { .location = 5,
+                              .format = rhi::VertexFormat::F32x4,
+                              .offset =
+                                  offsetof(render::SkinnedVertex, weights) } } } },
+              .depth = render::kDepthCaster,
+              .cull = rhi::CullMode::Back });
+    });
 }
 
 void WorldRenderer::drawShadowCasters(
@@ -1123,9 +1119,7 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                                         rhi::BindGroupHandle casterGroup,
                                         bool refreshUbos,
                                         const render::Frustum* cull) {
-    if (casterShaderWatch.changed(*shaders)) {
-        buildCasterPipelines(frame.device);
-    }
+    ensureCasterPipelines(frame.device);
     const bool firstCascade = refreshUbos;
 
     // Scene meshes: the per-draw UBO is the lit pass's — the caster pass
@@ -1219,22 +1213,11 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
     }
 }
 
-void WorldRenderer::buildMeshPipeline(rhi::Device& device) {
-    meshPipeline = { device, device.createPipeline(
-        { .shader = shaders->get("mesh"),
-          .vertexBuffers = { render::meshVertexLayout() },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back }) };
-    meshShaderGeneration = shaders->generation("mesh");
-}
-
 void WorldRenderer::recordPostFx(engine::FrameContext& frame, const RenderView& view,
                                const render::FrameUniforms& frameData,
                                bool useOffscreen) {
     // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
-    if (cfg.postFx && useOffscreen) {
+    if (mounted.postFx && useOffscreen) {
         core::FrameProbe::Scope probe { *view.probe, "postfx" };
         // Volumetric sky clouds FIRST: the god-ray march inside
         // postFx.render composites them (transmittance carves the rays).
@@ -1258,72 +1241,17 @@ void WorldRenderer::recordPostFx(engine::FrameContext& frame, const RenderView& 
                       radianceCascades.applyGroup(),
                       view.atmos.godRayIntensity > 0.003f, &gpuProbe,
                       sky.cloudMapBindGroup());
-        // SSDM scatter (ssdm_*.frag, Lobel 2008): fresh color copy (the
-        // pre-water one was consumed), then flow -> bounds quadtree ->
-        // nearest-wins resolve back into the offscreen target. Crests
-        // extrude over their neighbors (sky included); holes fall back
-        // to the gather (pits keep digging).
-        if (tuning.ssdmMode != 0 && useOffscreen &&
-            frame.device.caps().copyTexture &&
-            ssdmResolvePipeline.get().id != 0 &&
+        // SSDM scatter: fresh color copy (the pre-water one was
+        // consumed), then the chain resolves back into the offscreen
+        // target.
+        if (tuning.ssdmMode != render::SsdmChain::kOff && useOffscreen &&
+            mounted.sceneCopy && ssdm.ready() &&
             sceneColorCopy.id() != 0) {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "ssdm" };
             frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
-            const auto fullscreen = [&](rhi::FramebufferHandle fb,
-                                        rhi::PipelineHandle pipeline,
-                                        rhi::BindGroupHandle group) {
-                frame.cmd.beginRenderPass(
-                    { .framebuffer = fb,
-                      .loadOp = rhi::LoadOp::DontCare,
-                      .depthLoadOp = rhi::LoadOp::DontCare });
-                frame.cmd.setPipeline(pipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                frame.cmd.setBindGroup(1, group);
-                frame.cmd.draw(3);
-                frame.cmd.endRenderPass();
-            };
-            fullscreen(ssdmFlowFb.get(), ssdmFlowPipeline.get(),
-                       ssdmFlowGroup.get());
-            fullscreen(ssdmBoundsFb[0].get(), ssdmBounds0Pipeline.get(),
-                       ssdmBoundsGroup[0].get());
-            for (u32 i = 1; i < kSsdmLevels; ++i) {
-                fullscreen(ssdmBoundsFb[i].get(), ssdmDownPipeline.get(),
-                           ssdmBoundsGroup[i].get());
-            }
-            if (tuning.ssdmMode == 1 && ssdmHalfFb.id() != 0) {
-                // Half mode: resolve at chain res into the intermediate
-                // (alpha = "this pixel moved"), then the edge-aware
-                // upsample rewrites ONLY those pixels at full res.
-                frame.cmd.beginRenderPass(
-                    { .framebuffer = ssdmHalfFb.get(),
-                      .loadOp = rhi::LoadOp::DontCare,
-                      .depthLoadOp = rhi::LoadOp::DontCare });
-                frame.cmd.setPipeline(ssdmResolveHalfPipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                frame.cmd.setBindGroup(1, ssdmResolveGroup);
-                frame.cmd.draw(3);
-                frame.cmd.endRenderPass();
-                frame.cmd.beginRenderPass(
-                    { .framebuffer = offscreenFb,
-                      .loadOp = rhi::LoadOp::Load,
-                      .depthLoadOp = rhi::LoadOp::Load });
-                frame.cmd.setPipeline(ssdmUpsamplePipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                frame.cmd.setBindGroup(1, ssdmUpsampleGroup.get());
-                frame.cmd.draw(3);
-                frame.cmd.endRenderPass();
-            } else {
-                frame.cmd.beginRenderPass(
-                    { .framebuffer = offscreenFb,
-                      .loadOp = rhi::LoadOp::Load,
-                      .depthLoadOp = rhi::LoadOp::Load });
-                frame.cmd.setPipeline(ssdmResolvePipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                frame.cmd.setBindGroup(1, ssdmResolveGroup);
-                frame.cmd.draw(3);
-                frame.cmd.endRenderPass();
-            }
+            ssdm.record(frame.device, frame.cmd, *shaders, tuning.ssdmMode,
+                        offscreenFb, frameBindGroup);
         }
         // Contact shadows (the texture is the toggle — white = off).
         {
@@ -1381,8 +1309,7 @@ void WorldRenderer::recordCopyHizWater(engine::FrameContext& frame,
     // SSAO pass reads the depth copy EVERY frame — interiors included
     // (skipping it left the previous exterior's AO ghosting over the
     // room). Water composition and Hi-Z occlusion stay exterior-only.
-    if (useOffscreen && frame.device.caps().copyTexture &&
-        sceneColorCopy.id() != 0) {
+    if (useOffscreen && mounted.sceneCopy && sceneColorCopy.id() != 0) {
         core::FrameProbe::Scope probe { *view.probe, "copyHizWater" };
         render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                       "copyHizWater" };
@@ -1393,8 +1320,7 @@ void WorldRenderer::recordCopyHizWater(engine::FrameContext& frame,
         // snapshot + cull dispatch; the verdict is read back NEXT frame
         // (CPU path) or consumed as indirect commands (GPU-driven path).
         occlusionCommandsFresh = false;
-        if (cfg.occlusion && !view.interiorMode &&
-            frame.device.caps().computeShaders) {
+        if (mounted.gpuOcclusion && !view.interiorMode) {
             gpuOcclusion.resize(frame.device, frame.width, frame.height);
             terrain.collectChunkAabbs(occlusionAabbs);
             occlusionCandidates.clear();
@@ -1411,7 +1337,7 @@ void WorldRenderer::recordCopyHizWater(engine::FrameContext& frame,
             // the level picked now and consumed next frame (I5). Their
             // bigger padded AABBs only ever ADD readback-verdict keys the
             // terrain entries already imply.
-            if (cfg.vegetation) {
+            if (mounted.vegetation) {
                 vegetation.collectDrawCandidates(occlusionCandidates,
                                                  camera.position);
             }
@@ -1431,7 +1357,7 @@ void WorldRenderer::recordCopyHizWater(engine::FrameContext& frame,
                                  viewProj, occlusionCandidates);
         }
 
-        if (cfg.water && !view.interiorMode &&
+        if (mounted.water && !view.interiorMode &&
             waterSceneBindGroup.id() != 0) {
             frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
                                         .loadOp = rhi::LoadOp::Load,
@@ -1505,16 +1431,16 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                 frame.device.caps().midPassTimestamps ? &gpuProbe : nullptr;
             rhi::Device* subDevice =
                 subProbe != nullptr ? &frame.device : nullptr;
-            if (cfg.terrain && tuning.farTerrain) {
-                // Far silhouettes FIRST, horizon ring first of all:
+            if (mounted.terrain && tuning.farTerrain) {
+                // Far silhouettes FIRST, the horizon ring first of all:
                 // everything nearer overdraws them by depth; they
                 // extend the world past the ring.
-                if (tuning.farHorizon) {
-                    farHorizon.draw(frame.cmd, frameBindGroup,
-                                    sky.cloudMapBindGroup());
+                for (u32 ring = kFarRingCount; ring-- > 0;) {
+                    if (farRingEnabled(ring)) {
+                        farRings[ring].draw(frame.cmd, frameBindGroup,
+                                            sky.cloudMapBindGroup());
+                    }
                 }
-                farTerrain.draw(frame.cmd, frameBindGroup,
-                                sky.cloudMapBindGroup());
             }
             // GPU-driven path (docs/RENDERING.md §6.0): consume the
             // indirect commands the cull dispatch wrote LAST frame — the
@@ -1525,7 +1451,7 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                 tuning.gpuIndirect && tuning.gpuOcclusion &&
                 frame.device.caps().multiDrawIndirect &&
                 occlusionCommandsFresh && gpuOcclusion.commandsValid();
-            if (cfg.terrain) {
+            if (mounted.terrain) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainTerrain" };
                 if (indirectDraw) {
@@ -1540,7 +1466,7 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                                  occludedSet);
                 }
             }
-            if (cfg.vegetation) {
+            if (mounted.vegetation) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainVeg" };
                 if (indirectDraw && !vegetation.showcaseActive()) {
@@ -1559,7 +1485,7 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                                     occludedSet);
                 }
             }
-            if (cfg.grass) {
+            if (mounted.grass) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainGrass" };
                 grass.draw(frame.cmd, frameBindGroup,
@@ -1570,11 +1496,11 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
         drawSceneMeshes(frame, snapshot, view,
                         &viewFrustum); // RenderSnapshot.meshes
         drawSkinned(frame, snapshot);        // the Forms-driven skinned NPCs
-        if (cfg.sky && !view.interiorMode) {
+        if (mounted.sky && !view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
         // Placed water surfaces (alpha) after every opaque.
-        if (cfg.water) {
+        if (mounted.water) {
             drawWaterVolumes(frame, snapshot);
         }
         // The frame's particles (camera-facing quads; the
@@ -1588,18 +1514,14 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                 snapshot.fxAdditive, snapshot.fxFlames, snapshot.fxHaze,
                 flameSheet, waterSceneBindGroup);
         // Rain streaks (procedural, camera cylinder).
-        if (cfg.sky && frameData.stormInfo.y > 0.003f) {
-            if (shaders->generation("rain") != rainShaderGeneration ||
-                rainPipeline.id() == 0) {
-                rainPipeline = { frame.device, frame.device.createPipeline(
+        if (mounted.sky && frameData.stormInfo.y > 0.003f) {
+            rainPipeline.ensure(frame.device, *shaders, [&] {
+                return frame.device.createPipeline(
                     { .shader = shaders->get("rain"),
                       .blend = rhi::BlendMode::Alpha,
-                      .depth = { .testEnable = true,
-                                 .writeEnable = false,
-                                 .compare = rhi::CompareFunc::Greater }, // reversed-Z
-                      .cull = rhi::CullMode::None }) };
-                rainShaderGeneration = shaders->generation("rain");
-            }
+                      .depth = render::kDepthReadOnly,
+                      .cull = rhi::CullMode::None });
+            });
             frame.cmd.setPipeline(rainPipeline);
             frame.cmd.setBindGroup(0, frameBindGroup);
             frame.cmd.setBindGroup(1, rainReceiverGroup);
@@ -1676,28 +1598,28 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
         if (noiseVolume.ready() && noiseVolume.fireBindGroup().id != 0) {
             frame.cmd.setBindGroup(9, noiseVolume.fireBindGroup());
         }
-        if (cfg.terrain) {
+        if (mounted.terrain) {
             terrain.draw(frame.cmd, reflectionBindGroup,
                          shadows.receiverBindGroup(), &reflectionFrustum);
             // Far silhouettes in the mirror (inner ring only — the
             // horizon ring at 24 km adds nothing to a wobbly half-res
             // reflection): without them a lake at dusk mirrored SKY
             // where the eye sees mountains.
-            if (tuning.farTerrain) {
-                farTerrain.draw(frame.cmd, reflectionBindGroup,
-                                sky.cloudMapBindGroup());
+            if (farRingEnabled(kInnerRing)) {
+                farRings[kInnerRing].draw(frame.cmd, reflectionBindGroup,
+                                          sky.cloudMapBindGroup());
             }
         }
         // Trees only: rocks and bushes are invisible in a wobbly half-res
         // reflection — low-detail canopies for the same reason.
-        if (cfg.vegetation) {
+        if (mounted.vegetation) {
             vegetation.draw(frame.cmd, reflectionBindGroup,
                             shadows.receiverBindGroup(),
                             render::VegetationSystem::kTreeVariants,
                             camera.position, /*forceLowDetail=*/true,
                             &reflectionFrustum);
         }
-        if (cfg.sky) {
+        if (mounted.sky) {
             sky.draw(frame.cmd, reflectionBindGroup);
         }
         frame.cmd.endRenderPass();
@@ -1736,7 +1658,7 @@ void WorldRenderer::recordShadowCascades(engine::FrameContext& frame,
             frame.cmd.setScissor(0, 0, effRes, effRes);
             const i32 casterChunks =
                 i + 1 == render::ShadowMapper::kCascadeCount ? 26 : 13;
-            if (cfg.terrain) {
+            if (mounted.terrain) {
                 terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
                                   camera.position, casterChunks,
                                   &cascadeFrustum);
@@ -1744,7 +1666,7 @@ void WorldRenderer::recordShadowCascades(engine::FrameContext& frame,
             // Same 13-chunk cap: the last cascade ends at 800 m (the
             // ultra tree ring). Far cascades cast with the solid shadow
             // proxies (metaball blobs), cascade 0 with the leafy cards.
-            if (cfg.vegetation) {
+            if (mounted.vegetation) {
                 if (fireScorch.bindGroup().id != 0) {
                     // The caster drops the burnt canopies too (slot 8,
                     // bound per pass: the frame's replay starts empty).
@@ -1772,7 +1694,8 @@ void WorldRenderer::recordRainOcclusion(engine::FrameContext& frame,
                                       const render::FrameUniforms& frameData) {
     const render::Camera3D& camera = view.camera;
     // The top-down rain occlusion depth (roof + canopy cover).
-    if (cfg.sky && frameData.stormInfo.y > 0.003f && tuning.meshShadowCasters) {
+    if (mounted.sky && frameData.stormInfo.y > 0.003f &&
+        tuning.meshShadowCasters) {
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "rainOcc" };
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
                                     .loadOp = rhi::LoadOp::DontCare,
@@ -1786,7 +1709,7 @@ void WorldRenderer::recordRainOcclusion(engine::FrameContext& frame,
         // (shadow_prop.vert reads the bound ShadowUbo), so cards face up
         // here; solid shadow proxies / ultra lobes keep it cutout-free.
         // The window is 40 m around the camera — one chunk of reach.
-        if (cfg.vegetation) {
+        if (mounted.vegetation) {
             if (fireScorch.bindGroup().id != 0) {
                 frame.cmd.setBindGroup(8, fireScorch.bindGroup());
             }
@@ -1832,17 +1755,17 @@ void WorldRenderer::recordKeyShadowTiles(engine::FrameContext& frame,
 
 void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView& view) {
     if (!view.interiorMode) { // interiors: no terrain/scatter/water to stream
-        if (cfg.terrain && tuning.sharedHeightField) {
+        if (mounted.terrain && tuning.sharedHeightField) {
             // The shared height pyramid publishes FIRST so this frame's
             // consumer bakes capture the freshest snapshot.
             heightField.update(terrain.params, view.camera.position);
         }
-        if (cfg.terrain) {
+        if (mounted.terrain) {
             core::FrameProbe::Scope probe { *view.probe, "terrain" };
             terrain.update(frame.device, view.camera.position,
                            streamingHold, streamingBoost);
         }
-        if (cfg.terrain) {
+        if (mounted.terrain) {
             // Probed apart from the chunk streaming — a landing bake
             // recreates the 256² map (upload) and must be attributable.
             core::FrameProbe::Scope probe { *view.probe, "lightmap" };
@@ -1864,48 +1787,42 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             terrainShadeMap.update(frame.device, terrain.params,
                                    view.camera.position);
         }
-        if (cfg.terrain && cfg.postFx) {
+        if (mounted.mist) {
             // Valley data for the ground mist (sun-independent; re-bakes
             // only when the camera strays half a kilometer).
             core::FrameProbe::Scope probe { *view.probe, "mistmap" };
             mistMap.update(frame.device, terrain.params,
                            view.camera.position, heightFieldSnapshot());
         }
-        if (cfg.terrain && tuning.farTerrain) {
+        if (mounted.terrain && tuning.farTerrain) {
             // Distant silhouettes: the two worker-baked rings
-            // (18 km + 57.6 km horizon).
+            // (18 km + 57.6 km horizon), fed the same inputs. Only the
+            // inner ring scatters impostors.
             core::FrameProbe::Scope probe { *view.probe, "farterrain" };
-            farTerrain.impostorsFromGrid = tuning.farImpostorsFromGrid;
-            farTerrain.update(frame.device, terrain.params,
-                              view.camera.position,
-                              cfg.vegetation
-                                  ? vegetation.treeSilhouette()
-                                  : render::VegetationSystem::
-                                        TreeSilhouette {},
-                              { terrain.layerAlbedoBase(0),
-                                terrain.layerAlbedoBase(1),
-                                terrain.layerAlbedoBase(2),
-                                terrain.layerAlbedoBase(3),
-                                terrain.layerAlbedoBase(4) },
-                              heightFieldSnapshot());
-            if (tuning.farHorizon) {
-                farHorizon.update(frame.device, terrain.params,
-                                  view.camera.position,
-                                  cfg.vegetation
-                                      ? vegetation.treeSilhouette()
-                                      : render::VegetationSystem::
-                                            TreeSilhouette {},
-                                  { terrain.layerAlbedoBase(0),
-                                    terrain.layerAlbedoBase(1),
-                                    terrain.layerAlbedoBase(2),
-                                    terrain.layerAlbedoBase(3),
-                                    terrain.layerAlbedoBase(4) },
-                                  heightFieldSnapshot());
+            farRings[kInnerRing].impostorsFromGrid =
+                tuning.farImpostorsFromGrid;
+            const FarRingInputs in {
+                .trees = mounted.vegetation
+                             ? vegetation.treeSilhouette()
+                             : render::VegetationSystem::TreeSilhouette {},
+                .layerAlbedos = { terrain.layerAlbedoBase(0),
+                                  terrain.layerAlbedoBase(1),
+                                  terrain.layerAlbedoBase(2),
+                                  terrain.layerAlbedoBase(3),
+                                  terrain.layerAlbedoBase(4) },
+                .field = heightFieldSnapshot(),
+            };
+            for (u32 ring = 0; ring < kFarRingCount; ++ring) {
+                if (farRingEnabled(ring)) {
+                    farRings[ring].update(frame.device, terrain.params,
+                                          view.camera.position, in.trees,
+                                          in.layerAlbedos, in.field);
+                }
             }
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
-        if (cfg.occlusion) {
+        if (mounted.occlusion) {
             core::FrameProbe::Scope probe { *view.probe, "occlusion" };
             occlusion.pump();
             occlusion.configure(static_cast<f32>(terrain.viewRadius) *
@@ -1918,14 +1835,14 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                                       : nullptr);
             }
         }
-        if (cfg.gi) {
+        if (mounted.gi) {
             // The GI's albedo tile bounces the same tinted ground. The
             // strength settles first: a panel drag used to re-kick the
             // 65k-texel tile bake on every tick past 0.001 of delta.
             radianceCascades.terrainTintStrength =
                 giTintSettle.settled(view.terrainTintStrength, frame.dt);
         }
-        if (cfg.grass) {
+        if (mounted.grass) {
             core::FrameProbe::Scope probe { *view.probe, "grass" };
             // Root-albedo bake follows the terrain's splat scale,
             // macro-tint strength and the ACTIVE material set's variant
@@ -1965,12 +1882,12 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
             grass.update(frame.device, terrain.params,
                          view.camera.position, streamingHold);
         }
-        if (cfg.vegetation) {
+        if (mounted.vegetation) {
             core::FrameProbe::Scope probe { *view.probe, "veg" };
             vegetation.update(frame.device, terrain.params,
                               view.camera.position, streamingHold);
         }
-        if (cfg.water && frame.device.caps().copyTexture) {
+        if (mounted.water) {
             core::FrameProbe::Scope probe { *view.probe, "water" };
             water.setRainIntensity(
                 view.interiorMode ? 0.0f : view.atmos.rainIntensity);
@@ -1984,48 +1901,20 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
 
 void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     shaders->pollHotReload(frame.dt);
-    if (cfg.terrain) {
-        terrain.refreshPipeline(frame.device, *shaders);
-        farTerrain.refreshPipeline(frame.device, *shaders);
-        farHorizon.refreshPipeline(frame.device, *shaders);
+    for (const SystemEntry& system : kSystems) {
+        if (system.refresh && mounted.*(system.mounted)) {
+            system.refresh(*this, frame.device);
+        }
     }
-    if (cfg.grass) {
-        grass.refreshPipeline(frame.device, *shaders);
-    }
-    if (cfg.vegetation) {
-        vegetation.refreshPipeline(frame.device, *shaders);
-    }
-    if (cfg.sky) {
-        sky.refreshPipeline(frame.device, *shaders);
-    }
-    if (cfg.water && frame.device.caps().copyTexture) {
-        water.refreshPipeline(frame.device, *shaders);
-    }
-    if (cfg.postFx) {
-        postFx.refreshPipelines(frame.device, *shaders);
-    }
-    if (cfg.occlusion) {
-        gpuOcclusion.refreshPipelines(frame.device, *shaders);
-    }
-    if (cfg.gi) {
-        radianceCascades.refreshPipelines(frame.device, *shaders);
-    }
-    if (lightClusters.clusterBuffer().id != 0) {
-        lightClusters.refreshPipeline(frame.device, *shaders);
-    }
-    if (cfg.terrain) {
+    if (mounted.terrain) {
         terrain.setWireframe(tuning.wireframe, frame.device, *shaders);
     }
     if (regenerateRequested) {
         regenerateRequested = false;
-        if (cfg.terrain) {
-            terrain.regenerate(frame.device);
-        }
-        if (cfg.grass) {
-            grass.regenerate(frame.device);
-        }
-        if (cfg.vegetation) {
-            vegetation.regenerate(frame.device, terrain.params.seed);
+        for (const SystemEntry& system : kSystems) {
+            if (system.regenerate && mounted.*(system.mounted)) {
+                system.regenerate(*this, frame.device);
+            }
         }
         occlusion.invalidate();
     }
@@ -2033,14 +1922,14 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     // scatter stay resident.
     if (reseedVegetation) {
         reseedVegetation = false;
-        if (cfg.vegetation) {
+        if (mounted.vegetation) {
             vegetation.reseedVariantMeshes(frame.device);
         }
     }
     // Grass panel: a scatter knob moved — re-scatter the meadow only.
     if (grassRescatterRequested) {
         grassRescatterRequested = false;
-        if (cfg.grass) {
+        if (mounted.grass) {
             grass.regenerate(frame.device);
         }
     }
@@ -2057,15 +1946,15 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     // hole) — runs live during the stroke for real-time feedback. Grass/veg
     // re-scatter only on commit (`sculptScatterChunks`) so they don't flicker
     // every preview frame. The rest of the world stays put.
-    if (cfg.terrain && !sculptDirtyChunks.empty()) {
+    if (mounted.terrain && !sculptDirtyChunks.empty()) {
         terrain.remeshChunks(sculptDirtyChunks);
         sculptDirtyChunks.clear();
     }
     if (!sculptScatterChunks.empty()) {
-        if (cfg.grass) {
+        if (mounted.grass) {
             grass.invalidateChunks(frame.device, sculptScatterChunks);
         }
-        if (cfg.vegetation) {
+        if (mounted.vegetation) {
             vegetation.invalidateChunks(frame.device, sculptScatterChunks);
         }
         sculptScatterChunks.clear();
@@ -2078,38 +1967,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // Resolve last frames' timestamps (never blocking) and
     // open this frame's slot — the scopes below feed the budget table.
     gpuProbe.beginFrame(frame.device);
-    // One-shot GPU budget line for headless/scripted sessions (the F6
-    // table without eyes on the HUD): logged once past driver warmup,
-    // with the rolling window full.
-    ++perfFrames;
-    if (perfFrames == 2000 && gpuProbe.active()) {
-        str line;
-        char cell[64];
-        for (const render::GpuProbe::PassRow& row : gpuProbe.rows()) {
-            std::snprintf(cell, sizeof(cell), " | %s %.2f/%.2f", row.name,
-                          row.stats.averageMs, row.stats.maxMs);
-            line += cell;
-        }
-        LOG_INFO("gpu budget (avg/max ms, 120f): frame {:.2f}/{:.2f}{}",
-                 gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs(), line);
-    }
-    // Worker-job telemetry: fold landed costs every frame; mirror the
-    // one-shot budget line for headless/scripted sessions.
-    if (jobSystem) {
-        core::JobProbe& probe = jobSystem->probe();
-        probe.drain();
-        if (perfFrames == 2000 && !probe.rows().empty()) {
-            str line;
-            char cell[96];
-            for (const core::JobProbe::Row& row : probe.rows()) {
-                std::snprintf(cell, sizeof(cell), " | %s %ux avg %.0fms",
-                              row.name, row.runs, row.averageMs());
-                line += cell;
-            }
-            LOG_INFO("cpu bakes (window): {:.1f} s total{}",
-                     probe.windowTotalMs() / 1000.0, line);
-        }
-    }
+    logBudgetOnce();
     pumpPipelinesAndRequests(frame);
     pumpStreaming(frame, view);
 
@@ -2132,100 +1990,165 @@ void WorldRenderer::render(engine::FrameContext& frame,
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
                   (1.0f - 0.65f * view.atmos.cloudCoverage)
             : 0.0f;
-    // The cascades use a QUANTIZED sun (otherwise tree shadows tremble).
-    // The texel snap absorbs camera translation, but the game clock spins
-    // the light a fraction of a degree every frame, re-basing the snap —
-    // the edges crawl. Hysteresis instead: shadows sit rock-stable, then
-    // take an imperceptible ~0.4° step every ~8 real seconds; the VISIBLE
-    // sun/lighting keeps moving smoothly.
-    bool sunStepped = false;
-    if (glm::dot(shadowSunDirection, skyState.sunDirection) <
-        std::cos(glm::radians(0.4f))) {
-        shadowSunDirection = skyState.sunDirection;
-        sunStepped = true;
-    }
     render::ShadowMapper::Cascades cascades {};
-    // Which cascades actually re-render this frame (docs/RENDERING.md):
-    // most of the shadow cost is the two
-    // far cascades. Round-robin: cascade 0 every frame, cascades 1 and 2
-    // on alternate frames, each keeping its PREVIOUS matrix when skipped
-    // (the stale depth must be sampled with the matrix it was drawn
-    // with). A sun step (or the A/B toggle off) re-renders all three.
     array<bool, render::ShadowMapper::kCascadeCount> cascadeDue {
         true, true, true
     };
-    if (shadowStrength > 0.0f) {
-        cascades = shadows.computeCascades(camera, frame.aspect,
-                                           shadowSunDirection);
-        ++shadowFrame;
-        const bool full =
-            !tuning.shadowRoundRobin || !lastCascadesValid || sunStepped;
-        if (!full) {
-            for (u32 i = 1; i < render::ShadowMapper::kCascadeCount; ++i) {
-                cascadeDue[i] = (shadowFrame + i) % 2 == 0;
-                if (!cascadeDue[i]) {
-                    cascades.viewProj[i] = lastCascades.viewProj[i];
-                    cascades.splitFar[i] = lastCascades.splitFar[i];
-                    cascades.texelWorld[i] = lastCascades.texelWorld[i];
-                }
-            }
-        }
-        lastCascades = cascades;
-        lastCascadesValid = true;
-        shadows.updateCascadeUbos(frame.device, cascades);
-    } else {
-        lastCascadesValid = false; // interiors/night: refit from scratch
-    }
-
-    // Planar reflection is meaningful only from above the surface —
-    // and (auto-skip) only when some water can actually show: a
-    // RESIDENT chunk dipping below sea level inside the frustum. The
-    // known miss: sea at the horizon beyond the resident ring (~960 m) —
-    // the A/B toggle is there for that exact check.
-    bool waterVisible = true;
-    if (cfg.water && tuning.reflectionAutoSkip && !view.interiorMode &&
-        tuning.reflections) {
-        waterVisible = false;
-        terrain.collectChunkAabbs(occlusionAabbs);
-        const f32 sea = terrain.params.seaLevel;
-        for (const auto& aabb : occlusionAabbs) {
-            if (aabb.lo.y >= sea) {
-                continue; // fully above the water table
-            }
-            // Beyond ~600 m the mirror sits deep in the fog (fogStart
-            // 450): not worth a full scene re-render (~7 ms measured
-            // while no readable water was in sight).
-            const Vec2 toChunk {
-                (aabb.lo.x + aabb.hi.x) * 0.5f - camera.position.x,
-                (aabb.lo.z + aabb.hi.z) * 0.5f - camera.position.z
-            };
-            if (glm::dot(toChunk, toChunk) > 600.0f * 600.0f) {
-                continue;
-            }
-            // Test the chunk's water RECTANGLE (the sea plane spans it).
-            if (viewFrustum.intersectsAabb(
-                    { aabb.lo.x, sea - 1.0f, aabb.lo.z },
-                    { aabb.hi.x, sea + 1.0f, aabb.hi.z })) {
-                waterVisible = true;
-                break;
-            }
-        }
-    }
-    const bool reflectionsActive =
-        tuning.reflections && reflectionFb.id() != 0 && !view.interiorMode &&
-        camera.position.y > terrain.params.seaLevel && waterVisible;
+    fitShadowCascades(frame, camera, skyState.sunDirection, shadowStrength,
+                      cascades, cascadeDue);
+    const bool reflectionsActive = reflectionWanted(view, viewFrustum);
 
     // GI: decide this frame's inject + snap the grid origins
     // BEFORE the UBO composition so uGiGridInfo matches the volume
     // content the apply will sample (the moving-halo lag fix).
-    if (cfg.gi) {
+    if (mounted.gi) {
         radianceCascades.prepare(camera.position);
     }
 
     // The whole UBO composition is pure: gather the inputs,
     // let the composer build both variants, upload. This side keeps only
     // the GPU-availability gates and the updateBuffer calls.
-    const ComposedFrame composed = composeFrameUniforms({
+    const ComposedFrame composed = composeFrameUniforms(
+        composerInputs(frame, snapshot, view, viewProj, skyState, cascades,
+                       shadowStrength, reflectionsActive));
+    const render::FrameUniforms& uniforms = composed.base;
+    render::FrameUniforms frameData = composed.resolved;
+    // Clustered forward (docs/RENDERING.md §5): the grid's far reach is
+    // the froxel slicing's (interior room scale / exterior CSM reach) so
+    // both grids share their z slices by construction.
+    const bool clustered = tuning.clusteredLights && lightClusters.ready();
+    frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
+                              render::volumetricReach(view.interiorMode,
+                                                      view.atmos.fogStart),
+                              0.0f, 0.0f };
+    if (mounted.sky && frameData.stormInfo.y > 0.003f) {
+        frame.device.updateBuffer(rainOcclusionUbo,
+                                  &frameData.rainOcclusionViewProj,
+                                  sizeof(Mat4), 0);
+    }
+
+    // Key-shadow atlas selection (docs/RENDERING.md §5 B6): the up-to-4
+    // best-scored castsShadow lights get a 1024² tile. Selected HERE so
+    // the tile matrices ride this frame-UBO upload and the per-light
+    // slot lands in the lights UBO below (windowInfo.z). The tiles
+    // themselves render after the cloud bake.
+    vector<KeyShadowPick> keyShadowPicks;
+    if (tuning.keyShadow && tuning.meshShadowCasters) {
+        keyShadowPicks = pickKeyShadows(snapshot.shadowLights, camera.position,
+                                        shadowSunDirection, kKeyShadowSlots);
+        for (size_t slot = 0; slot < keyShadowPicks.size(); ++slot) {
+            frameData.keyShadowAtlasViewProj[slot] =
+                keyShadowPicks[slot].viewProj;
+        }
+    }
+    frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
+
+    // The selected local lights. Only the clustered path may consume
+    // the full budget; the legacy per-pixel loop stays capped at
+    // kFallbackLights (its cost is per-slot x per-pixel). With "lights
+    // via RC only" the lights exist purely in the GI volume: their
+    // occlusion and penumbras come from the cascades, at voxel
+    // resolution.
+    {
+        const LightsUniforms lights = fillLightsUbo({
+            .lights = snapshot.lights,
+            .budget = clustered ? kMaxLights : kFallbackLights,
+            .rcOnly = radianceCascades.tuning.rcOnlyLights &&
+                      radianceCascades.tuning.technique ==
+                          render::GiTechnique::RadianceCascades,
+            .shadowSunDirection = shadowSunDirection,
+            .sunColor = Vec3 { uniforms.sunColor },
+            .buriedBelowY = view.buriedBelowY,
+            .timeSeconds = view.timeSeconds,
+            .keyShadowPicks = keyShadowPicks,
+        });
+        frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
+    }
+
+    // Cluster the UBO's lights for this frame (the frame bind group —
+    // bound by every consumer — carries the list SSBO at binding 4).
+    if (clustered) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                      "clusterCull" };
+        frame.cmd.setBindGroup(0, frameBindGroup);
+        lightClusters.run(frame.cmd);
+    }
+
+    // Bake this frame's cloud field before anything lights with it.
+    if (mounted.sky && !view.interiorMode) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "cloudBake" };
+        sky.bakeCloudMap(frame.cmd, frameBindGroup);
+    }
+
+    recordKeyShadowTiles(frame, snapshot, view, keyShadowPicks);
+
+    recordRainOcclusion(frame, snapshot, view, frameData);
+
+    recordShadowCascades(frame, snapshot, view, cascades, cascadeDue,
+                         shadowStrength);
+
+    // GI voxel clipmap re-injection (docs/RENDERING.md) — its
+    // HISTORICAL slot: after the CSM passes (the inject samples fresh
+    // shadow maps), outside any render pass. Pipelined (PG2), the chain
+    // records at the END of the frame instead and this slot only fences
+    // LAST frame's cascade 0 for this frame's consumers — everything
+    // recorded above (cluster cull, cloud bake, CSM, key shadows) reads
+    // no GI and overlaps the still-running chain.
+    if (mounted.gi) {
+        if (!radianceCascades.tuning.pipelined) {
+            recordGiUpdate(frame, snapshot, view, uniforms, clustered);
+        } else if (radianceCascades.applyGroup().id != 0 &&
+                   !(radianceCascades.tuning.asyncCompute &&
+                     frame.device.caps().asyncCompute)) {
+            // Async: the cross-queue semaphore already publishes last
+            // frame's chain to this frame's consumers — no fence needed.
+            frame.cmd.memoryBarrier(rhi::BarrierStage_Fragment |
+                                    rhi::BarrierStage_Compute);
+        }
+    }
+
+    const bool useOffscreen = mounted.offscreen;
+    if (useOffscreen) {
+        ensureOffscreenTarget(frame.device, frame.width, frame.height);
+        blitPipeline.ensure(frame.device, *shaders, [&] {
+            return frame.device.createPipeline(
+                { .shader = shaders->get(kTonemapShader) });
+        });
+    }
+
+    recordReflection(frame, view, uniforms, reflectionsActive);
+
+    // (The Hi-Z verdict readback is gone — docs/RENDERING.md §6.0 I6:
+    // the cull's verdict lives in the indirect commands and never
+    // crosses the CPU. The legacy draw path keeps the CPU horizon
+    // occlusion only.)
+
+    recordMainPass(frame, snapshot, view, viewFrustum, frameData,
+                   useOffscreen);
+
+    recordCopyHizWater(frame, view, viewProj, useOffscreen);
+
+    recordPostFx(frame, view, frameData, useOffscreen);
+
+    // Pipelined GI (docs/RENDERING.md PG2): the chain records HERE, at the
+    // end of the frame — this frame consumed LAST frame's cascade 0; the
+    // chain overlaps the composite, the present and the next frame's
+    // front, up to the consumer fence before the next reflection.
+    if (mounted.gi && radianceCascades.tuning.pipelined) {
+        recordGiUpdate(frame, snapshot, view, uniforms, clustered);
+    }
+
+    recordComposite(frame, view, useOffscreen);
+}
+
+FrameComposerInputs WorldRenderer::composerInputs(
+    engine::FrameContext& frame, const render::RenderSnapshot& snapshot,
+    const RenderView& view, const Mat4& viewProj,
+    const render::SkySystem::SkyState& skyState,
+    const render::ShadowMapper::Cascades& cascades, f32 shadowStrength,
+    bool reflectionsActive) {
+    const render::Camera3D& camera = view.camera;
+    return {
         .viewProj = viewProj,
         .cameraPosition = camera.position,
         .width = frame.width,
@@ -2241,7 +2164,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .interiorDaylightWeight =
             tuning.interiorDaylightWeight *
             aboveBuried(view.camera.position.y, view.buriedBelowY),
-        .froxelFog = cfg.froxels && postFx.froxelFog && postFx.froxelReady(),
+        .froxelFog =
+            mounted.froxels && postFx.froxelFog && postFx.froxelReady(),
         .interiorDustDensity = tuning.interiorDustDensity,
         .seaLevel = terrain.params.seaLevel,
         .snowLine = view.snowLine,
@@ -2273,10 +2197,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
         // sky). z of the same uniform carries the ring for the far
         // mesh's sink bias.
         .drawDistance =
-            cfg.terrain ? glm::min(horizonReach(),
-                                   view.camera.farPlane * 0.95f)
-                        : 0.0f,
-        .nearRingDistance = cfg.terrain
+            mounted.terrain ? glm::min(horizonReach(),
+                                       view.camera.farPlane * 0.95f)
+                            : 0.0f,
+        .nearRingDistance = mounted.terrain
                                 ? static_cast<f32>(terrain.viewRadius) *
                                       render::TerrainSystem::kChunkSize
                                 : 0.0f,
@@ -2340,9 +2264,13 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .mistCoverageSoftness = tuning.mistCoverageSoftness,
         .mistReach = tuning.mistReach,
         .fogHorizonTail = tuning.fogHorizonTail,
-        // The sea reaches the farthest ring (phantom-land guard).
+        // The sea reaches the farthest enabled ring (phantom-land
+        // guard); the inner ring's span when none is drawn.
         .seaQuadHalfSpan =
-            tuning.farTerrain && tuning.farHorizon ? 28800.0f : 9000.0f,
+            kFarRingConfigs[farRingEnabled(kHorizonRing) ? kHorizonRing
+                                                         : kInnerRing]
+                .span *
+            0.5f,
         .mistShapeInfo = tuning.mistShape,
         .mistMapInfo = mistMap.info(),
         .mistDetailInfo = { noiseVolume.ready() && tuning.mistNoiseTex ? 1.0f
@@ -2378,260 +2306,112 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .fireFlameLook = { fireScorch.look.flameBoost,
                            fireScorch.look.flamePosterize,
                            fireScorch.look.hazeStrength, 0.0f },
-    });
-    const render::FrameUniforms& uniforms = composed.base;
-    render::FrameUniforms frameData = composed.resolved;
-    // Clustered forward (docs/RENDERING.md §5): the grid's far reach is
-    // the froxel slicing's (interior room scale / exterior CSM reach) so
-    // both grids share their z slices by construction.
-    const bool clustered = tuning.clusteredLights && lightClusters.ready();
-    frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
-                              render::volumetricReach(view.interiorMode,
-                                                      view.atmos.fogStart),
-                              0.0f, 0.0f };
-    if (cfg.sky && frameData.stormInfo.y > 0.003f) {
-        frame.device.updateBuffer(rainOcclusionUbo,
-                                  &frameData.rainOcclusionViewProj,
-                                  sizeof(Mat4), 0);
-    }
+    };
+}
 
-    // Key-shadow atlas selection (docs/RENDERING.md §5 B6): the up-to-4
-    // best-scored castsShadow lights get a 1024² tile. Selected HERE so
-    // the tile matrices ride this frame-UBO upload and the per-light
-    // slot lands in the lights UBO below (windowInfo.z). The tiles
-    // themselves render after the cloud bake.
-    vector<KeyShadowPick> keyShadowPicks;
-    if (tuning.keyShadow && tuning.meshShadowCasters) {
-        struct KeyCandidate {
-            f32 score;
-            Vec3 anchor;
-            Vec3 position;
-            Vec3 direction;
-            f32 fov;
-            f32 radius;
-        };
-        vector<KeyCandidate> keyCandidates;
-        const f32 keySunGate =
-            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
-        for (const render::SceneLight& light : snapshot.shadowLights) {
-            Vec3 position = light.position;
-            Vec3 direction = light.direction;
-            if (light.sunLinked) {
-                // Same anchor model as the lights UBO: the shadow camera
-                // sits OUTSIDE, films through the window along the live
-                // beam — the aperture clips the pool for real. A dead
-                // beam (night, sun behind the wall) frees its slot.
-                direction = -shadowSunDirection;
-                const f32 facing = glm::dot(
-                    direction, glm::normalize(light.direction));
-                if (keySunGate * glm::smoothstep(0.15f, 0.40f, facing) <=
-                    0.05f) {
-                    continue;
-                }
-                position += shadowSunDirection * 3.5f;
-            } else if (light.spotAngle <= 0.0f) {
-                // POINT lights film straight DOWN: one cone cannot
-                // cover the sphere, and the ground disc under the lamp
-                // is where cast shadows read (an unrotated light's
-                // default +Z cone missed everything beside it — "the
-                // meshes by the door cast nothing"). Wall shadows above
-                // the lamp's own height are the accepted loss.
-                direction = Vec3 { 0.0f, -1.0f, 0.0f };
-            }
-            const Vec3 d = light.position - camera.position;
-            keyCandidates.push_back(
-                { light.intensity / (1.0f + glm::dot(d, d)),
-                  light.position, position, direction,
-                  light.spotAngle > 0.0f
-                      ? glm::min(light.spotAngle * 1.3f, 150.0f)
-                      : 150.0f,
-                  light.radius });
+void WorldRenderer::logBudgetOnce() {
+    // One-shot GPU budget line for headless/scripted sessions (the F6
+    // table without eyes on the HUD): logged once past driver warmup,
+    // with the rolling window full.
+    ++perfFrames;
+    if (perfFrames == 2000 && gpuProbe.active()) {
+        str line;
+        char cell[64];
+        for (const render::GpuProbe::PassRow& row : gpuProbe.rows()) {
+            std::snprintf(cell, sizeof(cell), " | %s %.2f/%.2f", row.name,
+                          row.stats.averageMs, row.stats.maxMs);
+            line += cell;
         }
-        std::stable_sort(keyCandidates.begin(), keyCandidates.end(),
-                         [](const KeyCandidate& a, const KeyCandidate& b) {
-                             return a.score > b.score;
-                         });
-        const size_t slots =
-            glm::min<size_t>(keyCandidates.size(), kKeyShadowSlots);
-        for (size_t slot = 0; slot < slots; ++slot) {
-            const KeyCandidate& pick = keyCandidates[slot];
-            const Vec3 up = std::abs(pick.direction.y) > 0.95f
-                                ? Vec3 { 1.0f, 0.0f, 0.0f }
-                                : Vec3 { 0.0f, 1.0f, 0.0f };
-            const Mat4 lightView =
-                glm::lookAt(pick.position, pick.position + pick.direction,
-                            up);
-            const Mat4 proj = glm::perspective(glm::radians(pick.fov),
-                                               1.0f, 0.05f, pick.radius);
-            frameData.keyShadowAtlasViewProj[slot] = proj * lightView;
-            keyShadowPicks.push_back(
-                { pick.anchor, frameData.keyShadowAtlasViewProj[slot] });
+        LOG_INFO("gpu budget (avg/max ms, 120f): frame {:.2f}/{:.2f}{}",
+                 gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs(), line);
+    }
+    // Worker-job telemetry: fold landed costs every frame; mirror the
+    // one-shot budget line for headless/scripted sessions.
+    if (jobSystem) {
+        core::JobProbe& probe = jobSystem->probe();
+        probe.drain();
+        if (perfFrames == 2000 && !probe.rows().empty()) {
+            str line;
+            char cell[96];
+            for (const core::JobProbe::Row& row : probe.rows()) {
+                std::snprintf(cell, sizeof(cell), " | %s %ux avg %.0fms",
+                              row.name, row.runs, row.averageMs());
+                line += cell;
+            }
+            LOG_INFO("cpu bakes (window): {:.1f} s total{}",
+                     probe.windowTotalMs() / 1000.0, line);
         }
     }
-    frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
+}
 
-    // The selected local lights, flicker applied CPU-side (sin +
-    // per-index phase — cheap and stateless). Only the clustered path
-    // may consume the full budget; the legacy per-pixel loop stays
-    // capped at kFallbackLights (its cost is per-slot x per-pixel).
-    {
-        const u32 budget = clustered ? kMaxLights : kFallbackLights;
-        LightsUniforms lights;
-        const vector<render::SceneLight>& nearest = snapshot.lights;
-        // With "lights via RC only", the
-        // DIRECT contribution is cut (count 0 -> localLights() adds
-        // nothing) and the lights exist purely in the GI volume: their
-        // occlusion and penumbras come from the cascades, at voxel
-        // resolution. Only meaningful while the RC technique is active.
-        const bool rcOnly =
-            radianceCascades.tuning.rcOnlyLights &&
-            radianceCascades.tuning.technique ==
-                render::GiTechnique::RadianceCascades;
-        // H2 (docs/RENDERING.md): sun-linked sources take the SUN's
-        // live color — hour and weather included — and die below the
-        // horizon. WINDOW projectors (docs/RENDERING.md) keep the anchor
-        // and carry the window's NORMAL + extents; the facing gate
-        // lives in the shader (beam · normal). Plain sun-linked spots
-        // keep the pushed-cone model. rcOnly lights skip the direct
-        // path entirely — their GI blob carries them.
-        const f32 sunGate =
-            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
-        const Vec3 sunTint { uniforms.sunColor };
-        u32 slot = 0;
-        for (u32 i = 0; i < nearest.size() && slot < budget && !rcOnly;
-             ++i) {
-            const render::SceneLight& light = nearest[i];
-            if (light.rcOnly) {
-                continue;
-            }
-            const bool window = light.windowHalfWidth > 0.0f;
-            f32 intensity = light.intensity;
-            Vec3 color = light.color;
-            Vec3 position = light.position;
-            if (light.sunLinked) {
-                color = sunTint;
-                intensity *= sunGate * aboveBuried(light.position.y,
-                                                   view.buriedBelowY);
-                if (!window) {
-                    const f32 facing =
-                        glm::dot(-shadowSunDirection,
-                                 glm::normalize(light.direction));
-                    intensity *=
-                        glm::smoothstep(0.15f, 0.40f, facing);
-                    position += shadowSunDirection * 3.5f;
+void WorldRenderer::fitShadowCascades(
+    engine::FrameContext& frame, const render::Camera3D& camera,
+    const Vec3& sunDirection, f32 shadowStrength,
+    render::ShadowMapper::Cascades& cascades,
+    array<bool, render::ShadowMapper::kCascadeCount>& cascadeDue) {
+    // The cascades use a QUANTIZED sun (otherwise tree shadows tremble).
+    // The texel snap absorbs camera translation, but the game clock spins
+    // the light a fraction of a degree every frame, re-basing the snap —
+    // the edges crawl. Hysteresis instead: shadows sit rock-stable, then
+    // take an imperceptible ~0.4° step every ~8 real seconds; the VISIBLE
+    // sun/lighting keeps moving smoothly.
+    bool sunStepped = false;
+    if (glm::dot(shadowSunDirection, sunDirection) <
+        std::cos(glm::radians(0.4f))) {
+        shadowSunDirection = sunDirection;
+        sunStepped = true;
+    }
+    // Which cascades actually re-render this frame (docs/RENDERING.md):
+    // most of the shadow cost is the two
+    // far cascades. Round-robin: cascade 0 every frame, cascades 1 and 2
+    // on alternate frames, each keeping its PREVIOUS matrix when skipped
+    // (the stale depth must be sampled with the matrix it was drawn
+    // with). A sun step (or the A/B toggle off) re-renders all three.
+    if (shadowStrength > 0.0f) {
+        cascades = shadows.computeCascades(camera, frame.aspect,
+                                           shadowSunDirection);
+        ++shadowFrame;
+        const bool full =
+            !tuning.shadowRoundRobin || !lastCascadesValid || sunStepped;
+        if (!full) {
+            for (u32 i = 1; i < render::ShadowMapper::kCascadeCount; ++i) {
+                cascadeDue[i] = (shadowFrame + i) % 2 == 0;
+                if (!cascadeDue[i]) {
+                    cascades.viewProj[i] = lastCascades.viewProj[i];
+                    cascades.splitFar[i] = lastCascades.splitFar[i];
+                    cascades.texelWorld[i] = lastCascades.texelWorld[i];
                 }
             }
-            if (light.flicker > 0.0f) {
-                const f32 phase = static_cast<f32>(i) * 1.7f;
-                intensity *=
-                    1.0f + light.flicker *
-                               (0.55f * std::sin(view.timeSeconds * 9.0f + phase) +
-                                0.45f * std::sin(view.timeSeconds * 23.0f +
-                                                 phase * 3.1f));
-            }
-            lights.positionRadius[slot] = { position, light.radius };
-            lights.colorIntensity[slot] = { color * intensity, 0.0f };
-            const bool spot = light.spotAngle > 0.0f;
-            lights.directionAngle[slot] = {
-                glm::normalize(window ? light.direction
-                               : light.sunLinked ? -shadowSunDirection
-                                                 : light.direction),
-                window ? -3.0f
-                : spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
-                       : -2.0f
-            };
-            // The key-shadow atlas slot (windowInfo.z, 0 = unshadowed):
-            // matched against the pick's anchor — both come from the
-            // same Transform, so the positions are bit-equal.
-            f32 shadowSlot = 0.0f;
-            for (size_t k = 0; k < keyShadowPicks.size(); ++k) {
-                if (glm::distance(keyShadowPicks[k].anchor,
-                                  light.position) < 0.05f) {
-                    shadowSlot = static_cast<f32>(k + 1);
-                    break;
-                }
-            }
-            lights.windowInfo[slot] = { light.windowHalfWidth,
-                                        light.windowHalfHeight, shadowSlot,
-                                        0.0f };
-            ++slot;
         }
-        lights.count.x = static_cast<f32>(slot);
-        frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
+        lastCascades = cascades;
+        lastCascadesValid = true;
+        shadows.updateCascadeUbos(frame.device, cascades);
+    } else {
+        lastCascadesValid = false; // interiors/night: refit from scratch
     }
+}
 
-    // Cluster the UBO's lights for this frame (the frame bind group —
-    // bound by every consumer — carries the list SSBO at binding 4).
-    if (clustered) {
-        render::GpuProbe::Scope gpu { gpuProbe, frame.device,
-                                      "clusterCull" };
-        frame.cmd.setBindGroup(0, frameBindGroup);
-        lightClusters.run(frame.cmd);
+bool WorldRenderer::reflectionWanted(const RenderView& view,
+                                     const render::Frustum& viewFrustum) {
+    // Planar reflection is meaningful only from above the surface —
+    // and (auto-skip) only when some water can actually show: a
+    // RESIDENT chunk dipping below sea level inside the frustum.
+    bool waterVisible = true;
+    if (mounted.water && tuning.reflectionAutoSkip && !view.interiorMode &&
+        tuning.reflections) {
+        terrain.collectChunkAabbs(occlusionAabbs);
+        waterVisible = seaVisibleInFrustum(occlusionAabbs,
+                                           terrain.params.seaLevel,
+                                           view.camera.position, viewFrustum);
     }
+    return tuning.reflections && reflectionFb.id() != 0 &&
+           !view.interiorMode &&
+           view.camera.position.y > terrain.params.seaLevel && waterVisible;
+}
 
-    // Bake this frame's cloud field before anything lights with it.
-    if (cfg.sky && !view.interiorMode) {
-        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "cloudBake" };
-        sky.bakeCloudMap(frame.cmd, frameBindGroup);
-    }
-
-    recordKeyShadowTiles(frame, snapshot, view, keyShadowPicks);
-
-    recordRainOcclusion(frame, snapshot, view, frameData);
-
-    recordShadowCascades(frame, snapshot, view, cascades, cascadeDue,
-                         shadowStrength);
-
-    // GI voxel clipmap re-injection (docs/RENDERING.md) — its
-    // HISTORICAL slot: after the CSM passes (the inject samples fresh
-    // shadow maps), outside any render pass. Pipelined (PG2), the chain
-    // records at the END of the frame instead and this slot only fences
-    // LAST frame's cascade 0 for this frame's consumers — everything
-    // recorded above (cluster cull, cloud bake, CSM, key shadows) reads
-    // no GI and overlaps the still-running chain.
-    if (cfg.gi) {
-        if (!radianceCascades.tuning.pipelined) {
-            recordGiUpdate(frame, snapshot, view, uniforms, clustered);
-        } else if (radianceCascades.applyGroup().id != 0 &&
-                   !(radianceCascades.tuning.asyncCompute &&
-                     frame.device.caps().asyncCompute)) {
-            // Async: the cross-queue semaphore already publishes last
-            // frame's chain to this frame's consumers — no fence needed.
-            frame.cmd.memoryBarrier(rhi::BarrierStage_Fragment |
-                                    rhi::BarrierStage_Compute);
-        }
-    }
-
-    const bool useOffscreen = frame.device.caps().offscreenTargets;
-    if (useOffscreen) {
-        ensureOffscreenTarget(frame.device, frame.width, frame.height);
-        if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
-            rebuildBlitPipeline(frame.device);
-        }
-    }
-
-    recordReflection(frame, view, uniforms, reflectionsActive);
-
-    // (The Hi-Z verdict readback is gone — docs/RENDERING.md §6.0 I6:
-    // the cull's verdict lives in the indirect commands and never
-    // crosses the CPU. The legacy draw path keeps the CPU horizon
-    // occlusion only.)
-
-    recordMainPass(frame, snapshot, view, viewFrustum, frameData,
-                   useOffscreen);
-
-    recordCopyHizWater(frame, view, viewProj, useOffscreen);
-
-    recordPostFx(frame, view, frameData, useOffscreen);
-
-    // Pipelined GI (docs/RENDERING.md PG2): the chain records HERE, at the
-    // end of the frame — this frame consumed LAST frame's cascade 0; the
-    // chain overlaps the composite, the present and the next frame's
-    // front, up to the consumer fence before the next reflection.
-    if (cfg.gi && radianceCascades.tuning.pipelined) {
-        recordGiUpdate(frame, snapshot, view, uniforms, clustered);
-    }
-
+void WorldRenderer::recordComposite(engine::FrameContext& frame,
+                                    const RenderView& view,
+                                    bool useOffscreen) {
     if (useOffscreen) {
         core::FrameProbe::Scope probe { *view.probe, "composite" };
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "composite" };
@@ -2644,7 +2424,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.cmd.setBindGroup(1, blitBindGroups[postFx.exposureSide()]);
         frame.cmd.draw(3);
         // GI debug raymarch of a clip volume over the frame.
-        if (cfg.gi) {
+        if (mounted.gi) {
             radianceCascades.drawDebug(frame.cmd, frameBindGroup);
         }
         // The game UI composes over the tonemapped scene,
@@ -2727,7 +2507,7 @@ void WorldRenderer::recordGiUpdate(engine::FrameContext& frame,
         // march filters through, soft light under the crowns); rocks and
         // bushes as small solid/soft boxes. Nearest chunks first, capped
         // by the shared box budget.
-        if (cfg.vegetation && !view.interiorMode) {
+        if (mounted.vegetation && !view.interiorMode) {
             vegGiProps.clear();
             vegetation.collectGiProps(
                 camera.position, clipHalf, vegGiProps,

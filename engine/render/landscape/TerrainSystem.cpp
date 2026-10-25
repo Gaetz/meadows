@@ -12,6 +12,7 @@
 #include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/render/PipelinePresets.hpp"
 
 namespace render {
 
@@ -21,7 +22,7 @@ constexpr const char* kTerrainShader = "terrain";
 constexpr const char* kTerrainCasterShader = "shadow_terrain";
 
 i32 camChunk(f32 worldCoord) {
-    return chunkCoordOf(worldCoord, TerrainSystem::kChunkSize);
+    return core::chunkCoordOf(worldCoord, TerrainSystem::kChunkSize);
 }
 
 } // namespace
@@ -194,7 +195,7 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                  "terrain splatting disabled");
     }
 
-    shaders.load(kTerrainShader, { { "FrameUbo", 0 } },
+    shaders.load(kTerrainShader, { render::kFrameUbo },
                  { { "uSplat", 0 },
                    { "uShadowMap", 1 },
                    { "uSplatHeight", 3 },
@@ -202,9 +203,8 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                    { "uTerrainShade1", 5 },
                    { "uSplatNormal", 8 },
                    { "uFireScorch", 10 } });
-    buildPipeline(device, shaders);
-    shaders.load(kTerrainCasterShader, { { "ShadowUbo", 1 } });
-    buildCasterPipeline(device, shaders);
+    shaders.load(kTerrainCasterShader, { render::kShadowUbo });
+    refreshPipeline(device, shaders);
 }
 
 void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
@@ -299,19 +299,7 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
         constexpr size_t kLayerBytes =
             static_cast<size_t>(kSize) * kSize * 4;
         const auto familyColor = [&](u32 layer) -> Vec3 {
-            if (layer < SplatLayer_Count) {
-                return layerBases[layer];
-            }
-            if (layer < 8) {
-                return layerBases[SplatLayer_Grass];
-            }
-            if (layer < 11) {
-                return layerBases[SplatLayer_Rock];
-            }
-            if (layer < 13) {
-                return layerBases[SplatLayer_Snow];
-            }
-            return layerBases[SplatLayer_Sand];
+            return layerBases[splatFamilyOf(layer)];
         };
         vector<u8> albedoPixels(kLayerBytes * kSplatArrayLayers);
         vector<u8> normalPixels(kLayerBytes * kSplatArrayLayers);
@@ -439,7 +427,7 @@ void TerrainSystem::remeshChunks(const vector<u64>& keys) {
         // swaps in the result (residentLod != kNoLod → the LOD-swap path).
         it->second.queuedLod = it->second.residentLod;
         ++pending;
-        enqueueBuild(chunkKeyCx(key), chunkKeyCz(key),
+        enqueueBuild(core::chunkKeyCx(key), core::chunkKeyCz(key),
                      it->second.residentLod);
     }
 }
@@ -467,7 +455,7 @@ void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos,
     // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
-    // progress is guaranteed. (Budget loop in ChunkStreamer; this
+    // progress is guaranteed. (Budget loop in core::ChunkStreamer; this
     // lambda is the terrain-specific accept — the LOD-swap upload.)
     // Boosted while a loading veil hides the frame: stutter is invisible
     // there and the gate holds on `pending` draining.
@@ -526,7 +514,7 @@ void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos,
                 chunk.remeshOnLand = false;
                 chunk.queuedLod = lod;
                 ++pending;
-                enqueueBuild(chunkKeyCx(key), chunkKeyCz(key), lod);
+                enqueueBuild(core::chunkKeyCx(key), core::chunkKeyCz(key), lod);
             }
             return true;
         });
@@ -553,7 +541,7 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos, bool boost) {
               : (viewRadius > 24 ? kMaxRequestsPerFrame * 2
                                  : kMaxRequestsPerFrame),
         [&](i32 cx, i32 cz, i32 dx, i32 dz) {
-            const auto it = streamer.chunks.find(chunkKey(cx, cz));
+            const auto it = streamer.chunks.find(core::chunkKey(cx, cz));
             if (it == streamer.chunks.end()) {
                 return true; // missing entirely
             }
@@ -565,11 +553,11 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos, bool boost) {
         },
         [&](i32 cx, i32 cz, i32 dx, i32 dz) {
             const u8 lod = lodAt(dx, dz);
-            const auto it = streamer.chunks.find(chunkKey(cx, cz));
+            const auto it = streamer.chunks.find(core::chunkKey(cx, cz));
             if (it == streamer.chunks.end()) {
                 Chunk chunk;
                 chunk.queuedLod = lod;
-                streamer.chunks.emplace(chunkKey(cx, cz), std::move(chunk));
+                streamer.chunks.emplace(core::chunkKey(cx, cz), std::move(chunk));
             } else {
                 it->second.queuedLod = lod;
             }
@@ -617,8 +605,8 @@ bool TerrainSystem::stealFurthestSlot(u32 lod, const Vec3& cameraPos) {
             continue;
         }
         const i32 cheb =
-            std::max(std::abs(chunkKeyCx(key) - camCx),
-                     std::abs(chunkKeyCz(key) - camCz));
+            std::max(std::abs(core::chunkKeyCx(key) - camCx),
+                     std::abs(core::chunkKeyCz(key) - camCz));
         if (cheb > victimCheb) {
             victimCheb = cheb;
             victim = &chunk;
@@ -650,51 +638,35 @@ void TerrainSystem::freeSlot(u32 lod, u32 slot) {
     }
 }
 
-void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    shaders.beginWatch();
-    // U3-7: the assignment frees the previous pipeline.
-    pipeline = { device, device.createPipeline(
-        { .shader = shaders.get(kTerrainShader),
-          .vertexBuffers = { meshVertexLayout() }, // U3-5
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back,
-          .wireframe = wireframe }) };
-    shaderWatch = shaders.endWatch();
-}
-
-void TerrainSystem::buildCasterPipeline(rhi::Device& device,
-                                        ShaderLibrary& shaders) {
-    shaders.beginWatch();
-    casterPipeline = { device, device.createPipeline(
-        { .shader = shaders.get(kTerrainCasterShader),
-          .vertexBuffers = { meshVertexPositionLayout() }, // U3-5
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back,
-          // Polygon offset: the first line of defense against shadow acne.
-          .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f }) };
-    casterShaderWatch = shaders.endWatch();
-}
-
 void TerrainSystem::refreshPipeline(rhi::Device& device,
                                     ShaderLibrary& shaders) {
-    if (shaderWatch.changed(shaders)) {
-        buildPipeline(device, shaders);
-    }
-    if (casterShaderWatch.changed(shaders)) {
-        buildCasterPipeline(device, shaders);
-    }
+    pipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kTerrainShader),
+              .vertexBuffers = { meshVertexLayout() },
+              .depth = render::kDepthOpaque,
+              .cull = rhi::CullMode::Back,
+              .wireframe = wireframe });
+    });
+    casterPipeline.ensure(device, shaders, [&] {
+        return device.createPipeline(
+            { .shader = shaders.get(kTerrainCasterShader),
+              .vertexBuffers = { meshVertexPositionLayout() },
+              .depth = render::kDepthCaster,
+              .cull = rhi::CullMode::Back,
+              // Polygon offset: the first line of defense against shadow
+              // acne.
+              .depthBias = render::kDepthBias,
+              .depthBiasSlope = render::kDepthBiasSlope });
+    });
 }
 
 void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
                                  ShaderLibrary& shaders) {
     if (wireframe != enabled) {
         wireframe = enabled;
-        buildPipeline(device, shaders);
+        pipeline.invalidate();
+        refreshPipeline(device, shaders);
     }
 }
 
@@ -727,8 +699,8 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
             continue; // hidden behind a ridge (GpuOcclusion)
         }
         if (frustum) {
-            const f32 x0 = static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
-            const f32 z0 = static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
+            const f32 x0 = static_cast<f32>(core::chunkKeyCx(key)) * kChunkSize;
+            const f32 z0 = static_cast<f32>(core::chunkKeyCz(key)) * kChunkSize;
             if (!frustum->intersectsAabb(
                     { x0, chunk.minY, z0 },
                     { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
@@ -803,8 +775,8 @@ void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
         if (chunk.residentLod == kNoLod) {
             continue;
         }
-        const i32 cx = chunkKeyCx(key);
-        const i32 cz = chunkKeyCz(key);
+        const i32 cx = core::chunkKeyCx(key);
+        const i32 cz = core::chunkKeyCz(key);
         if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
             maxChunkDistance) {
             continue; // beyond the last cascade

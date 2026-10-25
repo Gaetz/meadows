@@ -46,6 +46,9 @@ struct MapBakeStats {
 // Cancellation: the JobSystem stop flag — a cancelled bake writes no
 // manifest (partial slices are orphaned by the missing manifest and
 // overwritten on the next run).
+// Its stage order (stage-1 -> slice grounds -> map hydrology -> slice
+// water) must match terraingen::bakeSoloTile, the same pipeline on a
+// 1x1 map: a stage added on one side is added on the other.
 MapBakeStats bakeMap(const render::terraingen::TileBakeParams& params,
                      i32 mapX, i32 mapZ,
                      const std::filesystem::path& cacheDir,

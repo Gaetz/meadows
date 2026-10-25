@@ -4,6 +4,7 @@
 
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
+#include "gameplay/ability/Tags.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
@@ -26,12 +27,10 @@ namespace {
 // theoretical max as effectiveMax / (1 + r/100) — the sim's rule stays
 // in ONE place (buildResonanceModifiers).
 void publishTheoreticalMaxima(AbilitySystem& system) {
-    system.current[attr("theoreticalMaxHealth")] =
-        currentValueOf(system, attr("maxHealth"));
-    system.current[attr("theoreticalMaxEnergy")] =
-        currentValueOf(system, attr("maxEnergy"));
-    system.current[attr("theoreticalMaxEssence")] =
-        currentValueOf(system, attr("maxEssence"));
+    for (const VitalPair& vital : kVitals) {
+        system.current[attr(vital.theoreticalMax)] =
+            currentValueOf(system, attr(vital.max));
+    }
 }
 
 } // namespace
@@ -50,10 +49,7 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
     auto& resoDecays  = entity.get_mut<ResonanceDecays>();
 
     // Stagger / paralysis / crit-window / shaken timers decay in real time.
-    updateStagger(combat, system, dt, ctx.tags);
-    updateParalysis(combat, system, dt, ctx.tags);
-    updateCritWindow(combat, system, dt, ctx.tags);
-    updateShaken(combat, system, dt, ctx.tags);
+    tickTimedStates(combat, system, dt, ctx.tags);
 
     // Pre-register decay entries for real-time resonance effects about to expire.
     {
@@ -119,7 +115,7 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
             // STATS.md §4: energy regen halves while the guard is up
             // (holding the parry is effortful, turtling starves you).
             f32 rate = regen;
-            if (const auto blocking = ctx.tags.find("State.Blocking");
+            if (const auto blocking = ctx.tags.find(tags::Blocking);
                 blocking && system.tags.has(*blocking)) {
                 rate *= ctx.tuning.blockEnergyRegenFactor;
             }
@@ -200,9 +196,10 @@ void initializeActorStats(ecs::Entity entity,
 
     // Restore vitals to full, then recompute once more so derived stats are
     // consistent with the new maxima.
-    vitals.health  = currentValueOf(system, attr("maxHealth"));
-    vitals.energy  = currentValueOf(system, attr("maxEnergy"));
-    vitals.essence = currentValueOf(system, attr("maxEssence"));
+    for (const VitalPair& vital : kVitals) {
+        setBaseValue(vitals, attr(vital.value),
+                     currentValueOf(system, attr(vital.max)));
+    }
     recomputeStats(core, vitals, resonance, system, ctx.derived, &mods);
     combat.posture = currentValueOf(system, attr("maxPosture"));
 

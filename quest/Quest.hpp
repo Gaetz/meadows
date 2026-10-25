@@ -45,13 +45,18 @@ struct QuestForm : data::Form {
     REFLECT_END()
 };
 
+inline constexpr std::string_view kQuestStateKindNames[] = { "Regular",
+                                                             "Success",
+                                                             "Failure" };
+inline constexpr reflect::EnumTable kQuestStateKinds { kQuestStateKindNames };
+
 struct QuestStateForm : data::Form {
     core::Guid quest;
-    str kind { "Regular" }; // Regular | Success | Failure
+    str kind { "Regular" }; // kQuestStateKinds
 
     REFLECT_BEGIN(QuestStateForm, data::Form)
         REFLECT_FIELD(quest)
-        REFLECT_FIELD(kind)
+        REFLECT_FIELD_ENUM(kind, kQuestStateKinds)
     REFLECT_END()
 };
 
@@ -60,7 +65,7 @@ struct QuestBranchForm : data::Form {
     core::Guid destination; // state entered when the branch's tasks complete
 
     REFLECT_BEGIN(QuestBranchForm, data::Form)
-        REFLECT_FIELD(state)
+        REFLECT_FIELD_FLAGS(state, reflect::ParentLink)
         REFLECT_FIELD(destination)
     REFLECT_END()
 };
@@ -73,7 +78,7 @@ struct QuestTaskForm : data::Form {
     i32 required { 1 };
 
     REFLECT_BEGIN(QuestTaskForm, data::Form)
-        REFLECT_FIELD(branch)
+        REFLECT_FIELD_FLAGS(branch, reflect::ParentLink)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(event)
         REFLECT_FIELD(filterTag)

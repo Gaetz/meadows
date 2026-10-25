@@ -1,5 +1,7 @@
 #include "world/spirit/SpiritSources.hpp"
 
+#include "engine/core/Math.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -86,7 +88,7 @@ vector<render::terraingen::WaterSource> SpiritSourceList::waterSourcesFor(
         out.push_back({ s.x, s.z, share });
         const f32 ring = s.radius * 0.55f;
         for (u32 k = 0; k < 6; ++k) {
-            const f32 a = static_cast<f32>(k) * (6.2831853f / 6.0f);
+            const f32 a = static_cast<f32>(k) * (core::kTau / 6.0f);
             out.push_back({ s.x + std::cos(a) * ring,
                             s.z + std::sin(a) * ring, share });
         }

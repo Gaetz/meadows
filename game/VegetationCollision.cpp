@@ -2,20 +2,13 @@
 
 #include <cmath>
 
+#include "engine/core/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 
 namespace game {
 
 namespace {
-
-u64 packChunk(i32 x, i32 z) {
-    return (static_cast<u64>(static_cast<u32>(x)) << 32) |
-           static_cast<u64>(static_cast<u32>(z));
-}
-
-i32 unpackX(u64 key) { return static_cast<i32>(key >> 32); }
-i32 unpackZ(u64 key) { return static_cast<i32>(key & 0xFFFFFFFFu); }
 
 // Collider proportions, calibrated on the generators (TreeGenerator:
 // trunk radius 0.17-0.24 x scale, height 4.2-6.1 x scale; rocks: ~unit
@@ -55,7 +48,7 @@ VegetationCollision::CookedChunk VegetationCollision::cookColliders(
     const render::VegetationSystem::VariantBuckets buckets =
         render::scatterProps(params, cx, cz);
     CookedChunk cooked;
-    cooked.key = packChunk(cx, cz);
+    cooked.key = core::chunkKey(cx, cz);
     const auto add = [&](const render::VegetationSystem::Instance& prop,
                          f32 halfXZ, f32 halfY) {
         const f32 s = prop.positionScale.w;
@@ -65,16 +58,22 @@ VegetationCollision::CookedChunk VegetationCollision::cookColliders(
             { { halfXZ * s, halfY * s, halfXZ * s },
               base + Vec3 { 0.0f, halfY * s, 0.0f } });
     };
-    for (u32 v = 0; v < render::VegetationSystem::kTreeVariants; ++v) {
+    using PropFamily = render::VegetationSystem::PropFamily;
+    const auto family = [](PropFamily f)
+        -> const render::VegetationSystem::PropFamilyTraits& {
+        return render::VegetationSystem::familyTraits(f);
+    };
+    const auto& trees = family(PropFamily::Tree);
+    for (u32 v = trees.first; v < trees.end(); ++v) {
         for (const auto& prop : buckets[v]) {
             add(prop, kTrunkHalfXZ, kTrunkHalfY);
         }
     }
-    for (u32 v = render::VegetationSystem::kFirstRock;
-         v < render::VegetationSystem::kFirstBush; ++v) {
-        // Pebbles live in their own variant slots (never iterated here):
-        // thousands of centimeter bodies per ring would be pure waste
-        // and blow the destroy path.
+    // Pebbles are their own family (never iterated here): thousands of
+    // centimeter bodies per ring would be pure waste and blow the
+    // destroy path.
+    const auto& rocks = family(PropFamily::Rock);
+    for (u32 v = rocks.first; v < rocks.end(); ++v) {
         for (const auto& prop : buckets[v]) {
             add(prop, kRockHalfXZ, kRockHalfY);
         }
@@ -83,9 +82,9 @@ VegetationCollision::CookedChunk VegetationCollision::cookColliders(
     // rotates with the instance yaw — tree.vert applies R_y(-yaw)
     // (x*c - z*s / x*s + z*c), the body must match or the box lies
     // across the visual.
-    for (u32 v = render::VegetationSystem::kFirstDebris;
-         v < render::VegetationSystem::kFirstPlant; ++v) {
-        const bool log = v == render::VegetationSystem::kFirstDebris + 1;
+    const auto& debris = family(PropFamily::Debris);
+    for (u32 v = debris.first; v < debris.end(); ++v) {
+        const bool log = v == debris.first + 1;
         for (const auto& prop : buckets[v]) {
             const f32 s = prop.positionScale.w;
             const Vec3 base { prop.positionScale.x, prop.positionScale.y,
@@ -99,8 +98,7 @@ VegetationCollision::CookedChunk VegetationCollision::cookColliders(
                   prop.params.x, true });
         }
     }
-    // Bushes (kFirstBush..kFirstDebris) and plants (kFirstPlant..) are
-    // deliberately walk-through.
+    // Bushes, plants, mass and pebbles are deliberately walk-through.
     return cooked;
 }
 
@@ -143,7 +141,7 @@ void VegetationCollision::update(const Vec3& focus) {
     i32 bestDist = INT32_MAX;
     for (i32 tz = centerZ - 1; tz <= centerZ + 1; ++tz) {
         for (i32 tx = centerX - 1; tx <= centerX + 1; ++tx) {
-            const u64 key = packChunk(tx, tz);
+            const u64 key = core::chunkKey(tx, tz);
             if (chunks.contains(key) || pending.contains(key)) {
                 continue;
             }
@@ -157,7 +155,7 @@ void VegetationCollision::update(const Vec3& focus) {
         }
     }
     if (bestDist != INT32_MAX) {
-        const u64 key = packChunk(bestX, bestZ);
+        const u64 key = core::chunkKey(bestX, bestZ);
         pending.insert(key);
         if (jobs) {
             jobs->enqueue([queue = built, scatterParams = params,
@@ -177,8 +175,8 @@ void VegetationCollision::update(const Vec3& focus) {
 
     // Evict beyond ring 2 (hysteresis).
     for (auto it = chunks.begin(); it != chunks.end();) {
-        const i32 dx = unpackX(it->first) - centerX;
-        const i32 dz = unpackZ(it->first) - centerZ;
+        const i32 dx = core::chunkKeyCx(it->first) - centerX;
+        const i32 dz = core::chunkKeyCz(it->first) - centerZ;
         if (dx < -2 || dx > 2 || dz < -2 || dz > 2) {
             for (const phys::BodyId body : it->second) {
                 physics.removeBody(body);
@@ -192,8 +190,8 @@ void VegetationCollision::update(const Vec3& focus) {
     // A pending chunk that left the ring is dropped on arrival
     // (landChunk's pending/chunks guards).
     for (auto it = pending.begin(); it != pending.end();) {
-        const i32 dx = unpackX(*it) - centerX;
-        const i32 dz = unpackZ(*it) - centerZ;
+        const i32 dx = core::chunkKeyCx(*it) - centerX;
+        const i32 dz = core::chunkKeyCz(*it) - centerZ;
         if (dx < -2 || dx > 2 || dz < -2 || dz > 2) {
             it = pending.erase(it);
         } else {

@@ -44,9 +44,11 @@ struct Equipment {
 
 void registerInventoryComponents(ecs::World& world);
 
-// Adds `count` of an item, stacking onto an existing stack if present.
+// Adds `count` (> 0, asserted; <= 0 is a no-op) of an item, stacking onto
+// an existing stack if present.
 void addItem(Inventory& inventory, const core::Guid& item, i32 count = 1);
-// Removes `count`; returns false (and removes nothing) if the stack is short.
+// Removes `count` (> 0, asserted; <= 0 removes nothing and returns false);
+// returns false (and removes nothing) if the stack is short.
 bool removeItem(Inventory& inventory, const core::Guid& item, i32 count = 1);
 i32 itemCount(const Inventory& inventory, const core::Guid& item);
 // Moves EVERY stack of `from` into `to` (stacking onto existing stacks) and
