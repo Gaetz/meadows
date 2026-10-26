@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iterator>
 #include <string_view>
 #include <variant>
 
@@ -101,9 +102,12 @@ struct SavedStatsForm : data::Form {
 // One per ACTIVE durational effect. Mirrors gameplay::ActiveEffect
 // directly (an ActiveEffect does not know its source EffectForm, and one
 // form can spawn several rows) — restored by restoreActiveEffect(), NOT
-// by re-applying a form. `attribute` is the raw fnv1a field id (stable
-// across runs; effects may target attributes of ANY set, no generic
-// reverse name lookup exists); the tag keeps its dotted name.
+// by re-applying a form. The reflected ActiveEffect fields are copied by
+// NAME (copyMatchingFields) — keep their names and kinds identical on both
+// sides; `op`, `grantedTag` and `effectId` are bridged explicitly.
+// `attribute` is the raw fnv1a field id (stable across runs; effects may
+// target attributes of ANY set, no generic reverse name lookup exists);
+// the tag keeps its dotted name.
 struct SavedEffectForm : data::Form {
     core::Guid parent;  // the actor's ReferenceForm
     u32 attribute { 0 }; // attr field id (gameplay::attr("health")...)
@@ -219,6 +223,39 @@ struct SavedBountyForm : data::Form {
         REFLECT_FIELD(parent)
         REFLECT_FIELD(faction)
         REFLECT_FIELD(amount)
+    REFLECT_END()
+};
+
+// The kinds a saved script variable can hold: the three the Lua bridge
+// stores in gameplay::ScriptVars (a Lua number is an f32, a string a str,
+// a boolean a bool). The ordinal selects the row's value slot.
+enum class ScriptVarKind { Number, Text, Flag };
+inline constexpr std::string_view kScriptVarKindNames[] = { "number", "text",
+                                                            "flag" };
+inline constexpr reflect::EnumTable kScriptVarKinds { kScriptVarKindNames };
+static_assert(std::size(kScriptVarKindNames) ==
+              static_cast<size_t>(ScriptVarKind::Flag) + 1);
+
+// One per gameplay::ScriptVars entry (§2.8): the variable's name and its
+// value, in the slot `kind` selects. Pattern B child records like
+// SavedItemForm; rows are emitted sorted by key so a re-save is
+// idempotent. A field-level patch can target one variable of one actor —
+// the §5 promise for script state.
+struct SavedScriptVarForm : data::Form {
+    core::Guid parent; // the owning entity's ReferenceForm
+    str key;           // the variable name (`self.<key>`)
+    str kind { "number" };
+    f32 number { 0.0f };
+    str text;
+    bool flag { false };
+
+    REFLECT_BEGIN(SavedScriptVarForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(key)
+        REFLECT_FIELD_ENUM(kind, kScriptVarKinds)
+        REFLECT_FIELD(number)
+        REFLECT_FIELD(text)
+        REFLECT_FIELD(flag)
     REFLECT_END()
 };
 

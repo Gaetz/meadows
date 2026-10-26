@@ -193,10 +193,15 @@ The **orchestrator**: `engine/render/WorldRenderer.{hpp,cpp}`
 (`render::WorldRenderer`, engine-side since R4 of §7) owns pass order,
 FrameUbo composition (via `render::FrameComposer`), offscreen targets,
 light UBO fill, key-shadow selection, and the per-subsystem
-`RendererConfig` (R3). Game-side remain only its two friends: the ImGui
-tuning panels (`game/ui/RenderTuningPanels`, R1) and the Forms↔flat-params
-tuning seam (`game/scenes/RenderTuningIo` — the engine never sees a Form,
-CLAUDE.md §4). The chantier's proof runs: `TreeCreationScene` mounts a
+`RendererConfig` (R3). Game-side remain the ImGui tuning panels
+(`game/ui/RenderTuningPanels`, R1) and the Forms↔flat-params tuning seam
+(`game/scenes/RenderTuningIo` — the engine never sees a Form, CLAUDE.md
+§4); neither is a `friend` any more: they reach the sub-system knobs
+through named public accessors (`grassScatterTuning()`, `giTuning()`,
+`postFxSystem()`, …), the scene owns `TerrainParams` and hands it to the
+renderer per frame through `RenderView::terrain`, and chunk rebuilds are
+requested with `requestRemesh/requestRescatter` (drained at the renderer's
+safe point). The chantier's proof runs: `TreeCreationScene` mounts a
 partial config (R5). `AnimPreviewPanel` still hand-rolls its own RHI
 offscreen pipeline — moving it onto a second configured instance is a
 follow-up.

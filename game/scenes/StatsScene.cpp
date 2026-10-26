@@ -1,14 +1,9 @@
 #include "game/scenes/StatsScene.hpp"
 
 #include "game/ui/CharacterStatsPanel.hpp"
+#include "gameplay/actors/ActorKit.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
-#include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Injuries.hpp"
-#include "gameplay/stats/Resonance.hpp"
-#include "gameplay/stats/ResonanceDecays.hpp"
-#include "gameplay/stats/StatusBuildup.hpp"
-#include "gameplay/stats/Survival.hpp"
 
 namespace game {
 
@@ -26,17 +21,9 @@ void StatsScene::onEnter() {
     // stats runtime tags) — one aggregator for every scene.
     gameplay::registerCharacterRuntimeTags(tags);
 
-    // The bench actor, carrying the full character kit.
+    // The bench actor, carrying the full actor kit.
     player = world.create();
-    player.set<gameplay::CoreAttributes>({});
-    player.set<gameplay::AttributeSet>({});
-    player.set<gameplay::AbilitySystem>({});
-    player.set<gameplay::Resonance>({});
-    player.set<gameplay::Survival>({});
-    player.set<gameplay::StatusBuildup>({});
-    player.set<gameplay::CombatState>({});
-    player.set<gameplay::Injuries>({});
-    player.set<gameplay::ResonanceDecays>({});
+    gameplay::attachActorKit(world, player);
     gameplay::initializeCurrent(player.get_mut<gameplay::AbilitySystem>(),
                                 player.get<gameplay::AttributeSet>());
     const gameplay::CharacterTickContext ctx { derived, tags, tuning };

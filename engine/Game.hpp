@@ -2,10 +2,6 @@
 
 #include "engine/core/Defines.hpp"
 
-namespace render {
-class SpriteRenderer;
-}
-
 namespace engine {
 
 class Engine;
@@ -17,7 +13,7 @@ struct FrameContext;
 //
 // Discipline that keeps future render architectures open:
 //   - update() must not touch rendering.
-//   - render()/draw()/drawUi() must not mutate game state (read and submit only).
+//   - render()/drawUi() must not mutate game state (read and submit only).
 class Game {
 public:
     virtual ~Game() = default;
@@ -29,13 +25,10 @@ public:
     virtual void update(f32 dt) = 0;
 
     // Record this frame's render passes. On return the backbuffer must hold
-    // the finished scene (ImGui renders after). The default reproduces the
-    // classic 2D path: one clear pass wrapping draw()'s sprites.
+    // the finished scene (ImGui renders after). The default records one
+    // clear pass, so a game without a renderer still presents a defined
+    // backbuffer.
     virtual void render(FrameContext& frame);
-
-    // Submit this frame's sprites, in painter's order. Only reached through
-    // the default render(); a game that overrides render() may ignore it.
-    virtual void draw(render::SpriteRenderer& /*renderer*/) {}
 
     // Emit dev-UI widgets (ImGui). Optional.
     virtual void drawUi() {}

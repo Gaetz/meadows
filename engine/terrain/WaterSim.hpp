@@ -51,9 +51,21 @@ struct WaterSimParams {
     // carved outlet poured ~6,200 m³/s (replay-measured, Amazon-grade)
     // and flooded the gorge until water climbed the far slopes. Only
     // cells with a real head difference leak at all — this caps each.
-    // (Appended LAST: WSD1 dumps read as a prefix of this struct.)
     f32 reservoirOutflow { 2.0f };
+    // Multiplier on the discharge the BAKED ribbons inject at the window
+    // boundary (entrySourcesFromBodies). The baked courses are interrupted
+    // in places (buried reaches, lake cuts) and the holes read dry —
+    // boosting the injected discharge lets the sim bridge them with
+    // visibly flowing water. 1 = the true runoff law.
+    // (Appended LAST: older dumps read as a prefix of this struct.)
+    f32 bakedDischargeBoost { 3.0f };
 };
+
+// Boundary-inflow provider (window rect -> sources), called ON THE
+// WORKER (pure by contract: cached .twb reads + the memoized master
+// network). Null = rain only.
+using BoundarySourcesFn = std::function<vector<terraingen::WaterSource>(
+    f32 minX, f32 minZ, f32 maxX, f32 maxZ)>;
 
 // Live simulation state. spec.origin is snapped to whole texels.
 struct WaterSimState {
@@ -179,6 +191,52 @@ WaterSimState preRollWindow(const terraingen::GridSpec& spec,
                             const HeightFn& height,
                             const WaterSimParams& params,
                             const vector<terraingen::WaterSource>& sources);
+
+// Boundary inflow from the BAKED ribbons: any river polyline entering
+// the window injects the discharge of its TRUE per-node drainage
+// (RiverNode::area; record-built worlds carry no area and keep the
+// width->area inverse as a fallback), scaled by
+// params.bakedDischargeBoost. A true head inside the window injects its
+// own discharge; the drainage GROWTH along in-window reaches is injected
+// as distributed runoff. `master` = the master-network entries already
+// injected (anything within 80 m of one is skipped). Ribbons at or above
+// `pinnedHalfWidth` are reservoir-fed (pinRivers) and inject nothing.
+vector<terraingen::WaterSource> entrySourcesFromBodies(
+    const WaterBodies& bodies, const terraingen::GridSpec& spec,
+    const vector<terraingen::WaterSource>& master,
+    const WaterSimParams& params, f32 pinnedHalfWidth);
+
+// One worker step of the LIVE window (the regular tick's job body):
+// optional ground refresh, optional scroll (with the boundary sources
+// re-gathered for the new rect), reservoir re-pin when either happened,
+// `substeps` kernel steps with the storm-scaled rain, then the snapshot.
+// `sources` = the cached boundary + baked entries (moved in, returned —
+// re-gathered on a scroll); `runtimeSources` ride the step only (never
+// stored, or they would double on the next job). Headless and
+// deterministic for the same inputs.
+struct LiveStepRequest {
+    i32 dCol { 0 };
+    i32 dRow { 0 };
+    u32 substeps { 0 };
+    bool refreshGround { false };
+    f32 pinRiverHalfWidth { 4.0f };
+    f32 rainIntensity { 0.0f }; // live storm 0..1
+    bool rainPuddles { true };
+};
+struct LiveStepResult {
+    sptr<WaterSimSnapshot> snap;
+    vector<terraingen::WaterSource> sources;
+    bool sourcesFresh { false };
+    f64 volume { 0.0 }; // published m³ (settle-gate calm metric)
+};
+LiveStepResult stepLiveWindow(
+    WaterSimState& state, const WaterSimParams& params,
+    const HeightFn& height, const WaterBodies* bodies,
+    const BoundarySourcesFn& boundary,
+    vector<terraingen::WaterSource> sources,
+    const vector<terraingen::WaterSource>& runtimeSources,
+    const vector<sptr<const WaterSimState>>& crumbs,
+    const LiveStepRequest& request);
 
 // Session LRU of evicted window states (the re-entry lever,
 // docs/PAYSAGE.md §1.5): pick the cached window that best overlaps

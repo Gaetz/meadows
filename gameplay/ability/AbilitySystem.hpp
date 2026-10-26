@@ -31,6 +31,13 @@ static_assert(std::size(kModifierOpNames) ==
 // Periodic effect. Non-periodic (period == 0) entries contribute to the
 // CurrentValue aggregation (a temporary modifier); periodic entries (period > 0)
 // instead re-apply to BaseValue on each tick and are excluded from aggregation.
+//
+// Reflected: the scalar state is mirrored onto SavedEffectForm by field
+// NAME (gameplay::copyMatchingFields, one call per direction in SaveState).
+// Three members stay outside reflection and are bridged explicitly there:
+// `op` (an enum — the row stores its ordinal), `grantedTag` (a runtime
+// handle — the row stores the dotted name) and `effectId` (an identity
+// re-allocated on load — the row stores it only to pair rows).
 struct ActiveEffect {
     u32 attribute { 0 };
     ModifierOp op { ModifierOp::Add };
@@ -45,6 +52,19 @@ struct ActiveEffect {
     f32  expiryMagnitude { 0.0f }; // initial ResonanceDecay value if != 0 (drug aftershock)
     bool gameTime { false };       // if true, remaining is in game-seconds (tickGameTimeEffects)
     u32  effectId { 0 };           // unique handle for targeted removal (0 = untracked)
+
+    REFLECT_BEGIN(ActiveEffect, void)
+        REFLECT_FIELD(attribute)
+        REFLECT_FIELD(magnitude)
+        REFLECT_FIELD(infinite)
+        REFLECT_FIELD(remaining)
+        REFLECT_FIELD(period)
+        REFLECT_FIELD(sinceLastTick)
+        REFLECT_FIELD(decayOnExpiry)
+        REFLECT_FIELD(decayPerHour)
+        REFLECT_FIELD(expiryMagnitude)
+        REFLECT_FIELD(gameTime)
+    REFLECT_END()
 };
 
 // The AbilitySystem (the ASC, §6): one per actor (player and NPC alike). Owns
@@ -53,8 +73,8 @@ struct ActiveEffect {
 // (save layer): BaseValues live in the reflected AttributeSet; the
 // active durational effects are mirrored as SavedEffect records by SaveState
 // (captureActiveEffects / restoreActiveEffect; currents re-derived on load, §6).
-// Not reflected — its members (containers) are not reflectable; it is a plain
-// flecs component.
+// The AbilitySystem itself is not reflected — its members (containers) are
+// not reflectable; it is a plain flecs component.
 struct AbilitySystem {
     TagContainer tags;
     std::unordered_map<u32 /*attr field id*/, f32> current; // current-value overlay

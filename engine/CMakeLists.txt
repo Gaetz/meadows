@@ -10,6 +10,7 @@ add_library(meadows STATIC
     Engine.cpp
     Game.cpp
     anim/Anim.cpp
+    anim/GltfSkeleton.cpp
     assets/AssetDatabase.cpp
     assets/CookedMesh.cpp
     assets/CookedTexture.cpp
@@ -38,6 +39,9 @@ add_library(meadows STATIC
     terrain/FireField.cpp
     terrain/WindField.cpp
     terrain/WaterSim.cpp
+    terrain/TerrainNoise.cpp
+    terrain/WaterGeometry.cpp
+    terrain/WaterSimControl.cpp
     terrain/SandboxTerrain.cpp
     terrain/generation/Authoring.cpp
     terrain/generation/Finalize.cpp
@@ -130,7 +134,6 @@ add_library(meadows-render STATIC
     render/landscape/TerrainLightMap.cpp
     render/landscape/TerrainShadeMap.cpp
     render/landscape/FireScorchMap.cpp
-    render/landscape/TerrainNoise.cpp
     render/landscape/TerrainSystem.cpp
     render/landscape/TreeGenerator.cpp
     render/landscape/SpaceColonizationTree.cpp
@@ -139,6 +142,7 @@ add_library(meadows-render STATIC
     render/landscape/VegetationStreaming.cpp
     render/landscape/VegetationSystem.cpp
     render/landscape/WaterSystem.cpp
+    render/landscape/WaterRenderer.cpp
     rhi/Device.cpp
     rhi/UniqueHandle.cpp
     rhi/backends/gl/GlDevice.cpp

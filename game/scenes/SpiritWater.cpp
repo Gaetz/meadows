@@ -61,7 +61,7 @@ void SpiritDirector::updateJets(const SpiritContext& ctx, f32 dt) {
         }
     }
     jets.aim(nozzle(ctx), ctx.cameraForward);
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     jets.resolveLandings([&params](f32 x, f32 z) {
         return render::terrain::height(params, x, z);
     });
@@ -203,7 +203,7 @@ void SpiritDirector::castWaterReading(const SpiritContext& ctx, const Vec3& at,
     in.query = &query;
     in.sources = &list();
     in.worldspace = ctx.worldspace;
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     in.ground = [&params](f32 x, f32 z) {
         return render::terrain::height(params, x, z);
     };

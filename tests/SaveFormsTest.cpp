@@ -103,6 +103,9 @@ TEST_CASE("save forms: an active effect survives capture -> TOML -> restore") {
     original.period = 1.0f;
     original.sinceLastTick = 0.25f;
     original.gameTime = true;
+    original.decayOnExpiry = true;
+    original.decayPerHour = 2.5f;
+    original.expiryMagnitude = -4.0f;
     original.grantedTag = *tags.find("Status.Poisoned");
     original.effectId = 41;
     source.tags.add(original.grantedTag, tags);
@@ -140,6 +143,10 @@ TEST_CASE("save forms: an active effect survives capture -> TOML -> restore") {
     CHECK(effect.period == doctest::Approx(original.period));
     CHECK(effect.sinceLastTick == doctest::Approx(original.sinceLastTick));
     CHECK(effect.gameTime == original.gameTime);
+    CHECK(effect.infinite == original.infinite);
+    CHECK(effect.decayOnExpiry == original.decayOnExpiry);
+    CHECK(effect.decayPerHour == doctest::Approx(original.decayPerHour));
+    CHECK(effect.expiryMagnitude == doctest::Approx(original.expiryMagnitude));
     CHECK(effect.grantedTag == original.grantedTag);
     CHECK(effect.effectId == 1);            // fresh id: the saved one only pairs rows
     CHECK(restored.nextEffectId == 2);
@@ -148,6 +155,47 @@ TEST_CASE("save forms: an active effect survives capture -> TOML -> restore") {
     // Determinism (§8): capturing twice yields the same record identity.
     const auto again = gameplay::captureActiveEffects(source, actor, tags);
     CHECK(again[0].formId == plugin.records[0].formId);
+}
+
+TEST_CASE("save forms: every reflected ActiveEffect field has its same-kind "
+          "mirror on SavedEffectForm; the rest is the explicit bridge") {
+    const reflect::TypeInfo& effect = gameplay::ActiveEffect::staticTypeInfo();
+    const reflect::TypeInfo& row = gameplay::SavedEffectForm::staticTypeInfo();
+    REQUIRE(!effect.fields.empty());
+    for (const reflect::FieldInfo& field : effect.fields) {
+        INFO("ActiveEffect.", field.name);
+        const reflect::FieldInfo* mirror = row.findField(field.id);
+        REQUIRE(mirror != nullptr);
+        CHECK(mirror->kind == field.kind);
+    }
+    // The row's own fields the copy does NOT cover are exactly the ones
+    // restoreActiveEffect / captureActiveEffects bridge by hand.
+    vector<str> explicitFields;
+    for (const reflect::FieldInfo& field : row.fields) {
+        if (!effect.findField(field.id)) {
+            explicitFields.push_back(field.name);
+        }
+    }
+    CHECK(explicitFields == vector<str> { "parent", "op", "grantedTag", "effectId" });
+
+    // And the two copy directions carry a value through untouched.
+    gameplay::ActiveEffect source;
+    source.attribute = core::fnv1a("essence");
+    source.magnitude = 3.5f;
+    source.infinite = true;
+    source.decayPerHour = 0.25f;
+    gameplay::SavedEffectForm saved;
+    gameplay::copyMatchingFields(effect, &source, row, &saved);
+    CHECK(saved.attribute == source.attribute);
+    CHECK(saved.magnitude == doctest::Approx(3.5f));
+    CHECK(saved.infinite);
+    CHECK(saved.decayPerHour == doctest::Approx(0.25f));
+    gameplay::ActiveEffect back;
+    gameplay::copyMatchingFields(row, &saved, effect, &back);
+    CHECK(back.attribute == source.attribute);
+    CHECK(back.magnitude == doctest::Approx(3.5f));
+    CHECK(back.infinite);
+    CHECK(back.decayPerHour == doctest::Approx(0.25f));
 }
 
 TEST_CASE("save forms: rows sharing an effectId are paired again on load") {

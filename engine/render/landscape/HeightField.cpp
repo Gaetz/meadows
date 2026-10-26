@@ -123,14 +123,13 @@ void HeightField::update(const TerrainParams& params, const Vec3& focus) {
                     const f32 x =
                         wantX + static_cast<f32>(col) * spec.texel;
                     f32 h;
-                    // Covered (or story terrain): the exact function is
-                    // already on its cheap baked path. Uncovered
-                    // SANDBOX: upsample a coarser covering level from
-                    // the captured snapshot instead of the ~1-3 µs
-                    // analytic stack; only the coarsest level (no
-                    // coarser cover) pays it.
-                    if (!params.sandbox ||
-                        (params.base && params.base->regionAt(x, z))) {
+                    // Final ground (covered, or story terrain): the
+                    // exact function is already on its cheap baked
+                    // path. Uncovered SANDBOX: upsample a coarser
+                    // covering level from the captured snapshot instead
+                    // of the ~1-3 µs analytic stack; only the coarsest
+                    // level (no coarser cover) pays it.
+                    if (params.groundFinalAt(x, z)) {
                         h = terrain::height(params, x, z);
                     } else {
                         h = -1.0e9f;

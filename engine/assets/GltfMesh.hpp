@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <optional>
 
-#include "engine/anim/Anim.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/assets/MeshData.hpp"
 
@@ -43,28 +42,13 @@ void normalizeMesh(render::MeshData& mesh, f32 targetSize);
 // per-instance sizing lives in ReferenceForm.scale.
 void groundMesh(render::MeshData& mesh);
 
-// --- Skeletal data --------------------------------------------------------------
-// Skin 0 of the file becomes the skeleton (joints reordered parents-first,
-// the anim runtime's requirement); animations resample into engine clips
-// with tracks indexed by joint. Skinned MESH import (vertex weights) is
-// loadGltfSkinnedMesh below.
-
-// Named clip: `name` comes from the glTF animation (may be empty).
-struct GltfClip {
-    str name;
-    anim::AnimClip clip;
-};
-
-std::optional<anim::Skeleton> loadGltfSkeleton(
-    const std::filesystem::path& path);
-vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
-                                    const anim::Skeleton& skeleton);
-
-// Skinned mesh import: the triangle primitives of every
-// node bound to skin 0, vertices left in bind-pose mesh space (a skinned
-// node's transform does not apply — the bone palette places vertices), and
-// JOINTS_0 remapped through the SAME parents-first reorder as
-// loadGltfSkeleton, so palette indices and Skeleton::joints stay aligned.
+// --- Skinned mesh ---------------------------------------------------------------
+// The triangle primitives of every node bound to skin 0, vertices left in
+// bind-pose mesh space (a skinned node's transform does not apply — the
+// bone palette places vertices), and JOINTS_0 remapped through the SAME
+// parents-first reorder as anim::loadGltfSkeleton (GltfParse.hpp), so
+// palette indices and Skeleton::joints stay aligned. The skeleton and
+// animation importers themselves live in engine/anim/GltfSkeleton.hpp.
 std::optional<render::SkinnedMeshData> loadGltfSkinnedMesh(
     const std::filesystem::path& path);
 std::optional<render::SkinnedMeshData> loadGltfSkinnedMeshFromMemory(

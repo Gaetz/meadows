@@ -1,12 +1,14 @@
-# Couches et modules — l'état mesuré du moteur (2026-10-01)
+# Couches et modules — l'état mesuré du moteur (2026-10-01, garde-fou 2026-10-26)
 
 > Référence : *Game Engine Architecture* (J. Gregory), fig. « runtime
 > engine architecture » — des couches où le haut appelle le bas, jamais
 > l'inverse. Ce document compare cette pile à ce que le code fait
 > VRAIMENT, graphe d'inclusion à l'appui. Il se rejoue :
 > `python tools/scripts/layers_audit.py` (modules, arêtes, arêtes qui
-> remontent, cycles). À relire avant de créer un module ou de déplacer
-> un sous-système.
+> remontent, cycles) et il est **un test** : `ctest -R layers_audit`
+> compare les violations trouvées à la baseline
+> `tools/scripts/layers_baseline.txt` (§5). À relire avant de créer un
+> module ou de déplacer un sous-système.
 
 ## 1. Correspondance avec la pile de Gregory
 
@@ -53,20 +55,36 @@ compté par paire de modules :
 ## 3. Les écarts trouvés (par ordre d'importance)
 
 1. **Cycle `engine/(racine)` ↔ `engine/render` ↔ `engine/ui`.**
-   `Engine.hpp` et `FrameContext.hpp` incluent `render/Camera2D.hpp`,
-   et `WorldRenderer.cpp` / `FxRenderer.cpp` incluent
-   `engine/FrameContext.hpp` en retour ; `WorldRenderer.cpp` inclut
+   Mesuré le 2026-10-01 : `Engine.hpp` et `FrameContext.hpp` incluaient
+   `render/Camera2D.hpp`, `WorldRenderer.cpp` / `FxRenderer.cpp` incluent
+   `engine/FrameContext.hpp` en retour, et `WorldRenderer.cpp` incluait
    `ui/UiSystem.hpp` (il dessine l'UI de jeu dans sa frame) pendant que
    `UiSystem.cpp` inclut `render/ShaderLibrary.hpp`. Trois modules de
-   même étage qui se tiennent par la main. Remède : `FrameContext` (device,
-   command buffer, dt) descend dans `engine/core` ou `engine/rhi` ;
-   `ShaderLibrary` est un utilitaire RHI, pas un rendu de scène ; le crochet
-   « dessine l'UI ici » de WorldRenderer devient une interface d'overlay
-   injectée, pas une inclusion de `UiSystem`.
-2. **`engine/assets` → `engine/anim`** (`GltfMesh.hpp` inclut
-   `Anim.hpp` pour le squelette/skin) : les ressources dépendent d'un
-   module au-dessus d'elles. Remède : les POD de squelette descendent
-   dans `assets` (ou `anim` sous `assets`), `anim` les consomme.
+   même étage qui se tenaient par la main.
+   **Résolu pour deux arêtes sur trois (2026-10-26)** : `Engine` ne
+   connaît plus `render::` — le `SpriteRenderer` + la `Camera2D` sont un
+   sous-système monté du `WorldRenderer` (`RendererConfig::sprites`,
+   accès `sprites()` / `camera2D()`), possédé par la scène 2D
+   (`WorldDemoScene`, frame owner comme les scènes 3D) ; `FrameContext`
+   ne porte plus que `Device&` + `CommandBuffer&` + dt/taille ; le
+   crochet UI de `RenderView` est un `render::InPassDraw`
+   (`std::function`) rempli par la scène, `WorldRenderer` n'inclut plus
+   `engine/ui`. `FrameContext` (une struct RHI pure) vit sous
+   `engine/rhi/FrameContext.hpp` ; `engine/FrameContext.hpp` n'est plus
+   qu'un en-tête de renvoi pour la racine et le jeu, et `render` inclut
+   le chemin `rhi`. L'anneau racine → ui → render → racine est fermé.
+2. **`engine/assets` → `engine/anim`** (`GltfMesh.hpp` incluait
+   `Anim.hpp` pour le squelette/skin) : les ressources dépendaient d'un
+   module au-dessus d'elles. **Résolu dans le sens de la dépendance
+   (2026-10-26)** : les importeurs `loadGltfSkeleton` /
+   `loadGltfAnimations` (+ `GltfClip`) vivent dans
+   `engine/anim/GltfSkeleton.{hpp,cpp}` (`anim::`), qui consomme la
+   plomberie cgltf partagée `engine/assets/GltfParse.hpp`
+   (`ParsedGltf`, `topologicalJointOrder` — l'unique réordonnancement
+   des joints, partagé par le squelette et le maillage skinné) : `anim`
+   (rang 3) inclut `assets` (rang 2), flèche descendante. `GltfMesh.hpp`
+   n'inclut plus `anim` ; `NpcSpawner` et `AnimPreviewPanel` incluent
+   `engine/anim/GltfSkeleton.hpp` et épellent `anim::`.
 3. **Une seule bibliothèque `meadows` pour neuf dossiers** : core,
    platform, reflect, assets, terrain (+ generation), dungeon, anim, fx,
    nav sont liés en UN `STATIC`. Les couches existent dans
@@ -84,7 +102,9 @@ compté par paire de modules :
    l'instanciation d'entités de §2.7, il doit connaître les composants.
    Mais CLAUDE.md §4 liste `world` avant `gameplay`, dans l'ordre inverse
    de la dépendance réelle ; la pile vraie est `data` → `gameplay` →
-   `world` → `script`/`quest` → `game`.
+   `world` → `script`/`quest` → `game`. **Le script range désormais
+   `world` (rang 6) au-dessus de `gameplay` (rang 5)** : ces 16
+   inclusions ne sont plus un faux positif.
 5. **`game` ↔ `game/scenes`** : `main.cpp` inclut les scènes (normal),
    mais les scènes incluent `game/LevelEditor.hpp`, `game/AllForms.hpp`
    (normal aussi : des services de l'application). Un cycle INTERNE à la
@@ -108,3 +128,47 @@ précède ne bloque une brique ; le remède le plus rentable est le garde-fou
 (§3.3), le plus utile à la lisibilité est la correction de l'ordre dans
 CLAUDE.md §4 (§3.4), les cycles (§3.1, §3.2) se défont en une demi-journée
 quand le chantier RENDERER-EXTRACT (RENDERING.md §7) touchera ces fichiers.
+
+## 5. Le garde-fou : rangs, baseline, test
+
+**Rangs** (`RANK` dans `tools/scripts/layers_audit.py` ; un module absent
+de la table vaut 9 sous `game/`, 5 ailleurs) :
+
+| Rang | Modules |
+|---|---|
+| 0 | `engine/core`, `engine/platform` |
+| 1 | `engine/reflect` |
+| 2 | `engine/ecs`, `engine/rhi`, `engine/assets`, `engine/terrain`, `engine/nav`, `engine/dungeon`, `data` |
+| 3 | `engine/anim`, `engine/physics`, `engine/audio`, `engine/fx` |
+| 4 | `engine/render`, `engine/ui` |
+| 5 | `engine/(root)` (Engine, Game, FrameContext), `gameplay` |
+| 6 | `world` |
+| 7 | `script`, `quest` |
+| 9 | `game`, `game/scenes`, `game/ui` |
+| 10 | `tools` |
+| 11 | `tests` |
+
+**Violations** = toute arête qui remonte (`A -> B` avec rang(A) <
+rang(B)) et toute composante fortement connexe du graphe des modules
+(`A <-> B [<-> C]`, membres triés).
+
+**Baseline** : `tools/scripts/layers_baseline.txt`, une violation
+tolérée par ligne (le `#` ouvre un commentaire — y écrire l'inclusion
+fautive, la ligne se documente). Le verdict :
+
+```
+python tools/scripts/layers_audit.py --baseline tools/scripts/layers_baseline.txt
+ctest -R layers_audit        # la même commande, enregistrée par tests/CMakeLists.txt
+```
+
+- une violation **absente** de la baseline = échec (un nouveau cycle
+  casse la suite) ;
+- une ligne de baseline dont la violation **n'existe plus** = échec
+  aussi (« STALE ») : **le correctif qui résout un cycle retire sa
+  ligne**, dans le même commit — la baseline ne peut que fondre ;
+- `--write-baseline FICHIER` régénère la liste depuis l'arbre courant
+  (puis relire les commentaires) ; `--quiet` n'imprime que le verdict.
+
+Contenu toléré au 2026-10-26 (une ligne) : le cycle interne
+`game <-> game/scenes <-> game/ui` (§3.5), qui ne tombera qu'avec
+l'objet-dieu.

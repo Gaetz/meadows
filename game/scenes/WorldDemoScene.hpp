@@ -15,6 +15,7 @@
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 #include "engine/render/TextureCache.hpp"
+#include "engine/render/WorldRenderer.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/GameClock.hpp"
@@ -31,6 +32,11 @@ namespace game {
 // it (ground + the ECS scene), and runs the GAS tick. Derived scenes add their
 // own tool panel in drawUi(). This is the isolation the scene stack buys — each
 // demo is self-contained.
+//
+// The 2D frame owner: like the 3D scenes it owns its render::WorldRenderer,
+// mounted with the sprite path alone (RendererConfig::sprites), and records
+// the one sprite pass in render(); draw() submits the frame's sprites in
+// painter's order (derived scenes extend it).
 class WorldDemoScene : public Scene {
 public:
     explicit WorldDemoScene(engine::Engine& engine) : engine(engine) {}
@@ -38,7 +44,12 @@ public:
     void onEnter() override;
     void onExit() override;
     void update(f32 dt) override;
-    void draw(render::SpriteRenderer& renderer) override;
+    bool ownsFrame() const override { return true; }
+    void render(engine::FrameContext& frame) override;
+
+    // Submit this frame's sprites, in painter's order (the renderer's
+    // frame is begun; render() uploads and records the pass after).
+    virtual void draw(render::SpriteRenderer& sprites);
 
 protected:
     void rebuild(); // re-resolve plugins → assets → world model → load cells
@@ -46,7 +57,7 @@ protected:
     // Full-screen loading gate (§7): after a (re)build, the visible assets
     // decode on workers; we hold the world hidden behind a progress bar until
     // they are resident, so the player never sees the placeholder pop-in.
-    void drawLoadingScreen(render::SpriteRenderer& renderer);
+    void drawLoadingScreen(render::SpriteRenderer& sprites);
     bool loading { false };
     u32 loadTotal { 0 }; // assets pending when the gate began (for progress)
 
@@ -70,6 +81,9 @@ protected:
     gameplay::GameplayTagRegistry tags;
     std::optional<world::CellLoader> cellLoader;
 
+    // Sprite path only (no 3D system mounted); created in onEnter,
+    // destroyed in onExit while the device is alive.
+    render::WorldRenderer renderer;
     uptr<render::TextureCache> textureCache;
     rhi::TextureHandle checker {};
 

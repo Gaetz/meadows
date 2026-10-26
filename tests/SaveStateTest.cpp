@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
@@ -10,7 +12,9 @@
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/actors/ActorKit.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/actors/ScriptVars.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/save/SaveForms.hpp"
@@ -372,4 +376,163 @@ TEST_CASE("save state: derived maxima survive applySavedState — the HUD is "
     // Non-derived currents refresh from the restored bases immediately.
     CHECK(gameplay::currentValueOf(system, gameplay::attr("health")) ==
           doctest::Approx(37.0f));
+}
+
+// The actor kit (ActorKit.hpp): the one list the Spawner, the scene and
+// the benches attach, and the list the stat sheet is generated from.
+
+TEST_CASE("actor kit: attach wires every kit component, keeps pre-filled "
+          "values and is idempotent") {
+    ecs::World world;
+
+    ecs::Entity fresh = world.create();
+    gameplay::attachActorKit(world, fresh);
+    size_t kitSize = 0;
+    gameplay::forEachActorKitType([&](auto tag) {
+        using T = typename decltype(tag)::type;
+        ++kitSize;
+        CHECK(fresh.has<T>());
+    });
+    CHECK(kitSize == 16);
+    // Defaults, not garbage: a kit component is default constructed.
+    CHECK(fresh.get<gameplay::AttributeSet>().health == 100.0f);
+    CHECK(fresh.get<gameplay::Inventory>().items.empty());
+    CHECK_FALSE(fresh.get<gameplay::FollowerState>().followerActive);
+
+    // A component seeded BEFORE the kit attaches keeps its values (the
+    // Spawner's AttributeSet / AbilitySystem, a bench's loadout).
+    ecs::Entity seeded = world.create();
+    gameplay::AttributeSet vitals;
+    vitals.health = 37.5f;
+    seeded.set<gameplay::AttributeSet>(vitals);
+    gameplay::Inventory bag;
+    gameplay::addItem(bag, kSword, 2);
+    seeded.set<gameplay::Inventory>(bag);
+    gameplay::attachActorKit(world, seeded);
+    CHECK(seeded.get<gameplay::AttributeSet>().health == 37.5f);
+    REQUIRE(seeded.get<gameplay::Inventory>().items.size() == 1);
+    CHECK(seeded.get<gameplay::Inventory>().items[0].count == 2);
+    CHECK(seeded.has<gameplay::CoreAttributes>());
+    CHECK(seeded.has<gameplay::SkillProgress>());
+
+    // Attaching again is a no-op on an actor that already has the kit.
+    seeded.get_mut<gameplay::Bounty>().bounty = 12.0f;
+    gameplay::attachActorKit(world, seeded);
+    CHECK(seeded.get<gameplay::Bounty>().bounty == 12.0f);
+    CHECK(seeded.get<gameplay::AttributeSet>().health == 37.5f);
+}
+
+TEST_CASE("actor kit: the reflection bridge sees exactly the persisted "
+          "components of a kit-attached actor") {
+    ecs::World world;
+    ecs::Entity actor = world.create();
+    gameplay::attachActorKit(world, actor);
+
+    vector<str> seen;
+    ecs::forEachReflectedComponent(
+        actor, [&](const reflect::TypeInfo& type, void* storage) {
+            CHECK(storage != nullptr);
+            seen.push_back(type.name);
+        });
+    const auto persisted = gameplay::savedStatsComponentTypes();
+    CHECK(seen.size() == persisted.size());
+    for (const reflect::TypeInfo* type : persisted) {
+        INFO(type->name);
+        CHECK(std::find(seen.begin(), seen.end(), type->name) != seen.end());
+    }
+    // The bridge hands back the live storage, not a copy.
+    ecs::forEachReflectedComponent(
+        actor, [&](const reflect::TypeInfo& type, void* storage) {
+            if (type.id == gameplay::Bounty::staticTypeInfo().id) {
+                static_cast<gameplay::Bounty*>(storage)->bounty = 7.0f;
+            }
+        });
+    CHECK(actor.get<gameplay::Bounty>().bounty == 7.0f);
+}
+
+TEST_CASE("save state: ScriptVars round-trip as one child record per "
+          "variable, sorted by key (§2.8)") {
+    gameplay::GameplayTagRegistry tags;
+    ecs::World worldA;
+    ecs::Entity actorA = worldA.create();
+    gameplay::attachActorKit(worldA, actorA);
+    gameplay::ScriptVars vars;
+    vars.vars["c"] = reflect::Value { true };
+    vars.vars["a"] = reflect::Value { 1.0f };
+    vars.vars["b"] = reflect::Value { str { "x" } };
+    actorA.set<gameplay::ScriptVars>(vars);
+
+    // Capture: the sentinel + one row per variable, in key order, with
+    // identities that do not depend on the map's iteration order.
+    const vector<data::Record> records =
+        gameplay::captureActor(actorA, kRef, tags);
+    const u32 rowType = gameplay::SavedScriptVarForm::staticTypeInfo().id;
+    vector<str> keys;
+    for (const data::Record& record : records) {
+        if (record.typeId == rowType) {
+            keys.push_back(
+                gameplay::formFromRecord<gameplay::SavedScriptVarForm>(record).key);
+        }
+    }
+    CHECK(keys == vector<str> { "a", "b", "c" });
+    const vector<data::Record> again =
+        gameplay::captureActor(actorA, kRef, tags);
+    REQUIRE(again.size() == records.size());
+    for (size_t i = 0; i < records.size(); ++i) {
+        CHECK(again[i].formId == records[i].formId);
+    }
+
+    // Through the full save path (TOML, reparse, resolve) onto a fresh
+    // actor that was spawned WITHOUT the component.
+    data::FormTypeRegistry types = makeTypes();
+    data::Plugin save;
+    save.id = guid("40000000-0000-4000-8000-00000000009b");
+    save.name = "slot";
+    save.records = records;
+    const str toml = data::writePluginToml(save, types);
+    const auto reparsed = data::parsePluginToml(toml, types, "slot");
+    REQUIRE(reparsed.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*reparsed }, types, db);
+
+    ecs::World worldB;
+    ecs::Entity actorB = worldB.create();
+    gameplay::attachActorKit(worldB, actorB);
+    REQUIRE_FALSE(actorB.has<gameplay::ScriptVars>());
+    const auto saved = gameplay::savedRecordsFor(db, kRef);
+    REQUIRE(saved.scriptVars.size() == 3);
+    gameplay::applySavedState(actorB, saved, tags);
+    REQUIRE(actorB.has<gameplay::ScriptVars>());
+    const auto& restored = actorB.get<gameplay::ScriptVars>().vars;
+    REQUIRE(restored.size() == 3);
+    CHECK(restored.at("a") == reflect::Value { 1.0f });
+    CHECK(restored.at("b") == reflect::Value { str { "x" } });
+    CHECK(restored.at("c") == reflect::Value { true });
+
+    // An actor captured with an EMPTY map reloads empty: the apply clears
+    // stale variables (the save is the truth once the sentinel exists).
+    actorA.get_mut<gameplay::ScriptVars>().vars.clear();
+    data::Plugin emptySave;
+    emptySave.records = gameplay::captureActor(actorA, kRef, tags);
+    data::FormDatabase emptyDb;
+    data::resolve({ &emptySave }, types, emptyDb);
+    gameplay::applySavedState(actorB, gameplay::savedRecordsFor(emptyDb, kRef),
+                              tags);
+    CHECK(actorB.get<gameplay::ScriptVars>().vars.empty());
+}
+
+TEST_CASE("save state: a pristine kit actor captures to the sentinel alone") {
+    gameplay::GameplayTagRegistry tags;
+    ecs::World world;
+    ecs::Entity actor = world.create();
+    gameplay::attachActorKit(world, actor);
+
+    // Every kit component is present and at its default: the stat sheet
+    // diffs to nothing but the child-record link, and no row is emitted.
+    const vector<data::Record> records =
+        gameplay::captureActor(actor, kRef, tags);
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].typeId == gameplay::SavedStatsForm::staticTypeInfo().id);
+    CHECK(records[0].fields.size() == 1);
+    CHECK(records[0].fields.count(core::fnv1a("parent")) == 1);
 }

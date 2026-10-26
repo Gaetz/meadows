@@ -26,17 +26,23 @@ class GameplayTagRegistry;
 
 // Copies every OWN field of `srcType` whose name (fnv1a id) also exists
 // on `dstType` with the same kind, through reflection. The generic bridge
-// between the stat components and SavedStatsForm (same field names on
-// both sides); works in both directions.
+// between the stat components and SavedStatsForm, and between ActiveEffect
+// and SavedEffectForm (same field names on both sides); works in both
+// directions.
 void copyMatchingFields(const reflect::TypeInfo& srcType, const void* src,
                         const reflect::TypeInfo& dstType, void* dst);
 
 // One persisted actor component: its TypeInfo and a default-constructed
-// instance. This list is the single source SavedStatsForm is GENERATED
-// from (one field per distinct reflected name, slot defaults = these
-// instances' values) and the one captureActor/applySavedState sweep —
-// the templated sweeps in SaveState.cpp and this array are kept in
-// lockstep, same components, same order.
+// instance. The list is DERIVED from the actor kit (ActorKit.hpp): its
+// reflected members, in kit order. It is the single source SavedStatsForm
+// is GENERATED from (one field per distinct reflected name, slot defaults
+// = these instances' values) and the order captureActor/applySavedState
+// write the stat sheet in. The sweeps themselves are type-erased: they
+// walk the entity's components through the ECS reflection bridge
+// (ecs::forEachReflectedComponent) and keep those on this list — a
+// reflected component outside the kit (a world component: Transform,
+// Perception...) is reference-level or runtime state, not stat sheet, and
+// is deliberately skipped.
 struct SavedStatsComponent {
     const reflect::TypeInfo* type { nullptr };
     const void* defaults { nullptr }; // a default-constructed instance
@@ -120,15 +126,18 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
 // component BASE values + active durational effects; currents are never
 // stored) as child records of `refGuid`: one SavedStatsForm (also the
 // "was captured" sentinel that suppresses loadout re-rolls), plus
-// SavedEffect/SavedItem/SavedInjury rows. Missing components are simply
-// skipped. Deterministic record guids; items sorted by item guid (§8).
+// SavedEffect/SavedItem/SavedInjury/SavedScriptVar rows. Missing
+// components are simply skipped. Deterministic record guids; items sorted
+// by item guid, script variables by key (§8).
 vector<data::Record> captureActor(ecs::Entity entity,
                                   const core::Guid& refGuid,
                                   const GameplayTagRegistry& registry);
 
 // The inverse: writes the SavedStatsForm fields back into the entity's
 // components (by reflection name matching), restores the effect rows,
-// refills Inventory/Injuries/Equipment. Call strictly AFTER
+// refills Inventory/Injuries/Equipment/ScriptVars (a ScriptVars component
+// is attached when rows exist and the entity lacks one — the rows prove
+// the captured entity carried it). Call strictly AFTER
 // initializeActorStats (which resets vitals and clears State.Dead), with
 // the same records the capture produced (resolved or pending). Ends with
 // a current recompute + updateLifeState so a dead actor loads dead.
@@ -137,9 +146,10 @@ struct SavedActorRecords {
     vector<const SavedEffectForm*> effects;
     vector<const SavedItemForm*> items;
     vector<const SavedInjuryForm*> injuries;
-    vector<const SavedAbilityForm*> abilities; // granted abilities
-    vector<const SavedSkillForm*> skills;      // skills-by-use
-    vector<const SavedBountyForm*> bounties;   // per-faction crime
+    vector<const SavedAbilityForm*> abilities;     // granted abilities
+    vector<const SavedSkillForm*> skills;          // skills-by-use
+    vector<const SavedBountyForm*> bounties;       // per-faction crime
+    vector<const SavedScriptVarForm*> scriptVars;  // §2.8 script state
 };
 void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                      const GameplayTagRegistry& registry);

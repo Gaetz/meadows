@@ -5,9 +5,6 @@
 namespace engine {
 struct FrameContext;
 }
-namespace render {
-class SpriteRenderer;
-}
 
 namespace game {
 
@@ -33,13 +30,13 @@ public:
     virtual void onExit() {}
 
     virtual void update(f32 /*dt*/) {}
-    virtual void draw(render::SpriteRenderer& /*renderer*/) {}
     virtual void drawUi() {}
 
     // A frame-owning scene records its own render passes (3D: shadow /
-    // offscreen / composite chains) and must leave the backbuffer holding the
-    // scene on return. The stack then layers the usual sprite pass on top
-    // (LoadOp::Load), so 2D overlays keep working above a 3D scene.
+    // offscreen / composite chains; 2D: the sprite pass of its own
+    // renderer) and must leave the backbuffer holding the scene on return.
+    // The first drawn scene owns the frame; without an owner the stack
+    // clears the backbuffer so the dev UI composes over a defined frame.
     virtual bool ownsFrame() const { return false; }
     virtual void render(engine::FrameContext& /*frame*/) {}
 

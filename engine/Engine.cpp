@@ -8,7 +8,6 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
-#include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "engine/ui/ImGuiLayer.hpp"
 
@@ -74,10 +73,6 @@ bool Engine::init(const EngineConfig& engineConfig) {
     }
     LOG_INFO("RHI backend: {}",
              device->backend() == rhi::Backend::Vulkan ? "Vulkan" : "OpenGL");
-    spriteRenderer = render::SpriteRenderer::create(*device);
-    if (!spriteRenderer) {
-        return false;
-    }
     imgui = ui::ImGuiLayer::create(*window, *device);
     if (!imgui) {
         return false;
@@ -109,8 +104,6 @@ void Engine::loop(Game& game) {
                            static_cast<f32>(window->height());
         FrameContext frame { .device = *device,
                              .cmd = cmd,
-                             .sprites = *spriteRenderer,
-                             .camera2d = camera,
                              .clearColor = config.clearColor,
                              .dt = dt,
                              .aspect = aspect,

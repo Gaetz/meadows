@@ -137,15 +137,16 @@ bool drawLanes(Params& params) {
 
 void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
                                        const core::FrameProbe* cpuProbe) {
-    if (!r.gpuProbe.active()) {
+    render::GpuProbe& gpuProbe = r.gpuTimings();
+    if (!gpuProbe.active()) {
         ImGui::TextDisabled("(no GPU timer queries on this device)");
         return;
     }
     ImGui::Text("GPU frame: %.2f ms avg  %.2f ms max",
-                r.gpuProbe.frameAverageMs(), r.gpuProbe.frameMaxMs());
+                gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs());
     ImGui::SameLine();
     if (ImGui::SmallButton("reset window")) {
-        r.gpuProbe.resetWindow();
+        gpuProbe.resetWindow();
     }
     if (!ImGui::BeginTable("gpuperf", 4,
                            ImGuiTableFlags_SizingStretchProp |
@@ -157,7 +158,7 @@ void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
     ImGui::TableSetupColumn("GPU max");
     ImGui::TableSetupColumn("CPU (ms)");
     ImGui::TableHeadersRow();
-    for (const render::GpuProbe::PassRow& row : r.gpuProbe.rows()) {
+    for (const render::GpuProbe::PassRow& row : gpuProbe.rows()) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(row.name);
@@ -186,15 +187,15 @@ void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
         }
     }
     ImGui::EndTable();
-    if (r.gpuProbe.rows().empty()) {
+    if (gpuProbe.rows().empty()) {
         ImGui::TextDisabled("(warming up — first frames resolving)");
     }
 
     // Worker-job costs (JobProbe): what the bakes burn off-frame. Total
     // accumulates since the last reset — the chantier-économie baseline
     // number (docs/CPU-PERF.md).
-    if (r.jobSystem) {
-        core::JobProbe& jobProbe = r.jobSystem->probe();
+    if (r.jobs()) {
+        core::JobProbe& jobProbe = r.jobs()->probe();
         ImGui::SeparatorText("Worker jobs (since reset)");
         ImGui::Text("CPU bakes: %.1f s total", jobProbe.windowTotalMs() / 1000.0);
         ImGui::SameLine();
@@ -235,19 +236,20 @@ void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
     // mid-pass GPU timestamps cannot measure (Metal runs a pass as one
     // tiled unit) — and the input to the impostor decision.
     ImGui::SeparatorText("Geometry this frame (all passes)");
+    const render::VegetationSystem& vegetation = r.vegetationSystem();
     const f32 terrainMTri =
-        static_cast<f32>(r.terrain.indicesThisFrame()) / 3.0e6f;
+        static_cast<f32>(r.terrainSystem().indicesThisFrame()) / 3.0e6f;
     const f32 vegMTri =
-        static_cast<f32>(r.vegetation.indicesThisFrame()) / 3.0e6f;
+        static_cast<f32>(vegetation.indicesThisFrame()) / 3.0e6f;
     const f32 grassMTri =
-        static_cast<f32>(r.grass.indicesThisFrame()) / 3.0e6f;
+        static_cast<f32>(r.grassSystem().indicesThisFrame()) / 3.0e6f;
     ImGui::Text("terrain: %.2f Mtri", terrainMTri);
     ImGui::Text("trees: %.2f Mtri (%u high + %u low + %u ultra instances)",
-                vegMTri, r.vegetation.highDetailInstancesThisFrame(),
-                r.vegetation.lowDetailInstancesThisFrame(),
-                r.vegetation.ultraDetailInstancesThisFrame());
+                vegMTri, vegetation.highDetailInstancesThisFrame(),
+                vegetation.lowDetailInstancesThisFrame(),
+                vegetation.ultraDetailInstancesThisFrame());
     ImGui::Text("grass: %.2f Mtri (%u blades)", grassMTri,
-                r.grass.bladesThisFrame());
+                r.grassSystem().bladesThisFrame());
     ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
 }
 
@@ -260,14 +262,15 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
     bool dirty = false;
 
     if (ImGui::CollapsingHeader("Lobe trees (classic)")) {
-        render::LobeTreeParams& p = r.vegetation.lobeTreeParams;
+        render::LobeTreeParams& p = r.vegetationSystem().lobeTreeParams;
         dirty |= drawLanes<kLobeTrunk>(p);
         dirty |= drawLanes<kLobeBranchCount>(p);
         dirty |= drawLanes<kLobeCrown>(p);
     }
     if (ImGui::CollapsingHeader("Space colonization",
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
-        render::ColonizedTreeParams& p = r.vegetation.colonizedTreeParams;
+        render::ColonizedTreeParams& p =
+            r.vegetationSystem().colonizedTreeParams;
         ImGui::SeparatorText("Skeleton (Runions)");
         dirty |= drawLanes<kColonizedGrowth>(p);
         dirty |= drawLanes<kColonizedAttractors>(p);
@@ -306,9 +309,10 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
 }
 
 void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
+    render::VegetationSystem& vegetation = r.vegetationSystem();
     bool dirty = false;
     if (ImGui::Checkbox("Space-colonization trees (A/B)",
-                        &r.vegetation.colonizationTrees)) {
+                        &vegetation.colonizationTrees)) {
         dirty = true;
     }
     ImGui::SameLine();
@@ -318,12 +322,12 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
     // The CLAUDE.md §5 round trip: the scene captures the live params
     // into the tuning records and writes the overlay plugin.
     if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
-        r.saveTuningRequested = true;
+        r.requestSaveTuning();
     }
 
     // Bark pick per tree slot (oak / spruce) — group rebuild lands at
     // the next update() safe point.
-    if (r.vegetation.barkLoaded() && ImGui::TreeNode("Bark")) {
+    if (vegetation.barkLoaded() && ImGui::TreeNode("Bark")) {
         static const char* kBarkNames[] = { "Oak", "Spruce" };
         static const char* kSlotNames[] = {
             "Slot 0 (broadleaf)", "Slot 1 (broadleaf)",
@@ -331,10 +335,10 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
         };
         for (u32 i = 0; i < render::VegetationSystem::kTreeVariants;
              ++i) {
-            int pick = r.vegetation.variantBark[i];
+            int pick = vegetation.variantBark[i];
             if (ImGui::Combo(kSlotNames[i], &pick, kBarkNames, 2)) {
-                r.vegetation.variantBark[i] = static_cast<u8>(pick);
-                r.vegetation.barkGroupsDirty = true;
+                vegetation.variantBark[i] = static_cast<u8>(pick);
+                vegetation.barkGroupsDirty = true;
             }
         }
         ImGui::TreePop();
@@ -343,42 +347,44 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
     dirty |= drawTreeKnobs(r);
 
     if (dirty) {
-        r.reseedVegetation = true;
+        r.requestReseedVegetation();
     }
 }
 
-void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
+void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r,
+                                          render::TerrainParams& terrain) {
     if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
-        r.saveTuningRequested = true;
+        r.requestSaveTuning();
     }
+    render::TerrainSystem& terrainSystem = r.terrainSystem();
+    render::VegetationSystem& vegetation = r.vegetationSystem();
     // Live stats stay on top, always visible; the knobs group below.
     ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
-                r.terrain.residentCount(), r.terrain.drawnLastFrame(),
-                r.terrain.pendingCount(), r.terrain.uploadsLastFrame());
+                terrainSystem.residentCount(), terrainSystem.drawnLastFrame(),
+                terrainSystem.pendingCount(), terrainSystem.uploadsLastFrame());
     // (The GPU Hi-Z verdict never crosses the CPU anymore — its culling
     // shows up in `drawn` when the indirect path is on.)
     ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u",
-                r.vegetation.drawnLastFrame(), r.occlusion.occludedCount());
-    ImGui::Text("Grass blades: %u | props: %u", r.grass.instanceTotal(),
-                r.vegetation.propTotal());
+                vegetation.drawnLastFrame(),
+                r.chunkOcclusion().occludedCount());
+    ImGui::Text("Grass blades: %u | props: %u",
+                r.grassSystem().instanceTotal(), vegetation.propTotal());
     if (ImGui::CollapsingHeader("Terrain",
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::InputScalar("Seed", ImGuiDataType_U32,
-                           &r.terrain.params.seed);
+        ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.seed);
         ImGui::SameLine();
         if (ImGui::Button("Regenerate")) {
-            r.regenerateRequested = true; // applied at the next render
+            r.requestRegenerate(); // applied at the next render
         }
         // Water plane, sand band and material weights follow live; the
         // scatter (grass/trees/props) is baked per chunk — Regenerate to
         // re-align it. Terrain shape is apply-only, hence no lane.
-        rangedSlider<&Tuning::seaLevel>("Sea level (m)",
-                                        r.terrain.params.seaLevel);
+        rangedSlider<&Tuning::seaLevel>("Sea level (m)", terrain.seaLevel);
         // Streaming ring = the draw distance (64 m chunks; the horizon
         // closure tracks it). Chunk count grows as (2r+1)^2 — watch F6.
         // The cap is the engine's constant, not Form metadata.
-        ImGui::SliderInt("View radius (chunks)", &r.terrain.viewRadius, 8,
-                         render::TerrainSystem::kMaxViewRadius);
+        ImGui::SliderInt("View radius (chunks)", &terrainSystem.viewRadius,
+                         8, render::TerrainSystem::kMaxViewRadius);
         // Far silhouettes, the 24 km ring, impostor grounding from the
         // bake's half-grid vs the analytic function (re-bakes on toggle),
         // and the shared height pyramid master A/B (consumers off it fall
@@ -393,19 +399,19 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         // The slider stops at 15 while the load clamp (the field's
         // reflected range) accepts up to 24.
         ImGui::SliderInt("Veg view radius (chunks)",
-                         &r.vegetation.viewRadius, 4, 15);
+                         &vegetation.viewRadius, 4, 15);
         rangedSliderInt<&Tuning::vegHighDetailRadius>(
-            "Veg high-detail radius", r.vegetation.highDetailRadius);
+            "Veg high-detail radius", vegetation.highDetailRadius);
         // 80-face twins within; 20-face ultra beyond.
         rangedSliderInt<&Tuning::vegLowDetailRadius>(
-            "Veg low-detail radius", r.vegetation.lowDetailRadius);
+            "Veg low-detail radius", vegetation.lowDetailRadius);
         // EXPERIMENT (feature/space-colonization-trees): Runions skeleton
         // + SDF-normal cross-plane foliage vs the solid-lobe trees. The
         // swap re-bakes AO for the new meshes (disk-cached after once).
         if (ImGui::Checkbox("Space-colonization trees (A/B)",
-                            &r.vegetation.colonizationTrees)) {
+                            &vegetation.colonizationTrees)) {
             // applied at the render()-top safe point
-            r.reseedVegetation = true;
+            r.requestReseedVegetation();
         }
         ImGui::TextDisabled("(generation knobs: Trees panel)");
     }
@@ -417,7 +423,7 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         ImGui::Checkbox("Indirect draw", &r.tuning.gpuIndirect);
         // Horizon rebake hysteresis: the verdicts stay conservative per
         // position; the drift only ages them.
-        drawLanes<kOcclusion>(r.occlusion);
+        drawLanes<kOcclusion>(r.chunkOcclusion());
         ImGui::Checkbox("Wireframe (LOD debug)", &r.tuning.wireframe);
     }
 }
@@ -425,7 +431,7 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
 void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                                          render::AtmosphereParams& atmos) {
     if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
-        r.saveTuningRequested = true;
+        r.requestSaveTuning();
     }
     // Every meadow constant, live. The render
     // half rides the FrameUbo; a scatter knob queues a grass-only
@@ -467,7 +473,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                           ImGuiColorEditFlags_Float);
     }
     if (ImGui::CollapsingHeader("Grass")) {
-        render::GrassRenderTuning& gt = r.grass.renderTuning;
+        render::GrassRenderTuning& gt = r.grassRenderTuning();
         ImGui::SeparatorText("Blade");
         drawLanes<kGrassBlade>(gt);
         ImGui::ColorEdit3("Base tint (x ground)", &gt.baseTint.x,
@@ -487,7 +493,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::SeparatorText("Detail / distance");
         drawLanes<kGrassDistance>(gt);
         ImGui::SeparatorText("Scatter (re-bakes on release)");
-        render::GrassScatterTuning& st = r.grass.scatterTuning;
+        render::GrassScatterTuning& st = r.grassScatterTuning();
         bool scatterEdited = drawLanes<kGrassScatter>(st);
         {
             const reflect::FieldRange& threshold =
@@ -510,14 +516,14 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         // 0.6 m corner (docs/CPU-PERF.md).
         scatterEdited |= drawLanes<kGrassScatterTint>(st);
         if (scatterEdited || ImGui::Button("Rescatter now")) {
-            r.grassRescatterRequested = true;
+            r.requestGrassRescatter();
         }
     }
     // Every cost-affecting GI parameter is a live knob (workflow:
     // quality first, then the perf descent here, watching
     // the rcInject/rcBuild lines of the F6 table).
     if (ImGui::CollapsingHeader("Global illumination")) {
-        render::RcTuning& rc = r.radianceCascades.tuning;
+        render::RcTuning& rc = r.giTuning();
         int technique = rc.technique == render::GiTechnique::RadianceCascades
                             ? 1 : 0;
         if (ImGui::Combo("Technique", &technique,
@@ -565,7 +571,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                      "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0"
                      "Cascade 0 irradiance\0");
         // The GPU cost lines, in place (the full table stays on F6).
-        for (const auto& row : r.gpuProbe.rows()) {
+        for (const auto& row : r.gpuTimings().rows()) {
             if (row.name && str(row.name).rfind("rc", 0) == 0) {
                 ImGui::TextDisabled("%s: %.2f ms (max %.2f)", row.name,
                                     row.stats.averageMs, row.stats.maxMs);
@@ -649,8 +655,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
     }
     if (ImGui::CollapsingHeader("Sun FX")) {
         drawLanes<kSunFx>(atmos);
-        drawLanes<kFroxelFog>(r.postFx);
-        drawLanes<kFroxel>(r.postFx);
+        drawLanes<kFroxelFog>(r.postFxSystem());
+        drawLanes<kFroxel>(r.postFxSystem());
         drawLanes<kInteriorDust>(r.tuning);
     }
     if (ImGui::CollapsingHeader("Fog & clouds")) {
@@ -732,7 +738,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         // reflected range) accepts 4..64.
         ImGui::SliderInt("Mist steps", &r.tuning.mistSteps, 8, 32);
         // 1 = accumulation off (A/B); lower = more history.
-        drawLanes<kMistBlend>(r.postFx);
+        drawLanes<kMistBlend>(r.postFxSystem());
     }
     if (ImGui::CollapsingHeader("Water")) {
         ImGui::Checkbox("Reflections", &r.tuning.reflections);
@@ -789,6 +795,10 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
             "Pin rivers >= half-width (m)", sim.pinRiverHalfWidth);
         rangedSlider<&Tuning::waterSimReservoirOutflow>(
             "Reservoir outflow (m3/s/cell)", sim.params.reservoirOutflow);
+        // Baked inflow multiplier at the window's entries (1 = the true
+        // runoff law).
+        rangedSlider<&Tuning::waterSimBakedDischargeBoost>(
+            "Baked discharge boost (x)", sim.params.bakedDischargeBoost);
         ImGui::Combo("Sim mode", &sim.debugMode,
                      "Sim + baked\0Force baked\0Seam overlay\0"
                      "Volumes debug\0");

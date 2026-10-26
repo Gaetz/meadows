@@ -146,6 +146,8 @@
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
     VegetationScatterTest.cpp
+    WaterGeometryTest.cpp
+    WaterSimControlTest.cpp
     GrassScatterTest.cpp
     FrameLanesTest.cpp
     VertexAoTest.cpp
@@ -187,3 +189,16 @@ target_link_libraries(meadows-simlink PRIVATE
 )
 meadows_set_warnings(meadows-simlink)
 add_test(NAME simlink COMMAND meadows-simlink)
+
+# The layer audit as a test (docs/ARCHITECTURE-LAYERS.md §5): the include
+# graph between modules must show no upward edge and no cycle beyond the
+# tolerated baseline. A new one fails the suite; a resolved one is removed
+# from the baseline (a stale line fails too). Skipped without a Python 3.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME layers_audit
+             COMMAND Python3::Interpreter
+                     ${PROJECT_SOURCE_DIR}/tools/scripts/layers_audit.py
+                     --root ${PROJECT_SOURCE_DIR}
+                     --baseline ${PROJECT_SOURCE_DIR}/tools/scripts/layers_baseline.txt)
+endif()

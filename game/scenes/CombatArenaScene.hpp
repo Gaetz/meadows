@@ -32,7 +32,7 @@ public:
 
     void onEnter() override;
     void update(f32 dt) override;
-    void draw(render::SpriteRenderer& renderer) override;
+    void draw(render::SpriteRenderer& sprites) override;
     void drawUi() override;
 
 private:

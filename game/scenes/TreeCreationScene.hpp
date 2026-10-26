@@ -63,6 +63,9 @@ private:
     data::FormDatabase forms;
 
     render::WorldRenderer renderer;
+    // The showcase's flat ground (zero relief) + the specimen seed; the
+    // renderer reads it by RenderView::terrain.
+    render::TerrainParams terrainParams;
     render::FlyCamera flyCamera;
     render::AtmosphereParams atmos;
     WeatherController weather; // the top bar's weather selector

@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 
+#include <iterator>
 #include <string_view>
 
 #include "data/plugins/Record.hpp"
 #include "engine/core/Hash.hpp"
 #include "engine/reflect/Reflect.hpp"
+#include "gameplay/actors/ActorKit.hpp"
 #include "gameplay/save/SaveForms.hpp"
 #include "gameplay/save/SaveState.hpp"
 
@@ -50,6 +52,34 @@ bool isHandWrittenField(const reflect::FieldInfo& field) {
 }
 
 } // namespace
+
+TEST_CASE("save coverage: the persisted components are the reflected actor "
+          "kit members, in kit order") {
+    vector<std::string_view> fromKit;
+    gameplay::forEachActorKitType([&](auto tag) {
+        using T = typename decltype(tag)::type;
+        if constexpr (gameplay::ReflectedKitComponent<T>) {
+            fromKit.push_back(T::staticTypeInfo().name);
+        }
+    });
+    const auto persisted = gameplay::savedStatsComponentTypes();
+    REQUIRE(persisted.size() == fromKit.size());
+    for (size_t i = 0; i < persisted.size(); ++i) {
+        CHECK(persisted[i]->name == fromKit[i]);
+    }
+
+    // The list saves were written with: the kit may only GROW past it, and
+    // a reordering would reorder the generated form's fields.
+    constexpr std::string_view kPersisted[] = {
+        "CoreAttributes", "AttributeSet", "Resonance",   "Survival",
+        "StatusBuildup",  "CombatState",  "Equipment",   "VendorState",
+        "Bounty",         "FollowerState",
+    };
+    REQUIRE(persisted.size() == std::size(kPersisted));
+    for (size_t i = 0; i < persisted.size(); ++i) {
+        CHECK(persisted[i]->name == kPersisted[i]);
+    }
+}
 
 TEST_CASE("save coverage: the generated SavedStatsForm carries every "
           "persisted component field with its kind and default") {

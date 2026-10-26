@@ -16,6 +16,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/actors/ActorKit.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -129,17 +130,9 @@ ecs::Entity CombatArenaScene::spawnCombatant(std::string name, Vec3 position,
     e.set<world::Velocity>({});
     e.set<world::Collider>({ Vec2 { 0.4f, 0.4f }, false });
 
-    // Full character-stats sheet (§2.7): the same set the Spawner attaches to
+    // The actor kit (§2.7): the same bundle the Spawner attaches to
     // data-driven actors, so tickCharacter runs uniformly on every combatant.
-    e.set<gameplay::CoreAttributes>({});
-    e.set<gameplay::AttributeSet>({});
-    e.set<gameplay::AbilitySystem>({});
-    e.set<gameplay::Resonance>({});
-    e.set<gameplay::Survival>({});
-    e.set<gameplay::StatusBuildup>({});
-    e.set<gameplay::CombatState>({});
-    e.set<gameplay::Injuries>({});
-    e.set<gameplay::ResonanceDecays>({});
+    gameplay::attachActorKit(world, e);
     e.add<world::ActorMarker>();
 
     gameplay::initializeCurrent(e.get_mut<gameplay::AbilitySystem>(),
@@ -289,7 +282,7 @@ void CombatArenaScene::updatePlayer(f32 dt) {
     const f32 aspect = static_cast<f32>(engine.getWindow().width()) /
                        static_cast<f32>(engine.getWindow().height());
     const Vec2 worldMouse = render::screenToWorld(
-        engine.getCamera(), input.mousePosition(), aspect,
+        renderer.camera2D(), input.mousePosition(), aspect,
         engine.getWindow().width(), engine.getWindow().height());
     const Vec2 toMouse = worldMouse - playerPos;
     if (glm::dot(toMouse, toMouse) > 1e-6f) {
@@ -443,12 +436,12 @@ void CombatArenaScene::updatePlayerAttack(f32 dt) {
     }
 }
 
-void CombatArenaScene::draw(render::SpriteRenderer& renderer) {
-    WorldDemoScene::draw(renderer);
+void CombatArenaScene::draw(render::SpriteRenderer& sprites) {
+    WorldDemoScene::draw(sprites);
     // Cue sparks over the world (painter order: after every entity).
     particles.forEach([&](const Vec3& position, f32 size,
                           const Vec4& color, bool) {
-        renderer.draw({ .position = { position.x, position.y },
+        sprites.draw({ .position = { position.x, position.y },
                         .size = { size, size },
                         .tint = color,
                         .texture = checker });

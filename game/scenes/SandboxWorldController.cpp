@@ -88,13 +88,13 @@ void SandboxWorldController::rebuildCollision(const SandboxContext& ctx,
         return;
     }
     ctx.terrainCollision = std::make_unique<TerrainCollision>(
-        *ctx.physics, ctx.renderer.terrainParams(), &ctx.jobs);
+        *ctx.physics, ctx.terrainParams, &ctx.jobs);
     ctx.vegCollision = std::make_unique<VegetationCollision>(
-        *ctx.physics, ctx.renderer.terrainParams(), &ctx.jobs);
+        *ctx.physics, ctx.terrainParams, &ctx.jobs);
 }
 
 void SandboxWorldController::republishWorld(const SandboxContext& ctx) {
-    render::TerrainParams& params = ctx.renderer.terrainParams();
+    render::TerrainParams& params = ctx.terrainParams;
     // A world-sized event keeps the contentTouchedSince contract (every
     // bump records its rects).
     params.contentEvents.push(params.contentStamp + 1, -1.0e9f, -1.0e9f,
@@ -142,7 +142,7 @@ u32 SandboxWorldController::loadNeighbourOverviews(
 }
 
 Vec3 SandboxWorldController::probeSpawn(const SandboxContext& ctx) const {
-    const render::TerrainParams& params = ctx.renderer.terrainParams();
+    const render::TerrainParams& params = ctx.terrainParams;
     const auto& sandbox = params.sandbox;
     const f32 size = sandbox->grid.mapSize;
     // The map's cached water (nothing is published yet): the probe
@@ -171,7 +171,7 @@ void SandboxWorldController::travelTo(const SandboxContext& ctx, i32 mapX,
         // Land at the pass's far side, grounded on the map fallback
         // (overview when baked, shaped analytic otherwise); the warmup
         // spawn validation refines it on the real baked ground.
-        const render::TerrainParams& params = ctx.renderer.terrainParams();
+        const render::TerrainParams& params = ctx.terrainParams;
         const f32 h = render::terrain::height(params, arrival->x, arrival->y);
         spawn_ = { arrival->x, h, arrival->y };
     } else {
@@ -217,7 +217,7 @@ void SandboxWorldController::runPendingTravel(const SandboxContext& ctx) {
 
 void SandboxWorldController::queueCrossing(const SandboxContext& ctx,
                                            const Vec3& at) {
-    const auto& sandbox = ctx.renderer.terrainParams().sandbox;
+    const auto& sandbox = ctx.terrainParams.sandbox;
     if (!(sandbox && sandbox->grid.valid)) {
         return;
     }
@@ -246,7 +246,7 @@ void SandboxWorldController::updatePrefetch(const SandboxContext& ctx, f32 dt,
         return;
     }
     prefetchCooldown_ = 2.0f;
-    const auto& sandbox = ctx.renderer.terrainParams().sandbox;
+    const auto& sandbox = ctx.terrainParams.sandbox;
     if (!(sandbox && sandbox->grid.valid)) {
         return;
     }
@@ -276,7 +276,7 @@ void SandboxWorldController::updatePrefetch(const SandboxContext& ctx, f32 dt,
     // rect.
     auto next = std::make_shared<render::SandboxTerrain>(*sandbox);
     if (loadNeighbourOverviews(ctx, *next, ctx.mapBakeParams()) > 0) {
-        render::TerrainParams& tp = ctx.renderer.terrainParams();
+        render::TerrainParams& tp = ctx.terrainParams;
         tp.contentEvents.push(tp.contentStamp + 1, minX - size, minZ - size,
                               minX + 2.0f * size, minZ + 2.0f * size);
         ++tp.contentStamp;
@@ -310,7 +310,7 @@ void SandboxWorldController::applyMap(const SandboxContext& ctx, i32 mapX,
     const bool crossing = ctx.sandboxActive && streamer_ != nullptr;
     mapX_ = mapX;
     mapZ_ = mapZ;
-    render::TerrainParams& params = ctx.renderer.terrainParams();
+    render::TerrainParams& params = ctx.terrainParams;
     auto sandbox = std::make_shared<render::SandboxTerrain>();
     // The sandbox world IS a bounded map; the fallback beyond the
     // borders shows the lattice neighbours' preview. The fallback and
@@ -457,7 +457,7 @@ void SandboxWorldController::applyMap(const SandboxContext& ctx, i32 mapX,
 }
 
 void SandboxWorldController::restoreAuthoredWorld(const SandboxContext& ctx) {
-    render::TerrainParams& params = ctx.renderer.terrainParams();
+    render::TerrainParams& params = ctx.terrainParams;
     spawnValid_ = false;
     params.sandbox = nullptr;
     ctx.activeSnowLine = ctx.tuning.snowLine;
@@ -530,7 +530,7 @@ void SandboxWorldController::publishWaterBodies(const SandboxContext& ctx) {
     // The scatter rules read the same set (underLocalWater): no trees
     // or grass under altitude lakes/rivers. Same immutable-publish
     // contract as base/patches.
-    ctx.renderer.terrainParams().water = ctx.waterBodies;
+    ctx.terrainParams.water = ctx.waterBodies;
     if (!next->lakes.empty() || !next->rivers.empty()) {
         LOG_INFO("Water: {} lake(s), {} river(s)", next->lakes.size(),
                  next->rivers.size());
@@ -631,12 +631,13 @@ void SandboxWorldController::update(const SandboxContext& ctx,
         // chunks that a lake actually covers.
         const f32 reach =
             static_cast<f32>(ctx.tuning.terrainViewRadius + 1) * 64.0f;
-        vector<u64>& scatterQueue = ctx.renderer.sculptScatterQueue();
+        vector<u64> scatterKeys;
         for (const auto& lake : lakes_) {
             forEachChunkWithinReach(
                 Rect { lake.minX, lake.minZ, lake.maxX, lake.maxZ }, focus,
-                reach, [&](u64 key) { scatterQueue.push_back(key); });
+                reach, [&](u64 key) { scatterKeys.push_back(key); });
         }
+        ctx.renderer.requestRescatter(scatterKeys);
     }
 }
 
@@ -730,11 +731,11 @@ void SandboxWorldController::publishTiles(
     }
     next->buildIndex(); // regions final: per-sample scans go O(bucket)
     ctx.terrainBase = next;
-    ctx.renderer.terrainParams().base = next;
+    ctx.terrainParams.base = next;
     // The stamp bump + its scoped events (contentTouchedSince contract:
     // every bump records its rects).
     {
-        render::TerrainParams& params = ctx.renderer.terrainParams();
+        render::TerrainParams& params = ctx.terrainParams;
         const u64 stamp = params.contentStamp + 1;
         for (const Rect& rect : changedRects) {
             params.contentEvents.push(stamp, rect.minX, rect.minZ, rect.maxX,
@@ -750,19 +751,17 @@ void SandboxWorldController::publishTiles(
     // heights — without the scatter pass they float over the new ground.
     const f32 reach =
         static_cast<f32>(ctx.tuning.terrainViewRadius + 1) * 64.0f;
-    vector<u64>& remeshQueue = ctx.renderer.sculptRemeshQueue();
-    vector<u64>& scatterQueue = ctx.renderer.sculptScatterQueue();
+    vector<u64> rebuildKeys;
     for (size_t r = firstNew; r < next->regions.size(); ++r) {
         const render::TerrainRegion& region = *next->regions[r];
         forEachChunkWithinReach(
             Rect { region.originX, region.originZ,
                    region.originX + region.spanX(),
                    region.originZ + region.spanZ() },
-            focus, reach, [&](u64 key) {
-                remeshQueue.push_back(key);
-                scatterQueue.push_back(key);
-            });
+            focus, reach, [&](u64 key) { rebuildKeys.push_back(key); });
     }
+    ctx.renderer.requestRemesh(rebuildKeys);
+    ctx.renderer.requestRescatter(rebuildKeys);
     // Horizon table: only when a changed region reaches the occlusion
     // rays (camera square of the view reach).
     const auto anyRectIntersects = [&](f32 minX, f32 minZ, f32 maxX,
@@ -827,7 +826,7 @@ void SandboxWorldController::finalizeSpawn(const SandboxContext& ctx,
     if (!ctx.sandboxActive || !spawnValid_) {
         return;
     }
-    const render::TerrainParams& params = ctx.renderer.terrainParams();
+    const render::TerrainParams& params = ctx.terrainParams;
     // The search must stay INSIDE the active map's rect: a crossing
     // arrival sits meters from the line, the previous map's kept
     // slices make the far side look dry and trustworthy, and a spawn

@@ -133,8 +133,7 @@ void WarmupController::update(const WarmupContext& ctx, f32 rawDt) {
             (ctx.meshCache ? ctx.meshCache->pendingCount() : 0u) +
             (ctx.materialTextures ? ctx.materialTextures->pendingCount()
                                   : 0u) +
-            static_cast<u32>(ctx.renderer.sculptRemeshQueue().size() +
-                             ctx.renderer.sculptScatterQueue().size());
+            ctx.renderer.pendingChunkRebuilds();
         peakPending_ = glm::max(peakPending_, pending);
         const f32 buildFrac =
             peakPending_ == 0u

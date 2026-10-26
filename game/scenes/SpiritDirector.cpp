@@ -579,7 +579,7 @@ void SpiritDirector::applyPendingActions(const SpiritContext& ctx) {
             douse(action.x, action.z, action.radius);
             ctx.ambientFx.noteWaterEvent({ action.x, action.z }, action.radius);
             const Vec3 at { action.x,
-                            render::terrain::height(ctx.renderer.terrainParams(),
+                            render::terrain::height(ctx.terrainParams,
                                                     action.x, action.z),
                             action.z };
             ctx.cues.emit({ "Cue.Spirit.Fire.Douse", at, action.radius });
@@ -600,7 +600,7 @@ void SpiritDirector::applyPendingActions(const SpiritContext& ctx) {
                 params.duration = 1.0e9f; // until the key lets go
                 params.shapeRadius = glm::min(params.shapeRadius, action.radius);
                 const Vec3 at { action.x,
-                                render::terrain::height(ctx.renderer.terrainParams(),
+                                render::terrain::height(ctx.terrainParams,
                                                         action.x, action.z),
                                 action.z };
                 brand.emitter = ctx.fxSim.spawn(params, at, 0x6b7a9du ^ ctx.fxSim.count());
@@ -690,7 +690,7 @@ void SpiritDirector::applyPendingActions(const SpiritContext& ctx) {
         if (action.mode == PendingAction::Mode::FireIgnite) {
             igniteGround(ctx, action.x, action.z, action.radius, action.rate);
             const Vec3 at { action.x,
-                            render::terrain::height(ctx.renderer.terrainParams(),
+                            render::terrain::height(ctx.terrainParams,
                                                     action.x, action.z),
                             action.z };
             ctx.cues.emit({ "Cue.Spirit.Fire.Spawn", at, action.rate });
@@ -728,7 +728,7 @@ void SpiritDirector::applyPendingActions(const SpiritContext& ctx) {
             hold.upkeepScale = action.upkeepScale;
             hold.ability = spiritAbility ? spiritAbility->id : core::Guid {};
             hold.aim = Vec3 { action.x,
-                              render::terrain::height(ctx.renderer.terrainParams(),
+                              render::terrain::height(ctx.terrainParams,
                                                       action.x, action.z),
                               action.z };
             const core::Guid& fxId = holdParticles(action.kind);
@@ -789,7 +789,7 @@ void SpiritDirector::applyPendingActions(const SpiritContext& ctx) {
         }
         changed = true;
         const Vec3 at { action.x,
-                        render::terrain::height(ctx.renderer.terrainParams(),
+                        render::terrain::height(ctx.terrainParams,
                                                 action.x, action.z),
                         action.z };
         ctx.cues.emit(

@@ -395,14 +395,18 @@ inline constexpr WorldLane<RenderTuning, f32> kGrade[] = {
 // "Save render tuning" button — fills the records from the CURRENT live
 // values (fields the panels don't own keep `out`'s values; the scene
 // overlays its atmosphere-owned fields, then writes the overlay plugin).
-// Stateless, friend of the renderer — the seam edits its knobs in place.
+// Stateless: the seam edits the knobs in place through the renderer's
+// public tuning accessors.
 class RenderTuningIo {
 public:
+    // `terrain` is the scene-owned world params (RenderView::terrain):
+    // the terrain shape half of the record lands there, apply-only.
     // `activeSnowLine` is the MODE-resolved value (story snowLine or
     // sandboxSnowLine) — the scene owns that decision; passing the raw
     // form value here silently re-lowers the CPU tree line in sandbox
     // while the shader snow stays high.
     static void applyTuning(render::WorldRenderer& r,
+                            render::TerrainParams& terrain,
                             const data::LandscapeTuningForm& tuning,
                             const sptr<const render::HeightPatches>& patches,
                             const sptr<const render::TerrainBase>& base,

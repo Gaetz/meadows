@@ -2,7 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/core/BakeMailbox.hpp"
-#include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/terrain/TerrainNoise.hpp"
 
 namespace render {
 

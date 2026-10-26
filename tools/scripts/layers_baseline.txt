@@ -1,0 +1,9 @@
+# Tolerated layer violations (docs/ARCHITECTURE-LAYERS.md §5).
+# One per line: "A -> B" = upward include, "A <-> B" = cycle (members sorted).
+# A violation missing here fails the layers_audit test; a line whose
+# violation is resolved fails it too — remove the line with the fix.
+
+# main.cpp includes the scenes, the scenes include game/ services and the
+# panels: a cycle internal to the application layer (the LandscapeScene
+# god object, ARCHITECTURE-LAYERS.md §3.5).
+game <-> game/scenes <-> game/ui

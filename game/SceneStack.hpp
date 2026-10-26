@@ -6,9 +6,6 @@
 namespace engine {
 struct FrameContext;
 }
-namespace render {
-class SpriteRenderer;
-}
 
 namespace game {
 
@@ -27,10 +24,9 @@ public:
 
     void update(f32 dt);             // applies pending, then updates the active set
     // Records the whole frame: the first drawn scene's own passes when it
-    // ownsFrame(), then one sprite pass over the drawn set (Clear when the
-    // stack is pure 2D, Load on top of a frame-owning scene).
+    // ownsFrame(), else one clear pass (a stack without a frame owner
+    // still presents a defined backbuffer).
     void render(engine::FrameContext& frame);
-    void draw(render::SpriteRenderer& renderer);
     void drawUi();
 
     bool empty() const { return scenes.empty(); }

@@ -97,6 +97,7 @@ void registerSaveFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<SavedAbilityForm>();
     registry.registerFormType<SavedSkillForm>();
     registry.registerFormType<SavedBountyForm>();
+    registry.registerFormType<SavedScriptVarForm>();
     registry.registerFormType<WorldStateForm>();
 }
 

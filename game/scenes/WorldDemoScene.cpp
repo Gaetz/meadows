@@ -1,10 +1,12 @@
 #include "game/scenes/WorldDemoScene.hpp"
 
 #include "data/forms/CoreForms.hpp"
+#include "engine/FrameContext.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
 #include "engine/render/SpriteRenderer.hpp"
+#include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "game/AllForms.hpp"
 #include "game/SceneSubmit.hpp"
@@ -55,7 +57,18 @@ void WorldDemoScene::onEnter() {
     tags.registerTag("Cooldown.Strike");
 
     checker = createCheckerTexture(engine.getDevice());
-    engine.getCamera().viewHeight = 12.0f;
+    renderer.create(engine.getDevice(), engine.getJobSystem(),
+                    { .terrain = false,
+                      .water = false,
+                      .sky = false,
+                      .vegetation = false,
+                      .grass = false,
+                      .gi = false,
+                      .froxels = false,
+                      .occlusion = false,
+                      .postFx = false,
+                      .sprites = true });
+    renderer.camera2D().viewHeight = 12.0f;
     textureCache = std::make_unique<render::TextureCache>(
         engine.getDevice(), assetDb, engine.getJobSystem());
 
@@ -85,9 +98,24 @@ void WorldDemoScene::onExit() {
     // Free GPU resources while the device is alive (onExit runs from the main
     // thread during applyPending, before any teardown).
     textureCache.reset();
+    renderer.destroy(engine.getDevice());
     if (checker.id != 0) {
         engine.getDevice().destroyTexture(checker);
     }
+}
+
+void WorldDemoScene::render(engine::FrameContext& frame) {
+    // Collect + upload BEFORE the pass opens (Vulkan: in-pass buffer
+    // writes race the in-flight frame — SpriteRenderer::upload), then
+    // one clear pass holds the frame's draws.
+    render::SpriteRenderer& sprites = renderer.sprites();
+    sprites.begin(renderer.camera2D(), frame.aspect);
+    draw(sprites);
+    sprites.upload();
+    frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
+                                .clearColor = frame.clearColor });
+    sprites.end(frame.cmd);
+    frame.cmd.endRenderPass();
 }
 
 void WorldDemoScene::update(f32 dt) {
@@ -101,7 +129,7 @@ void WorldDemoScene::update(f32 dt) {
         });
 }
 
-void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
+void WorldDemoScene::draw(render::SpriteRenderer& sprites) {
     // Completion-queue drain point of the frame (§9 Phase 5): upload any asset
     // that finished decoding on a worker, flipping its handle to resident before
     // extractScene reads it. Runs right before the seam, on the main thread.
@@ -113,7 +141,7 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
         if (textureCache->pendingCount() == 0) {
             loading = false; // everything resident: reveal the world this frame
         } else {
-            drawLoadingScreen(renderer);
+            drawLoadingScreen(sprites);
             return;
         }
     }
@@ -122,7 +150,7 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
         for (i32 x = -8; x < 8; ++x) {
             const f32 shade =
                 0.85f + 0.15f * static_cast<f32>((x * 7 + y * 13 + 60) % 5) / 4.0f;
-            renderer.draw({
+            sprites.draw({
                 .position = { static_cast<f32>(x) + 0.5f,
                               static_cast<f32>(y) + 0.5f },
                 .tint = { 0.35f * shade, 0.55f * shade, 0.30f * shade, 1.0f },
@@ -134,11 +162,11 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
     // from the world, then submit it. Same thread today; the split is what lets
     // submit move to a render thread later without touching gameplay.
     const game::RenderSnapshot snapshot = game::extractScene(world, *textureCache);
-    game::submitSnapshot(snapshot, renderer);
+    game::submitSnapshot(snapshot, sprites);
 }
 
-void WorldDemoScene::drawLoadingScreen(render::SpriteRenderer& renderer) {
-    const render::Camera2D& cam = engine.getCamera();
+void WorldDemoScene::drawLoadingScreen(render::SpriteRenderer& sprites) {
+    const render::Camera2D& cam = renderer.camera2D();
     const f32 aspect = static_cast<f32>(engine.getWindow().width()) /
                        static_cast<f32>(engine.getWindow().height());
     const f32 viewW = cam.viewHeight * aspect;
@@ -146,7 +174,7 @@ void WorldDemoScene::drawLoadingScreen(render::SpriteRenderer& renderer) {
     // Opaque cover over the whole view (untextured → white fallback, tinted), so
     // the world behind it never shows. Centered on the camera, so it covers the
     // screen wherever the view is.
-    renderer.draw({ .position = cam.position,
+    sprites.draw({ .position = cam.position,
                     .size = { viewW, cam.viewHeight },
                     .tint = { 0.06f, 0.07f, 0.09f, 1.0f } });
 
@@ -159,12 +187,12 @@ void WorldDemoScene::drawLoadingScreen(render::SpriteRenderer& renderer) {
     const f32 barW = viewW * 0.5f;
     const f32 barH = cam.viewHeight * 0.04f;
 
-    renderer.draw({ .position = cam.position,
+    sprites.draw({ .position = cam.position,
                     .size = { barW, barH },
                     .tint = { 0.18f, 0.19f, 0.24f, 1.0f } }); // track
     const f32 fillW = barW * done;
     if (fillW > 0.0f) {
-        renderer.draw({ .position = { cam.position.x - (barW - fillW) * 0.5f,
+        sprites.draw({ .position = { cam.position.x - (barW - fillW) * 0.5f,
                                       cam.position.y },
                         .size = { fillW, barH },
                         .tint = { 0.40f, 0.80f, 0.55f, 1.0f } }); // fill

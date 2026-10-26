@@ -61,7 +61,7 @@ void TreeCreationScene::onEnter() {
 
     // Flat ground: zero relief, the sea/sand band pushed far below —
     // the "plane" is ordinary terrain, so splat + shadows just work.
-    render::TerrainParams& params = renderer.terrainParams();
+    render::TerrainParams& params = terrainParams;
     params.hillAmplitude = 0.0f;
     params.mountainAmplitude = 0.0f;
     params.seaLevel = -100.0f;
@@ -87,7 +87,8 @@ void TreeCreationScene::onEnter() {
     const assets::AssetDatabase assetDb =
         game::buildAssetDatabase(pluginStack);
     game::applyCookedTerrainPaths(rendererConfig, forms, assetDb);
-    renderer.create(device, engine->getJobSystem(), rendererConfig);
+    renderer.create(device, engine->getJobSystem(), rendererConfig,
+                    terrainParams);
     game::loadTreeBark(device, renderer, assetDb, forms);
 
     // The showcased specimen: variant 0 at the origin, no distance fade.
@@ -127,6 +128,7 @@ void TreeCreationScene::render(engine::FrameContext& frame) {
         .timeSeconds = timeSeconds,
         .windTime = windTime,
         .snowLine = 1000.0f, // flat ground stays below every band
+        .terrain = &terrainParams,
         .probe = &frameProbe,
     };
     renderer.render(frame, snapshot, view);
@@ -227,7 +229,7 @@ void TreeCreationScene::applySelected() {
 // tracks reseedProgress() until the swap lands.
 void TreeCreationScene::regenerateSpecimen() {
     renderer.vegetationSystem().reseedVariantMeshesAsync(
-        engine->getJobSystem(), renderer.terrainParams().seed);
+        engine->getJobSystem(), terrainParams.seed);
 }
 
 void TreeCreationScene::captureIntoSelected() {
@@ -352,7 +354,7 @@ void TreeCreationScene::drawUi() {
         regenerateSpecimen();
     }
     ImGui::InputScalar("Specimen seed", ImGuiDataType_U32,
-                       &renderer.terrainParams().seed);
+                       &terrainParams.seed);
     ImGui::SameLine();
     if (ImGui::Button("Reroll")) {
         regenerateSpecimen();

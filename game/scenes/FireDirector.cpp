@@ -119,12 +119,12 @@ void FireDirector::update(const FireContext& ctx, f32 simSeconds) {
     }
     const render::WaterSystem& water = ctx.renderer.waterSystem();
     SpiritDirector::FireFrame frame;
-    frame.params = &ctx.renderer.terrainParams();
+    frame.params = &ctx.terrainParams;
     frame.water = (water.simIsValid() && !water.simIsSettling())
                       ? water.simSnapshot()
                       : nullptr;
     frame.bodies = ctx.waterBodies;
-    frame.seaLevel = ctx.renderer.terrainParams().seaLevel;
+    frame.seaLevel = ctx.terrainParams.seaLevel;
     frame.rain = ctx.rainIntensity; // the rain soaks the fuel and the flames
     const Vec3 cam = ctx.cameraPosition;
     frame.focus = { cam.x, cam.z };
@@ -178,7 +178,7 @@ void FireDirector::update(const FireContext& ctx, f32 simSeconds) {
     for (const Vec2& at : wanted) {
         FlameEmitter flame { at, 0, 0, 0, 0 };
         const Vec3 pos { at.x,
-                         render::terrain::height(ctx.renderer.terrainParams(),
+                         render::terrain::height(ctx.terrainParams,
                                                  at.x, at.y) +
                              0.15f,
                          at.y };
@@ -265,7 +265,7 @@ void FireDirector::extractLights(const FireContext& ctx,
     for (const auto& [key, tile] : tiles) {
         const Vec2 center = tile.sum / static_cast<f32>(tile.count);
         const f32 y =
-            render::terrain::height(ctx.renderer.terrainParams(), center.x, center.y) +
+            render::terrain::height(ctx.terrainParams, center.x, center.y) +
             0.8f;
         render::SceneLight light;
         light.position = { center.x, y, center.y };
@@ -586,7 +586,7 @@ void FireDirector::updateSound(const FireContext& ctx, const Vec3& cam) {
         return;
     }
     const Vec3 at { nearest->x,
-                    render::terrain::height(ctx.renderer.terrainParams(), nearest->x,
+                    render::terrain::height(ctx.terrainParams, nearest->x,
                                             nearest->y) +
                         0.5f,
                     nearest->y };

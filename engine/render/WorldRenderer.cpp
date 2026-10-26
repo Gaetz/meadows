@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "engine/FrameContext.hpp"
+#include "engine/rhi/FrameContext.hpp"
 #include "engine/assets/MeshData.hpp" // render::MeshVertex / SkinnedVertex
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
@@ -24,7 +24,6 @@
 #include "engine/render/TextureCache.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
-#include "engine/ui/UiSystem.hpp"
 #include "engine/render/FrameComposer.hpp"
 #include "engine/render/PipelinePresets.hpp"
 
@@ -131,6 +130,7 @@ WorldRenderer::Mounted WorldRenderer::resolveMounted(
     m.clusters = caps.computeShaders;
     m.offscreen = caps.offscreenTargets;
     m.sceneCopy = caps.copyTexture;
+    m.sprites = cfg.sprites;
     return m;
 }
 
@@ -310,12 +310,24 @@ const WorldRenderer::SystemEntry WorldRenderer::kSystems[] = {
           r.lightClusters.refreshPipeline(d, *r.shaders);
       },
       nullptr },
+    // Self-contained (own shader, own camera UBO): no dependency on the
+    // rows above, so it sits last.
+    { "sprites", &Mounted::sprites,
+      [](WorldRenderer& r, rhi::Device& d, core::JobSystem&) {
+          r.spriteRenderer = render::SpriteRenderer::create(d);
+      },
+      [](WorldRenderer& r, rhi::Device&) { r.spriteRenderer.reset(); },
+      nullptr, nullptr },
 };
 
 void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
-                               const RendererConfig& config) {
+                               const RendererConfig& config,
+                               const render::TerrainParams& worldParams) {
     cfg = config;
     jobSystem = &jobs;
+    // The frame copy the systems table reads (vegetation seeds from it);
+    // render() refreshes it from the view every frame.
+    terrain.params = worldParams;
     if (!cfg.postFx) {
         cfg.froxels = false; // froxel fog lives in the postFx chain
     }
@@ -1964,6 +1976,12 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
 void WorldRenderer::render(engine::FrameContext& frame,
                                const render::RenderSnapshot& snapshot,
                                const RenderView& view) {
+    // The world params for this frame, BEFORE any pump: the regenerate
+    // and remesh requests below and every streaming/bake system read the
+    // renderer's copy (the workers capture it by value at enqueue).
+    if (view.terrain) {
+        terrain.params = *view.terrain;
+    }
     // Resolve last frames' timestamps (never blocking) and
     // open this frame's slot — the scopes below feed the budget table.
     gpuProbe.beginFrame(frame.device);
@@ -2422,18 +2440,15 @@ void WorldRenderer::recordComposite(engine::FrameContext& frame,
         }
         // The game UI composes over the tonemapped scene,
         // under the dev ImGui layer.
-        if (view.gameUi) {
-            view.gameUi->resize(frame.width, frame.height); // no-op if same
-            view.gameUi->render(frame.cmd, frame.device, frame.width,
-                                frame.height);
+        if (view.inPassUi) {
+            view.inPassUi(frame.cmd, frame.device, frame.width,
+                          frame.height);
         }
         frame.cmd.endRenderPass();
-    } else if (view.gameUi) {
+    } else if (view.inPassUi) {
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Load,
                                     .depthLoadOp = rhi::LoadOp::DontCare });
-        view.gameUi->resize(frame.width, frame.height);
-        view.gameUi->render(frame.cmd, frame.device, frame.width,
-                            frame.height);
+        view.inPassUi(frame.cmd, frame.device, frame.width, frame.height);
         frame.cmd.endRenderPass();
     }
 }

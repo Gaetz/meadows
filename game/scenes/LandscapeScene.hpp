@@ -175,10 +175,10 @@ private:
     bool uiMapOpen { false };  // dev minimap (MiniMapPanel)
 
     // The whole custom renderer — shader library, render::* systems,
-    // GPU handles, frame graph, terrain/render dev panels and their toggle
-    // state — lives in render::WorldRenderer. The scene reaches the terrain
-    // ground truth via renderer.terrainParams() and hands a render::RenderView +
-    // the RenderSnapshot to renderer.render() each frame.
+    // GPU handles, frame graph — lives in render::WorldRenderer. The scene
+    // owns the terrain ground truth (`terrainParams` below) and hands a
+    // render::RenderView (which carries it) + the RenderSnapshot to
+    // renderer.render() each frame.
     render::WorldRenderer renderer;
     bool animateTime { false };
     // Atmospheric render state (sky/fog/weather-driven), grouped so the weather
@@ -487,6 +487,13 @@ private:
     // The baked-base layer under it (generated terrain regions), same
     // immutable-publish contract.
     sptr<const render::TerrainBase> terrainBase;
+    // The world's ground truth: terrain shape, the authored layers above
+    // (patches/base/sandbox/biomes/water) and the content stamps.
+    // Collision, nav, spawns, the sculpt tool and the controllers read and
+    // write it here; the renderer gets it by RenderView::terrain each
+    // frame and never writes it back (a change takes effect at the next
+    // render(), the same frame point the requests are drained at).
+    render::TerrainParams terrainParams;
     // The bounded-map world — the active map, its tile streamer, the
     // resident lakes/rivers, the probed spawn, the queued crossing and
     // the neighbour prefetch — lives in SandboxWorldController, wired

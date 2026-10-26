@@ -80,6 +80,7 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/combat/MeleeSwing.hpp" // the viewmodel swing arc
 #include "gameplay/cue/GameplayCues.hpp"  // toEmitterParams (fx cmd)
+#include "gameplay/actors/ActorKit.hpp"
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
@@ -260,7 +261,7 @@ void LandscapeScene::bootstrapData() {
         LOG_INFO("Terrain: {} baked region(s)", terrainBase->regions.size());
     }
     sandboxWorld.publishWaterBodies(makeSandboxContext());
-    renderer.terrainParams().biomes = world::buildBiomeSet(forms, assetDb);
+    terrainParams.biomes = world::buildBiomeSet(forms, assetDb);
     activeSnowLine = tuning.snowLine;
     // Boot clocks (docs/CPU-PERF.md): the steps of the data bootstrap
     // that touch the terrain and the renderer.
@@ -282,8 +283,8 @@ void LandscapeScene::bootstrapData() {
     // Terrain shape + startup values for every live-adjustable knob: the
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
     // the atmosphere half here (the weather crossfade owns `atmos`).
-    RenderTuningIo::applyTuning(renderer, tuning, heightPatches,
-                                terrainBase, activeSnowLine);
+    RenderTuningIo::applyTuning(renderer, terrainParams, tuning,
+                                heightPatches, terrainBase, activeSnowLine);
     // Tree builder: generation knobs ride two ordinary
     // records (§5) — mods retune the species; the Trees panel edits live.
     bootLap("render tuning");
@@ -376,7 +377,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     // RendererAssets, shared with TreeCreationScene).
     render::RendererConfig config;
     applyCookedTerrainPaths(config, forms, assetDb);
-    renderer.create(device, engine->getJobSystem(), config);
+    renderer.create(device, engine->getJobSystem(), config, terrainParams);
     // Scanned-prop overrides (docs/PAYSAGE.md §1.7 palier 1): CC0 scans
     // replace the generated rock variants and fill the forest-debris
     // slots. Decimated to clutter budgets (the sources are 40-100k tris)
@@ -647,7 +648,7 @@ void LandscapeScene::setupGameplay() {
     // everything else (patches included — the pointer rides in params).
     navigator = std::make_unique<world::TerrainNavigator>(
         [this](f32 x, f32 z) {
-            return render::terrain::height(renderer.terrainParams(), x, z);
+            return render::terrain::height(terrainParams, x, z);
         });
     furnitureOccupancy = gameplay::FurnitureOccupancy {};
 
@@ -947,7 +948,7 @@ void LandscapeScene::setupGameplay() {
                 // the weights -> name verdict lives on FxDirector.
                 const auto weights =
                     render::terrain::materialWeightsShaded(
-                        renderer.terrainParams(), at.x, at.z,
+                        terrainParams, at.x, at.z,
                         tuning.splatUvScale);
                 material = FxDirector::footstepMaterial(weights);
             }
@@ -1447,7 +1448,7 @@ void LandscapeScene::tickPhysics(f32 dt) {
     core::FrameProbe::Scope probe { frameProbe, "physics" };
     physics->tick(dt);
     // Seized rocks: the entity follows its body (rolling, resting).
-    spiritDirector.syncRocks(*physics, renderer.terrainParams());
+    spiritDirector.syncRocks(*physics, terrainParams);
     if (policy().snapsToTerrain) { // interiors have no terrain to collide with
         const Vec3 focus =
             (mode == SceneMode::Play) && playerController.body()
@@ -1929,7 +1930,7 @@ void LandscapeScene::enterPlayMode(const Vec3* feet) {
         // Under the camera, feet grounded on the height function (+0.5 m
         // so a slope never pins the spawn into the field).
         spawn = flyCamera.camera.position;
-        spawn.y = render::terrain::height(renderer.terrainParams(), spawn.x,
+        spawn.y = render::terrain::height(terrainParams, spawn.x,
                                           spawn.z) +
                   0.5f;
     }
@@ -2064,7 +2065,7 @@ void LandscapeScene::placeStartCamera() {
         flyCamera.camera.yaw = std::atan2(look.x, -look.z) + core::kPi;
         flyCamera.camera.pitch = -std::asin(look.y);
     } else {
-        const f32 ground = render::terrain::height(renderer.terrainParams(), 32.0f,
+        const f32 ground = render::terrain::height(terrainParams, 32.0f,
                                                    400.0f);
         flyCamera.camera.position = { 32.0f, ground + 30.0f, 400.0f };
         flyCamera.camera.pitch = -0.30f;
@@ -2122,6 +2123,7 @@ void LandscapeScene::setSandboxMode(bool enable) {
 SandboxContext LandscapeScene::makeSandboxContext() {
     return SandboxContext {
         renderer,
+        terrainParams,
         forms,
         assetDb,
         tuning,
@@ -2213,7 +2215,7 @@ WarmupContext LandscapeScene::makeWarmupContext() {
 
 SculptContext LandscapeScene::makeSculptContext() {
     return SculptContext {
-        renderer.terrainParams(),
+        terrainParams,
         heightPatches.get(),
         forms,
         *levelEditor,
@@ -2225,9 +2227,8 @@ SculptContext LandscapeScene::makeSculptContext() {
             // frame during a stroke. Whoever stands where the ground rises
             // is thrown by the swap itself.
             throwActorsOnGroundRise(
-                [&] { renderer.terrainParams().patches = next; }, changed);
-            renderer.sculptRemeshQueue().insert(renderer.sculptRemeshQueue().end(), changed.begin(),
-                                     changed.end());
+                [&] { terrainParams.patches = next; }, changed);
+            renderer.requestRemesh(changed);
             // The live water sim re-samples its ground on the next
             // step job — the water reacts DURING the stroke (the From
             // Dust terraforming loop).
@@ -2240,8 +2241,7 @@ SculptContext LandscapeScene::makeSculptContext() {
             // collision / cell snap rebuild.
             heightPatches = next;
             spellTouchedChunks.insert(changed.begin(), changed.end());
-            renderer.sculptScatterQueue().insert(renderer.sculptScatterQueue().end(),
-                                       changed.begin(), changed.end());
+            renderer.requestRescatter(changed);
             renderer.invalidateOcclusion();
             SandboxWorldController::rebuildCollision(makeSandboxContext(),
                                                      /*onlyIfBuilt=*/false);
@@ -2257,7 +2257,7 @@ EditorContext LandscapeScene::makeEditorContext() {
     return EditorContext {
         flyCamera,       world,           *meshCache,
         worldKind() == WorldKind::Interior,
-        renderer.terrainParams(),  forms,           *levelEditor,    activeWorldspace,
+        terrainParams,  forms,           *levelEditor,    activeWorldspace,
         worldModel,      categories,      *cellLoader,     *cellStreamer,
         spawner,         makeSculptContext(),
         GenContext {
@@ -2268,7 +2268,7 @@ EditorContext LandscapeScene::makeEditorContext() {
             makeMapBakeParams(),
             // The map section only makes sense over the sandbox map
             // world (the streamer's cache is the shared ground truth).
-            renderer.terrainParams().sandbox
+            terrainParams.sandbox
                 ? SandboxWorldController::cacheRoot(tuning.terrainSeed)
                 : std::filesystem::path {},
             &genTuning,
@@ -2521,7 +2521,7 @@ RideContext LandscapeScene::makeRideContext() {
         &actionMap,
         &settings,
         statsTuning,
-        renderer.terrainParams(),
+        terrainParams,
         playerEntity,
         [this](const Vec3& feet) {
             if (physics) {
@@ -2608,7 +2608,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
             Vec3 at = marker->position +
                       forward * (14.0f + 4.0f * static_cast<f32>(i)) +
                       side * (i % 2 == 0 ? 3.0f : -3.0f);
-            at.y = render::terrain::height(renderer.terrainParams(), at.x,
+            at.y = render::terrain::height(terrainParams, at.x,
                                            at.z);
             world::ReferenceForm runtime;
             runtime.id = core::Guid::generate();
@@ -3330,36 +3330,11 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
         }
     }
     gameplay::initializeActorStats(entity, tickCtx);
-    // Every actor can swing — the shared melee state machine
-    // (player LMB and NPC AI go through the same component).
-    if (!entity.has<gameplay::MeleeSwing>()) {
-        entity.set<gameplay::MeleeSwing>({});
-    }
-    if (!entity.has<gameplay::Inventory>()) {
-        entity.set<gameplay::Inventory>({});
-    }
-    if (!entity.has<gameplay::Equipment>()) {
-        entity.set<gameplay::Equipment>({});
-    }
-    // D1/D2: present on every actor BEFORE the saved-state apply, so the
-    // name-matched SavedStatsForm fields (bounty, lastRestockHours) land.
-    if (!entity.has<gameplay::Bounty>()) {
-        entity.set<gameplay::Bounty>({});
-    }
-    if (!entity.has<gameplay::VendorState>()) {
-        entity.set<gameplay::VendorState>({});
-    }
-    // Same rule — the follower* SavedStatsForm fields need
-    // the component present before the saved-state apply to land.
-    if (!entity.has<gameplay::FollowerState>()) {
-        entity.set<gameplay::FollowerState>({});
-    }
-    // Skills-by-use: present before the saved-state apply so the
-    // SavedSkillForm rows land (the bindSkillProgression handler never
-    // ADDS the component — locked-iteration rule).
-    if (!entity.has<gameplay::SkillProgress>()) {
-        entity.set<gameplay::SkillProgress>({});
-    }
+    // The whole actor kit must be present BEFORE the saved-state apply: the
+    // name-matched SavedStatsForm fields and the SavedSkill/SavedItem rows
+    // only land on components that exist. The Spawner already attached it;
+    // this keeps the guarantee local to the apply, whoever built the entity.
+    gameplay::attachActorKit(world, entity);
     // Re-apply captured instance overrides: a moved/killed actor keeps the
     // spot it died at instead of snapping back to its authored spawn (the
     // cell loader respawns the resolved record). finalize runs AFTER
@@ -3500,10 +3475,10 @@ MapContext LandscapeScene::makeMapContext() {
         (mode == SceneMode::Play) && playerController.body()
             ? playerController.body()->position()
             : flyCamera.camera.position;
-    const auto& sandbox = renderer.terrainParams().sandbox;
+    const auto& sandbox = terrainParams.sandbox;
     const bool sandboxMap = sandboxActive && sandbox && sandbox->grid.valid;
     return MapContext { forms,
-                        renderer.terrainParams(),
+                        terrainParams,
                         engine->getJobSystem(),
                         uiSystem,
                         screenStack,
@@ -3684,7 +3659,7 @@ void LandscapeScene::createConsole() {
                 : flyCamera.camera.position;
         Vec3 position = origin + glm::normalize(forward) * 3.0f;
         position.y =
-            render::terrain::height(renderer.terrainParams(), position.x, position.z);
+            render::terrain::height(terrainParams, position.x, position.z);
         world::ReferenceForm reference;
         reference.id = core::Guid::generate(); // transient (not a record)
         reference.baseForm = base->id;
@@ -3714,7 +3689,7 @@ void LandscapeScene::createConsole() {
         } else if (!(in >> x >> z)) {
             return "usage: tp <x> <z> | tp start";
         }
-        const f32 y = render::terrain::height(renderer.terrainParams(), x, z) + 0.5f;
+        const f32 y = render::terrain::height(terrainParams, x, z) + 0.5f;
         if ((mode == SceneMode::Play) && playerController.body()) {
             playerController.spawnBody(*physics, Vec3 { x, y, z });
         } else {
@@ -3734,7 +3709,7 @@ void LandscapeScene::createConsole() {
         }
         const render::Camera3D& cam = flyCamera.camera;
         Vec3 at = cam.position + cam.forward() * 4.0f;
-        at.y = render::terrain::height(renderer.terrainParams(), at.x,
+        at.y = render::terrain::height(terrainParams, at.x,
                                        at.z) +
                0.2f;
         // Cosmetic seed from the spot (§8: never the gameplay RNG).
@@ -3913,7 +3888,7 @@ void LandscapeScene::createConsole() {
             const f32 r = kSpacing * std::sqrt(static_cast<f32>(i) + 0.5f);
             const f32 a = kGolden * static_cast<f32>(i);
             Vec3 at = origin + Vec3 { r * std::cos(a), 0.0f, r * std::sin(a) };
-            at.y = render::terrain::height(renderer.terrainParams(), at.x,
+            at.y = render::terrain::height(terrainParams, at.x,
                                            at.z) +
                    1.6f;
             ecs::Entity entity = world.create();
@@ -4058,7 +4033,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
                 makeWaterQuery(), at.x, at.z, at.y);
             // Bounded-map guard: past the rim the ocean turns the
             // swimmer back (world/scene/MapBounds).
-            const auto& sandbox = renderer.terrainParams().sandbox;
+            const auto& sandbox = terrainParams.sandbox;
             if (policy().hasBoundedMap && sandbox) {
                 const f32 size = sandbox->grid.mapSize;
                 flow += world::mapBoundsCurrent(
@@ -4085,7 +4060,7 @@ std::optional<Vec3> LandscapeScene::aimGround() const {
     }
     // A hit more than a metre off the terrain surface is a prop (rock,
     // trunk, wall): a spring needs the ground itself.
-    const f32 ground = render::terrain::height(renderer.terrainParams(),
+    const f32 ground = render::terrain::height(terrainParams,
                                                hit.position.x,
                                                hit.position.z);
     if (std::abs(hit.position.y - ground) > 1.0f) {
@@ -4114,7 +4089,7 @@ script::ScriptContext LandscapeScene::playerScriptContext() {
 void LandscapeScene::throwActorsOnGroundRise(
     const std::function<void()>& swapOverlay,
     const std::vector<u64>& changedChunks) {
-    const auto& params = renderer.terrainParams();
+    const auto& params = terrainParams;
     const auto inChanged = [&](f32 x, f32 z) {
         const f32 chunk = render::TerrainSystem::kChunkSize;
         const u64 key = render::HeightPatches::keyOf(
@@ -4195,6 +4170,7 @@ SpiritContext LandscapeScene::makeSpiritContext() {
         fxDirector.cues(),
         ambientFx,
         renderer,
+        terrainParams,
         physics.get(),
         meshCache.get(),
         interactQuery,
@@ -4252,6 +4228,7 @@ FireContext LandscapeScene::makeFireContext() {
         audioSystem,
         soundResolver,
         renderer,
+        terrainParams,
         engine->getDevice(),
         engine->getJobSystem(),
         interactQuery,
@@ -4297,7 +4274,7 @@ AmbientFxContext LandscapeScene::makeAmbientFxContext() {
         fxSourceQuery,
         spiritDirector,
         spiritDirector.wind(),
-        renderer.terrainParams(),
+        terrainParams,
         waterBodies.get(),
         policy(),
         flyCamera.camera.position,
@@ -4318,7 +4295,7 @@ render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {
     return render::terrain::WaterQuery {
         simLive ? water.simSnapshot().get() : nullptr,
         waterBodies.get(),
-        renderer.terrainParams().seaLevel,
+        terrainParams.seaLevel,
     };
 }
 
@@ -4333,7 +4310,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         world,
         forms,
         assetDb,
-        renderer.terrainParams(),
+        terrainParams,
         gameTags,
         derivedStats,
         statsTuning,
@@ -4392,7 +4369,7 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         forms,
         gameTags,
         statsTuning,
-        renderer.terrainParams(),
+        terrainParams,
         worldKind() == WorldKind::Interior,
         physics.get(),
         cellLoader.get(),
@@ -4464,7 +4441,7 @@ StreamingContext LandscapeScene::makeStreamingContext() {
     return StreamingContext {
         world,
         forms,
-        renderer.terrainParams(),
+        terrainParams,
         physics.get(),
         meshCache.get(),
         navigator.get(),
@@ -4514,9 +4491,17 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .buriedBelowY = buriedBelowY,
         .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,
         .playerFeet = playerBody ? playerBody->position() : Vec3 { 0.0f },
+        .terrain = &terrainParams,
         .meshCache = meshCache.get(),
         .materialTextures = materialTextures.get(),
-        .gameUi = uiCreated ? &uiSystem : nullptr,
+        .inPassUi = uiCreated
+                        ? render::InPassDraw { [this](rhi::CommandBuffer& cmd,
+                                                      rhi::Device& device,
+                                                      u32 width, u32 height) {
+                              uiSystem.resize(width, height);
+                              uiSystem.render(cmd, device, width, height);
+                          } }
+                        : render::InPassDraw {},
         .probe = &frameProbe,
     };
     renderer.render(frame, snapshot, view);
@@ -4726,7 +4711,7 @@ void LandscapeScene::drawUi() {
     rightWindow("Gameplay — player, NPC, physics", uiGameplayOpen,
                 [&] { drawGameplayUi(); });
     rightWindow("Terrain & streaming", uiTerrainOpen, [&] {
-        RenderTuningPanels::drawTerrainPanel(renderer);
+        RenderTuningPanels::drawTerrainPanel(renderer, terrainParams);
         // Terrain material knobs (docs/PAYSAGE.md §1.6) live on the
         // scene's tuning form and flow into the view every frame — live.
         // Tint changes regenerate grass and re-bake the GI tile on their
@@ -4773,8 +4758,8 @@ void LandscapeScene::drawUi() {
     });
     if (uiMapOpen) {
         miniMap.draw(engine->getDevice(), engine->getJobSystem(),
-                     renderer.terrainParams(), flyCamera.camera.position,
-                     renderer.terrainParams().contentStamp, &uiMapOpen,
+                     terrainParams, flyCamera.camera.position,
+                     terrainParams.contentStamp, &uiMapOpen,
                      renderer.heightFieldSnapshot());
     }
     if (renderer.consumeSaveTuningRequest()) {

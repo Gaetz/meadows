@@ -1,25 +1,14 @@
 #pragma once
 
-#include <unordered_map>
-
-#include "engine/core/Defines.hpp"
-#include "engine/reflect/Reflect.hpp"
-
-namespace ecs {
-class World;
-}
+// The script-side name of the persistent per-entity variables. The struct
+// lives in gameplay (gameplay/actors/ScriptVars.hpp) so the save layer can
+// persist it without depending on the script layer; the VM only needs the
+// alias.
+#include "gameplay/actors/ScriptVars.hpp"
 
 namespace script {
 
-// Persistent per-entity script state (§2.8): a map of named values, each a
-// reflect::Value (the §5 serialization currency — NOT loose Lua tables). The
-// `self.x` proxy reads/writes these. Runtime component; serialization is
-// deferred (the map is a container — same story as inventories/active
-// effects).
-struct ScriptVars {
-    std::unordered_map<str, reflect::Value> vars;
-};
-
-void registerScriptComponents(ecs::World& world);
+using ScriptVars = gameplay::ScriptVars;
+using gameplay::registerScriptComponents;
 
 } // namespace script

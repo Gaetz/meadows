@@ -4,7 +4,7 @@
 #include <unordered_map>
 
 #include "engine/anim/Anim.hpp"          // anim::Skeleton
-#include "engine/assets/GltfMesh.hpp"    // assets::GltfClip
+#include "engine/anim/GltfSkeleton.hpp" // anim::GltfClip
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"          // ecs::Entity
@@ -22,7 +22,7 @@ struct NpcContext;
 // NPC built from that asset.
 struct RigData {
     anim::Skeleton skeleton;
-    vector<assets::GltfClip> clips;
+    vector<anim::GltfClip> clips;
 };
 
 // The Forms->NPC build path, split out of NpcDirector. Owns the rig

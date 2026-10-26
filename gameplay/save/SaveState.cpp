@@ -1,9 +1,12 @@
 #include "gameplay/save/SaveState.hpp"
 
 #include <algorithm>
+#include <optional>
+#include <utility>
+#include <variant>
 
 #include "data/forms/FormDatabase.hpp"
-#include "engine/core/Hash.hpp" // deterministic SavedBountyForm row guids
+#include "engine/core/Hash.hpp" // deterministic SavedBountyForm / SavedScriptVarForm row guids
 #include "engine/reflect/Fields.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -11,16 +14,9 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/ability/Tags.hpp"
-#include "gameplay/actors/ActorState.hpp"
+#include "gameplay/actors/ActorKit.hpp"
+#include "gameplay/actors/ScriptVars.hpp"
 #include "gameplay/combat/Combat.hpp"
-#include "gameplay/inventory/Inventory.hpp"
-#include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Damage.hpp"
-#include "gameplay/stats/Injuries.hpp"
-#include "gameplay/stats/Resonance.hpp"
-#include "gameplay/stats/Skills.hpp"
-#include "gameplay/stats/StatusBuildup.hpp"
-#include "gameplay/stats/Survival.hpp"
 
 namespace gameplay {
 
@@ -35,6 +31,49 @@ constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004u
 constexpr core::Guid kSavedAbilityNs { 0x534441424c545921ull, 0x0000000000000005ull };
 constexpr core::Guid kSavedSkillNs  { 0x5344534b494c4c21ull, 0x0000000000000006ull };
 constexpr core::Guid kSavedBountyNs { 0x5344424f554e5459ull, 0x0000000000000007ull };
+constexpr core::Guid kSavedScriptVarNs { 0x5344534356415221ull, 0x0000000000000008ull };
+
+// A ScriptVars value -> the row's kind + slot. False for a kind the row
+// does not carry (not script-authored state; see gameplay::ScriptVars).
+bool writeScriptVarValue(const reflect::Value& value, SavedScriptVarForm& row) {
+    const auto kindName = [](ScriptVarKind kind) {
+        return str { reflect::enumName(kScriptVarKinds, kind) };
+    };
+    if (const f32* number = std::get_if<f32>(&value)) {
+        row.kind = kindName(ScriptVarKind::Number);
+        row.number = *number;
+        return true;
+    }
+    if (const str* text = std::get_if<str>(&value)) {
+        row.kind = kindName(ScriptVarKind::Text);
+        row.text = *text;
+        return true;
+    }
+    if (const bool* flag = std::get_if<bool>(&value)) {
+        row.kind = kindName(ScriptVarKind::Flag);
+        row.flag = *flag;
+        return true;
+    }
+    return false;
+}
+
+// The inverse: the row's selected slot as a Value; nullopt for an unknown
+// kind (a row from a newer build — skipped, never fatal, §5).
+std::optional<reflect::Value> readScriptVarValue(const SavedScriptVarForm& row) {
+    const auto kind = reflect::parseEnum<ScriptVarKind>(kScriptVarKinds, row.kind);
+    if (!kind) {
+        return std::nullopt;
+    }
+    switch (*kind) {
+    case ScriptVarKind::Number:
+        return reflect::Value { row.number };
+    case ScriptVarKind::Text:
+        return reflect::Value { row.text };
+    case ScriptVarKind::Flag:
+        return reflect::Value { row.flag };
+    }
+    return std::nullopt;
+}
 
 // One savedStatsComponents() entry: the component's TypeInfo and the
 // default instance whose values seed the generated form's slots.
@@ -44,22 +83,29 @@ SavedStatsComponent persistedComponent() {
     return { &T::staticTypeInfo(), &kDefaults };
 }
 
-// Copies a component's fields into the SavedStatsForm (capture) or back
-// (apply) when the entity carries it. One line per savedStatsComponents()
-// entry in captureActor / applySavedState, same order.
-template<typename T>
-void componentToSaved(ecs::Entity entity, SavedStatsForm& saved) {
-    if (entity.has<T>()) {
-        copyMatchingFields(T::staticTypeInfo(), &entity.get<T>(),
-                           SavedStatsForm::staticTypeInfo(), &saved);
-    }
-}
-
-template<typename T>
-void savedToComponent(const SavedStatsForm& saved, ecs::Entity entity) {
-    if (entity.has<T>()) {
-        copyMatchingFields(SavedStatsForm::staticTypeInfo(), &saved,
-                           T::staticTypeInfo(), &entity.get_mut<T>());
+// Visits the persisted components the entity carries, in
+// savedStatsComponents() order: fn(const reflect::TypeInfo&, void*
+// storage). Type-erased through the ECS reflection bridge — no per-type
+// code here; the kit is bridged first so an actor assembled by hand (a
+// bench) persists exactly like a spawned one. A reflected component the
+// kit does not list is skipped (see SavedStatsComponent).
+template<typename Fn>
+void forEachPersistedComponent(ecs::Entity entity, Fn&& fn) {
+    registerActorKit(entity.world());
+    const std::span<const SavedStatsComponent> kit = savedStatsComponents();
+    vector<void*> storage(kit.size(), nullptr);
+    ecs::forEachReflectedComponent(
+        entity, [&](const reflect::TypeInfo& type, void* component) {
+            for (size_t i = 0; i < kit.size(); ++i) {
+                if (kit[i].type->id == type.id) {
+                    storage[i] = component;
+                }
+            }
+        });
+    for (size_t i = 0; i < kit.size(); ++i) {
+        if (storage[i]) {
+            fn(*kit[i].type, storage[i]);
+        }
     }
 }
 
@@ -77,19 +123,17 @@ constexpr SavedStatsExclusion kSavedStatsExclusions[] = {
 
 std::span<const SavedStatsComponent> savedStatsComponents() {
     // Function-local so the TypeInfos and default instances are built on
-    // first use, in a fixed order.
-    static const SavedStatsComponent kComponents[] = {
-        persistedComponent<CoreAttributes>(),
-        persistedComponent<AttributeSet>(),
-        persistedComponent<Resonance>(),
-        persistedComponent<Survival>(),
-        persistedComponent<StatusBuildup>(),
-        persistedComponent<CombatState>(),
-        persistedComponent<Equipment>(),
-        persistedComponent<VendorState>(),
-        persistedComponent<Bounty>(),
-        persistedComponent<FollowerState>(),
-    };
+    // first use; the reflected kit members, in kit order.
+    static const vector<SavedStatsComponent> kComponents = [] {
+        vector<SavedStatsComponent> components;
+        forEachActorKitType([&](auto tag) {
+            using T = typename decltype(tag)::type;
+            if constexpr (ReflectedKitComponent<T>) {
+                components.push_back(persistedComponent<T>());
+            }
+        });
+        return components;
+    }();
     return kComponents;
 }
 
@@ -132,17 +176,11 @@ void restoreActiveEffect(AbilitySystem& system, const SavedEffectForm& row,
                          const GameplayTagRegistry& registry,
                          EffectIdRemap* remap) {
     ActiveEffect effect;
-    effect.attribute = row.attribute;
+    // The reflected scalars land by name; the enum, the tag handle and the
+    // identity are bridged below (ActiveEffect's header lists the three).
+    copyMatchingFields(SavedEffectForm::staticTypeInfo(), &row,
+                       ActiveEffect::staticTypeInfo(), &effect);
     effect.op = static_cast<ModifierOp>(row.op);
-    effect.magnitude = row.magnitude;
-    effect.infinite = row.infinite;
-    effect.remaining = row.remaining;
-    effect.period = row.period;
-    effect.sinceLastTick = row.sinceLastTick;
-    effect.decayOnExpiry = row.decayOnExpiry;
-    effect.decayPerHour = row.decayPerHour;
-    effect.expiryMagnitude = row.expiryMagnitude;
-    effect.gameTime = row.gameTime;
     // The saved id only PAIRS rows: a row whose saved id already got a
     // fresh id on this actor (the primary of an attribute2 pair) shares it.
     u32 id = 0;
@@ -178,17 +216,9 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
     for (const ActiveEffect& effect : system.activeEffects) {
         SavedEffectForm row;
         row.parent = parent;
-        row.attribute = effect.attribute;
+        copyMatchingFields(ActiveEffect::staticTypeInfo(), &effect,
+                           SavedEffectForm::staticTypeInfo(), &row);
         row.op = static_cast<i32>(effect.op);
-        row.magnitude = effect.magnitude;
-        row.infinite = effect.infinite;
-        row.remaining = effect.remaining;
-        row.period = effect.period;
-        row.sinceLastTick = effect.sinceLastTick;
-        row.decayOnExpiry = effect.decayOnExpiry;
-        row.decayPerHour = effect.decayPerHour;
-        row.expiryMagnitude = effect.expiryMagnitude;
-        row.gameTime = effect.gameTime;
         row.effectId = effect.effectId;
         if (effect.grantedTag.isValid()) {
             if (const str* name = registry.nameOf(effect.grantedTag)) {
@@ -211,16 +241,11 @@ vector<data::Record> captureActor(ecs::Entity entity,
     // The stat sheet — one flat record, fields matched by name.
     SavedStatsForm stats;
     stats.parent = refGuid;
-    componentToSaved<CoreAttributes>(entity, stats);
-    componentToSaved<AttributeSet>(entity, stats);
-    componentToSaved<Resonance>(entity, stats);
-    componentToSaved<Survival>(entity, stats);
-    componentToSaved<StatusBuildup>(entity, stats);
-    componentToSaved<CombatState>(entity, stats);
-    componentToSaved<Equipment>(entity, stats);
-    componentToSaved<VendorState>(entity, stats);
-    componentToSaved<Bounty>(entity, stats);
-    componentToSaved<FollowerState>(entity, stats);
+    forEachPersistedComponent(
+        entity, [&](const reflect::TypeInfo& type, void* component) {
+            copyMatchingFields(type, component,
+                               SavedStatsForm::staticTypeInfo(), &stats);
+        });
     records.push_back(
         createRecord(stats, core::Guid::combine(kSavedStatsNs, refGuid)));
     // The sentinel must survive resolution even for a pristine actor: an
@@ -324,6 +349,32 @@ vector<data::Record> captureActor(ecs::Entity entity,
         }
     }
 
+    if (entity.has<ScriptVars>()) {
+        // Sorted by key: deterministic identities and diffs (§8). The row
+        // guid derives from the key, so a variable keeps its record
+        // identity across saves and a patch can target it.
+        vector<std::pair<str, reflect::Value>> entries {
+            entity.get<ScriptVars>().vars.begin(),
+            entity.get<ScriptVars>().vars.end()
+        };
+        std::sort(entries.begin(), entries.end(),
+                  [](const auto& a, const auto& b) {
+                      return a.first < b.first;
+                  });
+        for (const auto& [key, value] : entries) {
+            SavedScriptVarForm row;
+            if (!writeScriptVarValue(value, row)) {
+                continue;
+            }
+            row.parent = refGuid;
+            row.key = key;
+            records.push_back(createRecord(
+                row, core::Guid::combine(
+                         core::Guid::combine(kSavedScriptVarNs, refGuid),
+                         core::Guid { core::fnv1a(key), 0x53564152u })));
+        }
+    }
+
     if (entity.has<Injuries>()) {
         u64 index = 0;
         for (const Injury& injury : entity.get<Injuries>().list) {
@@ -367,6 +418,9 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     data::childrenOf<SavedBountyForm>( // per-faction crime
         forms, refGuid,
         [&](const SavedBountyForm& form) { saved.bounties.push_back(&form); });
+    data::childrenOf<SavedScriptVarForm>( // §2.8 script state
+        forms, refGuid,
+        [&](const SavedScriptVarForm& form) { saved.scriptVars.push_back(&form); });
     return saved;
 }
 
@@ -375,16 +429,11 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
     if (!saved.stats) {
         return;
     }
-    savedToComponent<CoreAttributes>(*saved.stats, entity);
-    savedToComponent<AttributeSet>(*saved.stats, entity);
-    savedToComponent<Resonance>(*saved.stats, entity);
-    savedToComponent<Survival>(*saved.stats, entity);
-    savedToComponent<StatusBuildup>(*saved.stats, entity);
-    savedToComponent<CombatState>(*saved.stats, entity);
-    savedToComponent<Equipment>(*saved.stats, entity);
-    savedToComponent<VendorState>(*saved.stats, entity);
-    savedToComponent<Bounty>(*saved.stats, entity);
-    savedToComponent<FollowerState>(*saved.stats, entity);
+    forEachPersistedComponent(
+        entity, [&](const reflect::TypeInfo& type, void* component) {
+            copyMatchingFields(SavedStatsForm::staticTypeInfo(), saved.stats,
+                               type, component);
+        });
 
     if (entity.has<Inventory>()) {
         auto& bag = entity.get_mut<Inventory>();
@@ -409,6 +458,21 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         for (const SavedBountyForm* row : saved.bounties) {
             if (const auto faction = registry.find(row->faction)) {
                 bounty.perFaction.push_back({ *faction, row->amount });
+            }
+        }
+    }
+    if (!saved.scriptVars.empty() || entity.has<ScriptVars>()) {
+        // The rows exist because the captured entity carried the
+        // component: re-create it on an entity spawned without one. A
+        // present component with no rows was empty at capture.
+        if (!entity.has<ScriptVars>()) {
+            entity.set<ScriptVars>({});
+        }
+        auto& vars = entity.get_mut<ScriptVars>();
+        vars.vars.clear();
+        for (const SavedScriptVarForm* row : saved.scriptVars) {
+            if (const auto value = readScriptVarValue(*row)) {
+                vars.vars[row->key] = *value;
             }
         }
     }

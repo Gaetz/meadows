@@ -1,6 +1,6 @@
 #include "engine/render/landscape/FxRenderer.hpp"
 
-#include "engine/FrameContext.hpp"
+#include "engine/rhi/FrameContext.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/Device.hpp"
 #include "engine/render/PipelinePresets.hpp"

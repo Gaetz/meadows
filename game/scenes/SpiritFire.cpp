@@ -91,7 +91,7 @@ void SpiritDirector::updateFlameJet(const SpiritContext& ctx, f32 dt) {
         return;
     }
     jet.pulseClock -= kFlameJetPulse;
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     for (f32 t = 1.5f; t <= jet.range; t += 1.5f) {
         const Vec3 p = origin + forward * t;
         const f32 ground = render::terrain::height(params, p.x, p.z);
@@ -231,7 +231,7 @@ void SpiritDirector::castFireReading(const SpiritContext& ctx, const Vec3& at,
         lines.push_back(ctx.texts.get("fire.cold"));
     }
     // The fuel the ground holds (the same blend the kernel samples).
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     const f32 h = render::terrain::height(params, at.x, at.z);
     const Vec3 n = render::terrain::normal(params, at.x, at.z);
     const render::terrain::RegionFields fields =

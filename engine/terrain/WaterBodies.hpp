@@ -23,6 +23,10 @@ namespace terrain {
 // ground through this, never through the renderer).
 constexpr f32 kWaterInfoDry = -1.0e6f; // surface sentinel: no water
 using HeightFn = std::function<f32(f32, f32)>;
+// Water material presets: 16 slots, slot 0 = default water. The mesher
+// clamps every materialIndex to it and the renderer's UBO mirrors it
+// (WaterMaterialsUbo; GLSL side via the frame constants preamble).
+constexpr u32 kMaxWaterMaterials = 16;
 } // namespace terrain
 
 // A water shading preset (WaterMaterialForm's flecs/Forms-free mirror):

@@ -23,6 +23,7 @@ class PhysicsWorld;
 namespace render {
 class WorldRenderer;
 struct TerrainBase;
+struct TerrainParams;
 struct WaterBodies;
 struct SandboxTerrain;
 }
@@ -44,7 +45,8 @@ class VegetationCollision;
 // reference: every write keeps the immutable-publish contract (a new
 // instance swapped in, never a mutation).
 struct SandboxContext {
-    render::WorldRenderer& renderer;      // terrainParams, water system, queues, holds
+    render::WorldRenderer& renderer;      // water system, rebuild requests, holds
+    render::TerrainParams& terrainParams; // the scene's world params (this controller writes them)
     const data::FormDatabase& forms;      // authored regions / water bodies
     const assets::AssetDatabase& assetDb;
     const data::LandscapeTuningForm& tuning; // seed, sea level, snow lines, view radius

@@ -65,7 +65,8 @@ struct FireContext {
     gameplay::CueRegistry& cues;
     audio::AudioSystem& audio;
     SoundResolver& sounds;
-    render::WorldRenderer& renderer;      // terrain params, water sim, scatter props, scorch map
+    render::WorldRenderer& renderer;      // water sim, scatter props, scorch map
+    const render::TerrainParams& terrainParams; // the scene's world params (ground heights, sea level)
     rhi::Device& device;                  // handed to the renderer's scorch map only
     core::JobSystem& jobs;                // the fire lane's worker
     flecs::query<const world::Transform, const world::RefId>& interactQuery; // the wooden props

@@ -6,6 +6,7 @@ class FrameProbe;
 namespace render {
 class WorldRenderer;
 struct AtmosphereParams;
+struct TerrainParams;
 }
 
 namespace game {
@@ -13,14 +14,17 @@ namespace game {
 // The world renderer's ImGui dev panels (tuning, tree builder, GPU
 // perf), kept out of render::WorldRenderer so the renderer itself carries no
 // dev-UI code (docs/RENDERING.md §7). Stateless: every panel edits the
-// renderer's live knobs in place, through friendship — this class is the
-// renderer's debug UI, not a subsystem. The "Save render tuning" buttons
-// only raise the renderer's save request; the scene owns the plugin write
-// (consumeSaveTuningRequest).
+// renderer's live knobs in place through its public tuning accessors —
+// this class is the renderer's debug UI, not a subsystem. The "Save
+// render tuning" buttons only raise the renderer's save request; the
+// scene owns the plugin write (consumeSaveTuningRequest).
 class RenderTuningPanels {
 public:
     // Terrain & streaming: stats, seed, vegetation radii, culling A/Bs.
-    static void drawTerrainPanel(render::WorldRenderer& r);
+    // `terrain` is the scene-owned world params (the seed and sea level
+    // edits land there; Regenerate requests the renderer's rebuild).
+    static void drawTerrainPanel(render::WorldRenderer& r,
+                                 render::TerrainParams& terrain);
     // Rendering & post-FX: every live render knob (grass, GI, lighting,
     // sun FX, fog, water, post) + the atmosphere sliders.
     static void drawRenderPanel(render::WorldRenderer& r,

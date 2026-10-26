@@ -29,7 +29,7 @@ namespace game {
 f32 SpiritDirector::groundHardnessAt(const SpiritContext& ctx, f32 x, f32 z) const {
     // The dominant splat names the material class; the compiled rule
     // table carries its hardness (SurfaceMaterialForm, data).
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     const f32 h = render::terrain::height(params, x, z);
     const render::terrain::MaterialWeights w = render::terrain::materialWeightsAt(
         params, x, z, h, render::terrain::normal(params, x, z));
@@ -72,7 +72,7 @@ void SpiritDirector::applyEarthBump(const SpiritContext& ctx,
                                          changed);
     ctx.republishTerrain(std::move(next), changed, true);
     const Vec3 at { action.x,
-                    render::terrain::height(ctx.renderer.terrainParams(), action.x,
+                    render::terrain::height(ctx.terrainParams, action.x,
                                             action.z),
                     action.z };
     ctx.cues.emit({ "Cue.Spirit.Earth.Spawn", at, height });
@@ -144,7 +144,7 @@ void SpiritDirector::finishEarth(const SpiritContext& ctx, bool commit) {
         if (!commit && !dig.grids.empty()) {
             // Abandoned mid-stroke: the preview overlay goes back to the
             // committed one.
-            ctx.renderer.terrainParams().patches = ctx.heightPatches;
+            ctx.terrainParams.patches = ctx.heightPatches;
         }
         return;
     }
@@ -219,7 +219,7 @@ void SpiritDirector::seizeRock(const SpiritContext& ctx,
     ctx.retireCollider(best);
     ctx.physics->setKinematic(body, true);
     best.set<world::Displaced>({ transform.position.y -
-                                 render::terrain::height(ctx.renderer.terrainParams(),
+                                 render::terrain::height(ctx.terrainParams,
                                                          transform.position.x,
                                                          transform.position.z) });
     SpiritRock rock;
@@ -341,7 +341,7 @@ void SpiritDirector::updateLine(const SpiritContext& ctx) {
                                          changed);
     ctx.republishTerrain(std::move(next), changed, true);
     const Vec3 at { mid.x,
-                    render::terrain::height(ctx.renderer.terrainParams(), mid.x,
+                    render::terrain::height(ctx.terrainParams, mid.x,
                                             mid.y),
                     mid.y };
     ctx.cues.emit({ "Cue.Spirit.Earth.Spawn", at, height });
@@ -349,7 +349,7 @@ void SpiritDirector::updateLine(const SpiritContext& ctx) {
 
 void SpiritDirector::castGroundReading(const SpiritContext& ctx, const Vec3& at,
                                        f32 seconds, bool live) {
-    const auto& params = ctx.renderer.terrainParams();
+    const auto& params = ctx.terrainParams;
     const f32 h = render::terrain::height(params, at.x, at.z);
     const Vec3 n = render::terrain::normal(params, at.x, at.z);
     const render::terrain::MaterialWeights w =

@@ -3,11 +3,13 @@
 # component, factions. Depends on the data model and the ECS; render-free (§4).
 # The GAS public surface is kept deliberately tiny.
 add_library(meadows-gameplay STATIC
+    actors/ActorKit.cpp
     actors/CharacterForms.cpp
     actors/CharacterTick.cpp
     actors/FollowerForms.cpp
     actors/Followers.cpp
     actors/Riding.cpp
+    actors/ScriptVars.cpp
     actors/Swimming.cpp
     ai/AiForms.cpp
     ai/ScheduleSystem.cpp

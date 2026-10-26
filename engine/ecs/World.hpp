@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-
 #include <flecs.h>
 
 #include "engine/core/Defines.hpp"
@@ -30,6 +28,52 @@ using Entity = flecs::entity;
 // persisted truth of "what is in a cell" is the ReferenceForm.cell field (§5).
 struct InCell {};
 
+// The reflection link of a component registered through
+// registerReflectedComponent. flecs components are entities, and this link
+// rides ON the component entity: any entity handle in the world can then
+// enumerate its reflected components (forEachReflectedComponent) without
+// reaching the World object that registered them — the save layer holds
+// only entity handles. Moving a World moves the link with the flecs world.
+struct ReflectedComponent {
+    const reflect::TypeInfo* type { nullptr };
+};
+
+// Registers T in BOTH systems at once: flecs storage AND our reflection
+// bridge, so saves can serialize component state through the same
+// reflect::Value pipeline as Forms (§2.8). Idempotent — a component that
+// flecs already knows (an earlier set<T>, another registration) just gets
+// linked. The single registration point that keeps the two from diverging;
+// World::registerComponent is its member spelling.
+template<typename T>
+Entity registerReflectedComponent(const flecs::world& world) {
+    const Entity component = world.component<T>();
+    if (!component.has<ReflectedComponent>()) {
+        component.set<ReflectedComponent>({ &T::staticTypeInfo() });
+    }
+    return component;
+}
+
+// Reflection type info for a component id, or nullptr when the id is a
+// pair / flagged id, or a component never registered through
+// registerReflectedComponent (an internal flecs component, a tag, a
+// runtime-only component).
+const reflect::TypeInfo* reflectedComponentOf(flecs::id id);
+
+// Visits every REFLECTED component the entity carries, in flecs type order
+// (not a stable order — callers that need one sort by their own list):
+// fn(const reflect::TypeInfo&, void* storage). Drives generic component
+// serialization for saves. Non-reflected components are skipped.
+template<typename Fn>
+void forEachReflectedComponent(Entity entity, Fn&& fn) {
+    entity.each([&](flecs::id id) {
+        if (const reflect::TypeInfo* type = reflectedComponentOf(id)) {
+            if (void* storage = entity.get_mut(id.raw_id())) {
+                fn(*type, storage);
+            }
+        }
+    });
+}
+
 // Thin owner of the flecs world plus the bridge that ties components into our
 // reflection. Systems reach the flecs API through handle().
 class World {
@@ -46,25 +90,17 @@ public:
 
     Entity create() { return world.entity(); }
 
-    // Registers a component in BOTH systems at once: flecs storage AND our
-    // reflected-component registry, so saves can serialize component
-    // state through the same reflect::Value pipeline as Forms (§2.8). The
-    // single registration point that keeps the two from diverging.
+    // registerReflectedComponent on this world — see there.
     template<typename T>
     Entity registerComponent() {
-        const flecs::component<T> component = world.component<T>();
-        reflectedComponents.emplace(component.id(), &T::staticTypeInfo());
-        return component;
+        return registerReflectedComponent<T>(world);
     }
 
-    // Reflection type info for a flecs component id, or nullptr if it was not
-    // registered through registerComponent (e.g. an internal flecs component).
-    // Drives generic component serialization for saves.
+    // reflectedComponentOf for a raw component id of this world.
     const reflect::TypeInfo* reflectedComponent(flecs::id_t componentId) const;
 
 private:
     flecs::world world;
-    std::unordered_map<flecs::id_t, const reflect::TypeInfo*> reflectedComponents;
 };
 
 } // namespace ecs

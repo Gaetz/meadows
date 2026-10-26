@@ -8,6 +8,8 @@
 
 #include "engine/core/Log.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
+#include "engine/terrain/generation/Hydrology.hpp"
+#include "engine/terrain/generation/MasterNetwork.hpp"
 
 namespace render::terrain {
 
@@ -1425,9 +1427,186 @@ WaterSimState preRollWindow(const GridSpec& spec, const HeightFn& height,
     return state;
 }
 
+vector<terraingen::WaterSource> entrySourcesFromBodies(
+    const WaterBodies& bodies, const terraingen::GridSpec& spec,
+    const vector<terraingen::WaterSource>& master,
+    const WaterSimParams& params, f32 pinnedHalfWidth) {
+    using terraingen::WaterSource;
+    terraingen::WaterSolveParams runoff;
+    runoff.rainRate = params.rainRate;
+    const f32 maxX = spec.originX +
+                     static_cast<f32>(spec.n - 1) * spec.texelSize;
+    const f32 maxZ = spec.originZ +
+                     static_cast<f32>(spec.n - 1) * spec.texelSize;
+    const auto inside = [&](f32 x, f32 z) {
+        return x >= spec.originX && x <= maxX && z >= spec.originZ &&
+               z <= maxZ;
+    };
+    const f32 boost = params.bakedDischargeBoost;
+    const auto nodeQ = [&](const RiverNode& node) {
+        const f32 area =
+            node.area > 0.0f
+                ? node.area
+                : terraingen::riverAreaFromHalfWidth(node.halfWidth);
+        return boost * terraingen::runoffDischarge(area, runoff);
+    };
+    vector<WaterSource> out;
+    for (const RiverSurface& river : bodies.rivers) {
+        // A HEAD inside the window injects its own discharge (it
+        // crosses no boundary and sits under the pin threshold: with
+        // nothing here, its pre-roll water drained and the channel
+        // stayed dry).
+        if (!river.nodes.empty()) {
+            const RiverNode& head = river.nodes.front();
+            // Only a TRUE head injects: a run that merely RESUMES
+            // (after a lake or pool sheet, or a tile-seam split)
+            // re-injected the course's full discharge at every cut —
+            // brooks ran visibly fatter downstream of each pool. A
+            // lake outlet keeps its injection (the course's water
+            // comes from a basin the window never integrates).
+            const bool trueHead =
+                river.headIsSource != 0 ||
+                river.headType ==
+                    static_cast<u32>(terraingen::RiverHeadType::LakeOutlet);
+            if (trueHead && inside(head.x, head.z) &&
+                head.halfWidth < pinnedHalfWidth) {
+                out.push_back(
+                    { head.x, head.z, glm::min(nodeQ(head), 90.0f) });
+            }
+        }
+        // DISTRIBUTED runoff along in-window reaches: the drainage
+        // area GROWS along a course as its local basin feeds it —
+        // inject that growth (the discharge delta between consecutive
+        // nodes, accumulated to a threshold). Pinned-wide reaches skip
+        // it (the reservoir supplies).
+        f32 accum = 0.0f;
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            const RiverNode& na = river.nodes[k - 1];
+            const RiverNode& nb = river.nodes[k];
+            if (inside(na.x, na.z) && inside(nb.x, nb.z) &&
+                nb.halfWidth < pinnedHalfWidth) {
+                accum += glm::max(0.0f, nodeQ(nb) - nodeQ(na));
+                if (accum >= 0.05f) {
+                    out.push_back(
+                        { nb.x, nb.z, glm::min(accum, 90.0f) });
+                    accum = 0.0f;
+                }
+            }
+        }
+        for (size_t k = 1; k < river.nodes.size(); ++k) {
+            const RiverNode& a = river.nodes[k - 1];
+            const RiverNode& b = river.nodes[k];
+            if (inside(a.x, a.z) || !inside(b.x, b.z)) {
+                continue;
+            }
+            bool nearMaster = false;
+            for (const WaterSource& m : master) {
+                const f32 dx = m.x - b.x;
+                const f32 dz = m.z - b.z;
+                if (dx * dx + dz * dz < 80.0f * 80.0f) {
+                    nearMaster = true;
+                    break;
+                }
+            }
+            if (nearMaster) {
+                continue;
+            }
+            // A ribbon wide enough to be PINNED supplies itself
+            // through its reservoir cells — injecting an entry source
+            // on top would double its discharge.
+            if (b.halfWidth >= pinnedHalfWidth) {
+                continue;
+            }
+            out.push_back(
+                { b.x, b.z, glm::min(nodeQ(b), 360.0f) });
+        }
+    }
+    return out;
+}
+
+LiveStepResult stepLiveWindow(
+    WaterSimState& state, const WaterSimParams& params,
+    const HeightFn& height, const WaterBodies* bodies,
+    const BoundarySourcesFn& boundary,
+    vector<terraingen::WaterSource> sources,
+    const vector<terraingen::WaterSource>& runtimeSources,
+    const vector<sptr<const WaterSimState>>& crumbs,
+    const LiveStepRequest& request) {
+    LiveStepResult out;
+    u32 substeps = request.substeps;
+    const bool moved = request.dCol != 0 || request.dRow != 0;
+    if (request.refreshGround) {
+        refreshTerrain(state, height);
+    }
+    if (moved) {
+        scrollWindow(state, request.dCol, request.dRow, height,
+                     params.seaLevel, crumbs.empty() ? nullptr : &crumbs);
+        const auto& sp = state.spec;
+        const f32 sMaxX =
+            sp.originX + static_cast<f32>(sp.n - 1) * sp.texelSize;
+        const f32 sMaxZ =
+            sp.originZ + static_cast<f32>(sp.n - 1) * sp.texelSize;
+        sources.clear();
+        if (boundary) {
+            sources = boundary(sp.originX, sp.originZ, sMaxX, sMaxZ);
+        }
+        if (bodies) {
+            const auto baked = entrySourcesFromBodies(
+                *bodies, sp, sources, params, request.pinRiverHalfWidth);
+            sources.insert(sources.end(), baked.begin(), baked.end());
+        }
+        out.sourcesFresh = true;
+    }
+    if (bodies && (request.refreshGround || moved)) {
+        // Ground or window moved: re-rasterize the reservoirs (and
+        // apply them — at least one substep).
+        pinLakes(state, *bodies);
+        pinRivers(state, *bodies, request.pinRiverHalfWidth);
+        substeps = glm::max(substeps, 1u);
+    }
+    // The storm multiplies the KERNEL rain only (up to 10x at full
+    // intensity) — the source-law rainRate stays the calibrated
+    // baseline, so river supply ignores the sky.
+    WaterSimParams stepParams = params;
+    stepParams.rainRate *= 1.0f + 9.0f * request.rainIntensity;
+    // Runtime (gameplay) springs ride the step only: appended here,
+    // never stored in `sources` — that list becomes the caller's source
+    // cache on a fresh scroll and would double them next job.
+    vector<terraingen::WaterSource> stepSources = sources;
+    stepSources.insert(stepSources.end(), runtimeSources.begin(),
+                       runtimeSources.end());
+    stepWindow(state, stepParams, stepSources, substeps);
+    auto snap = std::make_shared<WaterSimSnapshot>();
+    const u32 puddleMode =
+        request.rainPuddles ? (request.rainIntensity >= 0.2f ? 2u : 1u)
+                            : 0u;
+    extractSnapshot(state, params, *snap, puddleMode);
+    f64 volume = 0.0;
+    for (const f32 d : snap->depth) {
+        volume += d;
+    }
+    out.volume = volume * state.spec.texelSize * state.spec.texelSize;
+    out.snap = std::move(snap);
+    out.sources = std::move(sources);
+    return out;
+}
+
 namespace {
-constexpr char kDumpMagic[4] = { 'W', 'S', 'D', '2' };
+// Dump versions: the params struct is written whole; an older dump
+// reads as a PREFIX of the current struct, the appended fields taking
+// their defaults (one entry per version, newest first).
+constexpr char kDumpMagic[4] = { 'W', 'S', 'D', '3' };
+constexpr char kDumpMagicV2[4] = { 'W', 'S', 'D', '2' };
 constexpr char kDumpMagicV1[4] = { 'W', 'S', 'D', '1' };
+struct DumpVersion {
+    const char* magic;
+    size_t paramBytes; // of WaterSimParams present in the file
+};
+constexpr DumpVersion kDumpVersions[] = {
+    { kDumpMagic, sizeof(WaterSimParams) },
+    { kDumpMagicV2, sizeof(WaterSimParams) - sizeof(f32) },
+    { kDumpMagicV1, sizeof(WaterSimParams) - 2 * sizeof(f32) },
+};
 }
 
 bool dumpSimState(const WaterSimState& state,
@@ -1500,21 +1679,24 @@ bool loadSimState(const char* path, WaterSimState& state,
     };
     char magic[4] = {};
     file.read(magic, 4);
-    const bool v2 = std::memcmp(magic, kDumpMagic, 4) == 0;
-    const bool v1 = std::memcmp(magic, kDumpMagicV1, 4) == 0;
+    const DumpVersion* version = nullptr;
+    for (const DumpVersion& v : kDumpVersions) {
+        if (std::memcmp(magic, v.magic, 4) == 0) {
+            version = &v;
+            break;
+        }
+    }
     read(state.spec.n);
     read(state.spec.originX);
     read(state.spec.originZ);
     read(state.spec.texelSize);
-    if (v2) {
-        read(params);
-    } else {
-        // WSD1: the params struct minus the appended weir field.
-        file.read(reinterpret_cast<char*>(&params),
-                  sizeof(WaterSimParams) - sizeof(f32));
-        params.reservoirOutflow = WaterSimParams {}.reservoirOutflow;
-    }
-    if (!file || (!v2 && !v1) || state.spec.n < 8 ||
+    // The fields an older dump lacks keep the defaults `params` was
+    // constructed with.
+    params = WaterSimParams {};
+    file.read(reinterpret_cast<char*>(&params),
+              static_cast<std::streamsize>(
+                  version ? version->paramBytes : sizeof(WaterSimParams)));
+    if (!file || !version || state.spec.n < 8 ||
         state.spec.n > 4096 || state.spec.texelSize <= 0.0f) {
         LOG_ERROR("loadSimState: not a WSD dump: {}", path);
         return false;

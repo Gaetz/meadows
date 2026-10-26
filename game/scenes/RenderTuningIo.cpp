@@ -38,30 +38,31 @@ i32 clampToRange(i32 value, const reflect::FieldRange& range) {
 } // namespace
 
 void RenderTuningIo::applyTuning(
-    render::WorldRenderer& r, const data::LandscapeTuningForm& tuning,
+    render::WorldRenderer& r, render::TerrainParams& terrain,
+    const data::LandscapeTuningForm& tuning,
     const sptr<const render::HeightPatches>& patches,
     const sptr<const render::TerrainBase>& base, f32 activeSnowLine) {
     // Terrain shape + startup values for every live-adjustable knob the
     // render panel owns (§5: the TOML sets where it all starts; the scene
     // keeps the atmosphere half in `atmos`). Terrain shape is apply-only
     // (never captured back — the world's identity is not a slider).
-    r.terrain.params.seed = tuning.terrainSeed;
-    r.terrain.params.patches = patches;
-    r.terrain.params.base = base;
-    r.terrain.params.hillWavelength = tuning.hillWavelength;
-    r.terrain.params.hillAmplitude = tuning.hillAmplitude;
-    r.terrain.params.octaves = tuning.terrainOctaves;
-    r.terrain.params.lacunarity = tuning.terrainLacunarity;
-    r.terrain.params.gain = tuning.terrainGain;
-    r.terrain.params.mountainWavelength = tuning.mountainWavelength;
-    r.terrain.params.mountainAmplitude = tuning.mountainAmplitude;
-    r.terrain.params.mountainMaskLow = tuning.mountainMaskLow;
-    r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
-    r.terrain.params.seaLevel = tuning.seaLevel;
-    r.terrain.params.snowLine = activeSnowLine;
-    r.terrain.params.treeLineFactor = tuning.treeLineFactor;
+    terrain.seed = tuning.terrainSeed;
+    terrain.patches = patches;
+    terrain.base = base;
+    terrain.hillWavelength = tuning.hillWavelength;
+    terrain.hillAmplitude = tuning.hillAmplitude;
+    terrain.octaves = tuning.terrainOctaves;
+    terrain.lacunarity = tuning.terrainLacunarity;
+    terrain.gain = tuning.terrainGain;
+    terrain.mountainWavelength = tuning.mountainWavelength;
+    terrain.mountainAmplitude = tuning.mountainAmplitude;
+    terrain.mountainMaskLow = tuning.mountainMaskLow;
+    terrain.mountainMaskHigh = tuning.mountainMaskHigh;
+    terrain.seaLevel = tuning.seaLevel;
+    terrain.snowLine = activeSnowLine;
+    terrain.treeLineFactor = tuning.treeLineFactor;
     // The view-radius cap is the engine's own constant, not Form metadata.
-    r.terrain.viewRadius =
+    r.terrainSystem().viewRadius =
         glm::clamp(tuning.terrainViewRadius, 8,
                    render::TerrainSystem::kMaxViewRadius);
 
@@ -72,14 +73,15 @@ void RenderTuningIo::applyTuning(
                         kFogTail, kSkyClouds, kSkyCloudLook, kMist,
                         kMistCover, kMistSun, kMistNoise, kMistDetail,
                         kExposure, kAutoExposure, kGrade);
-    reflect::applyLanes(r.occlusion, tuning, kOcclusion);
-    reflect::applyLanes(r.postFx, tuning, kFroxelFog, kFroxel, kMistBlend);
-    reflect::applyLanes(r.grass.renderTuning, tuning, kGrassBlade,
+    reflect::applyLanes(r.chunkOcclusion(), tuning, kOcclusion);
+    reflect::applyLanes(r.postFxSystem(), tuning, kFroxelFog, kFroxel,
+                        kMistBlend);
+    reflect::applyLanes(r.grassRenderTuning(), tuning, kGrassBlade,
                         kGrassTints, kGrassShading, kGrassBrightness,
                         kGrassShadingTail, kGrassDistance);
     // Startup-only mapping: the scatter bake reads these on first
     // request, no regenerate needed (nothing is resident yet).
-    reflect::applyLanes(r.grass.scatterTuning, tuning, kGrassScatter,
+    reflect::applyLanes(r.grassScatterTuning(), tuning, kGrassScatter,
                         kGrassScatterWindows, kGrassScatterCutoff,
                         kGrassScatterTint);
 
@@ -114,11 +116,12 @@ void RenderTuningIo::applyTuning(
         clampToRange(tuning.mistSteps, rangeOf(&Tuning::mistSteps));
     // Vegetation draw budget (the streamer ring and the Hi-Z candidate
     // cap size the reflected ranges).
-    r.vegetation.viewRadius =
+    render::VegetationSystem& vegetation = r.vegetationSystem();
+    vegetation.viewRadius =
         clampToRange(tuning.vegViewRadius, rangeOf(&Tuning::vegViewRadius));
-    r.vegetation.highDetailRadius = clampToRange(
+    vegetation.highDetailRadius = clampToRange(
         tuning.vegHighDetailRadius, rangeOf(&Tuning::vegHighDetailRadius));
-    r.vegetation.lowDetailRadius = clampToRange(
+    vegetation.lowDetailRadius = clampToRange(
         tuning.vegLowDetailRadius, rangeOf(&Tuning::vegLowDetailRadius));
 
     // Water sim window — startup values for the render panel's "Sim
@@ -143,6 +146,9 @@ void RenderTuningIo::applyTuning(
     sim.params.reservoirOutflow =
         clampToRange(tuning.waterSimReservoirOutflow,
                      rangeOf(&Tuning::waterSimReservoirOutflow));
+    sim.params.bakedDischargeBoost =
+        clampToRange(tuning.waterSimBakedDischargeBoost,
+                     rangeOf(&Tuning::waterSimBakedDischargeBoost));
 }
 
 void RenderTuningIo::applyAtmosphere(
@@ -155,8 +161,8 @@ void RenderTuningIo::applyAtmosphere(
 void RenderTuningIo::applyTreeTuning(
     render::WorldRenderer& r, const data::LobeTreeTuningForm& lobes,
     const data::ColonizedTreeTuningForm& colonized) {
-    r.vegetation.lobeTreeParams = toLobeParams(lobes);
-    r.vegetation.colonizedTreeParams = toColonizedParams(colonized);
+    r.vegetationSystem().lobeTreeParams = toLobeParams(lobes);
+    r.vegetationSystem().colonizedTreeParams = toColonizedParams(colonized);
 }
 
 render::LobeTreeParams RenderTuningIo::toLobeParams(
@@ -185,7 +191,7 @@ render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
 
 void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
                                    const data::RcTuningForm& rc) {
-    render::RcTuning& t = r.radianceCascades.tuning;
+    render::RcTuning& t = r.giTuning();
     reflect::applyLanes(t, rc, kRcResolution, kRcVoxels, kRcUpdateInterval,
                         kRcTileDrift, kRcGridNormals, kRcCascadeCount,
                         kRcInterval, kRcInjection, kRcScheduling, kRcApply,
@@ -202,12 +208,13 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
                           kFogTail, kSkyClouds, kSkyCloudLook, kMist,
                           kMistCover, kMistSun, kMistNoise, kMistDetail,
                           kExposure, kAutoExposure, kGrade);
-    reflect::captureLanes(r.occlusion, out, kOcclusion);
-    reflect::captureLanes(r.postFx, out, kFroxelFog, kFroxel, kMistBlend);
-    reflect::captureLanes(r.grass.renderTuning, out, kGrassBlade,
+    reflect::captureLanes(r.chunkOcclusion(), out, kOcclusion);
+    reflect::captureLanes(r.postFxSystem(), out, kFroxelFog, kFroxel,
+                          kMistBlend);
+    reflect::captureLanes(r.grassRenderTuning(), out, kGrassBlade,
                           kGrassTints, kGrassShading, kGrassBrightness,
                           kGrassShadingTail, kGrassDistance);
-    reflect::captureLanes(r.grass.scatterTuning, out, kGrassScatter,
+    reflect::captureLanes(r.grassScatterTuning(), out, kGrassScatter,
                           kGrassScatterWindows, kGrassScatterCutoff,
                           kGrassScatterTint);
 
@@ -243,10 +250,10 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.shadowResolution = r.tuning.shadowResolution;
     out.reflectionScale = r.tuning.reflectionScale;
     out.mistSteps = r.tuning.mistSteps;
-    out.terrainViewRadius = r.terrain.viewRadius;
-    out.vegViewRadius = r.vegetation.viewRadius;
-    out.vegHighDetailRadius = r.vegetation.highDetailRadius;
-    out.vegLowDetailRadius = r.vegetation.lowDetailRadius;
+    out.terrainViewRadius = r.terrainSystem().viewRadius;
+    out.vegViewRadius = r.vegetationSystem().viewRadius;
+    out.vegHighDetailRadius = r.vegetationSystem().highDetailRadius;
+    out.vegLowDetailRadius = r.vegetationSystem().lowDetailRadius;
 
     const render::WaterSystem::SimConfig& sim =
         r.waterSystem().simConfig();
@@ -259,6 +266,7 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.waterSimFadeBand = sim.fadeBand;
     out.waterSimPinRiverHalfWidth = sim.pinRiverHalfWidth;
     out.waterSimReservoirOutflow = sim.params.reservoirOutflow;
+    out.waterSimBakedDischargeBoost = sim.params.bakedDischargeBoost;
 }
 
 void RenderTuningIo::captureAtmosphere(
@@ -270,7 +278,7 @@ void RenderTuningIo::captureAtmosphere(
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
                                      data::RcTuningForm& out) {
-    const render::RcTuning& t = r.radianceCascades.tuning;
+    const render::RcTuning& t = r.giTuning();
     reflect::captureLanes(t, out, kRcResolution, kRcVoxels,
                           kRcUpdateInterval, kRcTileDrift, kRcGridNormals,
                           kRcCascadeCount, kRcInterval, kRcInjection,
@@ -282,9 +290,10 @@ void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
 void RenderTuningIo::captureTreeTuning(
     const render::WorldRenderer& r, data::LobeTreeTuningForm& lobes,
     data::ColonizedTreeTuningForm& colonized) {
-    const render::LobeTreeParams& l = r.vegetation.lobeTreeParams;
+    const render::LobeTreeParams& l = r.vegetationSystem().lobeTreeParams;
     reflect::captureLanes(l, lobes, kLobeTrunk, kLobeBranchCount, kLobeCrown);
-    const render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
+    const render::ColonizedTreeParams& c =
+        r.vegetationSystem().colonizedTreeParams;
     reflect::captureLanes(c, colonized, kColonizedGrowth,
                           kColonizedAttractors, kColonizedPipe,
                           kColonizedTubeSides, kColonizedWood,

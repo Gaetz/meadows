@@ -1,14 +1,18 @@
 #pragma once
 
+#include <functional>
+#include <span>
 #include <unordered_set>
 
 #include "engine/core/FrameProbe.hpp"
 #include "engine/core/SettleTimer.hpp"
+#include "engine/render/Camera2D.hpp"
 #include "engine/render/Camera3D.hpp"
 #include "engine/render/FrameComposer.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/render/GpuProbe.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/SpriteRenderer.hpp"
 #include "engine/render/WatchedPipeline.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
@@ -43,17 +47,8 @@ namespace engine {
 struct FrameContext;
 }
 namespace rhi {
+class CommandBuffer;
 class Device;
-}
-namespace ui {
-class UiSystem;
-}
-// Game-side friends: the ImGui tuning panels and the Forms<->flat-params
-// tuning seam operate on the renderer's private knobs (names only — the
-// engine includes nothing from game/).
-namespace game {
-class RenderTuningPanels;
-class RenderTuningIo;
 }
 
 namespace render {
@@ -78,6 +73,10 @@ struct RendererConfig {
     bool froxels { true };    // froxel fog (needs postFx)
     bool occlusion { true };  // CPU horizon + GPU Hi-Z
     bool postFx { true };     // bloom/rays/volumetric/contact/auto-expo
+    // The instanced 2D sprite path (SpriteRenderer + its Camera2D), off
+    // in the game renderer: a 2D scene mounts it alone and records the
+    // sprite pass itself through sprites()/camera2D().
+    bool sprites { false };
     // Cooked terrain material arrays (.mtex file paths, resolved by the
     // scene from the plugin VFS — the renderer never sees a Form). Empty =
     // procedural splat tiles; ignored without caps.textureCompressionBC.
@@ -87,9 +86,18 @@ struct RendererConfig {
     str terrainHeightPath;
 };
 
+// A draw the scene records INSIDE the renderer's backbuffer pass — the
+// game UI composed over the tonemapped scene, under the dev ImGui layer.
+// The renderer knows the slot and the command buffer, never the UI
+// system behind it (engine/ui stays above engine/render).
+using InPassDraw = std::function<void(rhi::CommandBuffer& cmd,
+                                      rhi::Device& device, u32 width,
+                                      u32 height)>;
+
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
 // the renderer never reads the scene (the Phase-5 seam's GPU
-// half). Snapshot + view in, frames out.
+// half). Snapshot + view in, frames out. The sim decides, the renderer
+// reads: nothing in here is written back.
 struct RenderView {
     render::Camera3D camera {};   // the frame's viewpoint (POD copy)
     AtmosphereParams atmos {};    // weather/panel-driven render state
@@ -120,11 +128,18 @@ struct RenderView {
     // The player's feet part the grass (Play mode only).
     bool grassBend { false };
     Vec3 playerFeet { 0.0f };
+    // The world's ground truth (terrain shape, authored layers, content
+    // stamps), scene-owned: collision, nav, spawns and the sculpt tool
+    // read and write the scene's struct; the renderer copies it at the
+    // top of render() and every system — ring streaming, bakes, far
+    // rings, GI — reads that copy for the frame. Null = the renderer
+    // keeps the params it was created with (a scene without terrain).
+    const render::TerrainParams* terrain { nullptr };
     // Residency caches (scene-owned — the editor and streaming share them).
     render::MeshCache* meshCache { nullptr };
     render::TextureCache* materialTextures { nullptr };
-    // Game UI, composed inside the backbuffer pass (null = not created).
-    ::ui::UiSystem* gameUi { nullptr };
+    // Game UI, recorded inside the backbuffer pass (empty = no game UI).
+    InPassDraw inPassUi;
     // Stutter-hunt probe (scene-owned; render blocks report into it).
     core::FrameProbe* probe { nullptr };
 };
@@ -133,20 +148,22 @@ struct RenderView {
 // docs/RENDERING.md §7): owns the shader library, the render::* systems,
 // every GPU handle and the frame graph (shadow cascades, reflection, main
 // pass, water composite, post FX, tonemap). Consumes ONLY the
-// RenderSnapshot (SceneView.hpp) and the RenderView. The sim side reaches
-// the world ground truth through terrainParams() (terrain shape doubles
-// as collision/nav input). The dev tuning/perf panels live in
-// game/ui/RenderTuningPanels, and the Forms<->flat-params startup seam in
-// game/scenes/RenderTuningIo — both friends editing the live knobs in
-// place (the engine never sees a Form, CLAUDE.md §4).
+// RenderSnapshot (SceneView.hpp) and the RenderView — the world's ground
+// truth (TerrainParams) is scene-owned and arrives through the view each
+// frame. Every live knob is reachable through the public tuning
+// accessors below: the dev tuning/perf panels (game/ui/RenderTuningPanels)
+// and the Forms<->flat-params startup seam (game/scenes/RenderTuningIo)
+// edit them in place through that API (the engine never sees a Form,
+// CLAUDE.md §4).
 class WorldRenderer {
 public:
-    // GPU resources + systems. Call after terrainParams()/the tuning
-    // seam are seeded (bootstrap order unchanged from the scene's
-    // onEnter). `config` selects the mounted subsystems (default:
-    // everything).
+    // GPU resources + systems. `worldParams` seeds the renderer's copy of
+    // the world params (the vegetation scatter seeds from it) — the same
+    // struct the scene then passes by RenderView::terrain every frame.
+    // `config` selects the mounted subsystems (default: everything).
     void create(rhi::Device& device, core::JobSystem& jobs,
-                const RendererConfig& config = {});
+                const RendererConfig& config = {},
+                const render::TerrainParams& worldParams = {});
     void destroy(rhi::Device& device);
 
     const RendererConfig& config() const { return cfg; }
@@ -175,9 +192,11 @@ public:
                 const RenderView& view);
 
     // --- Sim-side access -------------------------------------------------
-    // Terrain shape = the world's ground truth (collision, nav, snaps,
-    // spawn grounding all read it; the sculpt tool writes patches).
-    render::TerrainParams& terrainParams() { return terrain.params; }
+    // The renderer's frame copy of the world params (RenderView::terrain)
+    // — read-only: the scene owns the truth and writes it there.
+    const render::TerrainParams& terrainParams() const {
+        return terrain.params;
+    }
 
     // Scanned-prop overrides (scene wiring, docs/PAYSAGE.md §1.7): replaces
     // one vegetation variant's mesh after create() — the scene resolves
@@ -208,12 +227,14 @@ public:
                                     std::move(rgba), normalWidth,
                                     normalHeight, std::move(normalRgba));
     }
-    const render::TerrainParams& terrainParams() const {
-        return terrain.params;
-    }
     render::ShaderLibrary& shaderLibrary() { return *shaders; }
+    // The 2D sprite path (cfg.sprites only): the scene drives begin/draw/
+    // upload/end around its own pass; the camera is the scene's to move.
+    render::SpriteRenderer& sprites() { return *spriteRenderer; }
+    render::Camera2D& camera2D() { return camera2d; }
     render::SkySystem& skySystem() { return sky; }
     render::TerrainSystem& terrainSystem() { return terrain; }
+    const render::TerrainSystem& terrainSystem() const { return terrain; }
     // The active horizon distance: the farthest standing geometry (the
     // farthest enabled far ring that is ready — 24 192 m for the
     // horizon ring — else the streaming ring). The camera's farPlane
@@ -229,6 +250,11 @@ public:
                render::TerrainSystem::kChunkSize;
     }
     render::VegetationSystem& vegetationSystem() { return vegetation; }
+    const render::VegetationSystem& vegetationSystem() const {
+        return vegetation;
+    }
+    render::GrassSystem& grassSystem() { return grass; }
+    const render::GrassSystem& grassSystem() const { return grass; }
     render::WaterSystem& waterSystem() { return water; }
     const render::WaterSystem& waterSystem() const { return water; }
     // The fire field's render mask (fed by the scene's fire lane).
@@ -244,12 +270,63 @@ public:
     // Variant meshes only (scatter/instances stay) — the tree builder's
     // regen trigger, applied at render()'s safe point.
     void requestReseedVegetation() { reseedVegetation = true; }
+    // Grass-only re-scatter at the safe point (a scatter knob moved).
+    void requestGrassRescatter() { grassRescatterRequested = true; }
     void invalidateOcclusion() { occlusion.invalidate(); }
-    // Terrain sculpt: chunks awaiting a targeted GPU rebuild at the safe
-    // point in render() (remesh live during the stroke; re-scatter on
-    // commit only — re-seeding every preview frame would flicker).
-    vector<u64>& sculptRemeshQueue() { return sculptDirtyChunks; }
-    vector<u64>& sculptScatterQueue() { return sculptScatterChunks; }
+    // Targeted chunk rebuilds (terrain chunk keys, keyOf()), applied at
+    // the safe point in render(): remesh the ground in place (live during
+    // a sculpt stroke, no hole), re-scatter grass/vegetation (on commit
+    // and tile/lake publishes only — re-seeding every preview frame would
+    // flicker). Requests accumulate across a frame in call order.
+    void requestRemesh(std::span<const u64> chunkKeys) {
+        sculptDirtyChunks.insert(sculptDirtyChunks.end(), chunkKeys.begin(),
+                                 chunkKeys.end());
+    }
+    void requestRescatter(std::span<const u64> chunkKeys) {
+        sculptScatterChunks.insert(sculptScatterChunks.end(),
+                                   chunkKeys.begin(), chunkKeys.end());
+    }
+    // Chunk rebuilds still queued (the loading veil's convergence count).
+    u32 pendingChunkRebuilds() const {
+        return static_cast<u32>(sculptDirtyChunks.size() +
+                                sculptScatterChunks.size());
+    }
+    // The panels' Save button: the scene performs the plugin write
+    // (consumeSaveTuningRequest).
+    void requestSaveTuning() { saveTuningRequested = true; }
+
+    // --- Sub-system knobs and stats -------------------------------------
+    // The live tuning structs the panels and the Forms<->flat-params seam
+    // edit in place (each stays stored on its system — the lane tables
+    // hold member pointers into them).
+    render::GrassRenderTuning& grassRenderTuning() {
+        return grass.renderTuning;
+    }
+    const render::GrassRenderTuning& grassRenderTuning() const {
+        return grass.renderTuning;
+    }
+    render::GrassScatterTuning& grassScatterTuning() {
+        return grass.scatterTuning;
+    }
+    const render::GrassScatterTuning& grassScatterTuning() const {
+        return grass.scatterTuning;
+    }
+    render::RcTuning& giTuning() { return radianceCascades.tuning; }
+    const render::RcTuning& giTuning() const {
+        return radianceCascades.tuning;
+    }
+    // PostFx carries its own knobs (froxel fog, temporal blends).
+    render::PostFx& postFxSystem() { return postFx; }
+    const render::PostFx& postFxSystem() const { return postFx; }
+    // CPU horizon culling: the rebake drift knob + the occluded count.
+    render::ChunkOcclusion& chunkOcclusion() { return occlusion; }
+    const render::ChunkOcclusion& chunkOcclusion() const {
+        return occlusion;
+    }
+    // Per-pass GPU budget (the F6 table) and the worker JobSystem the
+    // bakes run on (its JobProbe is the CPU-bake column).
+    render::GpuProbe& gpuTimings() { return gpuProbe; }
+    core::JobSystem* jobs() const { return jobSystem; }
     // Scene-driven streaming gates (sandbox boot): `hold` parks the
     // terrain/grass/vegetation rings while the base regions are not
     // published yet (meshing against the empty base would all be redone
@@ -263,11 +340,11 @@ public:
     static constexpr u32 kMaxLights = render::kMaxLights;
     static constexpr u32 kFallbackLights = render::kFallbackLights;
 
-    // Every live tuning knob in ONE public struct: the dev panels
+    // Every frame-level tuning knob in ONE public struct: the dev panels
     // (game/ui/RenderTuningPanels) and the Forms<->flat-params seam
     // (game/scenes/RenderTuningIo) edit it in place, render() reads it.
-    // Friendship below remains for what the panels drive BEYOND knobs
-    // (subsystem stats and internals, regen/save requests).
+    // Sub-system knobs stay on their system, reached through the
+    // accessors above; requests go through the request*() verbs.
     struct RenderTuning {
         bool occlusion { true }; // height-horizon occlusion culling (A/B)
         // Seasons (until a season system drives them): autumn color blend
@@ -389,10 +466,6 @@ public:
     RenderTuning tuning;
 
 private:
-    // Game-side dev UI and tuning seam edit the state below in place.
-    friend class ::game::RenderTuningPanels;
-    friend class ::game::RenderTuningIo;
-
     RendererConfig cfg {};
 
     // Config AND device capability, resolved once in create() — the
@@ -423,6 +496,7 @@ private:
                                      //   composite, SSDM (offscreen caps)
         bool sceneCopy { false };    // pre-water color/depth snapshots
                                      //   (copyTexture)
+        bool sprites { false };      // instanced 2D sprites (cfg)
     };
     static Mounted resolveMounted(const RendererConfig& cfg,
                                   const rhi::DeviceCaps& caps);
@@ -543,6 +617,9 @@ private:
                                const RenderView& view) const;
 
     uptr<render::ShaderLibrary> shaders;
+    // The 2D path (cfg.sprites): its own shader and buffers, no FrameUbo.
+    uptr<render::SpriteRenderer> spriteRenderer;
+    render::Camera2D camera2d;
     render::TerrainSystem terrain;
     render::GrassSystem grass;
     render::VegetationSystem vegetation;
@@ -624,7 +701,8 @@ private:
     // Local lights UBO (binding 5, same group as FrameUbo).
     rhi::UniqueBuffer lightsUbo;
 
-    // Chunks a sculpt changed, awaiting the safe-point rebuild in render().
+    // Chunks awaiting the safe-point rebuild in render() (requestRemesh /
+    // requestRescatter).
     vector<u64> sculptDirtyChunks;
     vector<u64> sculptScatterChunks;
     // Scene-driven streaming gates — see setStreamingHold/Boost.

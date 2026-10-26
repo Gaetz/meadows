@@ -77,7 +77,8 @@ struct SpiritContext {
     fx::ParticleSim& fxSim;
     gameplay::CueRegistry& cues;
     AmbientFxController& ambientFx;       // the ground events (a splash snuffs a torch)
-    render::WorldRenderer& renderer;      // terrain params, the live water sim
+    render::WorldRenderer& renderer;      // the live water sim
+    render::TerrainParams& terrainParams; // the scene's world params (the earth gestures swap the overlay)
     phys::PhysicsWorld* physics;          // null before the world exists
     render::MeshCache* meshes;            // the rocks' hulls; null before the GPU resources exist
     flecs::query<const world::Transform, const world::RefId>& interactQuery; // the rock props

@@ -9,13 +9,7 @@
 #include "world/worldspace/WorldForms.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
-#include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Damage.hpp"
-#include "gameplay/stats/Injuries.hpp"
-#include "gameplay/stats/Resonance.hpp"
-#include "gameplay/stats/ResonanceDecays.hpp"
-#include "gameplay/stats/StatusBuildup.hpp"
-#include "gameplay/stats/Survival.hpp"
+#include "gameplay/actors/ActorKit.hpp"
 
 namespace world {
 
@@ -118,13 +112,14 @@ void spawnItem(SpawnContext&, ecs::Entity entity, const data::Form&,
     entity.add<ItemMarker>();
 }
 
-void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
+void spawnActor(SpawnContext& ctx, ecs::Entity entity, const data::Form& base,
                 const reflect::TypeInfo& baseType) {
     entity.add<ActorMarker>();
 
     // Mandatory GAS for actors (§2.7): an AttributeSet seeded from the base
     // form's reflected `maxHealth` (through reflection — no per-type code), plus
-    // an AbilitySystem with its current-value overlay initialized.
+    // an AbilitySystem with its current-value overlay initialized. Seeded
+    // BEFORE the kit attaches, so attachActorKit keeps them as they are.
     gameplay::AttributeSet attributes;
     if (const reflect::FieldInfo* field = baseType.findField("maxHealth");
         field && field->kind == reflect::FieldKind::F32) {
@@ -149,15 +144,10 @@ void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
     entity.set<gameplay::AttributeSet>(attributes);
     entity.set<gameplay::AbilitySystem>(system);
 
-    // Full character-stats components (§2.7): all actors carry the complete
-    // stat sheet so tickCharacter works uniformly across player and NPCs.
-    entity.set<gameplay::CoreAttributes>({});
-    entity.set<gameplay::Resonance>({});
-    entity.set<gameplay::Survival>({});
-    entity.set<gameplay::StatusBuildup>({});
-    entity.set<gameplay::CombatState>({});
-    entity.set<gameplay::Injuries>({});
-    entity.set<gameplay::ResonanceDecays>({});
+    // The rest of the actor kit (§2.7): every actor carries the complete
+    // stat sheet and per-actor runtime state, so tickCharacter and the
+    // saved-state apply work uniformly across player and NPCs.
+    gameplay::attachActorKit(ctx.world, entity);
 }
 
 } // namespace

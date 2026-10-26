@@ -23,6 +23,7 @@ struct AbilitySystem;
 class GameplayTagRegistry;
 class EventBus;
 struct CombatSituation;
+struct ScriptVars;
 }
 namespace data {
 class FormDatabase;
@@ -30,7 +31,7 @@ class FormDatabase;
 
 namespace script {
 
-struct ScriptVars;
+using ScriptVars = gameplay::ScriptVars; // see script/ScriptVars.hpp
 
 // What `self` (or `target`) resolves against for one script run: the acting
 // entity's components. Any pointer may be null (the proxy degrades gracefully).

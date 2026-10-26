@@ -1,6 +1,7 @@
 #include "game/scenes/NpcSpawner.hpp"
 
 #include "data/forms/CoreForms.hpp"       // data::ActorForm
+#include "engine/assets/GltfMesh.hpp"    // assets::loadGltfSkinnedMesh
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"       // data::childrenOf
 #include "engine/assets/AssetDatabase.hpp"
@@ -30,12 +31,12 @@ const RigData* NpcSpawner::loadRig(const NpcContext& ctx,
         LOG_WARN("no asset registered for rig {}", asset.toString());
         return nullptr;
     }
-    auto skeleton = assets::loadGltfSkeleton(*path);
+    auto skeleton = anim::loadGltfSkeleton(*path);
     if (!skeleton) {
         return nullptr;
     }
     rig.skeleton = std::move(*skeleton);
-    rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
+    rig.clips = anim::loadGltfAnimations(*path, rig.skeleton);
     LOG_INFO("rig {} loaded — {} joints, {} clips", path->string(),
              rig.skeleton.joints.size(), rig.clips.size());
     return &rig;
@@ -129,7 +130,7 @@ void NpcSpawner::refreshNpcs(
                     if (!clipRig) {
                         return std::nullopt;
                     }
-                    for (const assets::GltfClip& clip : clipRig->clips) {
+                    for (const anim::GltfClip& clip : clipRig->clips) {
                         if (name.empty() || clip.name == name) {
                             return clip.clip;
                         }

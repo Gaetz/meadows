@@ -1,4 +1,4 @@
-#include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/terrain/TerrainNoise.hpp"
 
 #include <cmath>
 

@@ -6,7 +6,7 @@
 
 #include "data/plugins/EditSession.hpp"
 #include "engine/anim/Anim.hpp"
-#include "engine/assets/GltfMesh.hpp"
+#include "engine/anim/GltfSkeleton.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
 namespace assets {
@@ -51,7 +51,7 @@ public:
 private:
     struct Rig {
         anim::Skeleton skeleton;
-        vector<assets::GltfClip> clips;
+        vector<anim::GltfClip> clips;
         bool valid { false };
     };
 

@@ -4,7 +4,6 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/platform/Input.hpp"
-#include "engine/render/Camera2D.hpp"
 #include "engine/rhi/Rhi.hpp"
 
 namespace core {
@@ -15,9 +14,6 @@ class Window;
 }
 namespace rhi {
 class Device;
-}
-namespace render {
-class SpriteRenderer;
 }
 namespace ui {
 class ImGuiLayer;
@@ -39,8 +35,9 @@ struct EngineConfig {
     rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };
 };
 
-// Owns the platform window, the RHI device, the renderers, the dev UI and
-// the frame loop. The small explicit context passed by reference (§8) — no
+// Owns the platform window, the RHI device, the dev UI and the frame
+// loop. Renderers are scene-owned (render::WorldRenderer instances
+// configured per subsystem); the engine knows only the RHI. The small explicit context passed by reference (§8) — no
 // global singletons.
 class Engine {
 public:
@@ -52,8 +49,6 @@ public:
 
     platform::Window& getWindow() { return *window; }
     rhi::Device& getDevice() { return *device; }
-    render::SpriteRenderer& getSpriteRenderer() { return *spriteRenderer; }
-    render::Camera2D& getCamera() { return camera; }
     platform::Input& getInput() { return input; }
     core::JobSystem& getJobSystem() { return *jobSystem; }
 
@@ -71,9 +66,7 @@ private:
     uptr<core::JobSystem> jobSystem;
     uptr<platform::Window> window;
     uptr<rhi::Device> device;
-    uptr<render::SpriteRenderer> spriteRenderer;
     uptr<ui::ImGuiLayer> imgui;
-    render::Camera2D camera;
     platform::Input input;
     bool quitRequested { false };
 };

@@ -9,6 +9,7 @@
 #include <imgui.h>
 
 #include "data/forms/AnimForms.hpp"
+#include "engine/assets/GltfMesh.hpp"
 #include "data/forms/CoreForms.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "engine/FrameContext.hpp"
@@ -152,12 +153,12 @@ const AnimPreviewPanel::Rig* AnimPreviewPanel::loadRig(
                  asset.toString());
         return nullptr;
     }
-    auto loaded = assets::loadGltfSkeleton(*path);
+    auto loaded = anim::loadGltfSkeleton(*path);
     if (!loaded) {
         return nullptr;
     }
     rig.skeleton = std::move(*loaded);
-    rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
+    rig.clips = anim::loadGltfAnimations(*path, rig.skeleton);
     rig.valid = true;
     return &rig;
 }
@@ -268,7 +269,7 @@ void AnimPreviewPanel::drawClip(const core::Guid& clipId) {
         return;
     }
     const anim::AnimClip* clip = nullptr;
-    for (const assets::GltfClip& candidate : rig->clips) {
+    for (const anim::GltfClip& candidate : rig->clips) {
         if (form->animationName.empty() ||
             candidate.name == form->animationName) {
             clip = &candidate.clip;
@@ -401,7 +402,7 @@ bool AnimPreviewPanel::rebuildGraph(const core::Guid& graphId) {
             if (!graphSkeleton.isValid()) {
                 graphSkeleton = asset;
             }
-            for (const assets::GltfClip& clip : rig->clips) {
+            for (const anim::GltfClip& clip : rig->clips) {
                 if (name.empty() || clip.name == name) {
                     return clip.clip;
                 }

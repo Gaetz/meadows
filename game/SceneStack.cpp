@@ -1,7 +1,6 @@
 #include "game/SceneStack.hpp"
 
 #include "engine/FrameContext.hpp"
-#include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 
 namespace game {
@@ -73,36 +72,18 @@ void SceneStack::update(f32 dt) {
 }
 
 void SceneStack::render(engine::FrameContext& frame) {
-    const size_t first = scenes.empty() ? 0 : firstDrawnIndex();
-    const bool frameOwned = !scenes.empty() && scenes[first]->ownsFrame();
-    if (frameOwned) {
-        scenes[first]->render(frame);
+    if (!scenes.empty()) {
+        Scene& first = *scenes[firstDrawnIndex()];
+        if (first.ownsFrame()) {
+            first.render(frame);
+            return;
+        }
     }
-
-    // Sprite pass over every drawn scene (a frame owner's default draw() is a
-    // no-op). Collect + upload BEFORE the pass opens (Vulkan: in-pass buffer
-    // writes race the in-flight frame — SpriteRenderer::upload); Load
-    // preserves the owner's backbuffer; a pure-2D stack clears, exactly as
-    // the pre-seam loop did.
-    frame.sprites.begin(frame.camera2d, frame.aspect);
-    for (size_t i = first; i < scenes.size(); ++i) {
-        scenes[i]->draw(frame.sprites);
-    }
-    frame.sprites.upload();
-    frame.cmd.beginRenderPass({ .loadOp = frameOwned ? rhi::LoadOp::Load
-                                                     : rhi::LoadOp::Clear,
+    // No frame owner: clear the backbuffer (the dev ImGui layer draws
+    // after, with Load).
+    frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
                                 .clearColor = frame.clearColor });
-    frame.sprites.end(frame.cmd);
     frame.cmd.endRenderPass();
-}
-
-void SceneStack::draw(render::SpriteRenderer& renderer) {
-    if (scenes.empty()) {
-        return;
-    }
-    for (size_t i = firstDrawnIndex(); i < scenes.size(); ++i) {
-        scenes[i]->draw(renderer);
-    }
 }
 
 void SceneStack::drawUi() {
