@@ -46,6 +46,10 @@ public:
     static constexpr u32 kPoolMapSize = 256;
     static constexpr f32 kPoolMapSpan = 3072.0f; // meters covered
     static constexpr f32 kRebakeDistance = 512.0f;
+    // Water material presets (WaterMaterialsUbo, binding 1 of the map
+    // group): 16 slots, slot 0 = default water. Mirrored to GLSL by the
+    // frame constants preamble (FrameLanes.hpp).
+    static constexpr u32 kMaxWaterMaterials = 16;
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobSystem);
@@ -306,9 +310,6 @@ private:
     // Sim window depth / current XZ / spare (binding 8 of the map group).
     rhi::UniqueTexture simMapB;
 
-    // Water material presets (WaterMaterialsUbo, binding 1 of the map
-    // group): 16 slots, slot 0 = default water.
-    static constexpr u32 kMaxWaterMaterials = 16;
     rhi::UniqueBuffer materialsUbo;
     // Declared after everything it binds: members destroy in reverse
     // order, so the group goes before its textures and buffers.

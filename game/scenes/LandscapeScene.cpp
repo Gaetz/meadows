@@ -345,19 +345,7 @@ void LandscapeScene::bootstrapData() {
     bootLap("tree species");
     RenderTuningIo::applyRcTuning(renderer, data::resolveRcTuning(forms));
     bootLap("rc tuning");
-    atmos.fogDensity = tuning.fogDensity;
-    atmos.fogHeightFalloff = tuning.fogHeightFalloff;
-    atmos.fogLowBoost = tuning.fogLowBoost;
-    atmos.fogStart = tuning.fogStart;
-    atmos.fogSunPhase = tuning.fogSunPhase;
-    atmos.fogCeiling = tuning.fogCeiling;
-    atmos.bloomIntensity = tuning.bloomIntensity;
-    atmos.godRayIntensity = tuning.godRayIntensity;
-    atmos.volumetric = tuning.volumetricIntensity;
-    atmos.cloudCoverage = tuning.cloudCoverage;
-    atmos.cloudShadow = tuning.cloudShadowStrength;
-    atmos.cloudHeight = tuning.cloudHeight;
-    atmos.cloudScale = tuning.cloudScale;
+    RenderTuningIo::applyAtmosphere(atmos, tuning);
 }
 
 void LandscapeScene::createRenderResources(rhi::Device& device) {
@@ -4840,19 +4828,7 @@ void LandscapeScene::saveRenderTuning() {
     tuning.wetDarken = this->tuning.wetDarken;
     tuning.wetSheen = this->tuning.wetSheen;
     tuning.snowSheen = this->tuning.snowSheen;
-    tuning.fogDensity = atmos.fogDensity;
-    tuning.fogHeightFalloff = atmos.fogHeightFalloff;
-    tuning.fogLowBoost = atmos.fogLowBoost;
-    tuning.fogStart = atmos.fogStart;
-    tuning.fogSunPhase = atmos.fogSunPhase;
-    tuning.fogCeiling = atmos.fogCeiling;
-    tuning.cloudCoverage = atmos.cloudCoverage;
-    tuning.cloudShadowStrength = atmos.cloudShadow;
-    tuning.cloudHeight = atmos.cloudHeight;
-    tuning.cloudScale = atmos.cloudScale;
-    tuning.bloomIntensity = atmos.bloomIntensity;
-    tuning.godRayIntensity = atmos.godRayIntensity;
-    tuning.volumetricIntensity = atmos.volumetric;
+    RenderTuningIo::captureAtmosphere(atmos, tuning);
     data::RcTuningForm rc = data::resolveRcTuning(forms);
     RenderTuningIo::captureRcTuning(renderer, rc);
     data::LobeTreeTuningForm lobes = data::resolveLobeTreeTuning(forms);

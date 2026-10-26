@@ -228,13 +228,19 @@ Live tuning: render panels + "Save render tuning" →
 
 ### 2.3 FrameUbo discipline
 
-`FrameUniforms` (C++) ↔ `common.glsl` FrameUbo mirror **by comment only**,
-locked by static_asserts on byte offsets. **Append-only** at the end of
-the struct, both sides in lockstep, then bump the size assert. One
-mid-struct insertion desyncs ~14 shaders at once (paid lesson). The
-LightsUbo (binding 5) follows the same append-only rule; coordinated
-array resizes (24→64 lights) touch both GLSL declarations and the C++
-mirror in one change.
+`FrameUniforms` (C++) and the GLSL `FrameUbo` block are BOTH generated
+from one X-macro table, `engine/render/landscape/FrameLanes.hpp` (type,
+name, GLSL name, channel doc per lane; a second list for the constants
+shared with GLSL: cluster grid, light caps, water materials, grass
+species, mist band, far-tree reach, sea-quad half span). `common.glsl`
+includes the generated `shaders/frame_ubo.glsl`; `tests/FrameLanesTest`
+pins the file byte for byte against the generator and the offsets
+against std140, and prints the regenerated text on mismatch. The rule is
+no longer append-only: **edit the table, regenerate the file (the test
+tells you how), the struct and every shader follow** — the historical
+"one mid-struct insertion desyncs ~14 shaders" cannot happen any more.
+The LightsUbo (binding 5) is still a hand-written mirror and keeps the
+append-only rule.
 
 ## 3. Lighting & atmosphere
 
@@ -835,7 +841,7 @@ the `GpuOcclusion … clip` warning must never appear.
 
 1. **Measure first.** Remedies without measurements are hypotheses —
    paid twice (P0 rule; render scale retired by its own measurement).
-2. **UBO lockstep, append-only** (§2.3). After any shared-type layout
+2. **UBO lockstep through the lane table** (§2.3). After any shared-type layout
    change: clean rebuild (ninja header-dep miss → stale-object heap
    corruption).
 3. **Fill-rate cutout is enemy #1** (leaf-cards verdict). Opaque +

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+#include <string_view>
 #include <unordered_map>
 
 #include "data/plugins/Record.hpp"
@@ -23,11 +25,38 @@ struct AbilitySystem;
 class GameplayTagRegistry;
 
 // Copies every OWN field of `srcType` whose name (fnv1a id) also exists
-// on `dstType`, through reflection. The generic bridge between the stat
-// components and SavedStatsForm (same field names on both sides); works
-// in both directions.
+// on `dstType` with the same kind, through reflection. The generic bridge
+// between the stat components and SavedStatsForm (same field names on
+// both sides); works in both directions.
 void copyMatchingFields(const reflect::TypeInfo& srcType, const void* src,
                         const reflect::TypeInfo& dstType, void* dst);
+
+// One persisted actor component: its TypeInfo and a default-constructed
+// instance. This list is the single source SavedStatsForm is GENERATED
+// from (one field per distinct reflected name, slot defaults = these
+// instances' values) and the one captureActor/applySavedState sweep —
+// the templated sweeps in SaveState.cpp and this array are kept in
+// lockstep, same components, same order.
+struct SavedStatsComponent {
+    const reflect::TypeInfo* type { nullptr };
+    const void* defaults { nullptr }; // a default-constructed instance
+};
+std::span<const SavedStatsComponent> savedStatsComponents();
+
+// The TypeInfo view of savedStatsComponents(), same order.
+std::span<const reflect::TypeInfo* const> savedStatsComponentTypes();
+
+// A reflected component field deliberately NOT generated onto
+// SavedStatsForm, with its reason. Every omission must be listed here —
+// the coverage test fails on a stale entry (field gone, or carried by
+// another component's same-named field after all).
+struct SavedStatsExclusion {
+    std::string_view type;   // reflected TypeInfo name
+    std::string_view field;  // reflected field name
+    std::string_view reason;
+};
+std::span<const SavedStatsExclusion> savedStatsExclusions();
+bool isSavedStatsExcluded(std::string_view type, std::string_view field);
 
 // Materializes a typed Form from a raw Record (defaults + the record's
 // fields) — how the PENDING in-memory layer turns captured records back

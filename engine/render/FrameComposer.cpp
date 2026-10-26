@@ -38,8 +38,6 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .viewProj = in.viewProj,
         .invViewProj = glm::inverse(in.viewProj),
         .cameraPos = { in.cameraPosition, 1.0f },
-        // (time.y is a retired slot kept neutral: UBO layout is
-        // append-only.)
         .time = { in.timeSeconds, 0.0f, in.atmos.volumetric,
                   static_cast<f32>(in.debugBuffer) },
         .sunDirection = { in.sky.sunDirection, 0.0f },
@@ -57,12 +55,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .fogInfo = { in.atmos.fogDensity, in.atmos.fogHeightFalloff,
                      in.atmos.fogLowBoost, in.atmos.fogStart },
         .sunViewProj = in.cascades.viewProj,
-        // .w = interior flag: mesh/skinned/locallights switch to the
-        // hemispheric ambient + wrap/bounce indoors; 0 keeps the exterior
-        // byte-identical.
         .cascadeSplits = { in.cascades.splitFar[0], in.cascades.splitFar[1],
-                           in.cascades.splitFar[2],
-                           in.interiorMode ? 1.0f : 0.0f },
+                           in.cascades.splitFar[2], 0.0f },
         .shadowInfo = { in.cascades.texelWorld[0], in.cascades.texelWorld[1],
                         in.cascades.texelWorld[2], in.shadowStrength },
         .screenInfo = { static_cast<f32>(in.width),
@@ -102,7 +96,12 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // BASE too: the fog's altitude envelope applies in the
         // reflection as well (applyFog reads it).
         .fogLayerInfo = { in.atmos.fogCeiling, in.drawDistance,
-                          in.nearRingDistance, in.treeFadeEnd },
+                          in.nearRingDistance, 0.0f },
+        // BASE: the reflection pass draws the same bark, the same
+        // impostor handoff and shades its props with the same interior
+        // flag as the main view.
+        .vegInfo = { in.barkEnabled ? 1.0f : 0.0f,
+                     in.interiorMode ? 1.0f : 0.0f, in.treeFadeEnd, 0.0f },
     };
 
     // Post-init (a C array cannot take a designated initializer from
@@ -120,8 +119,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     base.fogTailInfo = { 2500.0f, in.fogHorizonTail,
                          in.seaQuadHalfSpan, 0.0f };
     base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
-                              in.pomDepth,
-                              in.barkEnabled ? 1.0f : 0.0f };
+                              in.pomDepth, 0.0f };
     // .w = the far-cascade viewport scale (shadow.glsl samples the
     // lower-left quarter of far layers — ShadowMapper contract).
     base.ssaoInfo = { in.ssaoStrength, in.ssaoRadius, in.ssdmAmplitude,
@@ -251,6 +249,16 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     resolved.giInfo = in.giInfo;
     resolved.giGridInfo = in.giGridInfo;
     resolved.giBandInfo = in.giBandInfo;
+    // Clustered forward + the key-shadow atlas ride RESOLVED only (the
+    // reflection pass keeps the legacy loop and an empty atlas). The
+    // grid's far reach is the froxel slicing's (interior room scale /
+    // exterior CSM reach) so both grids share their z slices by
+    // construction.
+    resolved.clusterInfo = { in.clusteredLights ? 1.0f : 0.0f,
+                             volumetricReach(in.interiorMode,
+                                             in.atmos.fogStart),
+                             0.0f, 0.0f };
+    resolved.keyShadowAtlasViewProj = in.keyShadowAtlasViewProj;
     // The player's feet part the grass (off in Fly).
     resolved.grassBendInfo =
         in.grassBend ? Vec4 { in.playerFeet.x, in.playerFeet.z,

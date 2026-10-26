@@ -103,6 +103,7 @@ add_library(meadows-render STATIC
     platform/common/GlContext.cpp
     render/FlyCamera.cpp
     render/FrameComposer.cpp
+    render/landscape/FrameLanes.cpp
     render/GpuProbe.cpp
     render/MeshBuilder.cpp
     render/MeshCache.cpp

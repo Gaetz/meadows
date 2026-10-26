@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
 // The POI PLAN (docs/POI-CATALOGUE.md, docs/PAYSAGE.md §7.6): the points
@@ -179,10 +180,45 @@ struct PoiPlanParams {
     f32 screenHalfLengthMax { 250.0f };
     f32 screenHalfWidth { 90.0f };
     f32 screenNotch { 0.75f }; // fraction of the screen cut on the corridor
+
+    // Exact equality for the per-call site memo (WorldLayerParams has
+    // the same contract).
+    bool operator==(const PoiPlanParams&) const = default;
+
+    REFLECT_BEGIN(PoiPlanParams, void)
+        REFLECT_FIELD(grandCell)
+        REFLECT_FIELD(moyenCell)
+        REFLECT_FIELD(petitCell)
+        REFLECT_FIELD(petitChance)
+        REFLECT_FIELD(grandHeightMin)
+        REFLECT_FIELD(grandHeightMax)
+        REFLECT_FIELD(moyenHeightMin)
+        REFLECT_FIELD(moyenHeightMax)
+        REFLECT_FIELD(petitHeightMin)
+        REFLECT_FIELD(petitHeightMax)
+        REFLECT_FIELD(edgeReach)
+        REFLECT_FIELD(edgeMax)
+        REFLECT_FIELD(waterPoiReach)
+        REFLECT_FIELD(grandStartClearance)
+        REFLECT_FIELD(coneSlopeMinDeg)
+        REFLECT_FIELD(coneSlopeMaxDeg)
+        REFLECT_FIELD(verticality)
+        REFLECT_FIELD(coneSlopeSteepMinDeg)
+        REFLECT_FIELD(coneSlopeSteepMaxDeg)
+        REFLECT_FIELD(corridorHalfWidthMin)
+        REFLECT_FIELD(corridorHalfWidthMax)
+        REFLECT_FIELD(screenHeightMin)
+        REFLECT_FIELD(screenHeightMax)
+        REFLECT_FIELD(screenHalfLengthMin)
+        REFLECT_FIELD(screenHalfLengthMax)
+        REFLECT_FIELD(screenHalfWidth)
+        REFLECT_FIELD(screenNotch)
+    REFLECT_END()
 };
 
-// FNV-1a over EVERY field (the memo key with the world's hash).
-u64 hashParams(const PoiPlanParams& p);
+// The cache key of the params: FNV-1a over every reflected field (all
+// of them — the struct is flat).
+u64 hashKey(const PoiPlanParams& p);
 
 // What the terrain reads at (x, z): the landform lift of the sites (the
 // max of their kernels; < 0 inside a basin), the walks' corridors and

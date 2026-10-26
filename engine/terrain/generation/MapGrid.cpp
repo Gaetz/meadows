@@ -40,15 +40,24 @@ MapEdgeStyle mapBorderSegmentStyle(const WorldLayerParams& world,
     // The world decides (passe EAU E2): ocean majority = Sea, massif
     // mean = Ridges, else Open — the landscape continues. The legacy
     // path keeps only the Sea veto of its hashed proposal. Memoized
-    // per segment; the key reads every world param so a pupitre edit
-    // never serves a stale style.
-    thread_local std::unordered_map<u64, MapEdgeStyle> memo;
+    // per segment, for ONE set of world params (an exact copy, compared
+    // on every call) so a pupitre edit never serves a stale style.
+    struct SegmentMemo {
+        WorldLayerParams world;
+        bool valid { false };
+        std::unordered_map<u64, MapEdgeStyle> styles;
+    };
+    thread_local SegmentMemo memo;
+    if (!memo.valid || !(memo.world == world)) {
+        memo.styles.clear();
+        memo.world = world;
+        memo.valid = true;
+    }
     u64 key = static_cast<u64>(static_cast<u32>(lineIndex)) |
               (static_cast<u64>(static_cast<u32>(cellCross)) << 32);
     key ^= vertical ? 0x9e3779b97f4a7c15ull : 0xc2b2ae3d27d4eb4full;
     key ^= static_cast<u64>(static_cast<i64>(mapSize)) << 3;
-    key ^= hashParams(world) * 0x9e3779b97f4a7c15ull;
-    if (const auto it = memo.find(key); it != memo.end()) {
+    if (const auto it = memo.styles.find(key); it != memo.styles.end()) {
         return it->second;
     }
     constexpr u32 kSamples = 9;
@@ -83,7 +92,7 @@ MapEdgeStyle mapBorderSegmentStyle(const WorldLayerParams& world,
     } else {
         resolved = MapEdgeStyle::Open;
     }
-    memo.emplace(key, resolved);
+    memo.styles.emplace(key, resolved);
     return resolved;
 }
 

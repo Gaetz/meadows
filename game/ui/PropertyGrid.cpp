@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <sstream>
 
 #include <imgui.h>
@@ -19,6 +20,33 @@ namespace game {
 
 // (valueToString / valueFromString live in engine/reflect/ValueText —
 // the CSV importer, the console and this grid share one codec.)
+
+const char* rangeFormat(const reflect::FieldRange& range,
+                        const char* fallback) {
+    static constexpr const char* kFixed[] = { "%.0f", "%.1f", "%.2f", "%.3f",
+                                              "%.4f", "%.5f", "%.6f" };
+    if (range.decimals < 0 ||
+        range.decimals >= static_cast<i8>(std::size(kFixed))) {
+        return fallback;
+    }
+    return kFixed[range.decimals];
+}
+
+namespace {
+
+// A ranged numeric field draws as a slider over its reflected interval;
+// the drag box stays for the unbounded ones. Both grids share these.
+bool rangedFloat(f32& v, const reflect::FieldRange& range) {
+    return ImGui::SliderFloat(
+        "##v", &v, range.lo, range.hi, rangeFormat(range, "%.4g"),
+        range.logarithmic ? ImGuiSliderFlags_Logarithmic : 0);
+}
+bool rangedInt(i32& v, const reflect::FieldRange& range) {
+    return ImGui::SliderInt("##v", &v, static_cast<int>(range.lo),
+                            static_cast<int>(range.hi));
+}
+
+} // namespace
 
 bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
     const data::Form* form = session.view(id);
@@ -97,7 +125,11 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                     }
                     return;
                 }
-                ImGui::InputInt("##v", &v);
+                if (field.range) {
+                    rangedInt(v, *field.range);
+                } else {
+                    ImGui::InputInt("##v", &v);
+                }
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](u32 v) {
@@ -105,7 +137,11 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](f32 v) {
-                ImGui::DragFloat("##v", &v, 0.05f);
+                if (field.range) {
+                    rangedFloat(v, *field.range);
+                } else {
+                    ImGui::DragFloat("##v", &v, 0.05f);
+                }
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](f64 v) {
@@ -238,7 +274,11 @@ bool drawReflectedStruct(void* object, const reflect::TypeInfo& type,
                 if (ImGui::Checkbox("##v", &b)) commit(reflect::Value { b });
             },
             [&](i32 v) {
-                ImGui::InputInt("##v", &v);
+                if (field.range) {
+                    rangedInt(v, *field.range);
+                } else {
+                    ImGui::InputInt("##v", &v);
+                }
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](u32 v) {
@@ -246,10 +286,14 @@ bool drawReflectedStruct(void* object, const reflect::TypeInfo& type,
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](f32 v) {
-                // Drag speed scales with the magnitude: a wavelength
-                // of 3 000 m and an edge of 0.05 both drag usefully.
-                const f32 speed = glm::max(std::abs(v) * 0.01f, 0.001f);
-                ImGui::DragFloat("##v", &v, speed, 0.0f, 0.0f, "%.4g");
+                if (field.range) {
+                    rangedFloat(v, *field.range);
+                } else {
+                    // Drag speed scales with the magnitude: a wavelength
+                    // of 3 000 m and an edge of 0.05 both drag usefully.
+                    const f32 speed = glm::max(std::abs(v) * 0.01f, 0.001f);
+                    ImGui::DragFloat("##v", &v, speed, 0.0f, 0.0f, "%.4g");
+                }
                 commitOnDeactivate(reflect::Value { v });
             },
             [&](f64 v) {

@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Stage S3 — thermal erosion (Musgrave/Olsen talus relaxation): material
@@ -22,7 +23,16 @@ struct ThermalParams {
     // Cells at/below the sea never erode (base level) but can receive
     // slide material — cliffs shed scree into the water.
     f32 seaLevel { kDefaultSeaLevel };
+
+    REFLECT_BEGIN(ThermalParams, void)
+        REFLECT_FIELD(iterations)
+        REFLECT_FIELD(rate)
+        REFLECT_FIELD(talusTan)
+        REFLECT_FIELD(seaLevel)
+    REFLECT_END()
 };
+
+u64 hashKey(const ThermalParams& p);
 
 struct ThermalResult {
     vector<f32> height;
@@ -47,7 +57,16 @@ struct RidgeRoundParams {
     // gentle convexity (hill tops, terrace rims) passes untouched.
     f32 threshold { 4.0f }; // meters
     f32 seaLevel { kDefaultSeaLevel };
+
+    REFLECT_BEGIN(RidgeRoundParams, void)
+        REFLECT_FIELD(radius)
+        REFLECT_FIELD(strength)
+        REFLECT_FIELD(threshold)
+        REFLECT_FIELD(seaLevel)
+    REFLECT_END()
 };
+
+u64 hashKey(const RidgeRoundParams& p);
 
 // `weight`, if given, scales the effect per cell — the caller gates the
 // rounding to where the orogeny built knife edges (uplift).

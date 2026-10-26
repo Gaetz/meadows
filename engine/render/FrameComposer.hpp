@@ -62,7 +62,7 @@ struct FrameComposerInputs {
     f32 wetDarken { 0.6f };
     f32 wetSheen { 0.5f };
     f32 snowSheen { 0.04f };
-    bool barkEnabled { false }; // tree bark textures resident
+    bool barkEnabled { false }; // tree bark textures resident (uVegInfo.x)
     f32 ssaoStrength { 0.85f }; // ssao.frag lanes
     f32 ssaoRadius { 0.7f };    // world radius (m)
     f32 ssdmAmplitude { 0.0f };    // ssdm warp amplitude (m, 0 = off)
@@ -74,7 +74,7 @@ struct FrameComposerInputs {
     // The streaming ring itself (m) — the far mesh's sink bias.
     f32 nearRingDistance { 0.0f };
     // Real-tree fade-out distance — the far impostors fade IN against
-    // it (uFogLayerInfo.w) so the handoff tracks the vegetation ring.
+    // it (uVegInfo.z) so the handoff tracks the vegetation ring.
     f32 treeFadeEnd { 880.0f };
     // Seasons: autumn tint blend and leaf fall (0..1 each), applied per
     // leaf-mask atlas slot through `leafSeason` (rgb tint, a =
@@ -130,6 +130,13 @@ struct FrameComposerInputs {
     Vec4 giInfo {};
     Vec4 giGridInfo {};
     Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f }; // band count + AA + floor
+
+    // Clustered forward + key-shadow atlas, RESOLVED only (the reflection
+    // pass keeps the legacy nearest-lights loop and an empty atlas): the
+    // renderer's GPU-availability gate, and this frame's picked tile
+    // matrices (world -> tile clip per slot, zero = empty slot).
+    bool clusteredLights { false };
+    array<Mat4, 4> keyShadowAtlasViewProj {};
 
     // Ground mist (mist.frag), RESOLVED only — no mist in the reflection
     // pass or indoors. Density/coverage ride `atmos` (weather-crossfaded);

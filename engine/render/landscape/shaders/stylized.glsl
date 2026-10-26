@@ -10,13 +10,15 @@
 // pre-stylization response (lambert or wrap), used when the toggle is off.
 // TWO shadow steps: shade 0 -> half-tone at the terminator -> full light
 // higher up. Three flat plateaus; every edge is a live tuning value
-// (uStylizedDiffuse/uStylizedShadow, render panel + LandscapeTuningForm).
+// (uStylizedDiffuseInfo / uStylizedShadowInfo, render panel +
+// LandscapeTuningForm).
 float stylizedDiffuse(float ndl, float classic) {
-    float halfTone = uStylizedShadow.w;
+    float halfTone = uStylizedShadowInfo.w;
     float stepped =
-        halfTone * smoothstep(uStylizedDiffuse.x, uStylizedDiffuse.y, ndl) +
+        halfTone *
+            smoothstep(uStylizedDiffuseInfo.x, uStylizedDiffuseInfo.y, ndl) +
         (1.0 - halfTone) *
-            smoothstep(uStylizedDiffuse.z, uStylizedDiffuse.w, ndl);
+            smoothstep(uStylizedDiffuseInfo.z, uStylizedDiffuseInfo.w, ndl);
     return mix(classic, stepped, uAmbientColor.w);
 }
 
@@ -26,8 +28,8 @@ float stylizedDiffuse(float ndl, float classic) {
 // instead of pitch black.
 float stylizedShadow(float shadow) {
     float snapped =
-        max(smoothstep(uStylizedShadow.x, uStylizedShadow.y, shadow),
-            uStylizedShadow.z);
+        max(smoothstep(uStylizedShadowInfo.x, uStylizedShadowInfo.y, shadow),
+            uStylizedShadowInfo.z);
     return mix(shadow, snapped, uAmbientColor.w);
 }
 

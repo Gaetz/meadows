@@ -1837,7 +1837,9 @@ briques Z0-Z5 dans le fichier de plan.
   Form (`hashTerrainGenTuning`) : une édition = une carte différente,
   re-bakée par le streamer ; les mémos thread-local (`PoiPlan`, le
   start-shift de `WorldLayer`, le veto de bordure de `TerrainGen`) sont
-  clés sur **tous** les paramètres (`hashParams` par struct). **Panneau** :
+  clés sur **tous** les paramètres (structs réfléchies, `hashKey` par
+  réflexion + membres explicites ; les mémos comparent une copie exacte
+  des params par `operator==`). **Panneau** :
   `drawReflectedStruct` (la grille de propriétés sans EditSession) dans
   « Terrain generation » (mode Édition) : filtre par groupe, **Apply &
   re-bake map** (= `travelToMap` de la carte active au prochain update :

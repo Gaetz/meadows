@@ -116,6 +116,7 @@
     RidingTest.cpp
     RngTest.cpp
     SaveAsyncTest.cpp
+    SaveCoverageTest.cpp
     SaveFormsTest.cpp
     SaveStateTest.cpp
     SceneStackTest.cpp
@@ -146,6 +147,7 @@
     VegetationCollisionTest.cpp
     VegetationScatterTest.cpp
     GrassScatterTest.cpp
+    FrameLanesTest.cpp
     VertexAoTest.cpp
     WeaponMeshesTest.cpp
     WorldLayerTest.cpp

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 
 // The WORLD LAYER (docs/PAYSAGE.md §7.5): the slow, seed-only fields
 // that decide what KIND of country a place is before any relief is
@@ -121,6 +122,57 @@ struct WorldLayerParams {
     // and the 3 km regions that never alternate.
     f32 coverWavelength { 600.0f };
     f32 coverAmp { 0.16f };
+
+    // Exact equality: the per-sample memos (etage anchor, zones, POI
+    // plan, border styles) compare their stored copy against the
+    // caller's params with it — cheaper than any fingerprint, and
+    // never a collision.
+    bool operator==(const WorldLayerParams&) const = default;
+
+    // Every scalar; the étage table (an array) is hashed explicitly in
+    // hashKey — reflection is flat.
+    REFLECT_BEGIN(WorldLayerParams, void)
+        REFLECT_FIELD(seed)
+        REFLECT_FIELD(continentWavelength)
+        REFLECT_FIELD(continentCellSupers)
+        REFLECT_FIELD(continentSuperSize)
+        REFLECT_FIELD(continentLatticeOrigin)
+        REFLECT_FIELD(continentRadius)
+        REFLECT_FIELD(continentJitter)
+        REFLECT_FIELD(continentShapeWavelength)
+        REFLECT_FIELD(continentShapeAmp)
+        REFLECT_FIELD(continentChance)
+        REFLECT_FIELD(borderFromWorld)
+        REFLECT_FIELD(borderMassifMin)
+        REFLECT_FIELD(coastDetailWavelength)
+        REFLECT_FIELD(coastDetailAmp)
+        REFLECT_FIELD(continentWarpWavelength)
+        REFLECT_FIELD(continentWarpStrength)
+        REFLECT_FIELD(seaThreshold)
+        REFLECT_FIELD(coastBand)
+        REFLECT_FIELD(etageWavelength)
+        REFLECT_FIELD(massifWavelength)
+        REFLECT_FIELD(massifLift)
+        REFLECT_FIELD(benchWavelength)
+        REFLECT_FIELD(benchAmp)
+        REFLECT_FIELD(plateauWavelength)
+        REFLECT_FIELD(plateauStep)
+        REFLECT_FIELD(plateauLevels)
+        REFLECT_FIELD(plateauEdge)
+        REFLECT_FIELD(plateauStartGap)
+        REFLECT_FIELD(startX)
+        REFLECT_FIELD(startZ)
+        REFLECT_FIELD(startEtage)
+        REFLECT_FIELD(anchorRadius)
+        REFLECT_FIELD(anchorFade)
+        REFLECT_FIELD(startRadius)
+        REFLECT_FIELD(startFade)
+        REFLECT_FIELD(climateWavelength)
+        REFLECT_FIELD(climateSlowWavelength)
+        REFLECT_FIELD(lapsePerKm)
+        REFLECT_FIELD(coverWavelength)
+        REFLECT_FIELD(coverAmp)
+    REFLECT_END()
 };
 
 struct WorldSample {
@@ -139,59 +191,11 @@ struct WorldSample {
 
 WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z);
 
-// EVERY field, in one walk, for the consumers that must agree on what
-// "the parameters" are: the FNV cache key below and the zone memo's
-// fingerprint (ZonePlan.cpp) — a pupitre edit must never serve a stale
-// sample. Add a field = add a line HERE, nowhere else. `v.mix(scalar)`.
-template <class Visitor>
-void visitParams(const WorldLayerParams& p, Visitor& v) {
-    v.mix(p.seed);
-    v.mix(p.continentWavelength);
-    v.mix(p.continentCellSupers);
-    v.mix(p.continentSuperSize);
-    v.mix(p.continentLatticeOrigin);
-    v.mix(p.continentRadius);
-    v.mix(p.continentJitter);
-    v.mix(p.continentShapeWavelength);
-    v.mix(p.continentShapeAmp);
-    v.mix(p.continentChance);
-    v.mix(p.borderFromWorld);
-    v.mix(p.borderMassifMin);
-    v.mix(p.coastDetailWavelength);
-    v.mix(p.coastDetailAmp);
-    v.mix(p.continentWarpWavelength);
-    v.mix(p.continentWarpStrength);
-    v.mix(p.seaThreshold);
-    v.mix(p.coastBand);
-    v.mix(p.etageWavelength);
-    v.mix(p.massifWavelength);
-    for (const f32 a : p.etageAltitude) {
-        v.mix(a);
-    }
-    v.mix(p.massifLift);
-    v.mix(p.benchWavelength);
-    v.mix(p.benchAmp);
-    v.mix(p.plateauWavelength);
-    v.mix(p.plateauStep);
-    v.mix(p.plateauLevels);
-    v.mix(p.plateauEdge);
-    v.mix(p.plateauStartGap);
-    v.mix(p.startX);
-    v.mix(p.startZ);
-    v.mix(p.startEtage);
-    v.mix(p.anchorRadius);
-    v.mix(p.anchorFade);
-    v.mix(p.startRadius);
-    v.mix(p.startFade);
-    v.mix(p.climateWavelength);
-    v.mix(p.climateSlowWavelength);
-    v.mix(p.lapsePerKm);
-    v.mix(p.coverWavelength);
-    v.mix(p.coverAmp);
-}
-
-// FNV-1a over every field (visitParams): the cache keys.
-u64 hashParams(const WorldLayerParams& p);
+// The cache key of the params: FNV-1a over every reflected field plus
+// the members reflection cannot carry (WorldLayer.cpp lists them).
+// A pupitre edit must never serve a stale decision, so every consumer
+// that memoizes on "the parameters" keys on this or on operator==.
+u64 hashKey(const WorldLayerParams& p);
 
 // Continuous province index 0..3 for a floor altitude (the inverse of
 // the étage table), and the table read back at a continuous index.

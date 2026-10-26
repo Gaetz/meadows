@@ -191,6 +191,36 @@ constexpr std::string_view enumName(const EnumTable& table, E value) {
     return table.name(static_cast<u32>(value));
 }
 
+// The legal interval of a numeric field (F32 or I32), declared once on
+// the Form by REFLECT_FIELD_RANGE: the property grid and the tuning
+// panels draw the field as a slider over it, the Forms->params seam
+// clamps loaded data to it. `decimals` is the precision the slider
+// rounds to (-1 = the widget's default), `logarithmic` the slider scale
+// for fields spanning decades, `step` the drag increment of range-pair
+// widgets (0 = none). Runtime metadata only: never persisted.
+struct FieldRange {
+    f32 lo { 0.0f };
+    f32 hi { 1.0f };
+    i8 decimals { -1 };
+    bool logarithmic { false };
+    f32 step { 0.0f };
+};
+
+// Byte offset of a data member inside its class, from the member pointer
+// alone (findFieldAt's key: a lane table names members, reflection names
+// fields, the offset joins them).
+template <typename C, typename T>
+u32 memberOffset(T C::* member) {
+    // No instance is constructed: a Form's constructor may itself consult
+    // the type's reflection (a generated TypeInfo), and building one here
+    // would re-enter the registration in progress. Applying the member
+    // pointer to raw storage yields the layout offset alone.
+    alignas(C) unsigned char storage[sizeof(C)] {};
+    const C* probe = reinterpret_cast<const C*>(storage);
+    return static_cast<u32>(reinterpret_cast<const char*>(&(probe->*member)) -
+                            reinterpret_cast<const char*>(probe));
+}
+
 struct FieldInfo {
     str name;
     u32 id { 0 }; // fnv1a(name) — stored in plugins/saves, so renaming
@@ -198,6 +228,10 @@ struct FieldInfo {
     FieldKind kind { FieldKind::Bool };
     u32 flags { None };
     const EnumTable* enumeration { nullptr }; // Str/I32 fields only
+    const FieldRange* range { nullptr };      // F32/I32 fields only
+    // Byte offset of the member in the reflected type: lets a member
+    // pointer held elsewhere (a FieldLane) find its FieldInfo.
+    u32 offset { 0 };
 
     // Type-erased access; `object` must point to an instance of the
     // reflected type (or a derived one).
@@ -225,6 +259,16 @@ struct TypeInfo {
     }
     const FieldInfo* findField(std::string_view fieldName) const {
         return findField(core::fnv1a(fieldName));
+    }
+    // The field at a byte offset (own fields, then parents — single
+    // inheritance keeps parent offsets valid in the derived type).
+    const FieldInfo* findFieldAt(u32 offset) const {
+        for (const FieldInfo& field : fields) {
+            if (field.offset == offset) {
+                return &field;
+            }
+        }
+        return parent ? parent->findFieldAt(offset) : nullptr;
     }
 
     bool isA(u32 typeId) const {
@@ -268,13 +312,16 @@ public:
     template<typename F>
     TypeInfoBuilder&& field(const char* name, F T::* member,
                             u32 flags = None,
-                            const EnumTable* enumeration = nullptr) && {
+                            const EnumTable* enumeration = nullptr,
+                            const FieldRange* range = nullptr) && {
         FieldInfo fieldInfo;
         fieldInfo.name = name;
         fieldInfo.id = core::fnv1a(name);
         fieldInfo.kind = detail::KindOf<F>::value;
         fieldInfo.flags = flags;
         fieldInfo.enumeration = enumeration;
+        fieldInfo.range = range;
+        fieldInfo.offset = memberOffset(member);
         fieldInfo.get = [member](const void* object) -> Value {
             return Value { static_cast<const T*>(object)->*member };
         };
@@ -314,6 +361,17 @@ private:
 // A Str (or ordinal I32) field bound to its closed vocabulary.
 #define REFLECT_FIELD_ENUM(fieldName, enumTable)                              \
     .field(#fieldName, &ReflectedT::fieldName, ::reflect::None, &(enumTable))
+
+// A numeric field with its legal interval, as the positional members of
+// FieldRange: (lo, hi), (lo, hi, decimals), (lo, hi, decimals,
+// logarithmic), (lo, hi, decimals, logarithmic, step). The range lives
+// in static storage so the FieldInfo can point at it.
+#define REFLECT_FIELD_RANGE(fieldName, ...)                                   \
+    .field(#fieldName, &ReflectedT::fieldName, ::reflect::None, nullptr,     \
+           [] {                                                               \
+               static constexpr ::reflect::FieldRange range { __VA_ARGS__ }; \
+               return &range;                                                 \
+           }())
 
 #define REFLECT_END()                                                         \
                 .build();                                                     \

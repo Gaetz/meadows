@@ -3,6 +3,7 @@
 #include "engine/core/Hash.hpp"
 #include "engine/core/Math.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
@@ -1024,79 +1025,52 @@ BorderSample sampleBorders(const ProceduralControls& controls,
 
 } // namespace
 
-u64 hashParams(const RhythmParams& p) {
+u64 hashKey(const RhythmParams& p) {
     core::Fnv64 h;
-    h.mix(p.pieceCellSize);
-    h.mix(p.pieceChance);
-    h.mix(p.pieceRadiusMin);
-    h.mix(p.pieceRadiusMax);
+    reflect::hashReflected(RhythmParams::staticTypeInfo(), &p, h);
+    // Not reflectable (arrays), hashed by hand — the only members to
+    // keep in step with the struct:
     for (const auto& row : p.pieceHeightByEtage) {
         h.mix(row[0]);
         h.mix(row[1]);
     }
-    h.mix(p.ridgeColWavelength);
-    h.mix(p.crestWavelength);
     for (const f32 a : p.crestAmplitudeByEtage) {
         h.mix(a);
     }
-    h.mix(p.bedWavelength);
     for (const f32 d : p.bedDepthByEtage) {
         h.mix(d);
     }
-    h.mix(p.colSpacing);
-    h.mix(p.hardnessWavelength);
-    h.mix(p.storyMountainWavelength);
-    h.mix(p.storyMountainAmplitude);
-    h.mix(p.storyMountainMaskLow);
-    h.mix(p.storyMountainMaskHigh);
-    h.mix(p.plan);
-    h.mix(p.planStoryScale);
-    h.mix(p.regimeWavelength);
-    h.mix(p.regimeHillAmplitude);
-    h.mix(p.regimeMassifHeight);
-    h.mix(p.calmBandWavelength);
-    h.mix(p.intimateCellSize);
-    h.mix(p.intimateChance);
-    h.mix(p.intimateHeightMin);
-    h.mix(p.intimateHeightMax);
-    h.mix(p.intimateRadiusMin);
-    h.mix(p.intimateRadiusMax);
     return h.value;
 }
 
-u64 hashParams(const MacroParams& p) {
+u64 hashKey(const MacroParams& p) {
     core::Fnv64 h;
+    reflect::hashReflected(MacroParams::staticTypeInfo(), &p, h);
+    // Not reflectable (a table), hashed by hand — the only member to
+    // keep in step with the struct:
+    h.mix(static_cast<u32>(p.tiers.size()));
     for (const TierLevel& t : p.tiers) {
-        h.mix(t.altitude);
-        h.mix(t.reliefAmplitude);
-        h.mix(t.reliefWavelength);
-        h.mix(t.terrace);
+        reflect::hashReflected(TierLevel::staticTypeInfo(), &t, h);
     }
-    h.mix(p.reliefOctaves);
-    h.mix(p.seaLevel);
-    h.mix(p.seaFloor);
-    h.mix(p.shallowDepth);
-    h.mix(p.shelfWidth);
-    h.mix(p.shelfDepth);
-    h.mix(p.shelfEnd);
-    h.mix(p.seaFalloff);
-    h.mix(p.shoreWidth);
-    h.mix(p.shoreHeight);
-    h.mix(p.cliffTierStart);
-    h.mix(p.cliffTierEnd);
-    h.mix(p.hillChainWavelength);
-    h.mix(p.valleyStretch);
-    h.mix(p.bedWavelength);
-    h.mix(p.terraceStep);
-    h.mix(p.terraceEdge);
-    h.mix(p.cliffStep);
-    h.mix(p.cliffEdge);
-    h.mix(p.warpWavelength);
-    h.mix(p.warpStrength);
-    h.mix(p.recurveLow);
-    h.mix(p.recurveMid);
-    h.mix(p.recurveHigh);
-    h.mix(p.recurveSpan);
+    return h.value;
+}
+
+u64 hashKey(const ProceduralControlParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(ProceduralControlParams::staticTypeInfo(), &p,
+                           h);
+    // Nested params, each by its own key — the only members to keep in
+    // step with the struct:
+    h.mix(hashKey(p.world));
+    h.mix(hashKey(p.zones));
+    h.mix(hashKey(p.rhythm));
+    h.mix(hashKey(p.poi));
+    return h.value;
+}
+
+u64 hashKey(const MapGridSpec& spec) {
+    core::Fnv64 h;
+    reflect::hashReflected(MapGridSpec::staticTypeInfo(), &spec, h);
     return h.value;
 }
 

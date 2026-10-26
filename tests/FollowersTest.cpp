@@ -255,7 +255,8 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     CHECK_FALSE(flushedCell(pending, kFollowerRef).has_value());
     // The saved actor state remembers he is off duty.
     REQUIRE(pending.hasActorState(kFollowerRef));
-    CHECK_FALSE(pending.actorState(kFollowerRef).stats->followerActive);
+    CHECK_FALSE(
+        pending.actorState(kFollowerRef).stats->get<bool>("followerActive"));
 
     // Back home, the normal unload/reload cycle owns him again.
     loader.unloadCell(db.handleOf(kCell));

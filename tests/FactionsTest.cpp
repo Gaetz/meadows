@@ -111,7 +111,7 @@ TEST_CASE("per-faction bounty: capture/apply round-trips the slices") {
                 gameplay::formFromRecord<gameplay::SavedBountyForm>(record));
         }
     }
-    CHECK(stats.bounty == doctest::Approx(50.0f)); // the legacy total field
+    CHECK(stats.get<f32>("bounty") == doctest::Approx(50.0f)); // the total field
     REQUIRE(rows.size() == 1);
     CHECK(rows[0].faction == "Faction.VillageGuard");
     CHECK(rows[0].amount == doctest::Approx(40.0f));

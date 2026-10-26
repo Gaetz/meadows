@@ -109,7 +109,7 @@ TEST_CASE("death persists across an unload/reload (capture -> respawn -> apply)"
         }
     }
     REQUIRE(sawStats);
-    CHECK(statsForm.health == doctest::Approx(0.0f));
+    CHECK(statsForm.get<f32>("health") == doctest::Approx(0.0f));
 
     SavedActorRecords saved;
     saved.stats = &statsForm;

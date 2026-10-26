@@ -26,9 +26,8 @@ public:
     static void drawRenderPanel(render::WorldRenderer& r,
                                 render::AtmosphereParams& atmos);
     // Tree builder: every generation knob of both tree types, live —
-    // regen on slider release; "Log TOML" prints paste-ready records
-    // (the CLAUDE.md §5 round trip until the editor's EditSession takes
-    // over).
+    // regen on slider release; the Save button requests the CLAUDE.md §5
+    // round trip (the scene captures the records and writes the plugin).
     static void drawTreeBuilderPanel(render::WorldRenderer& r);
     // The generation knobs alone (both tree types' headers) — shared by
     // drawTreeBuilderPanel and the TreeCreation scene. Returns true on a

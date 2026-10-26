@@ -12,6 +12,7 @@
 #include "engine/core/Bezier.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/core/Hash.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
@@ -1189,6 +1190,12 @@ void classifyRivers(vector<River>& rivers, const HydrologyParams& params,
             }
         }
     }
+}
+
+u64 hashKey(const HydrologyParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(HydrologyParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

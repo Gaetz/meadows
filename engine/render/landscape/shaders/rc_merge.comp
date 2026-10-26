@@ -21,8 +21,8 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcClipInfo[2];
     vec4 uRcTileInfo;
     vec4 uRcMisc;
-    vec4 uRcLightPosRadius[16];
-    vec4 uRcLightColor[16];
+    vec4 uRcLightPosRadius[kRcMaxLights];
+    vec4 uRcLightColor[kRcMaxLights];
 };
 
 MEADOWS_PUSH_CONSTANTS(RcCascadeUbo) {

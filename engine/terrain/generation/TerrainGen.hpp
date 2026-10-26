@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
 #include "engine/terrain/generation/MapGrid.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
@@ -232,12 +233,44 @@ struct RhythmParams {
     f32 intimateHeightMax { 120.0f };
     f32 intimateRadiusMin { 300.0f };
     f32 intimateRadiusMax { 600.0f };
+
+    // Every scalar; the three per-etage arrays are hashed explicitly in
+    // hashKey — reflection is flat.
+    REFLECT_BEGIN(RhythmParams, void)
+        REFLECT_FIELD(pieceCellSize)
+        REFLECT_FIELD(pieceChance)
+        REFLECT_FIELD(pieceRadiusMin)
+        REFLECT_FIELD(pieceRadiusMax)
+        REFLECT_FIELD(ridgeColWavelength)
+        REFLECT_FIELD(crestWavelength)
+        REFLECT_FIELD(bedWavelength)
+        REFLECT_FIELD(colSpacing)
+        REFLECT_FIELD(hardnessWavelength)
+        REFLECT_FIELD(storyMountainWavelength)
+        REFLECT_FIELD(storyMountainAmplitude)
+        REFLECT_FIELD(storyMountainMaskLow)
+        REFLECT_FIELD(storyMountainMaskHigh)
+        REFLECT_FIELD(plan)
+        REFLECT_FIELD(planStoryScale)
+        REFLECT_FIELD(zones)
+        REFLECT_FIELD(regimeWavelength)
+        REFLECT_FIELD(regimeHillAmplitude)
+        REFLECT_FIELD(regimeMassifHeight)
+        REFLECT_FIELD(calmBandWavelength)
+        REFLECT_FIELD(intimateCellSize)
+        REFLECT_FIELD(intimateChance)
+        REFLECT_FIELD(intimateHeightMin)
+        REFLECT_FIELD(intimateHeightMax)
+        REFLECT_FIELD(intimateRadiusMin)
+        REFLECT_FIELD(intimateRadiusMax)
+    REFLECT_END()
 };
 
-// FNV-1a over EVERY field of the rhythm / macro params (memo keys and
-// the analytic border veto: a pupitre edit must never serve a stale
-// decision). Add a field = add a line in TerrainGen.cpp.
-u64 hashParams(const RhythmParams& p);
+// The cache key of the rhythm / macro / control params: FNV-1a over
+// every reflected field plus the members reflection cannot carry
+// (TerrainGen.cpp lists them). Memo keys and the analytic border veto
+// read it: a pupitre edit must never serve a stale decision.
+u64 hashKey(const RhythmParams& p);
 
 // Sandbox controls: every field derives from ONE sample of the world
 // layer (sea, floor, étage, massif, coast, climate) plus the local
@@ -249,7 +282,14 @@ struct ProceduralControlParams {
     ZoneParams zones;
     RhythmParams rhythm;
     PoiPlanParams poi; // the POI plan (docs/POI-CATALOGUE.md)
+
+    // The nested params are hashed by their own keys in hashKey.
+    REFLECT_BEGIN(ProceduralControlParams, void)
+        REFLECT_FIELD(seed)
+    REFLECT_END()
 };
+
+u64 hashKey(const ProceduralControlParams& p);
 
 class ProceduralControls final : public ControlSource {
 public:
@@ -279,6 +319,13 @@ struct TierLevel {
     f32 reliefAmplitude { 0.0f }; // +/- meters of macro relief
     f32 reliefWavelength { 500.0f };
     f32 terrace { 0.0f }; // 0..1 strata quantization strength (mesas)
+
+    REFLECT_BEGIN(TierLevel, void)
+        REFLECT_FIELD(altitude)
+        REFLECT_FIELD(reliefAmplitude)
+        REFLECT_FIELD(reliefWavelength)
+        REFLECT_FIELD(terrace)
+    REFLECT_END()
 };
 
 // The étage table (docs/PAYSAGE.md §7.5): one tier per elevation
@@ -347,10 +394,39 @@ struct MacroParams {
     f32 recurveMid { 0.5f };
     f32 recurveHigh { 0.75f };
     f32 recurveSpan { 700.0f };
+
+    // Every scalar; `tiers` (a table) is hashed explicitly in hashKey —
+    // reflection is flat.
+    REFLECT_BEGIN(MacroParams, void)
+        REFLECT_FIELD(reliefOctaves)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(seaFloor)
+        REFLECT_FIELD(shallowDepth)
+        REFLECT_FIELD(shelfWidth)
+        REFLECT_FIELD(shelfDepth)
+        REFLECT_FIELD(shelfEnd)
+        REFLECT_FIELD(seaFalloff)
+        REFLECT_FIELD(shoreWidth)
+        REFLECT_FIELD(shoreHeight)
+        REFLECT_FIELD(cliffTierStart)
+        REFLECT_FIELD(cliffTierEnd)
+        REFLECT_FIELD(hillChainWavelength)
+        REFLECT_FIELD(valleyStretch)
+        REFLECT_FIELD(bedWavelength)
+        REFLECT_FIELD(terraceStep)
+        REFLECT_FIELD(terraceEdge)
+        REFLECT_FIELD(cliffStep)
+        REFLECT_FIELD(cliffEdge)
+        REFLECT_FIELD(warpWavelength)
+        REFLECT_FIELD(warpStrength)
+        REFLECT_FIELD(recurveLow)
+        REFLECT_FIELD(recurveMid)
+        REFLECT_FIELD(recurveHigh)
+        REFLECT_FIELD(recurveSpan)
+    REFLECT_END()
 };
 
-// FNV-1a over every MacroParams field (see hashParams(RhythmParams)).
-u64 hashParams(const MacroParams& p);
+u64 hashKey(const MacroParams& p);
 
 struct MacroResult {
     GridSpec spec;
@@ -429,7 +505,16 @@ struct MapGridSpec {
     u32 seed { 0 };
     f32 mapSize { 8192.0f }; // the game map (tileSize * kMapTilesPerSide)
     f32 seaLevel { kDefaultSeaLevel };
+
+    REFLECT_BEGIN(MapGridSpec, void)
+        REFLECT_FIELD(valid)
+        REFLECT_FIELD(seed)
+        REFLECT_FIELD(mapSize)
+        REFLECT_FIELD(seaLevel)
+    REFLECT_END()
 };
+
+u64 hashKey(const MapGridSpec& spec);
 
 constexpr f32 kMapBorderMountainHalf = 900.0f; // rise, each side
 constexpr f32 kMapBorderMountainLift = 260.0f;  // max crest above base

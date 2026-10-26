@@ -1,6 +1,10 @@
 #pragma once
 
+#include <string_view>
+#include <variant>
+
 #include "data/forms/Form.hpp"
+#include "engine/core/Assert.hpp"
 
 // The save-game record types. A SAVE IS AN ORDINARY PLUGIN
 // (§2.4/§5 — the non-negotiable): these Forms are its records, resolved by
@@ -22,146 +26,76 @@ namespace gameplay {
 
 // One per captured actor — its existence IS the "this actor was captured"
 // sentinel (spawn applies saved state instead of rolling the loadout).
-// Fields mirror the reflected stat components BY NAME, so capture/apply
-// copy them generically through reflection (same fnv1a field ids).
+//
+// Its reflected fields are GENERATED from the persisted components'
+// TypeInfos (savedStatsComponents(), SaveState.hpp) rather than mirrored
+// by hand: every reflected field of every persisted component, minus the
+// savedStatsExclusions() table, becomes one field of the same name and
+// kind — so a field added to a component is saved without anyone
+// remembering to mirror it. Field ids are fnv1a(name) on both sides, which
+// is what plugins and saves store: a generated field carries exactly the
+// id its hand-written predecessor did, and existing saves resolve
+// unchanged. Slot defaults are the components' own C++ defaults, so a
+// record keeps carrying only what differs from spawn state.
+//
+// Hand-written: `parent`, the child-record link to the actor's
+// ReferenceForm (not a component mirror). Generated: everything else,
+// stored kind-typed in `values`, one slot per distinct field name. Two
+// components reflecting the same name share ONE slot (the capture sweep
+// writes it from whichever component is swept last, the apply sweep
+// reads it into both) and must agree on the kind — the generator
+// asserts, the coverage test reports.
+//
+// Flags and enum tables of the component fields are NOT carried: a save
+// field is always persisted (never Transient) and never vocabulary-
+// checked by the loader.
 struct SavedStatsForm : data::Form {
     core::Guid parent; // the actor's ReferenceForm
 
-    // CoreAttributes.
-    f32 strength { 6.0f };
-    f32 constitution { 6.0f };
-    f32 grace { 6.0f };
-    f32 dexterity { 6.0f };
-    f32 alacrity { 6.0f };
-    f32 perception { 6.0f };
-    f32 charisma { 6.0f };
-    f32 ego { 6.0f };
-    f32 insight { 0.0f };
-    // AttributeSet BaseValues (`damage` is the transient meta-attribute —
-    // deliberately absent).
-    f32 health { 100.0f };
-    f32 maxHealth { 100.0f };
-    f32 energy { 100.0f };
-    f32 maxEnergy { 100.0f };
-    f32 essence { 50.0f };
-    f32 maxEssence { 50.0f };
-    f32 armorRating { 0.0f };
-    // Resonance channels.
-    f32 onyx { 0.0f };
-    f32 amber { 0.0f };
-    f32 garnet { 0.0f };
-    // Survival needs.
-    f32 hunger { 100.0f };
-    f32 thirst { 100.0f };
-    f32 sleep { 100.0f };
-    // Status buildup channels.
-    f32 poison { 0.0f };
-    f32 bleed { 0.0f };
-    f32 mental { 0.0f };
-    f32 disease { 0.0f };
-    f32 curse { 0.0f };
-    f32 death { 0.0f };
-    f32 ignition { 0.0f };
-    f32 glaciation { 0.0f };
-    f32 electrocution { 0.0f };
-    // CombatState.
-    f32 posture { 0.0f };
-    f32 staggerSeconds { 0.0f };
-    f32 paralysisSeconds { 0.0f };
-    f32 restSeconds { 0.0f };
-    // Equipment slots.
-    core::Guid weapon;
-    core::Guid head;
-    core::Guid torso;
-    core::Guid arms;
-    core::Guid legs;
-    // CombatState timers, vendor restock clock, crime bounty
-    // (name-mirrored like everything above).
-    f32 critWindowSeconds { 0.0f };
-    f32 shakenSeconds { 0.0f };
-    f32 lastRestockHours { 0.0f };
-    f32 bounty { 0.0f };
-    // FollowerState mirror. The
-    // `follower` prefix keeps the names unique across every captured
-    // component (docs/CHANTIER-FOLLOWERS.md).
-    bool followerActive { false };
-    f32 followerLevel { 1.0f };
-    f32 followerAffinity { 0.0f };
-    f32 followerHoursTogether { 0.0f };
-    f32 followerContractExpiryHours { 0.0f };
-    f32 followerLastLevelSyncedFrom { 0.0f };
-    f32 followerLastHomeUpgradeHours { 0.0f };
-    f32 followerDownedRecoveryHours { 0.0f };
-    // CombatState.downedSeconds —
-    // a downed follower reloads mid-bleedout, clock intact.
-    f32 downedSeconds { 0.0f };
-    // AttributeSet.level — the
-    // console-set player level and the follower's class level survive
-    // the save (name-matched like every field above; distinct from
-    // FollowerState.followerLevel).
-    f32 level { 1.0f };
-    // FollowerState.followerStance
-    // — a Stay order survives the save (name-matched sweep).
-    f32 followerStance { 0.0f };
+    // The generated fields' storage: values[slot], kind fixed per slot by
+    // the generated FieldInfo, sized and defaulted by the constructor.
+    vector<reflect::Value> values;
 
-    REFLECT_BEGIN(SavedStatsForm, data::Form)
-        REFLECT_FIELD(parent)
-        REFLECT_FIELD(strength)
-        REFLECT_FIELD(constitution)
-        REFLECT_FIELD(grace)
-        REFLECT_FIELD(dexterity)
-        REFLECT_FIELD(alacrity)
-        REFLECT_FIELD(perception)
-        REFLECT_FIELD(charisma)
-        REFLECT_FIELD(ego)
-        REFLECT_FIELD(insight)
-        REFLECT_FIELD(health)
-        REFLECT_FIELD(maxHealth)
-        REFLECT_FIELD(energy)
-        REFLECT_FIELD(maxEnergy)
-        REFLECT_FIELD(essence)
-        REFLECT_FIELD(maxEssence)
-        REFLECT_FIELD(armorRating)
-        REFLECT_FIELD(onyx)
-        REFLECT_FIELD(amber)
-        REFLECT_FIELD(garnet)
-        REFLECT_FIELD(hunger)
-        REFLECT_FIELD(thirst)
-        REFLECT_FIELD(sleep)
-        REFLECT_FIELD(poison)
-        REFLECT_FIELD(bleed)
-        REFLECT_FIELD(mental)
-        REFLECT_FIELD(disease)
-        REFLECT_FIELD(curse)
-        REFLECT_FIELD(death)
-        REFLECT_FIELD(ignition)
-        REFLECT_FIELD(glaciation)
-        REFLECT_FIELD(electrocution)
-        REFLECT_FIELD(posture)
-        REFLECT_FIELD(staggerSeconds)
-        REFLECT_FIELD(paralysisSeconds)
-        REFLECT_FIELD(restSeconds)
-        REFLECT_FIELD(weapon)
-        REFLECT_FIELD(head)
-        REFLECT_FIELD(torso)
-        REFLECT_FIELD(arms)
-        REFLECT_FIELD(legs)
-        REFLECT_FIELD(critWindowSeconds)
-        REFLECT_FIELD(shakenSeconds)
-        REFLECT_FIELD(lastRestockHours)
-        REFLECT_FIELD(bounty)
-        REFLECT_FIELD(followerActive)
-        REFLECT_FIELD(followerLevel)
-        REFLECT_FIELD(followerAffinity)
-        REFLECT_FIELD(followerHoursTogether)
-        REFLECT_FIELD(followerContractExpiryHours)
-        REFLECT_FIELD(followerLastLevelSyncedFrom)
-        REFLECT_FIELD(followerLastHomeUpgradeHours)
-        REFLECT_FIELD(followerDownedRecoveryHours)
-        REFLECT_FIELD(downedSeconds)
-        REFLECT_FIELD(level)
-        REFLECT_FIELD(followerStance)
-    REFLECT_END()
+    SavedStatsForm();
+
+    // Built once from the persisted components; same type name/id and
+    // parent (data::Form) as a REFLECT_BEGIN declaration would produce.
+    static const reflect::TypeInfo& staticTypeInfo();
+
+    // Typed by-name access to a field (generated or hand-written). A name
+    // no field carries, or a kind the field does not hold, is a
+    // programming error: asserts in Debug, yields T{} / writes nothing in
+    // Release.
+    template<typename T>
+    T get(std::string_view name) const {
+        const reflect::FieldInfo* field = staticTypeInfo().findField(name);
+        ENGINE_ASSERT_MSG(field != nullptr, "SavedStatsForm has no field '{}'",
+                          name);
+        if (!field) {
+            return T {};
+        }
+        const reflect::Value value = field->get(this);
+        const T* typed = std::get_if<T>(&value);
+        ENGINE_ASSERT_MSG(typed != nullptr,
+                          "SavedStatsForm.{} does not hold the requested kind",
+                          name);
+        return typed ? *typed : T {};
+    }
+
+    template<typename T>
+    void set(std::string_view name, const T& value) {
+        const reflect::FieldInfo* field = staticTypeInfo().findField(name);
+        ENGINE_ASSERT_MSG(field != nullptr, "SavedStatsForm has no field '{}'",
+                          name);
+        if (!field) {
+            return;
+        }
+        [[maybe_unused]] const bool written =
+            field->set(this, reflect::Value { value });
+        ENGINE_ASSERT_MSG(written,
+                          "SavedStatsForm.{} does not hold the requested kind",
+                          name);
+    }
 };
 
 // One per ACTIVE durational effect. Mirrors gameplay::ActiveEffect

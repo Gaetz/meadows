@@ -2,14 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <string_view>
-#include <type_traits>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
 
 #include "engine/core/Hash.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/MapGrid.hpp"
 
@@ -39,62 +37,30 @@ struct Zone {
 };
 
 struct Memo {
-    u64 key { 0 };
+    // The params the cells were drawn with: an exact copy, compared
+    // against the caller's on every sample (the key of the memo).
+    // Never a pointer identity, which a stack temporary reusing an
+    // address would fool; never a partial fingerprint, which once left
+    // stale cells in play after an in-session rebake.
+    WorldLayerParams world;
+    ZoneParams zones;
     bool valid { false };
+    u64 generation { 0 }; // bumped at every reset (the sample memo reads it)
     std::unordered_map<u64, Zone> cells;
 };
 
-// The memo key: EVERY parameter — the same visitParams walk as the
-// cache key, so no pupitre field can slip through (a partial
-// fingerprint once left stale cells in play after an in-session
-// rebake) — folded one 64-bit word per scalar by a multiply-xorshift
-// mixer: cheaper per call than the FNV byte loop the cache key pays
-// once per bake, which matters because the synthesis asks per texel.
-// Never a pointer identity, which a stack temporary reusing an address
-// would fool.
-struct WordMixer {
-    u64 h { 0x9e3779b97f4a7c15ull };
-    void word(u64 w) {
-        h = (h ^ w) * 0xff51afd7ed558ccdull;
-        h ^= h >> 29;
-    }
-    template <class T>
-        requires((std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) ||
-                 std::is_enum_v<T>)
-    void mix(T v) {
-        static_assert(sizeof(T) <= sizeof(u64));
-        u64 w = 0;
-        std::memcpy(&w, &v, sizeof(v));
-        word(w);
-    }
-    void mix(bool v) { word(v ? 1u : 0u); }
-    void mix(std::string_view s) {
-        word(s.size());
-        for (size_t i = 0; i < s.size(); i += sizeof(u64)) {
-            u64 w = 0;
-            std::memcpy(&w, s.data() + i,
-                        std::min(sizeof(u64), s.size() - i));
-            word(w);
-        }
-    }
-};
-
-u64 paramsKey(const WorldLayerParams& world, const ZoneParams& zones) {
-    WordMixer m;
-    visitParams(world, m);
-    visitParams(zones, m);
-    return m.h;
-}
-
-// One memo per thread, keyed by paramsKey. The key is computed ONCE per
-// sample and the memo handed down to every cell lookup of that sample —
-// a per-cell recomputation was the dominant cost of a zone sample.
-Memo& memoFor(u64 key) {
+// One memo per thread. The params are compared ONCE per sample and the
+// memo handed down to every cell lookup of that sample — a per-cell
+// recomputation was the dominant cost of a zone sample.
+Memo& memoFor(const WorldLayerParams& world, const ZoneParams& zones) {
     thread_local Memo memo;
-    if (!memo.valid || memo.key != key || memo.cells.size() > 65536) {
+    if (!memo.valid || !(memo.world == world) || !(memo.zones == zones) ||
+        memo.cells.size() > 65536) {
         memo.cells.clear();
-        memo.key = key;
+        memo.world = world;
+        memo.zones = zones;
         memo.valid = true;
+        ++memo.generation;
     }
     return memo;
 }
@@ -423,18 +389,18 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     // The synthesis asks twice per texel (the floor, then the palette):
     // the last answer is kept.
     struct LastSample {
-        u64 key { 0 };
+        u64 generation { 0 };
         f32 x { 0.0f }, z { 0.0f };
         bool valid { false };
         ZoneSample sample;
     };
     thread_local LastSample last;
-    const u64 key = paramsKey(world, zones);
-    if (last.valid && last.key == key && last.x == x && last.z == z) {
+    Memo& memo = memoFor(world, zones);
+    if (last.valid && last.generation == memo.generation && last.x == x &&
+        last.z == z) {
         return last.sample;
     }
     ZoneSample out;
-    Memo& memo = memoFor(key);
     const Nearest n = nearestZones(world, zones, memo, x, z);
     if (!n.a) {
         return out;
@@ -621,7 +587,7 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
     if (b != n.a) {
         pieceAt(zones, gb, *b, x, z, out);
     }
-    last.key = key;
+    last.generation = memo.generation;
     last.x = x;
     last.z = z;
     last.valid = true;
@@ -631,14 +597,21 @@ ZoneSample zoneSampleAt(const WorldLayerParams& world, const ZoneParams& zones,
 
 u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
                     f32 x, f32 z) {
-    Memo& memo = memoFor(paramsKey(world, zones));
+    Memo& memo = memoFor(world, zones);
     const Nearest n = nearestZones(world, zones, memo, x, z);
     return n.a ? n.a->archetype : 0u;
 }
 
-u64 hashParams(const ZoneParams& p) {
+u64 hashKey(const ZoneParams& p) {
     core::Fnv64 h;
-    visitParams(p, h);
+    reflect::hashReflected(ZoneParams::staticTypeInfo(), &p, h);
+    // Not reflectable (a table), hashed by hand — the only member to
+    // keep in step with the struct:
+    const vector<ZoneArchetype>& table = zoneArchetypesOf(p);
+    h.mix(static_cast<u32>(table.size()));
+    for (const ZoneArchetype& a : table) {
+        reflect::hashReflected(ZoneArchetype::staticTypeInfo(), &a, h);
+    }
     return h.value;
 }
 

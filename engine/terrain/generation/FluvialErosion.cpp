@@ -6,6 +6,7 @@
 #include <queue>
 
 #include <glm/glm.hpp>
+#include "engine/reflect/Fields.hpp"
 
 namespace render::terraingen {
 
@@ -283,6 +284,12 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
         }
     }
     return out;
+}
+
+u64 hashKey(const FluvialParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(FluvialParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

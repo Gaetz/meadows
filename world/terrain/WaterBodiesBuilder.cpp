@@ -5,9 +5,35 @@
 
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/FieldLane.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
 namespace world {
+
+namespace {
+
+// WaterMaterialForm -> render::WaterMaterialParams, one lane per field.
+template <typename T>
+using MaterialLane =
+    reflect::FieldLane<render::WaterMaterialParams, WaterMaterialForm, T>;
+
+constexpr MaterialLane<Vec3> kMaterialLanesVec3[] = {
+    { &render::WaterMaterialParams::tint, &WaterMaterialForm::tint },
+    { &render::WaterMaterialParams::deepColor, &WaterMaterialForm::deepColor },
+    { &render::WaterMaterialParams::absorption, &WaterMaterialForm::absorption },
+    { &render::WaterMaterialParams::foamColor, &WaterMaterialForm::foamColor },
+    { &render::WaterMaterialParams::emissiveColor, &WaterMaterialForm::emissiveColor },
+};
+constexpr MaterialLane<f32> kMaterialLanesF32[] = {
+    { &render::WaterMaterialParams::tintStrength, &WaterMaterialForm::tintStrength },
+    { &render::WaterMaterialParams::foamGain, &WaterMaterialForm::foamGain },
+    { &render::WaterMaterialParams::emissiveStrength, &WaterMaterialForm::emissiveStrength },
+    { &render::WaterMaterialParams::flowSpeedScale, &WaterMaterialForm::flowSpeedScale },
+    { &render::WaterMaterialParams::viscosity, &WaterMaterialForm::viscosity },
+    { &render::WaterMaterialParams::waveScale, &WaterMaterialForm::waveScale },
+};
+
+} // namespace
 
 sptr<const render::WaterBodies> buildWaterBodies(
     const data::FormDatabase& forms, f32 seaLevel,
@@ -42,17 +68,8 @@ sptr<const render::WaterBodies> buildWaterBodies(
         }
         const auto* form = static_cast<const WaterMaterialForm*>(raw);
         render::WaterMaterialParams params;
-        params.tint = form->tint;
-        params.tintStrength = form->tintStrength;
-        params.deepColor = form->deepColor;
-        params.absorption = form->absorption;
-        params.foamColor = form->foamColor;
-        params.foamGain = form->foamGain;
-        params.emissiveColor = form->emissiveColor;
-        params.emissiveStrength = form->emissiveStrength;
-        params.flowSpeedScale = form->flowSpeedScale;
-        params.viscosity = form->viscosity;
-        params.waveScale = form->waveScale;
+        reflect::applyLanes(params, *form, kMaterialLanesVec3);
+        reflect::applyLanes(params, *form, kMaterialLanesF32);
         const u32 index = static_cast<u32>(bodies->materials.size());
         bodies->materials.push_back(params);
         materialIndices.emplace(materialKey(guid), index);

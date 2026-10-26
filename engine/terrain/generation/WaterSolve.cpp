@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include "engine/reflect/Fields.hpp"
 
 #include "engine/terrain/generation/FluvialErosion.hpp"
 
@@ -410,6 +411,12 @@ vector<WaterSource> masterBoundarySources(
         }
     }
     return sources;
+}
+
+u64 hashKey(const WaterSolveParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(WaterSolveParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

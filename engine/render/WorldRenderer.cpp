@@ -2008,25 +2008,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // The whole UBO composition is pure: gather the inputs,
     // let the composer build both variants, upload. This side keeps only
     // the GPU-availability gates and the updateBuffer calls.
-    const ComposedFrame composed = composeFrameUniforms(
-        composerInputs(frame, snapshot, view, viewProj, skyState, cascades,
-                       shadowStrength, reflectionsActive));
-    const render::FrameUniforms& uniforms = composed.base;
-    render::FrameUniforms frameData = composed.resolved;
-    // Clustered forward (docs/RENDERING.md §5): the grid's far reach is
-    // the froxel slicing's (interior room scale / exterior CSM reach) so
-    // both grids share their z slices by construction.
     const bool clustered = tuning.clusteredLights && lightClusters.ready();
-    frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
-                              render::volumetricReach(view.interiorMode,
-                                                      view.atmos.fogStart),
-                              0.0f, 0.0f };
-    if (mounted.sky && frameData.stormInfo.y > 0.003f) {
-        frame.device.updateBuffer(rainOcclusionUbo,
-                                  &frameData.rainOcclusionViewProj,
-                                  sizeof(Mat4), 0);
-    }
-
     // Key-shadow atlas selection (docs/RENDERING.md §5 B6): the up-to-4
     // best-scored castsShadow lights get a 1024² tile. Selected HERE so
     // the tile matrices ride this frame-UBO upload and the per-light
@@ -2036,10 +2018,21 @@ void WorldRenderer::render(engine::FrameContext& frame,
     if (tuning.keyShadow && tuning.meshShadowCasters) {
         keyShadowPicks = pickKeyShadows(snapshot.shadowLights, camera.position,
                                         shadowSunDirection, kKeyShadowSlots);
-        for (size_t slot = 0; slot < keyShadowPicks.size(); ++slot) {
-            frameData.keyShadowAtlasViewProj[slot] =
-                keyShadowPicks[slot].viewProj;
-        }
+    }
+    FrameComposerInputs inputs =
+        composerInputs(frame, snapshot, view, viewProj, skyState, cascades,
+                       shadowStrength, reflectionsActive);
+    inputs.clusteredLights = clustered;
+    for (size_t slot = 0; slot < keyShadowPicks.size(); ++slot) {
+        inputs.keyShadowAtlasViewProj[slot] = keyShadowPicks[slot].viewProj;
+    }
+    const ComposedFrame composed = composeFrameUniforms(inputs);
+    const render::FrameUniforms& uniforms = composed.base;
+    const render::FrameUniforms& frameData = composed.resolved;
+    if (mounted.sky && frameData.stormInfo.y > 0.003f) {
+        frame.device.updateBuffer(rainOcclusionUbo,
+                                  &frameData.rainOcclusionViewProj,
+                                  sizeof(Mat4), 0);
     }
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 

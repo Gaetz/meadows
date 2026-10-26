@@ -70,11 +70,12 @@ TEST_CASE("save forms: resolve through the ordinary §5 pipeline") {
     const auto stats =
         data::collectChildren<gameplay::SavedStatsForm>(db, actor);
     REQUIRE(stats.size() == 1);
-    CHECK(stats[0]->health == doctest::Approx(42.5f));
-    CHECK(stats[0]->hunger == doctest::Approx(63.0f));
-    CHECK(stats[0]->posture == doctest::Approx(12.0f));
-    CHECK(stats[0]->maxHealth == doctest::Approx(100.0f)); // default kept
-    CHECK(stats[0]->weapon ==
+    CHECK(stats[0]->get<f32>("health") == doctest::Approx(42.5f));
+    CHECK(stats[0]->get<f32>("hunger") == doctest::Approx(63.0f));
+    CHECK(stats[0]->get<f32>("posture") == doctest::Approx(12.0f));
+    CHECK(stats[0]->get<f32>("maxHealth") ==
+          doctest::Approx(100.0f)); // default kept
+    CHECK(stats[0]->get<core::Guid>("weapon") ==
           guid("30000000-0000-4000-8000-0000000000bb"));
 
     const auto items =
@@ -223,8 +224,8 @@ TEST_CASE("save forms: CombatState is reflected (field-name bridge)") {
     gameplay::copyMatchingFields(type, &combat,
                                  gameplay::SavedStatsForm::staticTypeInfo(),
                                  &saved);
-    CHECK(saved.posture == doctest::Approx(33.0f));
-    CHECK(saved.restSeconds == doctest::Approx(5.0f));
+    CHECK(saved.get<f32>("posture") == doctest::Approx(33.0f));
+    CHECK(saved.get<f32>("restSeconds") == doctest::Approx(5.0f));
 
     // And back.
     gameplay::CombatState back;

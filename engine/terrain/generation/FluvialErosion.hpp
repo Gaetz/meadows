@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Stage S2 — fluvial erosion: tectonic uplift + stream-power incision,
@@ -72,7 +73,29 @@ struct FluvialParams {
     // cells keep the old ceiling), but sediment can no longer pave a
     // whole basin up to its surface — lakes keep a real floor.
     f32 lakeKeepDepth { 2.0f };
+
+    REFLECT_BEGIN(FluvialParams, void)
+        REFLECT_FIELD(iterations)
+        REFLECT_FIELD(dt)
+        REFLECT_FIELD(k)
+        REFLECT_FIELD(areaExponent)
+        REFLECT_FIELD(upliftRate)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(minSlope)
+        REFLECT_FIELD(routingInterval)
+        REFLECT_FIELD(sedimentCapacity)
+        REFLECT_FIELD(depositMax)
+        REFLECT_FIELD(depositSlack)
+        REFLECT_FIELD(capacitySlopeFloor)
+        REFLECT_FIELD(channelKeepCoef)
+        REFLECT_FIELD(channelKeepExponent)
+        REFLECT_FIELD(channelKeepMax)
+        REFLECT_FIELD(channelKeepMinArea)
+        REFLECT_FIELD(lakeKeepDepth)
+    REFLECT_END()
 };
+
+u64 hashKey(const FluvialParams& p);
 
 struct FluvialResult {
     vector<f32> height;

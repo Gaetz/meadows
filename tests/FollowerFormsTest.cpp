@@ -160,9 +160,9 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
     gameplay::copyMatchingFields(
         gameplay::FollowerState::staticTypeInfo(), &state,
         gameplay::SavedStatsForm::staticTypeInfo(), &saved);
-    CHECK(saved.followerActive);
-    CHECK(saved.followerLevel == doctest::Approx(7.0f));
-    CHECK(saved.followerAffinity == doctest::Approx(12.5f));
+    CHECK(saved.get<bool>("followerActive"));
+    CHECK(saved.get<f32>("followerLevel") == doctest::Approx(7.0f));
+    CHECK(saved.get<f32>("followerAffinity") == doctest::Approx(12.5f));
 
     gameplay::FollowerState restored;
     gameplay::copyMatchingFields(

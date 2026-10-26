@@ -23,6 +23,13 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id);
 bool drawReflectedStruct(void* object, const reflect::TypeInfo& type,
                          const char* filter = "");
 
+// The ImGui number format of a ranged field (REFLECT_FIELD_RANGE):
+// "%.Nf" for its declared decimals, `fallback` when it declares none.
+// Shared by every slider drawn from reflected metadata (the grids above,
+// the render tuning panels) so one declaration yields one rounding.
+const char* rangeFormat(const reflect::FieldRange& range,
+                        const char* fallback);
+
 // The Value <-> text codec lives in engine/reflect/ValueText (the
 // CSV importer shares it); these usings keep the console/grid call sites.
 using reflect::valueFromString;

@@ -34,15 +34,12 @@ layout(std140, binding = 3) uniform MistTemporalUbo {
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
 
-// Must match MistMap::kTopOffset / kTopRange / kValleyDepth quantization.
-const float kTopOffset = -64.0;
-const float kTopRange = 512.0;
-
 // The mist ceiling at this column (baked smoothed terrain + live lift).
 float mistTopAt(vec2 xz) {
     vec2 uv = (xz - uMistMapInfo.xy) * uMistMapInfo.z + 0.5;
     float r = texture(uMistMap, uv).r;
-    return uTerrainInfo.x + kTopOffset + r * kTopRange + uMistShapeInfo.w;
+    return uTerrainInfo.x + kMistTopOffset + r * kMistTopRange +
+           uMistShapeInfo.w;
 }
 
 // Coverage-noise uv: which valleys hold mist. Slow ground crawl (a
@@ -73,7 +70,8 @@ float mistDensityAt(vec3 p, float coverNoise, float segLen, out float top) {
     // 50 m lift reads as a hard flat lid — parallelepiped mist.
     float soft = max(6.0, uMistShapeInfo.w * 0.5);
     float baseTop =
-        uTerrainInfo.x + kTopOffset + m.r * kTopRange + uMistShapeInfo.w;
+        uTerrainInfo.x + kMistTopOffset + m.r * kMistTopRange +
+        uMistShapeInfo.w;
     top = baseTop;
     if (p.y > baseTop + soft * 0.5) {
         return 0.0; // above the tallest possible dome — no noise taps
@@ -151,7 +149,7 @@ void main() {
     // here; the march spends its steps only inside the band.
     float slabTop = uMistMapInfo.w + uMistShapeInfo.w +
                     max(6.0, uMistShapeInfo.w * 0.5) * 0.5;
-    float slabBot = uTerrainInfo.x + kTopOffset;
+    float slabBot = uTerrainInfo.x + kMistTopOffset;
     float t0 = 0.0;
     float t1 = rayLen;
     if (abs(dir.y) > 1e-4) {

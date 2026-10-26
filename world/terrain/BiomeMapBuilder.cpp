@@ -5,6 +5,7 @@
 
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/FieldLane.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
 namespace world {
@@ -12,6 +13,20 @@ namespace world {
 namespace {
 constexpr char kMagic[4] = { 'T', 'B', 'M', '1' };
 constexpr u32 kMaxSamples = 8192;
+
+// BiomeForm -> render::BiomeParams, one lane per field.
+constexpr reflect::FieldLane<render::BiomeParams, BiomeForm, f32>
+    kBiomeLanesF32[] = {
+        { &render::BiomeParams::snowLineOffset, &BiomeForm::snowLineOffset },
+        { &render::BiomeParams::rockiness, &BiomeForm::rockiness },
+        { &render::BiomeParams::sandiness, &BiomeForm::sandiness },
+        { &render::BiomeParams::grassPresence, &BiomeForm::grassPresence },
+        { &render::BiomeParams::detailAmplitudeScale,
+          &BiomeForm::detailAmplitudeScale },
+        { &render::BiomeParams::temperature, &BiomeForm::temperature },
+        { &render::BiomeParams::wetness, &BiomeForm::wetness },
+        { &render::BiomeParams::forestDensity, &BiomeForm::forestDensity },
+    };
 } // namespace
 
 bool writeTbmFile(const std::filesystem::path& path,
@@ -93,14 +108,7 @@ sptr<const render::BiomeSet> buildBiomeSet(
         }
         render::BiomeParams& params = set->table[static_cast<size_t>(
             index)];
-        params.snowLineOffset = form.snowLineOffset;
-        params.rockiness = form.rockiness;
-        params.sandiness = form.sandiness;
-        params.grassPresence = form.grassPresence;
-        params.detailAmplitudeScale = form.detailAmplitudeScale;
-        params.temperature = form.temperature;
-        params.wetness = form.wetness;
-        params.forestDensity = form.forestDensity;
+        reflect::applyLanes(params, form, kBiomeLanesF32);
     });
     data::forEach<BiomeMapForm>(forms, [&](const BiomeMapForm& form) {
         if (!filter.matches(form.worldspace)) {

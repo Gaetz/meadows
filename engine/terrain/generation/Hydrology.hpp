@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Stage S4 — hydrology extraction + conditioning. Lakes and rivers are
@@ -268,7 +269,38 @@ struct HydrologyParams {
         return { widthCoef, widthExponent, 45.0f, fleuveWidthScale,
                  fleuveRampLow, fleuveRampHigh };
     }
+    REFLECT_BEGIN(HydrologyParams, void)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(minSlope)
+        REFLECT_FIELD(minLakeDepth)
+        REFLECT_FIELD(minLakeArea)
+        REFLECT_FIELD(lakePiercing)
+        REFLECT_FIELD(lakeKeepDepth)
+        REFLECT_FIELD(lakeDeepPierce)
+        REFLECT_FIELD(pierceMinArea)
+        REFLECT_FIELD(pierceMinDepth)
+        REFLECT_FIELD(lakeKeepArea)
+        REFLECT_FIELD(mouthFlare)
+        REFLECT_FIELD(mouthFlareLength)
+        REFLECT_FIELD(riverArea)
+        REFLECT_FIELD(riviereArea)
+        REFLECT_FIELD(fleuveArea)
+        REFLECT_FIELD(fleuveWidthScale)
+        REFLECT_FIELD(fordSpacing)
+        REFLECT_FIELD(fordReach)
+        REFLECT_FIELD(riverMinGradient)
+        REFLECT_FIELD(riverReprofileMaxDrop)
+        REFLECT_FIELD(widthCoef)
+        REFLECT_FIELD(widthExponent)
+        REFLECT_FIELD(fleuveRampLow)
+        REFLECT_FIELD(fleuveRampHigh)
+        REFLECT_FIELD(tier2MinHalfWidth)
+        REFLECT_FIELD(minRiverPoints)
+        REFLECT_FIELD(hairpinTurn)
+    REFLECT_END()
 };
+
+u64 hashKey(const HydrologyParams& p);
 
 struct HydrologyResult {
     vector<f32> filled;   // routing surface (priority flood)

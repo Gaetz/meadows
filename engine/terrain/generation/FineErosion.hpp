@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Fine-scale erosion amplification (finalize stage): a stream-power
@@ -42,7 +43,22 @@ struct FineErosionParams {
     // erodeThermal): breaks ravine walls into credible talus facets.
     i32 thermalIterations { 5 };
     f32 thermalTalusTan { 0.8f };
+    REFLECT_BEGIN(FineErosionParams, void)
+        REFLECT_FIELD(iterations)
+        REFLECT_FIELD(routingInterval)
+        REFLECT_FIELD(reachSteps)
+        REFLECT_FIELD(dt)
+        REFLECT_FIELD(k)
+        REFLECT_FIELD(areaExponent)
+        REFLECT_FIELD(areaCap)
+        REFLECT_FIELD(dischargeGain)
+        REFLECT_FIELD(maxDepth)
+        REFLECT_FIELD(thermalIterations)
+        REFLECT_FIELD(thermalTalusTan)
+    REFLECT_END()
 };
+
+u64 hashKey(const FineErosionParams& p);
 
 struct FineErosionResult {
     vector<f32> height;

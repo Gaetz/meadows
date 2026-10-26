@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -74,7 +75,28 @@ struct WaterSolveParams {
     u32 multigridMinN { 96 };      // stop coarsening below this grid
     u32 fineIterations { 3000 };   // per refined level (coarse levels
                                    // are capped separately)
+    REFLECT_BEGIN(WaterSolveParams, void)
+        REFLECT_FIELD(rainRate)
+        REFLECT_FIELD(runoffExponent)
+        REFLECT_FIELD(runoffRefArea)
+        REFLECT_FIELD(evaporationRate)
+        REFLECT_FIELD(dt)
+        REFLECT_FIELD(gravity)
+        REFLECT_FIELD(friction)
+        REFLECT_FIELD(warmStart)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(maxIterations)
+        REFLECT_FIELD(convergenceEps)
+        REFLECT_FIELD(checkInterval)
+        REFLECT_FIELD(dryThreshold)
+        REFLECT_FIELD(borderDrain)
+        REFLECT_FIELD(multigrid)
+        REFLECT_FIELD(multigridMinN)
+        REFLECT_FIELD(fineIterations)
+    REFLECT_END()
 };
+
+u64 hashKey(const WaterSolveParams& p);
 
 // A point discharge injected every iteration (m³/s) — the boundary
 // inflow: a course entering the solve window carries its whole

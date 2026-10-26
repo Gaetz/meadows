@@ -123,7 +123,35 @@ struct MasterNetworkParams {
     f32 fleuveArea { 6.0e6f };
     f32 seaLevel { kDefaultSeaLevel };
     f32 minSlope { 1.0e-4f };
+
+    // Every scalar; `mapGrid` (a nested spec) is hashed explicitly in
+    // hashKey — reflection is flat.
+    REFLECT_BEGIN(MasterNetworkParams, void)
+        REFLECT_FIELD(superRegionSize)
+        REFLECT_FIELD(superOrigin)
+        REFLECT_FIELD(apron)
+        REFLECT_FIELD(texel)
+        REFLECT_FIELD(routeOnShaped)
+        REFLECT_FIELD(runoffWeights)
+        REFLECT_FIELD(runoffDryMin)
+        REFLECT_FIELD(runoffWetMax)
+        REFLECT_FIELD(snowBonus)
+        REFLECT_FIELD(snowlineTemp)
+        REFLECT_FIELD(lakeDepth)
+        REFLECT_FIELD(glacierTemp)
+        REFLECT_FIELD(neveTemp)
+        REFLECT_FIELD(routeDither)
+        REFLECT_FIELD(riverExtractArea)
+        REFLECT_FIELD(fleuveArea)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(minSlope)
+    REFLECT_END()
 };
+
+// The cache key of the network params (every field, the grid spec
+// included): the disk cache of the super-cell networks and the map
+// bake key read it.
+u64 hashKey(const MasterNetworkParams& p);
 
 struct MasterNetwork {
     GridSpec grid; // core + apron routing window
@@ -171,7 +199,19 @@ struct MasterImprintParams {
     f32 maxPlainCut { 14.0f };   // deeper crossings stay gorges
     f32 keepChannel { 0.85f };   // erosion keep inside the channel
     f32 keepPlain { 0.35f };
+
+    REFLECT_BEGIN(MasterImprintParams, void)
+        REFLECT_FIELD(minGradient)
+        REFLECT_FIELD(bedDepth)
+        REFLECT_FIELD(plainFactor)
+        REFLECT_FIELD(plainLift)
+        REFLECT_FIELD(maxPlainCut)
+        REFLECT_FIELD(keepChannel)
+        REFLECT_FIELD(keepPlain)
+    REFLECT_END()
 };
+
+u64 hashKey(const MasterImprintParams& p);
 // `extraKeep` (sim.cells(), caller-zeroed) receives the erosion
 // protection to max into the bake's keep grid. Width law shared with
 // classifyRivers (Hydrology.hpp RiverWidthLaw, on the node's qArea) so

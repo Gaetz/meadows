@@ -71,33 +71,14 @@ std::optional<MapOverview> loadMapOverview(
 }
 
 u64 mapBakeKey(const TileBakeParams& params, i32 tilesPerSide) {
-    u64 h = core::kFnv64Basis;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= core::kFnv64Prime;
-        }
-    };
-    const auto mixF = [&](f32 v) { mix(&v, sizeof(v)); };
-    const auto mixU = [&](u32 v) { mix(&v, sizeof(v)); };
-    mixU(kTileBakeVersion);
-    mixU(static_cast<u32>(tilesPerSide));
-    mixU(params.worldSeed);
-    mixU(params.controls.seed);
-    mixF(params.tileSize);
-    mixF(params.macro.seaLevel);
-    mixF(params.macro.recurveLow);
-    mixF(params.macro.recurveMid);
-    mixF(params.macro.recurveHigh);
-    mixU(params.mapGrid.valid ? 1u : 0u);
-    // The generation pupitre (every TerrainGenTuningForm field): an
-    // edit is a different map, re-baked on demand.
-    const u64 gen = hashTerrainGenTuning(params);
-    mix(&gen, sizeof(gen));
-    const u64 zones = render::terraingen::hashParams(params.controls.zones);
-    mix(&zones, sizeof(zones));
-    return h;
+    core::Fnv64 h;
+    h.mix(kTileBakeVersion);
+    h.mix(static_cast<u32>(tilesPerSide));
+    // Every data input of the bake, nested params and the archetype
+    // table included (the params' reflected keys): an edited pupitre
+    // knob is a different map, re-baked on demand.
+    h.mix(render::terraingen::hashKey(params));
+    return h.value;
 }
 
 bool mapBakedAndValid(const std::filesystem::path& cacheDir, i32 mapX,

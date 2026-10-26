@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include "engine/reflect/Fields.hpp"
 
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/ThermalErosion.hpp"
@@ -1043,6 +1044,15 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
     finalizeWater(out, coarse, eroded, macro, hydro, hydroSpec, params,
                   seed, deposit);
     return out;
+}
+
+u64 hashKey(const FinalizeParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(FinalizeParams::staticTypeInfo(), &p, h);
+    // Nested params, by its own key — the only member to keep in step
+    // with the struct:
+    h.mix(hashKey(p.fine));
+    return h.value;
 }
 
 } // namespace render::terraingen

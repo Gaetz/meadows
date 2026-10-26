@@ -14,6 +14,7 @@
 
 #include "engine/core/Hash.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
@@ -130,55 +131,16 @@ std::filesystem::path cacheDirCopy() {
 u64 networkFileKey(const ProceduralControls& controls,
                    const MacroParams& macro,
                    const MasterNetworkParams& params) {
-    u64 h = core::kFnv64Basis;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= core::kFnv64Prime;
-        }
-    };
-    const auto mix64 = [&](u64 v) { mix(&v, sizeof(v)); };
-    const auto mixF = [&](f32 v) { mix(&v, sizeof(v)); };
-    const ProceduralControlParams& cp = controls.params();
-    mix(&cp.seed, sizeof(cp.seed));
-    mix64(hashParams(cp.world));
-    mix64(hashParams(cp.rhythm));
-    mix64(hashParams(cp.poi));
-    mix64(hashParams(macro));
-    mix64(hashParams(cp.zones));
-    mixF(params.superRegionSize);
-    mixF(params.superOrigin);
-    mixF(params.apron);
-    mixF(params.texel);
-    mixF(params.riverExtractArea);
-    mixF(params.fleuveArea);
-    mixF(params.seaLevel);
-    mixF(params.minSlope);
-    const u32 shaped =
-        params.routeOnShaped && params.mapGrid.valid ? 1u : 0u;
-    mix(&shaped, sizeof(shaped));
-    if (shaped != 0u) {
-        mix(&params.mapGrid.seed, sizeof(params.mapGrid.seed));
-        mixF(params.mapGrid.mapSize);
-        mixF(params.mapGrid.seaLevel);
-    }
-    mixF(params.lakeDepth);
-    mixF(params.glacierTemp);
-    mixF(params.neveTemp);
-    mixF(params.routeDither);
-    const u32 weighted = params.runoffWeights ? 1u : 0u;
-    mix(&weighted, sizeof(weighted));
-    if (weighted != 0u) {
-        mixF(params.runoffDryMin);
-        mixF(params.runoffWetMax);
-        mixF(params.snowBonus);
-        mixF(params.snowlineTemp);
-    }
+    // Every input of computeMasterNetwork, by the params' own keys
+    // (controls = seed + world + zones + rhythm + POI plan).
+    core::Fnv64 h;
+    h.mix(hashKey(controls.params()));
+    h.mix(hashKey(macro));
+    h.mix(hashKey(params));
     const u32 version = 2; // the file format below (MNW2: qArea,
                            // flags, headType on the node)
-    mix(&version, sizeof(version));
-    return h;
+    h.mix(version);
+    return h.value;
 }
 
 std::filesystem::path networkFilePath(const std::filesystem::path& dir,
@@ -704,6 +666,21 @@ void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
             }
         }
     }
+}
+
+u64 hashKey(const MasterNetworkParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(MasterNetworkParams::staticTypeInfo(), &p, h);
+    // Nested spec, by its own key — the only member to keep in step
+    // with the struct:
+    h.mix(hashKey(p.mapGrid));
+    return h.value;
+}
+
+u64 hashKey(const MasterImprintParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(MasterImprintParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

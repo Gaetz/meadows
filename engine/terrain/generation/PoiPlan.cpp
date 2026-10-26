@@ -10,6 +10,7 @@
 
 #include "engine/core/Hash.hpp"
 #include "engine/core/Math.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
@@ -415,18 +416,16 @@ bool lowerRank(i32 ax, i32 az, i32 bx, i32 bz) {
 }
 
 // Memo of typed sites (and the moyen edges) per cell. Thread-local, so
-// workers never share it; re-keyed by the params that shape it.
+// workers never share it; keyed by an exact copy of BOTH params — the
+// sites' typing reads the world sample and the master network, so any
+// field can move a site.
 struct Memo {
-    u64 paramsKey { 0 };
+    WorldLayerParams world;
+    PoiPlanParams plan;
+    bool valid { false };
     std::unordered_map<u64, CellSite> sites;
     std::unordered_map<u64, vector<PoiSite>> rawEdges; // moyen: partners
 };
-
-// The whole of both params: the sites' typing reads the world sample
-// and the master network, so any field can move a site.
-u64 paramsKeyOf(const WorldLayerParams& world, const PoiPlanParams& plan) {
-    return hashParams(world) ^ (hashParams(plan) * 0x9e3779b97f4a7c15ull);
-}
 
 // The memo is only ever CLEARED at a public entry point (memoReady):
 // the internal functions hold references into it across nested calls.
@@ -437,11 +436,13 @@ Memo& memoFor(const WorldLayerParams&, const PoiPlanParams&) {
 
 Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan) {
     Memo& memo = memoFor(world, plan);
-    const u64 key = paramsKeyOf(world, plan);
-    if (memo.paramsKey != key || memo.sites.size() > 32768) {
+    if (!memo.valid || !(memo.world == world) || !(memo.plan == plan) ||
+        memo.sites.size() > 32768) {
         memo.sites.clear();
         memo.rawEdges.clear();
-        memo.paramsKey = key;
+        memo.world = world;
+        memo.plan = plan;
+        memo.valid = true;
     }
     return memo;
 }
@@ -887,45 +888,10 @@ constexpr CharacterStyle kCharacters[] = {
 
 } // namespace
 
-u64 hashParams(const PoiPlanParams& p) {
-    u64 h = core::kFnv64Basis;
-    const auto mix = [&](const void* data, size_t size) {
-        const auto* bytes = static_cast<const unsigned char*>(data);
-        for (size_t i = 0; i < size; ++i) {
-            h ^= bytes[i];
-            h *= core::kFnv64Prime;
-        }
-    };
-    const auto f = [&](f32 v) { mix(&v, sizeof(v)); };
-    const auto u = [&](u32 v) { mix(&v, sizeof(v)); };
-    f(p.grandCell);
-    f(p.moyenCell);
-    f(p.petitCell);
-    f(p.petitChance);
-    f(p.grandHeightMin);
-    f(p.grandHeightMax);
-    f(p.moyenHeightMin);
-    f(p.moyenHeightMax);
-    f(p.petitHeightMin);
-    f(p.petitHeightMax);
-    f(p.edgeReach);
-    u(p.edgeMax);
-    f(p.waterPoiReach);
-    f(p.grandStartClearance);
-    f(p.coneSlopeMinDeg);
-    f(p.coneSlopeMaxDeg);
-    f(p.verticality);
-    f(p.coneSlopeSteepMinDeg);
-    f(p.coneSlopeSteepMaxDeg);
-    f(p.corridorHalfWidthMin);
-    f(p.corridorHalfWidthMax);
-    f(p.screenHeightMin);
-    f(p.screenHeightMax);
-    f(p.screenHalfLengthMin);
-    f(p.screenHalfLengthMax);
-    f(p.screenHalfWidth);
-    f(p.screenNotch);
-    return h;
+u64 hashKey(const PoiPlanParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(PoiPlanParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 PlanSample planSampleAt(const WorldLayerParams& world,

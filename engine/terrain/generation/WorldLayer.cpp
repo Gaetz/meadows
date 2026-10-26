@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Hash.hpp"
+#include "engine/reflect/Fields.hpp"
 #include "engine/terrain/Noise.hpp"
 
 namespace render::terraingen {
@@ -266,14 +267,13 @@ f32 etageRaw(const WorldLayerParams& p, f32 x, f32 z) {
 }
 
 // The étage shift that anchors the start: memoized on the whole
-// params hash — pure, thread-local, a few floats.
+// params (exact compare against a stored copy) — pure, thread-local.
 f32 etageAnchorShift(const WorldLayerParams& p) {
-    thread_local u64 memoKey = 0;
+    thread_local WorldLayerParams memoParams;
     thread_local f32 memoShift = 0.0f;
     thread_local bool valid = false;
-    const u64 key = hashParams(p);
-    if (!valid || memoKey != key) {
-        memoKey = key;
+    if (!valid || !(memoParams == p)) {
+        memoParams = p;
         memoShift = p.startEtage - etageRaw(p, p.startX, p.startZ);
         valid = true;
     }
@@ -440,9 +440,14 @@ WorldSample worldSampleAt(const WorldLayerParams& p, f32 x, f32 z) {
     return w;
 }
 
-u64 hashParams(const WorldLayerParams& p) {
+u64 hashKey(const WorldLayerParams& p) {
     core::Fnv64 h;
-    visitParams(p, h);
+    reflect::hashReflected(WorldLayerParams::staticTypeInfo(), &p, h);
+    // Not reflectable (array), hashed by hand — the only member to
+    // keep in step with the struct:
+    for (const f32 a : p.etageAltitude) {
+        h.mix(a);
+    }
     return h.value;
 }
 

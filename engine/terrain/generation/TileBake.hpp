@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/TerrainBase.hpp"
 #include "engine/terrain/generation/Finalize.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
@@ -47,6 +48,12 @@ struct BiomeErosion {
     f32 talusScale { 1.0f };    // scales the thermal angle of repose
     f32 capacityScale { 1.0f }; // scales sediment capacity
     f32 fineScale { 1.0f };     // scales the fine-erosion carve
+    REFLECT_BEGIN(BiomeErosion, void)
+        REFLECT_FIELD(erodibility)
+        REFLECT_FIELD(talusScale)
+        REFLECT_FIELD(capacityScale)
+        REFLECT_FIELD(fineScale)
+    REFLECT_END()
 };
 
 struct TileBakeParams {
@@ -142,7 +149,29 @@ struct TileBakeParams {
         { 0.9f, 1.0f, 1.15f, 0.8f },   // clearing (temperate)
         { 1.0f, 0.9f, 1.4f, 0.5f },    // marsh (soft, fills flat)
     };
+    // The top-level scalars; every nested params struct and the biome
+    // table are hashed explicitly in hashKey — reflection is flat.
+    REFLECT_BEGIN(TileBakeParams, void)
+        REFLECT_FIELD(worldSeed)
+        REFLECT_FIELD(tileSize)
+        REFLECT_FIELD(apron)
+        REFLECT_FIELD(overlapMargin)
+        REFLECT_FIELD(macroTexel)
+        REFLECT_FIELD(waterMargin)
+        REFLECT_FIELD(hydroTexel)
+        REFLECT_FIELD(fineCalmGateLow)
+        REFLECT_FIELD(fineCalmGateHigh)
+        REFLECT_FIELD(fineSlopeReturn)
+        REFLECT_FIELD(calmCut)
+        REFLECT_FIELD(roughCut)
+        REFLECT_FIELD(dimpleFillMax)
+        REFLECT_FIELD(keepCrestFade)
+    REFLECT_END()
 };
+
+// The cache key of a whole bake input: every field of every nested
+// params struct, by their own keys. game::mapBakeKey is built on it.
+u64 hashKey(const TileBakeParams& p);
 
 // Stage-1 output: the tile's eroded coarse terrain + the macro fields
 // the finalize masks need. Deterministic per (params, tile).
@@ -294,7 +323,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 122;
+constexpr u32 kTileBakeVersion = 123;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

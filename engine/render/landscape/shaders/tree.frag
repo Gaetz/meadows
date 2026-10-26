@@ -14,7 +14,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 // or stomps them for every later draw in the pass.
 layout(binding = 12) uniform sampler2D uPropNormal;
 // Per-tree-slot bark (oak/spruce — the tree builder's pick), sampled
-// triplanarly on flagged wood. uSplatVarietyInfo.w gates it (0 until
+// triplanarly on flagged wood. uVegInfo.x gates it (0 until
 // the scene loaded the textures). uBarkNrm packs nor_gl in RGB and the
 // displacement in A — the LOW-POLY trunk carries its relief here.
 layout(binding = 13) uniform sampler2D uBark;
@@ -174,7 +174,7 @@ void main() {
     // parallax bump-offset shifts the taps along the view, the packed
     // normal map perturbs the shading normal (whiteout blend), and the
     // vertex color keeps carrying AO + the vertical gradient.
-    if (hasBark(vObjPos.w) && uSplatVarietyInfo.w > 0.5) {
+    if (hasBark(vObjPos.w) && uVegInfo.x > 0.5) {
         float yaw = barkYaw(vObjPos.w);
         float yc = cos(yaw);
         float ys = sin(yaw);

@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/reflect/FieldLane.hpp"
+
 namespace game {
 
 namespace {
@@ -13,12 +15,13 @@ namespace {
 // field is added exactly here (forgetting one of three hand-written
 // lists is how fields silently stop saving). Two fields are spelled
 // differently on the two structs: cloudShadow <-> cloudShadowStrength,
-// volumetric <-> volumetricIntensity. A reflection-driven version (no
-// hand-listed fields) is a possible later step.
-struct WeatherLane {
-    f32 render::AtmosphereParams::* atmos;
-    f32 data::WeatherForm::* form;
-};
+// volumetric <-> volumetricIntensity. The global atmosphere baseline
+// (LandscapeTuningForm) has its own table in RenderTuningIo — a
+// different Form type, so the two tables cannot be shared. A
+// reflection-driven version (no hand-listed fields) is a possible later
+// step.
+using WeatherLane =
+    reflect::FieldLane<render::AtmosphereParams, data::WeatherForm, f32>;
 constexpr WeatherLane kWeatherLanes[] = {
     { &render::AtmosphereParams::cloudCoverage,
       &data::WeatherForm::cloudCoverage },
@@ -62,16 +65,12 @@ constexpr WeatherLane kWeatherLanes[] = {
 
 data::WeatherForm capture(const render::AtmosphereParams& a) {
     data::WeatherForm w;
-    for (const WeatherLane& lane : kWeatherLanes) {
-        w.*lane.form = a.*lane.atmos;
-    }
+    reflect::captureLanes(a, w, kWeatherLanes);
     return w;
 }
 
 void applyTo(render::AtmosphereParams& a, const data::WeatherForm& w) {
-    for (const WeatherLane& lane : kWeatherLanes) {
-        a.*lane.atmos = w.*lane.form;
-    }
+    reflect::applyLanes(a, w, kWeatherLanes);
 }
 
 } // namespace
@@ -99,8 +98,10 @@ void WeatherController::update(render::AtmosphereParams& atmos, f32 dt) {
     blend_ = glm::min(blend_ + dt / glm::max(duration_, 0.01f), 1.0f);
     const data::WeatherForm& to = weathers_[selected_];
     const f32 t = glm::smoothstep(0.0f, 1.0f, blend_);
+    // Two Forms feed each lane (from and to), so this walks the table
+    // itself rather than through forEachLane.
     for (const WeatherLane& lane : kWeatherLanes) {
-        atmos.*lane.atmos = glm::mix(from_.*lane.form, to.*lane.form, t);
+        atmos.*lane.param = glm::mix(from_.*lane.form, to.*lane.form, t);
     }
     // The wind's heading turns along the short arc (350 -> 10 is +20,
     // never a -340 sweep through the south).

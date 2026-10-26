@@ -17,8 +17,9 @@ class FormTypeRegistry;
 
 namespace game {
 
-// Every pupitre field onto its bake parameter (and back). Both lists
-// live in TerrainGenTuning.cpp, in the same order.
+// Every pupitre field onto its bake parameter (and back), through the
+// reflect::FieldLane tables of TerrainGenTuning.cpp: one line per
+// field serves both directions.
 void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
                            render::terraingen::TileBakeParams& params);
 data::TerrainGenTuningForm

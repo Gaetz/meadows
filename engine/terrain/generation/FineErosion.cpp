@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include "engine/reflect/Fields.hpp"
 
 namespace render::terraingen {
 
@@ -121,6 +122,12 @@ FineErosionResult amplifyFine(const GridSpec& spec,
         }
     }
     return out;
+}
+
+u64 hashKey(const FineErosionParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(FineErosionParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

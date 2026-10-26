@@ -2,6 +2,9 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Assert.hpp"
+#include "engine/reflect/FieldLane.hpp"
+#include "engine/render/AtmosphereParams.hpp"
 #include "engine/render/WorldRenderer.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 
@@ -9,228 +12,28 @@ namespace game {
 
 namespace {
 
-// ONE field list per Form <-> engine-params pair, walked in BOTH
-// directions (apply and capture): a field added to a table is
-// automatically read AND written — a field forgotten in one of two
-// hand-written lists is how nine conifer fields silently stopped saving.
-// The member pointers are compile-checked against both structs.
-template <typename Params, typename Form, typename T>
-struct FieldLane {
-    T Params::* param;
-    T Form::* form;
-};
+using namespace tuning_lanes;
 
-template <typename Params, typename Form, typename T, size_t N>
-void applyLanes(Params& params, const Form& form,
-                const FieldLane<Params, Form, T> (&lanes)[N]) {
-    for (const auto& lane : lanes) {
-        params.*lane.param = form.*lane.form;
-    }
+// The slider range reflected on a Form field (REFLECT_FIELD_RANGE), as
+// the clamp applied to loaded data: the panel and the seam read the one
+// definition. A field without a range is a programming error.
+template <typename Form, typename T>
+const reflect::FieldRange& rangeOf(T Form::* field) {
+    const reflect::FieldInfo* info =
+        Form::staticTypeInfo().findFieldAt(reflect::memberOffset(field));
+    ENGINE_ASSERT_MSG(info && info->range, "{}: field without a range",
+                      Form::staticTypeInfo().name);
+    static constexpr reflect::FieldRange kUnbounded { -3.4e38f, 3.4e38f };
+    return info && info->range ? *info->range : kUnbounded;
 }
 
-template <typename Params, typename Form, typename T, size_t N>
-void captureLanes(const Params& params, Form& form,
-                  const FieldLane<Params, Form, T> (&lanes)[N]) {
-    for (const auto& lane : lanes) {
-        form.*lane.form = params.*lane.param;
-    }
+f32 clampToRange(f32 value, const reflect::FieldRange& range) {
+    return glm::clamp(value, range.lo, range.hi);
 }
-
-constexpr FieldLane<render::LobeTreeParams, data::LobeTreeTuningForm, f32> kLobeLanesF32[] = {
-    { &render::LobeTreeParams::trunkHeightMin, &data::LobeTreeTuningForm::trunkHeightMin },
-    { &render::LobeTreeParams::trunkHeightMax, &data::LobeTreeTuningForm::trunkHeightMax },
-    { &render::LobeTreeParams::trunkRadiusMin, &data::LobeTreeTuningForm::trunkRadiusMin },
-    { &render::LobeTreeParams::trunkRadiusMax, &data::LobeTreeTuningForm::trunkRadiusMax },
-    { &render::LobeTreeParams::trunkTaper, &data::LobeTreeTuningForm::trunkTaper },
-    { &render::LobeTreeParams::lean, &data::LobeTreeTuningForm::lean },
-    { &render::LobeTreeParams::branchLengthMin, &data::LobeTreeTuningForm::branchLengthMin },
-    { &render::LobeTreeParams::branchLengthMax, &data::LobeTreeTuningForm::branchLengthMax },
-    { &render::LobeTreeParams::crownLobeRadiusMin, &data::LobeTreeTuningForm::crownLobeRadiusMin },
-    { &render::LobeTreeParams::crownLobeRadiusMax, &data::LobeTreeTuningForm::crownLobeRadiusMax },
-    { &render::LobeTreeParams::branchLobeRadiusMin, &data::LobeTreeTuningForm::branchLobeRadiusMin },
-    { &render::LobeTreeParams::branchLobeRadiusMax, &data::LobeTreeTuningForm::branchLobeRadiusMax },
-    { &render::LobeTreeParams::lobeFlatten, &data::LobeTreeTuningForm::lobeFlatten },
-    { &render::LobeTreeParams::normalSpherize, &data::LobeTreeTuningForm::normalSpherize },
-};
-constexpr FieldLane<render::LobeTreeParams, data::LobeTreeTuningForm, i32> kLobeLanesI32[] = {
-    { &render::LobeTreeParams::branchCountMin, &data::LobeTreeTuningForm::branchCountMin },
-    { &render::LobeTreeParams::branchCountMax, &data::LobeTreeTuningForm::branchCountMax },
-};
-constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, f32> kColonizedLanesF32[] = {
-    { &render::ColonizedTreeParams::flareAmount, &data::ColonizedTreeTuningForm::flareAmount },
-    { &render::ColonizedTreeParams::flareHeight, &data::ColonizedTreeTuningForm::flareHeight },
-    { &render::ColonizedTreeParams::curvePreserve, &data::ColonizedTreeTuningForm::curvePreserve },
-    { &render::ColonizedTreeParams::pathJitter, &data::ColonizedTreeTuningForm::pathJitter },
-    { &render::ColonizedTreeParams::ringIrregularity, &data::ColonizedTreeTuningForm::ringIrregularity },
-    { &render::ColonizedTreeParams::sideMinFraction, &data::ColonizedTreeTuningForm::sideMinFraction },
-    { &render::ColonizedTreeParams::segment, &data::ColonizedTreeTuningForm::segment },
-    { &render::ColonizedTreeParams::killDistance, &data::ColonizedTreeTuningForm::killDistance },
-    { &render::ColonizedTreeParams::pipeExponent, &data::ColonizedTreeTuningForm::pipeExponent },
-    { &render::ColonizedTreeParams::tropism, &data::ColonizedTreeTuningForm::tropism },
-    { &render::ColonizedTreeParams::trunkBaseMin, &data::ColonizedTreeTuningForm::trunkBaseMin },
-    { &render::ColonizedTreeParams::trunkBaseMax, &data::ColonizedTreeTuningForm::trunkBaseMax },
-    { &render::ColonizedTreeParams::crownHeightMin, &data::ColonizedTreeTuningForm::crownHeightMin },
-    { &render::ColonizedTreeParams::crownHeightMax, &data::ColonizedTreeTuningForm::crownHeightMax },
-    { &render::ColonizedTreeParams::crownRadiusMin, &data::ColonizedTreeTuningForm::crownRadiusMin },
-    { &render::ColonizedTreeParams::crownRadiusMax, &data::ColonizedTreeTuningForm::crownRadiusMax },
-    { &render::ColonizedTreeParams::crownTaper, &data::ColonizedTreeTuningForm::crownTaper },
-    { &render::ColonizedTreeParams::leaderBias, &data::ColonizedTreeTuningForm::leaderBias },
-    { &render::ColonizedTreeParams::lateralFlatten, &data::ColonizedTreeTuningForm::lateralFlatten },
-    { &render::ColonizedTreeParams::sprayFoliage, &data::ColonizedTreeTuningForm::sprayFoliage },
-    { &render::ColonizedTreeParams::tipBallRadius, &data::ColonizedTreeTuningForm::tipBallRadius },
-    { &render::ColonizedTreeParams::tipOrderFalloff, &data::ColonizedTreeTuningForm::tipOrderFalloff },
-    { &render::ColonizedTreeParams::tipBallMin, &data::ColonizedTreeTuningForm::tipBallMin },
-    { &render::ColonizedTreeParams::seasonality, &data::ColonizedTreeTuningForm::seasonality },
-    { &render::ColonizedTreeParams::smoothK, &data::ColonizedTreeTuningForm::smoothK },
-    { &render::ColonizedTreeParams::cardHalfSizeMin, &data::ColonizedTreeTuningForm::cardHalfSizeMin },
-    { &render::ColonizedTreeParams::cardHalfSizeMax, &data::ColonizedTreeTuningForm::cardHalfSizeMax },
-    { &render::ColonizedTreeParams::densityGradient, &data::ColonizedTreeTuningForm::densityGradient },
-    { &render::ColonizedTreeParams::foliageDensity, &data::ColonizedTreeTuningForm::foliageDensity },
-    { &render::ColonizedTreeParams::leafSizeMin, &data::ColonizedTreeTuningForm::leafSizeMin },
-    { &render::ColonizedTreeParams::leafSizeMax, &data::ColonizedTreeTuningForm::leafSizeMax },
-    { &render::ColonizedTreeParams::leafSolidStart, &data::ColonizedTreeTuningForm::leafSolidStart },
-    { &render::ColonizedTreeParams::leafSolidEnd, &data::ColonizedTreeTuningForm::leafSolidEnd },
-    { &render::ColonizedTreeParams::barkTileScale, &data::ColonizedTreeTuningForm::barkTileScale },
-    { &render::ColonizedTreeParams::barkHexCell, &data::ColonizedTreeTuningForm::barkHexCell },
-    { &render::ColonizedTreeParams::barkHexSharpness, &data::ColonizedTreeTuningForm::barkHexSharpness },
-};
-constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, i32> kColonizedLanesI32[] = {
-    { &render::ColonizedTreeParams::tubeSides, &data::ColonizedTreeTuningForm::tubeSides },
-    { &render::ColonizedTreeParams::flareLobes, &data::ColonizedTreeTuningForm::flareLobes },
-    { &render::ColonizedTreeParams::curveSubdiv, &data::ColonizedTreeTuningForm::curveSubdiv },
-    { &render::ColonizedTreeParams::attractorCount, &data::ColonizedTreeTuningForm::attractorCount },
-    { &render::ColonizedTreeParams::leafStyle, &data::ColonizedTreeTuningForm::leafStyle },
-    { &render::ColonizedTreeParams::leafShape, &data::ColonizedTreeTuningForm::leafShape },
-    { &render::ColonizedTreeParams::leafCount, &data::ColonizedTreeTuningForm::leafCount },
-};
-constexpr FieldLane<render::ColonizedTreeParams, data::ColonizedTreeTuningForm, Vec3> kColonizedLanesVec3[] = {
-    { &render::ColonizedTreeParams::autumnTint, &data::ColonizedTreeTuningForm::autumnTint },
-    { &render::ColonizedTreeParams::barkTint, &data::ColonizedTreeTuningForm::barkTint },
-};
-
-constexpr FieldLane<render::RcTuning, data::RcTuningForm, f32> kRcLanesF32[] = {
-    { &render::RcTuning::fineVoxel, &data::RcTuningForm::fineVoxel },
-    { &render::RcTuning::coarseVoxel, &data::RcTuningForm::coarseVoxel },
-    { &render::RcTuning::intensity, &data::RcTuningForm::intensity },
-    { &render::RcTuning::skyFactor, &data::RcTuningForm::skyFactor },
-    { &render::RcTuning::emitterBoost, &data::RcTuningForm::emitterBoost },
-    { &render::RcTuning::lightSplatBounce,
-      &data::RcTuningForm::lightSplatBounce },
-    { &render::RcTuning::bounceFeedback,
-      &data::RcTuningForm::bounceFeedback },
-    { &render::RcTuning::tileRebakeDrift,
-      &data::RcTuningForm::tileRebakeDrift },
-    { &render::RcTuning::interval0, &data::RcTuningForm::interval0 },
-    { &render::RcTuning::edgeFade, &data::RcTuningForm::edgeFade },
-    { &render::RcTuning::bandCount, &data::RcTuningForm::bandCount },
-    { &render::RcTuning::bandAa, &data::RcTuningForm::bandAa },
-    { &render::RcTuning::giFloor, &data::RcTuningForm::giFloor },
-};
-constexpr FieldLane<render::RcTuning, data::RcTuningForm, i32> kRcLanesI32[] = {
-    { &render::RcTuning::resolution, &data::RcTuningForm::resolution },
-    { &render::RcTuning::cascadeCount, &data::RcTuningForm::cascadeCount },
-    { &render::RcTuning::updateInterval,
-      &data::RcTuningForm::updateInterval },
-};
-constexpr FieldLane<render::RcTuning, data::RcTuningForm, bool> kRcLanesBool[] = {
-    { &render::RcTuning::gridNormals, &data::RcTuningForm::gridNormals },
-    { &render::RcTuning::pipelined, &data::RcTuningForm::pipelined },
-    { &render::RcTuning::asyncCompute, &data::RcTuningForm::asyncCompute },
-    { &render::RcTuning::rcOnlyLights, &data::RcTuningForm::rcOnlyLights },
-    { &render::RcTuning::intervalExtension,
-      &data::RcTuningForm::intervalExtension },
-};
-
-
-using RenderTuning = render::WorldRenderer::RenderTuning;
-
-// World-renderer knobs with a 1:1 Form field. Clamped fields, Vec4
-// packing and subsystem scalars stay hand-written in apply/capture.
-constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, f32> kWorldLanesF32[] = {
-    { &RenderTuning::seasonAutumn, &data::LandscapeTuningForm::seasonAutumn },
-    { &RenderTuning::seasonLeafFall, &data::LandscapeTuningForm::seasonLeafFall },
-    { &RenderTuning::exposure, &data::LandscapeTuningForm::exposure },
-    { &RenderTuning::gradeVibrance, &data::LandscapeTuningForm::gradeVibrance },
-    { &RenderTuning::gradeSplitTone, &data::LandscapeTuningForm::gradeSplitTone },
-    { &RenderTuning::gradeContrast, &data::LandscapeTuningForm::gradeContrast },
-    { &RenderTuning::autoExposureMin, &data::LandscapeTuningForm::autoExposureMin },
-    { &RenderTuning::autoExposureMax, &data::LandscapeTuningForm::autoExposureMax },
-    { &RenderTuning::interiorDaylightWeight, &data::LandscapeTuningForm::interiorDaylightWeight },
-    { &RenderTuning::interiorDustDensity, &data::LandscapeTuningForm::interiorDustDensity },
-    { &RenderTuning::fogHorizonTail, &data::LandscapeTuningForm::fogHorizonTail },
-    { &RenderTuning::mistReach, &data::LandscapeTuningForm::mistReach },
-    { &RenderTuning::mistCoverageSoftness, &data::LandscapeTuningForm::mistCoverageSoftness },
-    { &RenderTuning::mistSunBoost, &data::LandscapeTuningForm::mistSunBoost },
-    { &RenderTuning::mistDetailDropout, &data::LandscapeTuningForm::mistDetailDropout },
-    { &RenderTuning::mistPuffiness, &data::LandscapeTuningForm::mistPuffiness },
-    { &RenderTuning::skyCloudLiningLobe, &data::LandscapeTuningForm::skyCloudLiningLobe },
-    { &RenderTuning::skyCloudPowder, &data::LandscapeTuningForm::skyCloudPowder },
-    { &RenderTuning::skyCloudPuffiness, &data::LandscapeTuningForm::skyCloudPuffiness },
-    { &RenderTuning::skyCloudRimGain, &data::LandscapeTuningForm::skyCloudRimGain },
-    { &RenderTuning::skyCloudRimLobe, &data::LandscapeTuningForm::skyCloudRimLobe },
-    { &RenderTuning::skyCloudBaseDark, &data::LandscapeTuningForm::skyCloudBaseDark },
-};
-constexpr FieldLane<RenderTuning, data::LandscapeTuningForm, bool> kWorldLanesBool[] = {
-    { &RenderTuning::farTerrain, &data::LandscapeTuningForm::farTerrain },
-    { &RenderTuning::farHorizon, &data::LandscapeTuningForm::farHorizon },
-    { &RenderTuning::farImpostorsFromGrid,
-      &data::LandscapeTuningForm::farImpostorsFromGrid },
-    { &RenderTuning::sharedHeightField,
-      &data::LandscapeTuningForm::sharedHeightField },
-    { &RenderTuning::clusteredLights, &data::LandscapeTuningForm::clusteredLights },
-    { &RenderTuning::mist, &data::LandscapeTuningForm::mistEnabled },
-    { &RenderTuning::mistNoiseTex, &data::LandscapeTuningForm::mistNoiseTexture },
-    { &RenderTuning::skyClouds, &data::LandscapeTuningForm::skyCloudsVolumetric },
-};
-constexpr FieldLane<render::ChunkOcclusion, data::LandscapeTuningForm, f32> kOcclusionLanesF32[] = {
-    { &render::ChunkOcclusion::rebuildDistance,
-      &data::LandscapeTuningForm::occlusionRebuildDistance },
-};
-constexpr FieldLane<render::PostFx, data::LandscapeTuningForm, f32> kPostFxLanesF32[] = {
-    { &render::PostFx::froxelTemporalBlend, &data::LandscapeTuningForm::froxelTemporalBlend },
-    { &render::PostFx::froxelDustNoise, &data::LandscapeTuningForm::froxelDustNoise },
-    { &render::PostFx::mistTemporalBlend, &data::LandscapeTuningForm::mistTemporalBlend },
-};
-constexpr FieldLane<render::PostFx, data::LandscapeTuningForm, bool> kPostFxLanesBool[] = {
-    { &render::PostFx::froxelFog, &data::LandscapeTuningForm::froxelFog },
-};
-constexpr FieldLane<render::GrassRenderTuning, data::LandscapeTuningForm, f32> kGrassRenderLanesF32[] = {
-    { &render::GrassRenderTuning::bladeHeight, &data::LandscapeTuningForm::grassBladeHeight },
-    { &render::GrassRenderTuning::bladeHalfWidth, &data::LandscapeTuningForm::grassBladeHalfWidth },
-    { &render::GrassRenderTuning::detailNear, &data::LandscapeTuningForm::grassDetailNear },
-    { &render::GrassRenderTuning::detailFar, &data::LandscapeTuningForm::grassDetailFar },
-    { &render::GrassRenderTuning::thinStart, &data::LandscapeTuningForm::grassThinStart },
-    { &render::GrassRenderTuning::thinEnd, &data::LandscapeTuningForm::grassThinEnd },
-    { &render::GrassRenderTuning::farDensity, &data::LandscapeTuningForm::grassFarDensity },
-    { &render::GrassRenderTuning::widthCompensation, &data::LandscapeTuningForm::grassWidthCompensation },
-    { &render::GrassRenderTuning::fadeStart, &data::LandscapeTuningForm::grassFadeStart },
-    { &render::GrassRenderTuning::fadeEnd, &data::LandscapeTuningForm::grassFadeEnd },
-    { &render::GrassRenderTuning::rootAo, &data::LandscapeTuningForm::grassRootAo },
-    { &render::GrassRenderTuning::sheen, &data::LandscapeTuningForm::grassSheen },
-    { &render::GrassRenderTuning::bladeNormals, &data::LandscapeTuningForm::grassBladeNormals },
-    { &render::GrassRenderTuning::brightMin, &data::LandscapeTuningForm::grassBrightMin },
-    { &render::GrassRenderTuning::brightMax, &data::LandscapeTuningForm::grassBrightMax },
-    { &render::GrassRenderTuning::middleDarken, &data::LandscapeTuningForm::grassMiddleDarken },
-    { &render::GrassRenderTuning::backscatter, &data::LandscapeTuningForm::grassBackscatter },
-};
-constexpr FieldLane<render::GrassRenderTuning, data::LandscapeTuningForm, Vec3> kGrassRenderLanesVec3[] = {
-    { &render::GrassRenderTuning::baseTint, &data::LandscapeTuningForm::grassBaseTint },
-    { &render::GrassRenderTuning::tipTint, &data::LandscapeTuningForm::grassTipTint },
-};
-constexpr FieldLane<render::GrassScatterTuning, data::LandscapeTuningForm, f32> kGrassScatterLanesF32[] = {
-    { &render::GrassScatterTuning::spacing, &data::LandscapeTuningForm::grassSpacing },
-    { &render::GrassScatterTuning::patchBroadScale, &data::LandscapeTuningForm::grassPatchBroadScale },
-    { &render::GrassScatterTuning::patchDetailScale, &data::LandscapeTuningForm::grassPatchDetailScale },
-    { &render::GrassScatterTuning::patchThresholdLo, &data::LandscapeTuningForm::grassPatchThresholdLo },
-    { &render::GrassScatterTuning::patchThresholdHi, &data::LandscapeTuningForm::grassPatchThresholdHi },
-    { &render::GrassScatterTuning::presenceLo, &data::LandscapeTuningForm::grassPresenceLo },
-    { &render::GrassScatterTuning::presenceHi, &data::LandscapeTuningForm::grassPresenceHi },
-    { &render::GrassScatterTuning::materialCutoff, &data::LandscapeTuningForm::grassMaterialCutoff },
-};
-constexpr FieldLane<render::GrassScatterTuning, data::LandscapeTuningForm, bool> kGrassScatterLanesBool[] = {
-    { &render::GrassScatterTuning::coarseTint,
-      &data::LandscapeTuningForm::grassCoarseTint },
-};
+i32 clampToRange(i32 value, const reflect::FieldRange& range) {
+    return glm::clamp(value, static_cast<i32>(range.lo),
+                      static_cast<i32>(range.hi));
+}
 
 } // namespace
 
@@ -257,25 +60,31 @@ void RenderTuningIo::applyTuning(
     r.terrain.params.seaLevel = tuning.seaLevel;
     r.terrain.params.snowLine = activeSnowLine;
     r.terrain.params.treeLineFactor = tuning.treeLineFactor;
+    // The view-radius cap is the engine's own constant, not Form metadata.
     r.terrain.viewRadius =
         glm::clamp(tuning.terrainViewRadius, 8,
                    render::TerrainSystem::kMaxViewRadius);
 
     // The 1:1 knobs ride the lane tables (captureTuning walks the SAME
     // tables back). (tuning.ssaoStrength is unused — screen AO removed.)
-    applyLanes(r.tuning, tuning, kWorldLanesF32);
-    applyLanes(r.tuning, tuning, kWorldLanesBool);
-    applyLanes(r.occlusion, tuning, kOcclusionLanesF32);
-    applyLanes(r.postFx, tuning, kPostFxLanesF32);
-    applyLanes(r.postFx, tuning, kPostFxLanesBool);
-    applyLanes(r.grass.renderTuning, tuning, kGrassRenderLanesF32);
-    applyLanes(r.grass.renderTuning, tuning, kGrassRenderLanesVec3);
+    reflect::applyLanes(r.tuning, tuning, kTerrainFar, kSeasons,
+                        kClusteredLights, kInteriorDaylight, kInteriorDust,
+                        kFogTail, kSkyClouds, kSkyCloudLook, kMist,
+                        kMistCover, kMistSun, kMistNoise, kMistDetail,
+                        kExposure, kAutoExposure, kGrade);
+    reflect::applyLanes(r.occlusion, tuning, kOcclusion);
+    reflect::applyLanes(r.postFx, tuning, kFroxelFog, kFroxel, kMistBlend);
+    reflect::applyLanes(r.grass.renderTuning, tuning, kGrassBlade,
+                        kGrassTints, kGrassShading, kGrassBrightness,
+                        kGrassShadingTail, kGrassDistance);
     // Startup-only mapping: the scatter bake reads these on first
     // request, no regenerate needed (nothing is resident yet).
-    applyLanes(r.grass.scatterTuning, tuning, kGrassScatterLanesF32);
-    applyLanes(r.grass.scatterTuning, tuning, kGrassScatterLanesBool);
+    reflect::applyLanes(r.grass.scatterTuning, tuning, kGrassScatter,
+                        kGrassScatterWindows, kGrassScatterCutoff,
+                        kGrassScatterTint);
 
-    // Vec4 packing (the Form spells the lanes as scalars) and clamps.
+    // Vec4 packing (the Form spells the lanes as scalars) and the knobs
+    // clamped to their reflected range.
     r.tuning.stylizedDiffuse = { tuning.stylizedDiffuseEdge0Start,
                                  tuning.stylizedDiffuseEdge0End,
                                  tuning.stylizedDiffuseEdge1Start,
@@ -297,38 +106,50 @@ void RenderTuningIo::applyTuning(
     r.tuning.skyCloudLight = { tuning.skyCloudSunGain, tuning.skyCloudSunLobe,
                                tuning.skyCloudAmbientGain,
                                tuning.skyCloudLiningGain };
-    r.tuning.shadowResolution =
-        glm::clamp(tuning.shadowResolution, 1024, 4096);
-    r.tuning.reflectionScale =
-        glm::clamp(tuning.reflectionScale, 0.25f, 0.5f);
-    r.tuning.mistSteps = glm::clamp(tuning.mistSteps, 4, 64);
-    // Vegetation draw budget (clamped — the streamer ring
-    // and the Hi-Z candidate cap size the safe range).
-    r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 24);
-    r.vegetation.highDetailRadius =
-        glm::clamp(tuning.vegHighDetailRadius, 0, 8);
-    r.vegetation.lowDetailRadius =
-        glm::clamp(tuning.vegLowDetailRadius, 2, 12);
+    r.tuning.shadowResolution = clampToRange(
+        tuning.shadowResolution, rangeOf(&Tuning::shadowResolution));
+    r.tuning.reflectionScale = clampToRange(
+        tuning.reflectionScale, rangeOf(&Tuning::reflectionScale));
+    r.tuning.mistSteps =
+        clampToRange(tuning.mistSteps, rangeOf(&Tuning::mistSteps));
+    // Vegetation draw budget (the streamer ring and the Hi-Z candidate
+    // cap size the reflected ranges).
+    r.vegetation.viewRadius =
+        clampToRange(tuning.vegViewRadius, rangeOf(&Tuning::vegViewRadius));
+    r.vegetation.highDetailRadius = clampToRange(
+        tuning.vegHighDetailRadius, rangeOf(&Tuning::vegHighDetailRadius));
+    r.vegetation.lowDetailRadius = clampToRange(
+        tuning.vegLowDetailRadius, rangeOf(&Tuning::vegLowDetailRadius));
 
     // Water sim window — startup values for the render panel's "Sim
-    // window" knobs (clamps = the panel's slider ranges). Span/texel
-    // land before the first window init, so no re-init dance here.
+    // window" knobs. Span/texel land before the first window init, so
+    // no re-init dance here.
     render::WaterSystem::SimConfig& sim = r.waterSystem().simConfig();
-    sim.enabled = tuning.waterSimEnabled;
-    sim.span = glm::clamp(tuning.waterSimSpan, 256.0f, 1024.0f);
-    sim.texel = glm::clamp(tuning.waterSimTexel, 1.0f, 4.0f);
-    sim.maxSubsteps =
-        static_cast<u32>(glm::clamp(tuning.waterSimMaxSubsteps, 1, 8));
-    sim.timeScale = glm::clamp(tuning.waterSimTimeScale, 0.25f, 8.0f);
-    sim.params.rainRate =
-        glm::clamp(tuning.waterSimRainRate, 0.0f, 60.0f / 3.6e6f);
-    sim.fadeBand = glm::clamp(tuning.waterSimFadeBand, 8.0f, 64.0f);
-    sim.settleGated = tuning.waterSimSettleGated;
+    reflect::applyLanes(sim, tuning, kWaterSim);
+    sim.span = clampToRange(tuning.waterSimSpan, rangeOf(&Tuning::waterSimSpan));
+    sim.texel =
+        clampToRange(tuning.waterSimTexel, rangeOf(&Tuning::waterSimTexel));
+    sim.maxSubsteps = static_cast<u32>(clampToRange(
+        tuning.waterSimMaxSubsteps, rangeOf(&Tuning::waterSimMaxSubsteps)));
+    sim.timeScale = clampToRange(tuning.waterSimTimeScale,
+                                 rangeOf(&Tuning::waterSimTimeScale));
+    sim.params.rainRate = clampToRange(tuning.waterSimRainRate,
+                                       rangeOf(&Tuning::waterSimRainRate));
+    sim.fadeBand = clampToRange(tuning.waterSimFadeBand,
+                                rangeOf(&Tuning::waterSimFadeBand));
     sim.pinRiverHalfWidth =
-        glm::clamp(tuning.waterSimPinRiverHalfWidth, 0.0f, 40.0f);
+        clampToRange(tuning.waterSimPinRiverHalfWidth,
+                     rangeOf(&Tuning::waterSimPinRiverHalfWidth));
     sim.params.reservoirOutflow =
-        glm::clamp(tuning.waterSimReservoirOutflow, 0.2f, 20.0f);
-    sim.rainPuddles = tuning.waterSimRainPuddles;
+        clampToRange(tuning.waterSimReservoirOutflow,
+                     rangeOf(&Tuning::waterSimReservoirOutflow));
+}
+
+void RenderTuningIo::applyAtmosphere(
+    render::AtmosphereParams& atmos,
+    const data::LandscapeTuningForm& tuning) {
+    reflect::applyLanes(atmos, tuning, kSunFx, kFog, kFogStart,
+                        kFogSunAndClouds, kCloudGeometry, kBloom);
 }
 
 void RenderTuningIo::applyTreeTuning(
@@ -343,26 +164,32 @@ render::LobeTreeParams RenderTuningIo::toLobeParams(
     // Form -> flat engine params through the lane tables (§4: engine
     // never sees data/). The Trees panel then edits the params live.
     render::LobeTreeParams l;
-    applyLanes(l, lobes, kLobeLanesF32);
-    applyLanes(l, lobes, kLobeLanesI32);
+    reflect::applyLanes(l, lobes, kLobeTrunk, kLobeBranchCount, kLobeCrown);
     return l;
 }
 
 render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
     const data::ColonizedTreeTuningForm& colonized) {
     render::ColonizedTreeParams c;
-    applyLanes(c, colonized, kColonizedLanesF32);
-    applyLanes(c, colonized, kColonizedLanesI32);
-    applyLanes(c, colonized, kColonizedLanesVec3);
+    reflect::applyLanes(c, colonized, kColonizedGrowth, kColonizedAttractors,
+                        kColonizedPipe, kColonizedTubeSides, kColonizedWood,
+                        kColonizedCurveSubdiv, kColonizedWoodNoise,
+                        kColonizedFlareLobes, kColonizedBark, kColonizedTints,
+                        kColonizedCrown, kColonizedConifer,
+                        kColonizedLeafStyle, kColonizedLeafShape,
+                        kColonizedSeason, kColonizedFoliage,
+                        kColonizedLeafCount, kColonizedLeafSize,
+                        kColonizedLeafLod);
     return c;
 }
 
 void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
                                    const data::RcTuningForm& rc) {
     render::RcTuning& t = r.radianceCascades.tuning;
-    applyLanes(t, rc, kRcLanesF32);
-    applyLanes(t, rc, kRcLanesI32);
-    applyLanes(t, rc, kRcLanesBool);
+    reflect::applyLanes(t, rc, kRcResolution, kRcVoxels, kRcUpdateInterval,
+                        kRcTileDrift, kRcGridNormals, kRcCascadeCount,
+                        kRcInterval, kRcInjection, kRcScheduling, kRcApply,
+                        kRcIntervalExtension);
     // The one non-lane field: the Form spells the technique as an i32.
     t.technique = rc.technique == 1 ? render::GiTechnique::RadianceCascades
                                     : render::GiTechnique::Classic;
@@ -370,15 +197,19 @@ void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
 
 void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
                                    data::LandscapeTuningForm& out) {
-    captureLanes(r.tuning, out, kWorldLanesF32);
-    captureLanes(r.tuning, out, kWorldLanesBool);
-    captureLanes(r.occlusion, out, kOcclusionLanesF32);
-    captureLanes(r.postFx, out, kPostFxLanesF32);
-    captureLanes(r.postFx, out, kPostFxLanesBool);
-    captureLanes(r.grass.renderTuning, out, kGrassRenderLanesF32);
-    captureLanes(r.grass.renderTuning, out, kGrassRenderLanesVec3);
-    captureLanes(r.grass.scatterTuning, out, kGrassScatterLanesF32);
-    captureLanes(r.grass.scatterTuning, out, kGrassScatterLanesBool);
+    reflect::captureLanes(r.tuning, out, kTerrainFar, kSeasons,
+                          kClusteredLights, kInteriorDaylight, kInteriorDust,
+                          kFogTail, kSkyClouds, kSkyCloudLook, kMist,
+                          kMistCover, kMistSun, kMistNoise, kMistDetail,
+                          kExposure, kAutoExposure, kGrade);
+    reflect::captureLanes(r.occlusion, out, kOcclusion);
+    reflect::captureLanes(r.postFx, out, kFroxelFog, kFroxel, kMistBlend);
+    reflect::captureLanes(r.grass.renderTuning, out, kGrassBlade,
+                          kGrassTints, kGrassShading, kGrassBrightness,
+                          kGrassShadingTail, kGrassDistance);
+    reflect::captureLanes(r.grass.scatterTuning, out, kGrassScatter,
+                          kGrassScatterWindows, kGrassScatterCutoff,
+                          kGrassScatterTint);
 
     // Vec4 unpacking + the clamped/subsystem scalars (mirror of
     // applyTuning's hand-written half; terrain SHAPE stays apply-only).
@@ -419,25 +250,31 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
 
     const render::WaterSystem::SimConfig& sim =
         r.waterSystem().simConfig();
-    out.waterSimEnabled = sim.enabled;
+    reflect::captureLanes(sim, out, kWaterSim);
     out.waterSimSpan = sim.span;
     out.waterSimTexel = sim.texel;
     out.waterSimMaxSubsteps = static_cast<i32>(sim.maxSubsteps);
     out.waterSimTimeScale = sim.timeScale;
     out.waterSimRainRate = sim.params.rainRate;
     out.waterSimFadeBand = sim.fadeBand;
-    out.waterSimSettleGated = sim.settleGated;
     out.waterSimPinRiverHalfWidth = sim.pinRiverHalfWidth;
     out.waterSimReservoirOutflow = sim.params.reservoirOutflow;
-    out.waterSimRainPuddles = sim.rainPuddles;
+}
+
+void RenderTuningIo::captureAtmosphere(
+    const render::AtmosphereParams& atmos,
+    data::LandscapeTuningForm& out) {
+    reflect::captureLanes(atmos, out, kSunFx, kFog, kFogStart,
+                          kFogSunAndClouds, kCloudGeometry, kBloom);
 }
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,
                                      data::RcTuningForm& out) {
     const render::RcTuning& t = r.radianceCascades.tuning;
-    captureLanes(t, out, kRcLanesF32);
-    captureLanes(t, out, kRcLanesI32);
-    captureLanes(t, out, kRcLanesBool);
+    reflect::captureLanes(t, out, kRcResolution, kRcVoxels,
+                          kRcUpdateInterval, kRcTileDrift, kRcGridNormals,
+                          kRcCascadeCount, kRcInterval, kRcInjection,
+                          kRcScheduling, kRcApply, kRcIntervalExtension);
     out.technique =
         t.technique == render::GiTechnique::RadianceCascades ? 1 : 0;
 }
@@ -446,12 +283,18 @@ void RenderTuningIo::captureTreeTuning(
     const render::WorldRenderer& r, data::LobeTreeTuningForm& lobes,
     data::ColonizedTreeTuningForm& colonized) {
     const render::LobeTreeParams& l = r.vegetation.lobeTreeParams;
-    captureLanes(l, lobes, kLobeLanesF32);
-    captureLanes(l, lobes, kLobeLanesI32);
+    reflect::captureLanes(l, lobes, kLobeTrunk, kLobeBranchCount, kLobeCrown);
     const render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
-    captureLanes(c, colonized, kColonizedLanesF32);
-    captureLanes(c, colonized, kColonizedLanesI32);
-    captureLanes(c, colonized, kColonizedLanesVec3);
+    reflect::captureLanes(c, colonized, kColonizedGrowth,
+                          kColonizedAttractors, kColonizedPipe,
+                          kColonizedTubeSides, kColonizedWood,
+                          kColonizedCurveSubdiv, kColonizedWoodNoise,
+                          kColonizedFlareLobes, kColonizedBark,
+                          kColonizedTints, kColonizedCrown,
+                          kColonizedConifer, kColonizedLeafStyle,
+                          kColonizedLeafShape, kColonizedSeason,
+                          kColonizedFoliage, kColonizedLeafCount,
+                          kColonizedLeafSize, kColonizedLeafLod);
 }
 
 } // namespace game

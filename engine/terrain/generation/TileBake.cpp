@@ -13,6 +13,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Assert.hpp"
+#include "engine/reflect/Fields.hpp"
 
 namespace render::terraingen {
 
@@ -1103,6 +1104,29 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z) {
         }
     }
     return false;
+}
+
+u64 hashKey(const TileBakeParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(TileBakeParams::staticTypeInfo(), &p, h);
+    // Nested params, each by its own key, and the biome table — the
+    // only members to keep in step with the struct:
+    h.mix(hashKey(p.controls));
+    h.mix(hashKey(p.macro));
+    h.mix(hashKey(p.fluvial));
+    h.mix(hashKey(p.thermal));
+    h.mix(hashKey(p.rounding));
+    h.mix(hashKey(p.hydrology));
+    h.mix(hashKey(p.network));
+    h.mix(hashKey(p.imprint));
+    h.mix(hashKey(p.mapGrid));
+    h.mix(hashKey(p.finalize));
+    h.mix(hashKey(p.waterSolve));
+    h.mix(static_cast<u32>(p.biomeErosion.size()));
+    for (const BiomeErosion& b : p.biomeErosion) {
+        reflect::hashReflected(BiomeErosion::staticTypeInfo(), &b, h);
+    }
+    return h.value;
 }
 
 } // namespace render::terraingen

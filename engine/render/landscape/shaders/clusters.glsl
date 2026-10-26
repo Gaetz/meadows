@@ -5,12 +5,12 @@
 // passes, cluster_cull.comp and locallights.glsl — change the mapping in
 // lockstep or the grids shear apart.
 
-const ivec3 kClusterDims = ivec3(16, 9, 64);
+const ivec3 kClusterDims = ivec3(kClusterX, kClusterY, kClusterZ);
 // Per-cell list capacity. Sized ABOVE the worst overlapping set: an
 // interior hall stacks ~18 light spheres over its central cells — at 16
 // the farthest-from-camera lights (the far windows) fell off the list.
 // On overflow the nearest-to-camera win (UBO order).
-const int kClusterSlots = 32; // slot 0 = light count, 1..31 = indices
+// kClusterSlots (frame_ubo.glsl): slot 0 = light count, 1..31 = indices.
 const float kSliceNear = 1.0;
 
 // Slice coordinate s in [0, slices] -> view distance (dense near camera).

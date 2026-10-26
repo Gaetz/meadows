@@ -16,103 +16,249 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
 #include "game/MapBaker.hpp"
+#include "engine/reflect/FieldLane.hpp"
 #include "engine/reflect/Fields.hpp"
 
 namespace game {
 
 using render::terraingen::TileBakeParams;
 
-// The ONE place a pupitre field meets its bake parameter (both
-// directions, same order): add a knob = one line in each list plus the
-// Form field. The tiers table has four rows by construction.
+namespace {
+
+namespace tg = render::terraingen;
+using Tuning = data::TerrainGenTuningForm;
+template <typename Params, typename T>
+using Lane = reflect::FieldLane<Params, Tuning, T>;
+
+// ONE line per pupitre field <-> bake parameter, walked in BOTH
+// directions by applyTerrainGenTuning / captureTerrainGenTuning. What
+// is not a plain member-to-member copy (the per-etage arrays, the
+// macro tiers, the i32/u32 rampart steps, the fleuve area mirrored
+// into the hydrology) stays hand-written in those two functions.
+constexpr Lane<tg::WorldLayerParams, f32> kWorldLanesF32[] = {
+    { &tg::WorldLayerParams::continentWavelength, &Tuning::worldContinentWavelength },
+    { &tg::WorldLayerParams::continentRadius, &Tuning::worldContinentRadius },
+    { &tg::WorldLayerParams::continentJitter, &Tuning::worldContinentJitter },
+    { &tg::WorldLayerParams::continentShapeWavelength, &Tuning::worldContinentShapeWavelength },
+    { &tg::WorldLayerParams::continentShapeAmp, &Tuning::worldContinentShapeAmp },
+    { &tg::WorldLayerParams::continentChance, &Tuning::worldContinentChance },
+    { &tg::WorldLayerParams::borderMassifMin, &Tuning::worldBorderMassifMin },
+    { &tg::WorldLayerParams::seaThreshold, &Tuning::worldSeaThreshold },
+    { &tg::WorldLayerParams::etageWavelength, &Tuning::worldEtageWavelength },
+    { &tg::WorldLayerParams::massifWavelength, &Tuning::worldMassifWavelength },
+    { &tg::WorldLayerParams::massifLift, &Tuning::worldMassifLift },
+    { &tg::WorldLayerParams::benchWavelength, &Tuning::worldBenchWavelength },
+    { &tg::WorldLayerParams::benchAmp, &Tuning::worldBenchAmp },
+    { &tg::WorldLayerParams::plateauWavelength, &Tuning::worldPlateauWavelength },
+    { &tg::WorldLayerParams::plateauStep, &Tuning::worldPlateauStep },
+    { &tg::WorldLayerParams::plateauEdge, &Tuning::worldPlateauEdge },
+    { &tg::WorldLayerParams::plateauStartGap, &Tuning::worldPlateauStartGap },
+    { &tg::WorldLayerParams::startEtage, &Tuning::worldStartEtage },
+    { &tg::WorldLayerParams::startRadius, &Tuning::worldStartRadius },
+    { &tg::WorldLayerParams::startFade, &Tuning::worldStartFade },
+    { &tg::WorldLayerParams::anchorRadius, &Tuning::worldAnchorRadius },
+    { &tg::WorldLayerParams::anchorFade, &Tuning::worldAnchorFade },
+    { &tg::WorldLayerParams::climateWavelength, &Tuning::worldClimateWavelength },
+    { &tg::WorldLayerParams::lapsePerKm, &Tuning::worldLapsePerKm },
+    { &tg::WorldLayerParams::coverWavelength, &Tuning::worldCoverWavelength },
+    { &tg::WorldLayerParams::coverAmp, &Tuning::worldCoverAmp },
+};
+constexpr Lane<tg::WorldLayerParams, u32> kWorldLanesU32[] = {
+    { &tg::WorldLayerParams::continentCellSupers, &Tuning::worldContinentCellSupers },
+    { &tg::WorldLayerParams::plateauLevels, &Tuning::worldPlateauLevels },
+};
+constexpr Lane<tg::WorldLayerParams, bool> kWorldLanesBool[] = {
+    { &tg::WorldLayerParams::borderFromWorld, &Tuning::worldBorderFromWorld },
+};
+
+constexpr Lane<tg::RhythmParams, f32> kRhythmLanesF32[] = {
+    { &tg::RhythmParams::planStoryScale, &Tuning::rhythmPlanStoryScale },
+    { &tg::RhythmParams::storyMountainWavelength, &Tuning::rhythmStoryMountainWavelength },
+    { &tg::RhythmParams::storyMountainAmplitude, &Tuning::rhythmStoryMountainAmplitude },
+    { &tg::RhythmParams::storyMountainMaskLow, &Tuning::rhythmStoryMountainMaskLow },
+    { &tg::RhythmParams::storyMountainMaskHigh, &Tuning::rhythmStoryMountainMaskHigh },
+    { &tg::RhythmParams::regimeWavelength, &Tuning::rhythmRegimeWavelength },
+    { &tg::RhythmParams::regimeHillAmplitude, &Tuning::rhythmRegimeHillAmplitude },
+    { &tg::RhythmParams::regimeMassifHeight, &Tuning::rhythmRegimeMassifHeight },
+    { &tg::RhythmParams::calmBandWavelength, &Tuning::rhythmCalmBandWavelength },
+    { &tg::RhythmParams::intimateCellSize, &Tuning::rhythmIntimateCellSize },
+    { &tg::RhythmParams::intimateChance, &Tuning::rhythmIntimateChance },
+    { &tg::RhythmParams::intimateHeightMin, &Tuning::rhythmIntimateHeightMin },
+    { &tg::RhythmParams::intimateHeightMax, &Tuning::rhythmIntimateHeightMax },
+    { &tg::RhythmParams::intimateRadiusMin, &Tuning::rhythmIntimateRadiusMin },
+    { &tg::RhythmParams::intimateRadiusMax, &Tuning::rhythmIntimateRadiusMax },
+    { &tg::RhythmParams::crestWavelength, &Tuning::rhythmCrestWavelength },
+    { &tg::RhythmParams::bedWavelength, &Tuning::rhythmBedWavelength },
+    { &tg::RhythmParams::colSpacing, &Tuning::rhythmColSpacing },
+    { &tg::RhythmParams::hardnessWavelength, &Tuning::rhythmHardnessWavelength },
+    { &tg::RhythmParams::ridgeColWavelength, &Tuning::rhythmRidgeColWavelength },
+};
+constexpr Lane<tg::RhythmParams, bool> kRhythmLanesBool[] = {
+    { &tg::RhythmParams::plan, &Tuning::rhythmPlan },
+    { &tg::RhythmParams::zones, &Tuning::rhythmZones },
+};
+
+constexpr Lane<tg::PoiPlanParams, f32> kPoiLanesF32[] = {
+    { &tg::PoiPlanParams::moyenCell, &Tuning::poiMoyenCell },
+    { &tg::PoiPlanParams::petitCell, &Tuning::poiPetitCell },
+    { &tg::PoiPlanParams::petitChance, &Tuning::poiPetitChance },
+    { &tg::PoiPlanParams::grandHeightMin, &Tuning::poiGrandHeightMin },
+    { &tg::PoiPlanParams::grandHeightMax, &Tuning::poiGrandHeightMax },
+    { &tg::PoiPlanParams::moyenHeightMin, &Tuning::poiMoyenHeightMin },
+    { &tg::PoiPlanParams::moyenHeightMax, &Tuning::poiMoyenHeightMax },
+    { &tg::PoiPlanParams::petitHeightMin, &Tuning::poiPetitHeightMin },
+    { &tg::PoiPlanParams::petitHeightMax, &Tuning::poiPetitHeightMax },
+    { &tg::PoiPlanParams::edgeReach, &Tuning::poiEdgeReach },
+    { &tg::PoiPlanParams::waterPoiReach, &Tuning::poiWaterReach },
+    { &tg::PoiPlanParams::grandStartClearance, &Tuning::poiGrandStartClearance },
+    { &tg::PoiPlanParams::coneSlopeMinDeg, &Tuning::poiConeSlopeMinDeg },
+    { &tg::PoiPlanParams::coneSlopeMaxDeg, &Tuning::poiConeSlopeMaxDeg },
+    { &tg::PoiPlanParams::verticality, &Tuning::poiVerticality },
+    { &tg::PoiPlanParams::coneSlopeSteepMinDeg, &Tuning::poiConeSlopeSteepMinDeg },
+    { &tg::PoiPlanParams::coneSlopeSteepMaxDeg, &Tuning::poiConeSlopeSteepMaxDeg },
+    { &tg::PoiPlanParams::corridorHalfWidthMin, &Tuning::poiCorridorHalfWidthMin },
+    { &tg::PoiPlanParams::corridorHalfWidthMax, &Tuning::poiCorridorHalfWidthMax },
+    { &tg::PoiPlanParams::screenHeightMin, &Tuning::poiScreenHeightMin },
+    { &tg::PoiPlanParams::screenHeightMax, &Tuning::poiScreenHeightMax },
+    { &tg::PoiPlanParams::screenNotch, &Tuning::poiScreenNotch },
+};
+constexpr Lane<tg::PoiPlanParams, u32> kPoiLanesU32[] = {
+    { &tg::PoiPlanParams::edgeMax, &Tuning::poiEdgeMax },
+};
+
+constexpr Lane<tg::MacroParams, f32> kMacroLanesF32[] = {
+    { &tg::MacroParams::terraceStep, &Tuning::macroTerraceStep },
+    { &tg::MacroParams::terraceEdge, &Tuning::macroTerraceEdge },
+    { &tg::MacroParams::cliffStep, &Tuning::macroCliffStep },
+    { &tg::MacroParams::cliffEdge, &Tuning::macroCliffEdge },
+    { &tg::MacroParams::warpWavelength, &Tuning::macroWarpWavelength },
+    { &tg::MacroParams::warpStrength, &Tuning::macroWarpStrength },
+    { &tg::MacroParams::valleyStretch, &Tuning::macroValleyStretch },
+};
+constexpr Lane<tg::MacroParams, i32> kMacroLanesI32[] = {
+    { &tg::MacroParams::reliefOctaves, &Tuning::macroReliefOctaves },
+};
+
+constexpr Lane<TileBakeParams, f32> kBakeLanesF32[] = {
+    { &TileBakeParams::macroTexel, &Tuning::bakeMacroTexel },
+    { &TileBakeParams::calmCut, &Tuning::bakeCalmCut },
+    { &TileBakeParams::roughCut, &Tuning::bakeRoughCut },
+    { &TileBakeParams::dimpleFillMax, &Tuning::bakeDimpleFillMax },
+    { &TileBakeParams::keepCrestFade, &Tuning::bakeKeepCrestFade },
+};
+constexpr Lane<tg::FluvialParams, f32> kFluvialLanesF32[] = {
+    { &tg::FluvialParams::k, &Tuning::bakeFluvialK },
+    { &tg::FluvialParams::upliftRate, &Tuning::bakeUpliftRate },
+};
+constexpr Lane<tg::FluvialParams, i32> kFluvialLanesI32[] = {
+    { &tg::FluvialParams::iterations, &Tuning::bakeFluvialIterations },
+};
+constexpr Lane<tg::ThermalParams, f32> kThermalLanesF32[] = {
+    { &tg::ThermalParams::talusTan, &Tuning::bakeTalusTan },
+};
+constexpr Lane<tg::ThermalParams, i32> kThermalLanesI32[] = {
+    { &tg::ThermalParams::iterations, &Tuning::bakeThermalIterations },
+};
+constexpr Lane<tg::RidgeRoundParams, f32> kRoundingLanesF32[] = {
+    { &tg::RidgeRoundParams::strength, &Tuning::bakeRoundingStrength },
+};
+
+constexpr Lane<tg::ZoneParams, f32> kZoneLanesF32[] = {
+    { &tg::ZoneParams::cellSize, &Tuning::zoneCellSize },
+    { &tg::ZoneParams::jitter, &Tuning::zoneJitter },
+    { &tg::ZoneParams::borderWarp, &Tuning::zoneBorderWarp },
+    { &tg::ZoneParams::borderWarpWavelength, &Tuning::zoneBorderWarpWavelength },
+    { &tg::ZoneParams::stepHeight, &Tuning::zoneStepHeight },
+    { &tg::ZoneParams::trendWavelength, &Tuning::zoneTrendWavelength },
+    { &tg::ZoneParams::trendContrast, &Tuning::zoneTrendContrast },
+    { &tg::ZoneParams::wallWidthOne, &Tuning::zoneWallWidthOne },
+    { &tg::ZoneParams::wallWidthHigh, &Tuning::zoneWallWidthHigh },
+    { &tg::ZoneParams::rampWidth, &Tuning::zoneRampWidth },
+    { &tg::ZoneParams::startGap, &Tuning::zoneStartGap },
+    { &tg::ZoneParams::gateHalfWidth, &Tuning::zoneGateHalfWidth },
+    { &tg::ZoneParams::gateExtra, &Tuning::zoneGateExtra },
+    { &tg::ZoneParams::ridgeHeight, &Tuning::zoneRidgeHeight },
+};
+constexpr Lane<tg::ZoneParams, u32> kZoneLanesU32[] = {
+    { &tg::ZoneParams::storeys, &Tuning::zoneStoreys },
+};
+
+constexpr Lane<tg::MasterNetworkParams, f32> kNetworkLanesF32[] = {
+    { &tg::MasterNetworkParams::fleuveArea, &Tuning::networkFleuveArea },
+    { &tg::MasterNetworkParams::riverExtractArea, &Tuning::networkRiverExtractArea },
+    { &tg::MasterNetworkParams::texel, &Tuning::networkTexel },
+    { &tg::MasterNetworkParams::runoffDryMin, &Tuning::hydroRunoffDryMin },
+    { &tg::MasterNetworkParams::runoffWetMax, &Tuning::hydroRunoffWetMax },
+    { &tg::MasterNetworkParams::snowBonus, &Tuning::hydroSnowBonus },
+    { &tg::MasterNetworkParams::snowlineTemp, &Tuning::hydroSnowlineTemp },
+    { &tg::MasterNetworkParams::lakeDepth, &Tuning::networkLakeDepth },
+    { &tg::MasterNetworkParams::routeDither, &Tuning::networkRouteDither },
+    { &tg::MasterNetworkParams::glacierTemp, &Tuning::hydroGlacierTemp },
+    { &tg::MasterNetworkParams::neveTemp, &Tuning::hydroNeveTemp },
+};
+constexpr Lane<tg::MasterNetworkParams, bool> kNetworkLanesBool[] = {
+    { &tg::MasterNetworkParams::routeOnShaped, &Tuning::networkRouteOnShaped },
+    { &tg::MasterNetworkParams::runoffWeights, &Tuning::hydroRunoffWeights },
+};
+
+constexpr Lane<tg::HydrologyParams, f32> kHydrologyLanesF32[] = {
+    { &tg::HydrologyParams::fleuveRampLow, &Tuning::hydroFleuveRampLow },
+    { &tg::HydrologyParams::fleuveRampHigh, &Tuning::hydroFleuveRampHigh },
+    { &tg::HydrologyParams::tier2MinHalfWidth, &Tuning::hydroTier2MinHalfWidth },
+    { &tg::HydrologyParams::riverArea, &Tuning::hydroRiverArea },
+    { &tg::HydrologyParams::riviereArea, &Tuning::hydroRiviereArea },
+    { &tg::HydrologyParams::widthCoef, &Tuning::hydroWidthCoef },
+    { &tg::HydrologyParams::widthExponent, &Tuning::hydroWidthExponent },
+    { &tg::HydrologyParams::fleuveWidthScale, &Tuning::hydroFleuveWidthScale },
+    { &tg::HydrologyParams::minLakeDepth, &Tuning::hydroMinLakeDepth },
+    { &tg::HydrologyParams::minLakeArea, &Tuning::hydroMinLakeArea },
+    { &tg::HydrologyParams::mouthFlare, &Tuning::hydroMouthFlare },
+    { &tg::HydrologyParams::mouthFlareLength, &Tuning::hydroMouthFlareLength },
+    { &tg::HydrologyParams::lakeKeepDepth, &Tuning::hydroLakeKeepDepth },
+    { &tg::HydrologyParams::lakeDeepPierce, &Tuning::hydroLakeDeepPierce },
+    { &tg::HydrologyParams::lakeKeepArea, &Tuning::hydroLakeKeepArea },
+};
+constexpr Lane<tg::HydrologyParams, bool> kHydrologyLanesBool[] = {
+    { &tg::HydrologyParams::lakePiercing, &Tuning::hydroLakePiercing },
+};
+
+constexpr Lane<tg::MasterImprintParams, f32> kImprintLanesF32[] = {
+    { &tg::MasterImprintParams::bedDepth, &Tuning::imprintBedDepth },
+    { &tg::MasterImprintParams::plainFactor, &Tuning::imprintPlainFactor },
+    { &tg::MasterImprintParams::minGradient, &Tuning::imprintMinGradient },
+};
+constexpr Lane<tg::WaterSolveParams, f32> kWaterSolveLanesF32[] = {
+    { &tg::WaterSolveParams::rainRate, &Tuning::waterRainRate },
+};
+
+} // namespace
+
+// The lane tables above are the ONE place a pupitre field meets its
+// bake parameter; only the copies a member pointer cannot express are
+// spelled out here (and mirrored in captureTerrainGenTuning). The
+// tiers table has four rows by construction.
 void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
                            TileBakeParams& params) {
     if (params.macro.tiers.size() < 4) {
         params.macro.tiers.resize(4);
     }
-    params.controls.world.continentWavelength = form.worldContinentWavelength;
-    params.controls.world.continentCellSupers = form.worldContinentCellSupers;
-    params.controls.world.continentRadius = form.worldContinentRadius;
-    params.controls.world.continentJitter = form.worldContinentJitter;
-    params.controls.world.continentShapeWavelength =
-        form.worldContinentShapeWavelength;
-    params.controls.world.continentShapeAmp = form.worldContinentShapeAmp;
-    params.controls.world.continentChance = form.worldContinentChance;
-    params.controls.world.borderFromWorld = form.worldBorderFromWorld;
-    params.controls.world.borderMassifMin = form.worldBorderMassifMin;
-    params.controls.world.seaThreshold = form.worldSeaThreshold;
-    params.controls.world.etageWavelength = form.worldEtageWavelength;
-    params.controls.world.massifWavelength = form.worldMassifWavelength;
-    params.controls.world.massifLift = form.worldMassifLift;
-    params.controls.world.benchWavelength = form.worldBenchWavelength;
-    params.controls.world.benchAmp = form.worldBenchAmp;
-    params.controls.world.plateauWavelength = form.worldPlateauWavelength;
-    params.controls.world.plateauStep = form.worldPlateauStep;
-    params.controls.world.plateauLevels = form.worldPlateauLevels;
-    params.controls.world.plateauEdge = form.worldPlateauEdge;
-    params.controls.world.plateauStartGap = form.worldPlateauStartGap;
-    params.controls.world.startEtage = form.worldStartEtage;
-    params.controls.world.startRadius = form.worldStartRadius;
-    params.controls.world.startFade = form.worldStartFade;
-    params.controls.world.anchorRadius = form.worldAnchorRadius;
-    params.controls.world.anchorFade = form.worldAnchorFade;
-    params.controls.world.climateWavelength = form.worldClimateWavelength;
-    params.controls.world.lapsePerKm = form.worldLapsePerKm;
-    params.controls.world.coverWavelength = form.worldCoverWavelength;
-    params.controls.world.coverAmp = form.worldCoverAmp;
-    params.controls.rhythm.plan = form.rhythmPlan;
-    params.controls.rhythm.planStoryScale = form.rhythmPlanStoryScale;
-    params.controls.rhythm.storyMountainWavelength = form.rhythmStoryMountainWavelength;
-    params.controls.rhythm.storyMountainAmplitude = form.rhythmStoryMountainAmplitude;
-    params.controls.rhythm.storyMountainMaskLow = form.rhythmStoryMountainMaskLow;
-    params.controls.rhythm.storyMountainMaskHigh = form.rhythmStoryMountainMaskHigh;
-    params.controls.rhythm.regimeWavelength = form.rhythmRegimeWavelength;
-    params.controls.rhythm.regimeHillAmplitude = form.rhythmRegimeHillAmplitude;
-    params.controls.rhythm.regimeMassifHeight = form.rhythmRegimeMassifHeight;
-    params.controls.rhythm.calmBandWavelength = form.rhythmCalmBandWavelength;
-    params.controls.rhythm.intimateCellSize = form.rhythmIntimateCellSize;
-    params.controls.rhythm.intimateChance = form.rhythmIntimateChance;
-    params.controls.rhythm.intimateHeightMin = form.rhythmIntimateHeightMin;
-    params.controls.rhythm.intimateHeightMax = form.rhythmIntimateHeightMax;
-    params.controls.rhythm.intimateRadiusMin = form.rhythmIntimateRadiusMin;
-    params.controls.rhythm.intimateRadiusMax = form.rhythmIntimateRadiusMax;
-    params.controls.rhythm.crestWavelength = form.rhythmCrestWavelength;
+    reflect::applyLanes(params.controls.world, form, kWorldLanesF32);
+    reflect::applyLanes(params.controls.world, form, kWorldLanesU32);
+    reflect::applyLanes(params.controls.world, form, kWorldLanesBool);
+    reflect::applyLanes(params.controls.rhythm, form, kRhythmLanesF32);
+    reflect::applyLanes(params.controls.rhythm, form, kRhythmLanesBool);
     params.controls.rhythm.crestAmplitudeByEtage[0] = form.rhythmCrestAmplitudeEtage0;
     params.controls.rhythm.crestAmplitudeByEtage[1] = form.rhythmCrestAmplitudeEtage1;
     params.controls.rhythm.crestAmplitudeByEtage[2] = form.rhythmCrestAmplitudeEtage2;
     params.controls.rhythm.crestAmplitudeByEtage[3] = form.rhythmCrestAmplitudeEtage3;
-    params.controls.rhythm.bedWavelength = form.rhythmBedWavelength;
     params.controls.rhythm.bedDepthByEtage[0] = form.rhythmBedDepthEtage0;
     params.controls.rhythm.bedDepthByEtage[1] = form.rhythmBedDepthEtage1;
     params.controls.rhythm.bedDepthByEtage[2] = form.rhythmBedDepthEtage2;
     params.controls.rhythm.bedDepthByEtage[3] = form.rhythmBedDepthEtage3;
-    params.controls.rhythm.colSpacing = form.rhythmColSpacing;
-    params.controls.rhythm.hardnessWavelength = form.rhythmHardnessWavelength;
-    params.controls.rhythm.ridgeColWavelength = form.rhythmRidgeColWavelength;
-    params.controls.poi.moyenCell = form.poiMoyenCell;
-    params.controls.poi.petitCell = form.poiPetitCell;
-    params.controls.poi.petitChance = form.poiPetitChance;
-    params.controls.poi.grandHeightMin = form.poiGrandHeightMin;
-    params.controls.poi.grandHeightMax = form.poiGrandHeightMax;
-    params.controls.poi.moyenHeightMin = form.poiMoyenHeightMin;
-    params.controls.poi.moyenHeightMax = form.poiMoyenHeightMax;
-    params.controls.poi.petitHeightMin = form.poiPetitHeightMin;
-    params.controls.poi.petitHeightMax = form.poiPetitHeightMax;
-    params.controls.poi.edgeReach = form.poiEdgeReach;
-    params.controls.poi.edgeMax = form.poiEdgeMax;
-    params.controls.poi.waterPoiReach = form.poiWaterReach;
-    params.controls.poi.grandStartClearance = form.poiGrandStartClearance;
-    params.controls.poi.coneSlopeMinDeg = form.poiConeSlopeMinDeg;
-    params.controls.poi.coneSlopeMaxDeg = form.poiConeSlopeMaxDeg;
-    params.controls.poi.verticality = form.poiVerticality;
-    params.controls.poi.coneSlopeSteepMinDeg = form.poiConeSlopeSteepMinDeg;
-    params.controls.poi.coneSlopeSteepMaxDeg = form.poiConeSlopeSteepMaxDeg;
-    params.controls.poi.corridorHalfWidthMin = form.poiCorridorHalfWidthMin;
-    params.controls.poi.corridorHalfWidthMax = form.poiCorridorHalfWidthMax;
-    params.controls.poi.screenHeightMin = form.poiScreenHeightMin;
-    params.controls.poi.screenHeightMax = form.poiScreenHeightMax;
-    params.controls.poi.screenNotch = form.poiScreenNotch;
-    params.macro.reliefOctaves = form.macroReliefOctaves;
+    reflect::applyLanes(params.controls.poi, form, kPoiLanesF32);
+    reflect::applyLanes(params.controls.poi, form, kPoiLanesU32);
+    reflect::applyLanes(params.macro, form, kMacroLanesF32);
+    reflect::applyLanes(params.macro, form, kMacroLanesI32);
     params.macro.tiers[0].reliefAmplitude = form.macroReliefAmplitudeEtage0;
     params.macro.tiers[1].reliefAmplitude = form.macroReliefAmplitudeEtage1;
     params.macro.tiers[2].reliefAmplitude = form.macroReliefAmplitudeEtage2;
@@ -122,77 +268,24 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.macro.tiers[2].reliefWavelength = form.macroReliefWavelengthEtage2;
     params.macro.tiers[3].reliefWavelength = form.macroReliefWavelengthEtage3;
     params.macro.tiers[2].terrace = form.macroPlateauTerrace;
-    params.macro.terraceStep = form.macroTerraceStep;
-    params.macro.terraceEdge = form.macroTerraceEdge;
-    params.macro.cliffStep = form.macroCliffStep;
-    params.macro.cliffEdge = form.macroCliffEdge;
-    params.macro.warpWavelength = form.macroWarpWavelength;
-    params.macro.warpStrength = form.macroWarpStrength;
-    params.macro.valleyStretch = form.macroValleyStretch;
-    params.macroTexel = form.bakeMacroTexel;
-    params.calmCut = form.bakeCalmCut;
-    params.roughCut = form.bakeRoughCut;
-    params.dimpleFillMax = form.bakeDimpleFillMax;
-    params.keepCrestFade = form.bakeKeepCrestFade;
-    params.fluvial.iterations = form.bakeFluvialIterations;
-    params.fluvial.k = form.bakeFluvialK;
-    params.fluvial.upliftRate = form.bakeUpliftRate;
-    params.thermal.iterations = form.bakeThermalIterations;
-    params.thermal.talusTan = form.bakeTalusTan;
-    params.rounding.strength = form.bakeRoundingStrength;
-    params.controls.rhythm.zones = form.rhythmZones;
-    params.controls.zones.cellSize = form.zoneCellSize;
-    params.controls.zones.jitter = form.zoneJitter;
-    params.controls.zones.borderWarp = form.zoneBorderWarp;
-    params.controls.zones.borderWarpWavelength = form.zoneBorderWarpWavelength;
-    params.controls.zones.stepHeight = form.zoneStepHeight;
-    params.controls.zones.storeys = form.zoneStoreys;
-    params.controls.zones.trendWavelength = form.zoneTrendWavelength;
-    params.controls.zones.trendContrast = form.zoneTrendContrast;
-    params.controls.zones.wallWidthOne = form.zoneWallWidthOne;
-    params.controls.zones.wallWidthHigh = form.zoneWallWidthHigh;
-    params.controls.zones.rampWidth = form.zoneRampWidth;
-    params.controls.zones.startGap = form.zoneStartGap;
+    reflect::applyLanes(params, form, kBakeLanesF32);
+    reflect::applyLanes(params.fluvial, form, kFluvialLanesF32);
+    reflect::applyLanes(params.fluvial, form, kFluvialLanesI32);
+    reflect::applyLanes(params.thermal, form, kThermalLanesF32);
+    reflect::applyLanes(params.thermal, form, kThermalLanesI32);
+    reflect::applyLanes(params.rounding, form, kRoundingLanesF32);
+    reflect::applyLanes(params.controls.zones, form, kZoneLanesF32);
+    reflect::applyLanes(params.controls.zones, form, kZoneLanesU32);
     params.controls.zones.rampartSteps =
         static_cast<i32>(form.zoneRampartSteps);
-    params.controls.zones.gateHalfWidth = form.zoneGateHalfWidth;
-    params.controls.zones.gateExtra = form.zoneGateExtra;
-    params.controls.zones.ridgeHeight = form.zoneRidgeHeight;
-    params.network.fleuveArea = form.networkFleuveArea;
-    params.network.riverExtractArea = form.networkRiverExtractArea;
-    params.network.texel = form.networkTexel;
+    reflect::applyLanes(params.network, form, kNetworkLanesF32);
+    reflect::applyLanes(params.network, form, kNetworkLanesBool);
+    reflect::applyLanes(params.hydrology, form, kHydrologyLanesF32);
+    reflect::applyLanes(params.hydrology, form, kHydrologyLanesBool);
     // The tier-2 cut of classifyRivers mirrors the network's.
     params.hydrology.fleuveArea = form.networkFleuveArea;
-    params.hydrology.fleuveRampLow = form.hydroFleuveRampLow;
-    params.hydrology.fleuveRampHigh = form.hydroFleuveRampHigh;
-    params.hydrology.tier2MinHalfWidth = form.hydroTier2MinHalfWidth;
-    params.network.routeOnShaped = form.networkRouteOnShaped;
-    params.network.runoffWeights = form.hydroRunoffWeights;
-    params.network.runoffDryMin = form.hydroRunoffDryMin;
-    params.network.runoffWetMax = form.hydroRunoffWetMax;
-    params.network.snowBonus = form.hydroSnowBonus;
-    params.network.snowlineTemp = form.hydroSnowlineTemp;
-    params.hydrology.riverArea = form.hydroRiverArea;
-    params.hydrology.riviereArea = form.hydroRiviereArea;
-    params.hydrology.widthCoef = form.hydroWidthCoef;
-    params.hydrology.widthExponent = form.hydroWidthExponent;
-    params.hydrology.fleuveWidthScale = form.hydroFleuveWidthScale;
-    params.hydrology.minLakeDepth = form.hydroMinLakeDepth;
-    params.hydrology.minLakeArea = form.hydroMinLakeArea;
-    params.hydrology.lakePiercing = form.hydroLakePiercing;
-    params.hydrology.mouthFlare = form.hydroMouthFlare;
-    params.hydrology.mouthFlareLength = form.hydroMouthFlareLength;
-    params.hydrology.lakeKeepDepth = form.hydroLakeKeepDepth;
-    params.hydrology.lakeDeepPierce = form.hydroLakeDeepPierce;
-    params.hydrology.lakeKeepArea = form.hydroLakeKeepArea;
-    params.network.lakeDepth = form.networkLakeDepth;
-    params.network.routeDither = form.networkRouteDither;
-    params.network.glacierTemp = form.hydroGlacierTemp;
-    params.network.neveTemp = form.hydroNeveTemp;
-    params.imprint.bedDepth = form.imprintBedDepth;
-    params.imprint.plainFactor = form.imprintPlainFactor;
-    params.imprint.minGradient = form.imprintMinGradient;
-    params.waterSolve.rainRate = form.waterRainRate;
+    reflect::applyLanes(params.imprint, form, kImprintLanesF32);
+    reflect::applyLanes(params.waterSolve, form, kWaterSolveLanesF32);
 }
 
 data::TerrainGenTuningForm
@@ -201,89 +294,23 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     if (params.macro.tiers.size() < 4) {
         return form;
     }
-    form.worldContinentWavelength = params.controls.world.continentWavelength;
-    form.worldContinentCellSupers = params.controls.world.continentCellSupers;
-    form.worldContinentRadius = params.controls.world.continentRadius;
-    form.worldContinentJitter = params.controls.world.continentJitter;
-    form.worldContinentShapeWavelength =
-        params.controls.world.continentShapeWavelength;
-    form.worldContinentShapeAmp = params.controls.world.continentShapeAmp;
-    form.worldContinentChance = params.controls.world.continentChance;
-    form.worldBorderFromWorld = params.controls.world.borderFromWorld;
-    form.worldBorderMassifMin = params.controls.world.borderMassifMin;
-    form.worldSeaThreshold = params.controls.world.seaThreshold;
-    form.worldEtageWavelength = params.controls.world.etageWavelength;
-    form.worldMassifWavelength = params.controls.world.massifWavelength;
-    form.worldMassifLift = params.controls.world.massifLift;
-    form.worldBenchWavelength = params.controls.world.benchWavelength;
-    form.worldBenchAmp = params.controls.world.benchAmp;
-    form.worldPlateauWavelength = params.controls.world.plateauWavelength;
-    form.worldPlateauStep = params.controls.world.plateauStep;
-    form.worldPlateauLevels = params.controls.world.plateauLevels;
-    form.worldPlateauEdge = params.controls.world.plateauEdge;
-    form.worldPlateauStartGap = params.controls.world.plateauStartGap;
-    form.worldStartEtage = params.controls.world.startEtage;
-    form.worldStartRadius = params.controls.world.startRadius;
-    form.worldStartFade = params.controls.world.startFade;
-    form.worldAnchorRadius = params.controls.world.anchorRadius;
-    form.worldAnchorFade = params.controls.world.anchorFade;
-    form.worldClimateWavelength = params.controls.world.climateWavelength;
-    form.worldLapsePerKm = params.controls.world.lapsePerKm;
-    form.worldCoverWavelength = params.controls.world.coverWavelength;
-    form.worldCoverAmp = params.controls.world.coverAmp;
-    form.rhythmPlan = params.controls.rhythm.plan;
-    form.rhythmPlanStoryScale = params.controls.rhythm.planStoryScale;
-    form.rhythmStoryMountainWavelength = params.controls.rhythm.storyMountainWavelength;
-    form.rhythmStoryMountainAmplitude = params.controls.rhythm.storyMountainAmplitude;
-    form.rhythmStoryMountainMaskLow = params.controls.rhythm.storyMountainMaskLow;
-    form.rhythmStoryMountainMaskHigh = params.controls.rhythm.storyMountainMaskHigh;
-    form.rhythmRegimeWavelength = params.controls.rhythm.regimeWavelength;
-    form.rhythmRegimeHillAmplitude = params.controls.rhythm.regimeHillAmplitude;
-    form.rhythmRegimeMassifHeight = params.controls.rhythm.regimeMassifHeight;
-    form.rhythmCalmBandWavelength = params.controls.rhythm.calmBandWavelength;
-    form.rhythmIntimateCellSize = params.controls.rhythm.intimateCellSize;
-    form.rhythmIntimateChance = params.controls.rhythm.intimateChance;
-    form.rhythmIntimateHeightMin = params.controls.rhythm.intimateHeightMin;
-    form.rhythmIntimateHeightMax = params.controls.rhythm.intimateHeightMax;
-    form.rhythmIntimateRadiusMin = params.controls.rhythm.intimateRadiusMin;
-    form.rhythmIntimateRadiusMax = params.controls.rhythm.intimateRadiusMax;
-    form.rhythmCrestWavelength = params.controls.rhythm.crestWavelength;
+    reflect::captureLanes(params.controls.world, form, kWorldLanesF32);
+    reflect::captureLanes(params.controls.world, form, kWorldLanesU32);
+    reflect::captureLanes(params.controls.world, form, kWorldLanesBool);
+    reflect::captureLanes(params.controls.rhythm, form, kRhythmLanesF32);
+    reflect::captureLanes(params.controls.rhythm, form, kRhythmLanesBool);
     form.rhythmCrestAmplitudeEtage0 = params.controls.rhythm.crestAmplitudeByEtage[0];
     form.rhythmCrestAmplitudeEtage1 = params.controls.rhythm.crestAmplitudeByEtage[1];
     form.rhythmCrestAmplitudeEtage2 = params.controls.rhythm.crestAmplitudeByEtage[2];
     form.rhythmCrestAmplitudeEtage3 = params.controls.rhythm.crestAmplitudeByEtage[3];
-    form.rhythmBedWavelength = params.controls.rhythm.bedWavelength;
     form.rhythmBedDepthEtage0 = params.controls.rhythm.bedDepthByEtage[0];
     form.rhythmBedDepthEtage1 = params.controls.rhythm.bedDepthByEtage[1];
     form.rhythmBedDepthEtage2 = params.controls.rhythm.bedDepthByEtage[2];
     form.rhythmBedDepthEtage3 = params.controls.rhythm.bedDepthByEtage[3];
-    form.rhythmColSpacing = params.controls.rhythm.colSpacing;
-    form.rhythmHardnessWavelength = params.controls.rhythm.hardnessWavelength;
-    form.rhythmRidgeColWavelength = params.controls.rhythm.ridgeColWavelength;
-    form.poiMoyenCell = params.controls.poi.moyenCell;
-    form.poiPetitCell = params.controls.poi.petitCell;
-    form.poiPetitChance = params.controls.poi.petitChance;
-    form.poiGrandHeightMin = params.controls.poi.grandHeightMin;
-    form.poiGrandHeightMax = params.controls.poi.grandHeightMax;
-    form.poiMoyenHeightMin = params.controls.poi.moyenHeightMin;
-    form.poiMoyenHeightMax = params.controls.poi.moyenHeightMax;
-    form.poiPetitHeightMin = params.controls.poi.petitHeightMin;
-    form.poiPetitHeightMax = params.controls.poi.petitHeightMax;
-    form.poiEdgeReach = params.controls.poi.edgeReach;
-    form.poiEdgeMax = params.controls.poi.edgeMax;
-    form.poiWaterReach = params.controls.poi.waterPoiReach;
-    form.poiGrandStartClearance = params.controls.poi.grandStartClearance;
-    form.poiConeSlopeMinDeg = params.controls.poi.coneSlopeMinDeg;
-    form.poiConeSlopeMaxDeg = params.controls.poi.coneSlopeMaxDeg;
-    form.poiVerticality = params.controls.poi.verticality;
-    form.poiConeSlopeSteepMinDeg = params.controls.poi.coneSlopeSteepMinDeg;
-    form.poiConeSlopeSteepMaxDeg = params.controls.poi.coneSlopeSteepMaxDeg;
-    form.poiCorridorHalfWidthMin = params.controls.poi.corridorHalfWidthMin;
-    form.poiCorridorHalfWidthMax = params.controls.poi.corridorHalfWidthMax;
-    form.poiScreenHeightMin = params.controls.poi.screenHeightMin;
-    form.poiScreenHeightMax = params.controls.poi.screenHeightMax;
-    form.poiScreenNotch = params.controls.poi.screenNotch;
-    form.macroReliefOctaves = params.macro.reliefOctaves;
+    reflect::captureLanes(params.controls.poi, form, kPoiLanesF32);
+    reflect::captureLanes(params.controls.poi, form, kPoiLanesU32);
+    reflect::captureLanes(params.macro, form, kMacroLanesF32);
+    reflect::captureLanes(params.macro, form, kMacroLanesI32);
     form.macroReliefAmplitudeEtage0 = params.macro.tiers[0].reliefAmplitude;
     form.macroReliefAmplitudeEtage1 = params.macro.tiers[1].reliefAmplitude;
     form.macroReliefAmplitudeEtage2 = params.macro.tiers[2].reliefAmplitude;
@@ -293,75 +320,24 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.macroReliefWavelengthEtage2 = params.macro.tiers[2].reliefWavelength;
     form.macroReliefWavelengthEtage3 = params.macro.tiers[3].reliefWavelength;
     form.macroPlateauTerrace = params.macro.tiers[2].terrace;
-    form.macroTerraceStep = params.macro.terraceStep;
-    form.macroTerraceEdge = params.macro.terraceEdge;
-    form.macroCliffStep = params.macro.cliffStep;
-    form.macroCliffEdge = params.macro.cliffEdge;
-    form.macroWarpWavelength = params.macro.warpWavelength;
-    form.macroWarpStrength = params.macro.warpStrength;
-    form.macroValleyStretch = params.macro.valleyStretch;
-    form.bakeMacroTexel = params.macroTexel;
-    form.bakeCalmCut = params.calmCut;
-    form.bakeRoughCut = params.roughCut;
-    form.bakeDimpleFillMax = params.dimpleFillMax;
-    form.bakeKeepCrestFade = params.keepCrestFade;
-    form.bakeFluvialIterations = params.fluvial.iterations;
-    form.bakeFluvialK = params.fluvial.k;
-    form.bakeUpliftRate = params.fluvial.upliftRate;
-    form.bakeThermalIterations = params.thermal.iterations;
-    form.bakeTalusTan = params.thermal.talusTan;
-    form.bakeRoundingStrength = params.rounding.strength;
-    form.rhythmZones = params.controls.rhythm.zones;
-    form.zoneCellSize = params.controls.zones.cellSize;
-    form.zoneJitter = params.controls.zones.jitter;
-    form.zoneBorderWarp = params.controls.zones.borderWarp;
-    form.zoneBorderWarpWavelength = params.controls.zones.borderWarpWavelength;
-    form.zoneStepHeight = params.controls.zones.stepHeight;
-    form.zoneStoreys = params.controls.zones.storeys;
-    form.zoneTrendWavelength = params.controls.zones.trendWavelength;
-    form.zoneTrendContrast = params.controls.zones.trendContrast;
-    form.zoneWallWidthOne = params.controls.zones.wallWidthOne;
-    form.zoneWallWidthHigh = params.controls.zones.wallWidthHigh;
-    form.zoneRampWidth = params.controls.zones.rampWidth;
-    form.zoneStartGap = params.controls.zones.startGap;
+    reflect::captureLanes(params, form, kBakeLanesF32);
+    reflect::captureLanes(params.fluvial, form, kFluvialLanesF32);
+    reflect::captureLanes(params.fluvial, form, kFluvialLanesI32);
+    reflect::captureLanes(params.thermal, form, kThermalLanesF32);
+    reflect::captureLanes(params.thermal, form, kThermalLanesI32);
+    reflect::captureLanes(params.rounding, form, kRoundingLanesF32);
+    reflect::captureLanes(params.controls.zones, form, kZoneLanesF32);
+    reflect::captureLanes(params.controls.zones, form, kZoneLanesU32);
     form.zoneRampartSteps =
         static_cast<u32>(glm::max(params.controls.zones.rampartSteps, 0));
-    form.zoneGateHalfWidth = params.controls.zones.gateHalfWidth;
-    form.zoneGateExtra = params.controls.zones.gateExtra;
-    form.zoneRidgeHeight = params.controls.zones.ridgeHeight;
-    form.networkFleuveArea = params.network.fleuveArea;
-    form.networkRiverExtractArea = params.network.riverExtractArea;
-    form.networkTexel = params.network.texel;
-    form.hydroFleuveRampLow = params.hydrology.fleuveRampLow;
-    form.hydroFleuveRampHigh = params.hydrology.fleuveRampHigh;
-    form.hydroTier2MinHalfWidth = params.hydrology.tier2MinHalfWidth;
-    form.networkRouteOnShaped = params.network.routeOnShaped;
-    form.hydroRunoffWeights = params.network.runoffWeights;
-    form.hydroRunoffDryMin = params.network.runoffDryMin;
-    form.hydroRunoffWetMax = params.network.runoffWetMax;
-    form.hydroSnowBonus = params.network.snowBonus;
-    form.hydroSnowlineTemp = params.network.snowlineTemp;
-    form.hydroRiverArea = params.hydrology.riverArea;
-    form.hydroRiviereArea = params.hydrology.riviereArea;
-    form.hydroWidthCoef = params.hydrology.widthCoef;
-    form.hydroWidthExponent = params.hydrology.widthExponent;
-    form.hydroFleuveWidthScale = params.hydrology.fleuveWidthScale;
-    form.hydroMinLakeDepth = params.hydrology.minLakeDepth;
-    form.hydroMinLakeArea = params.hydrology.minLakeArea;
-    form.hydroLakePiercing = params.hydrology.lakePiercing;
-    form.hydroMouthFlare = params.hydrology.mouthFlare;
-    form.hydroMouthFlareLength = params.hydrology.mouthFlareLength;
-    form.hydroLakeKeepDepth = params.hydrology.lakeKeepDepth;
-    form.hydroLakeDeepPierce = params.hydrology.lakeDeepPierce;
-    form.hydroLakeKeepArea = params.hydrology.lakeKeepArea;
-    form.networkLakeDepth = params.network.lakeDepth;
-    form.networkRouteDither = params.network.routeDither;
-    form.hydroGlacierTemp = params.network.glacierTemp;
-    form.hydroNeveTemp = params.network.neveTemp;
-    form.imprintBedDepth = params.imprint.bedDepth;
-    form.imprintPlainFactor = params.imprint.plainFactor;
-    form.imprintMinGradient = params.imprint.minGradient;
-    form.waterRainRate = params.waterSolve.rainRate;
+    // networkFleuveArea reads the network's copy; the hydrology mirror
+    // is write-only.
+    reflect::captureLanes(params.network, form, kNetworkLanesF32);
+    reflect::captureLanes(params.network, form, kNetworkLanesBool);
+    reflect::captureLanes(params.hydrology, form, kHydrologyLanesF32);
+    reflect::captureLanes(params.hydrology, form, kHydrologyLanesBool);
+    reflect::captureLanes(params.imprint, form, kImprintLanesF32);
+    reflect::captureLanes(params.waterSolve, form, kWaterSolveLanesF32);
     return form;
 }
 

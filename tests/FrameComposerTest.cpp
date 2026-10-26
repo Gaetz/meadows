@@ -43,7 +43,7 @@ TEST_CASE("frame composer: exterior passes sky and toggles through") {
     CHECK(out.resolved.ambientColor.w == doctest::Approx(1.0f)); // stylized
     CHECK(out.resolved.postInfo.x == doctest::Approx(1.0f));     // tonemap
     CHECK(out.resolved.postInfo.y == doctest::Approx(1.3f));     // exposure
-    CHECK(out.resolved.cascadeSplits.w == doctest::Approx(0.0f)); // exterior
+    CHECK(out.resolved.vegInfo.y == doctest::Approx(0.0f));      // exterior
     CHECK(out.resolved.fogInfo.x == doctest::Approx(0.0014f));
     CHECK(out.resolved.screenInfo.x == doctest::Approx(1920.0f));
     CHECK(out.resolved.screenInfo.z == doctest::Approx(1.0f / 1920.0f));
@@ -61,7 +61,8 @@ TEST_CASE("frame composer: interior mode reshapes the frame") {
     CHECK(out.resolved.ambientColor.x == doctest::Approx(0.16f));
     CHECK(out.resolved.fogInfo.x == doctest::Approx(0.0f)); // no fog
     CHECK(out.resolved.time.z == doctest::Approx(0.0f));    // volumetric off
-    CHECK(out.resolved.cascadeSplits.w == doctest::Approx(1.0f));
+    CHECK(out.resolved.vegInfo.y == doctest::Approx(1.0f)); // interior flag
+    CHECK(out.base.vegInfo.y == doctest::Approx(1.0f)); // the mirror too
     CHECK(out.resolved.stormInfo.y == doctest::Approx(0.0f)); // no rain
     // The reflection contract: `base` keeps the raw exterior composition.
     CHECK(out.base.sunColor.x == doctest::Approx(1.0f));
@@ -144,6 +145,26 @@ TEST_CASE("frame composer: grass bend follows the player's feet in Play") {
     in.grassBend = false;
     const auto off = render::composeFrameUniforms(in);
     CHECK(off.resolved.grassBendInfo.w == doctest::Approx(0.0f));
+}
+
+TEST_CASE("frame composer: vegInfo carries the bark gate and the impostor "
+          "handoff, in base") {
+    render::FrameComposerInputs in = exteriorDay();
+    in.barkEnabled = true;
+    in.treeFadeEnd = 640.0f;
+    const auto out = render::composeFrameUniforms(in);
+    CHECK(out.base.vegInfo.x == doctest::Approx(1.0f));
+    CHECK(out.base.vegInfo.z == doctest::Approx(640.0f));
+    CHECK(out.resolved.vegInfo.x == doctest::Approx(1.0f));
+    CHECK(out.resolved.vegInfo.z == doctest::Approx(640.0f));
+    // The channels the flags used to ride stay free (written 0).
+    CHECK(out.resolved.cascadeSplits.w == doctest::Approx(0.0f));
+    CHECK(out.resolved.splatVarietyInfo.w == doctest::Approx(0.0f));
+    CHECK(out.resolved.fogLayerInfo.w == doctest::Approx(0.0f));
+
+    in.barkEnabled = false;
+    CHECK(render::composeFrameUniforms(in).resolved.vegInfo.x ==
+          doctest::Approx(0.0f));
 }
 
 TEST_CASE("frame composer: stormInfo.x carries the raw storm front") {

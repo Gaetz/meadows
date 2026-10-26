@@ -11,6 +11,7 @@
 #include "engine/core/Guid.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/reflect/FieldLane.hpp"
 #include "gameplay/save/SaveForms.hpp"  // WorldStateForm
 #include "gameplay/save/SaveState.hpp"  // createRecord
 #include "gameplay/stats/GameClock.hpp"
@@ -25,6 +26,32 @@ f64 msSince(const std::chrono::steady_clock::time_point& start) {
         std::chrono::steady_clock::now() - start
     }.count();
 }
+
+// SaveContext -> WorldStateForm, the fields that are a plain copy.
+// Capture-only: the load half (LandscapeScene's onEnter) applies each
+// one conditionally (legacy zero camera, map change), not as a mirror.
+// The clock pair and the worldspace id are derived, hand-written below.
+template <typename T>
+using WorldStateLane = reflect::FieldLane<SaveContext, gameplay::WorldStateForm, T>;
+constexpr WorldStateLane<f32> kWorldStateLanesF32[] = {
+    { &SaveContext::playerYaw, &gameplay::WorldStateForm::playerYaw },
+    { &SaveContext::playerPitch, &gameplay::WorldStateForm::playerPitch },
+};
+constexpr WorldStateLane<Vec3> kWorldStateLanesVec3[] = {
+    { &SaveContext::cameraPosition,
+      &gameplay::WorldStateForm::cameraPosition },
+};
+constexpr WorldStateLane<bool> kWorldStateLanesBool[] = {
+    { &SaveContext::playMode, &gameplay::WorldStateForm::playMode },
+    { &SaveContext::editMode, &gameplay::WorldStateForm::editMode },
+    { &SaveContext::sandboxMap, &gameplay::WorldStateForm::sandboxMap },
+};
+constexpr WorldStateLane<i32> kWorldStateLanesI32[] = {
+    { &SaveContext::weatherSelected,
+      &gameplay::WorldStateForm::weatherSelected },
+    { &SaveContext::activeMapX, &gameplay::WorldStateForm::activeMapX },
+    { &SaveContext::activeMapZ, &gameplay::WorldStateForm::activeMapZ },
+};
 
 } // namespace
 
@@ -70,15 +97,10 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
             state.activeWorldspace = space->id;
         }
     }
-    state.playerYaw = ctx.playerYaw;
-    state.playerPitch = ctx.playerPitch;
-    state.cameraPosition = ctx.cameraPosition;
-    state.playMode = ctx.playMode;
-    state.editMode = ctx.editMode;
-    state.weatherSelected = ctx.weatherSelected;
-    state.sandboxMap = ctx.sandboxMap;
-    state.activeMapX = ctx.activeMapX;
-    state.activeMapZ = ctx.activeMapZ;
+    reflect::captureLanes(ctx, state, kWorldStateLanesF32);
+    reflect::captureLanes(ctx, state, kWorldStateLanesVec3);
+    reflect::captureLanes(ctx, state, kWorldStateLanesBool);
+    reflect::captureLanes(ctx, state, kWorldStateLanesI32);
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(
                    "5a5e0000-0000-4000-8000-0000000000ff")));

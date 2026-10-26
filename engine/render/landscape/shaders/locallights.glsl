@@ -18,16 +18,16 @@ layout(std430, binding = 4) readonly buffer ClusterLights {
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
-    vec4 uLightPositionRadius[64];    // xyz world, w radius (m)
-    vec4 uLightColorIntensity[64];    // rgb premultiplied color*intensity
+    vec4 uLightPositionRadius[kMaxLights]; // xyz world, w radius (m)
+    vec4 uLightColorIntensity[kMaxLights]; // rgb premultiplied color*intensity
     // APPEND-only UBO (new members at the END, both sides):
     // xyz = spot direction (normalized), w = cos(half angle); w = -2
     // marks a point light, w = -3 a WINDOW projector (xyz = the
     // window's into-room normal — docs/RENDERING.md).
-    vec4 uLightDirectionAngle[64];
+    vec4 uLightDirectionAngle[kMaxLights];
     // Window projector half extents (xy); z = key-shadow atlas slot + 1
     // (0 = unshadowed — docs/RENDERING.md §5 B6).
-    vec4 uLightWindowInfo[64];
+    vec4 uLightWindowInfo[kMaxLights];
 };
 
 // The light's key-shadow atlas tile (2x2 of the shared target). The
@@ -38,7 +38,7 @@ float keyShadowFactor(int i, vec3 p) {
     if (slot < 0) {
         return 1.0;
     }
-    vec4 lc = uKeyShadowAtlas[slot] * vec4(p, 1.0);
+    vec4 lc = uKeyShadowAtlasViewProj[slot] * vec4(p, 1.0);
     if (lc.w <= 0.0) {
         return 1.0;
     }
@@ -146,13 +146,13 @@ vec3 shadeLocalLight(int i, vec3 worldPos, vec3 n, float interior) {
 
 vec3 localLights(vec3 worldPos, vec3 n) {
     vec3 sum = vec3(0.0);
-    // Interior pass (uCascadeSplits.w = 1 inside interior cells; the
+    // Interior pass (uVegInfo.y = 1 inside interior cells; the
     // exterior look stays byte-identical at 0): pure N·L leaves every
     // surface facing away from a candle pitch flat — dead rooms. Indoors
     // the diffuse wraps (half-Lambert) and each light adds a small
     // normal-free bounce so the room takes its hue, a cheap stand-in for
     // the first GI bounce.
-    float interior = clamp(uCascadeSplits.w, 0.0, 1.0);
+    float interior = clamp(uVegInfo.y, 0.0, 1.0);
     if (uClusterInfo.x > 0.5) {
         // Clustered path (docs/RENDERING.md §5): only this pixel's cell.
         // The z slice uses CAMERA DISTANCE — the froxel grid's metric.
@@ -173,8 +173,8 @@ vec3 localLights(vec3 worldPos, vec3 n) {
     } else {
         // Legacy loop, capped at the pre-clustered budget: passes whose
         // frame data leaves the clustered flag off (reflection) degrade
-        // to the 24 NEAREST (the list is distance-ordered).
-        int count = min(int(uLightCount.x + 0.5), 24);
+        // to the kFallbackLights NEAREST (the list is distance-ordered).
+        int count = min(int(uLightCount.x + 0.5), kFallbackLights);
         for (int i = 0; i < count; ++i) {
             sum += shadeLocalLight(i, worldPos, n, interior);
         }

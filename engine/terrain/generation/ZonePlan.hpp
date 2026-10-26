@@ -1,10 +1,9 @@
 #pragma once
 
-#include <string_view>
-
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
 
 // The ZONES (docs/PAYSAGE.md §4 bis, principles 1-3, 6-7): the world is
@@ -55,6 +54,35 @@ struct ZoneArchetype {
     // may cut, a floor under the calm/rough rule): 0 = the socle's own
     // (raw); hill country, badlands and ranges dissect.
     f32 erosionCut { 0.0f };
+
+    bool operator==(const ZoneArchetype&) const = default;
+
+    REFLECT_BEGIN(ZoneArchetype, void)
+        REFLECT_FIELD(name)
+        REFLECT_FIELD(weight)
+        REFLECT_FIELD(minEtage)
+        REFLECT_FIELD(maxEtage)
+        REFLECT_FIELD(minMassif)
+        REFLECT_FIELD(maxMassif)
+        REFLECT_FIELD(minCoast)
+        REFLECT_FIELD(maxCoast)
+        REFLECT_FIELD(minMoisture)
+        REFLECT_FIELD(maxMoisture)
+        REFLECT_FIELD(storeyBias)
+        REFLECT_FIELD(reliefMul)
+        REFLECT_FIELD(wavelengthMul)
+        REFLECT_FIELD(terrace)
+        REFLECT_FIELD(cliffStep)
+        REFLECT_FIELD(hillCrests)
+        REFLECT_FIELD(hardBias)
+        REFLECT_FIELD(wetBias)
+        REFLECT_FIELD(coverBias)
+        REFLECT_FIELD(palette)
+        REFLECT_FIELD(piece)
+        REFLECT_FIELD(pieceHeight)
+        REFLECT_FIELD(pieceRadius)
+        REFLECT_FIELD(erosionCut)
+    REFLECT_END()
 };
 
 // The style of the border between two zones (docs/PAYSAGE.md §4 bis,
@@ -117,6 +145,32 @@ struct ZoneParams {
     // The crest between two massif zones of one storey (0 = none).
     f32 ridgeHeight { 30.0f };
     vector<ZoneArchetype> archetypes; // empty = defaultZoneArchetypes()
+
+    // Exact equality for the per-sample memo (WorldLayerParams has the
+    // same contract).
+    bool operator==(const ZoneParams&) const = default;
+
+    // Every scalar; `archetypes` (a table) is hashed explicitly in
+    // hashKey — reflection is flat.
+    REFLECT_BEGIN(ZoneParams, void)
+        REFLECT_FIELD(cellSize)
+        REFLECT_FIELD(jitter)
+        REFLECT_FIELD(borderWarp)
+        REFLECT_FIELD(borderWarpWavelength)
+        REFLECT_FIELD(stepHeight)
+        REFLECT_FIELD(storeys)
+        REFLECT_FIELD(trendWavelength)
+        REFLECT_FIELD(trendContrast)
+        REFLECT_FIELD(wallWidthOne)
+        REFLECT_FIELD(wallWidthHigh)
+        REFLECT_FIELD(rampWidth)
+        REFLECT_FIELD(startGap)
+        REFLECT_FIELD(mapSize)
+        REFLECT_FIELD(rampartSteps)
+        REFLECT_FIELD(gateHalfWidth)
+        REFLECT_FIELD(gateExtra)
+        REFLECT_FIELD(ridgeHeight)
+    REFLECT_END()
 };
 
 struct ZoneSample {
@@ -177,58 +231,10 @@ u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
 const vector<ZoneArchetype>& defaultZoneArchetypes();
 const vector<ZoneArchetype>& zoneArchetypesOf(const ZoneParams& zones);
 
-// EVERY field (the archetypes in force included), in one walk, for the
-// consumers that must agree on what "the parameters" are: the FNV cache
-// key and the zone memo's fingerprint. Add a field = add a line HERE,
-// nowhere else. `v.mix(scalar | string_view)`.
-template <class Visitor>
-void visitParams(const ZoneParams& p, Visitor& v) {
-    v.mix(p.cellSize);
-    v.mix(p.jitter);
-    v.mix(p.borderWarp);
-    v.mix(p.borderWarpWavelength);
-    v.mix(p.stepHeight);
-    v.mix(p.storeys);
-    v.mix(p.trendWavelength);
-    v.mix(p.trendContrast);
-    v.mix(p.wallWidthOne);
-    v.mix(p.wallWidthHigh);
-    v.mix(p.rampWidth);
-    v.mix(p.startGap);
-    v.mix(p.mapSize);
-    v.mix(p.rampartSteps);
-    v.mix(p.gateHalfWidth);
-    v.mix(p.gateExtra);
-    v.mix(p.ridgeHeight);
-    for (const ZoneArchetype& a : zoneArchetypesOf(p)) {
-        v.mix(std::string_view { a.name });
-        v.mix(a.weight);
-        v.mix(a.minEtage);
-        v.mix(a.maxEtage);
-        v.mix(a.minMassif);
-        v.mix(a.maxMassif);
-        v.mix(a.minCoast);
-        v.mix(a.maxCoast);
-        v.mix(a.minMoisture);
-        v.mix(a.maxMoisture);
-        v.mix(a.storeyBias);
-        v.mix(a.reliefMul);
-        v.mix(a.wavelengthMul);
-        v.mix(a.terrace);
-        v.mix(a.cliffStep);
-        v.mix(a.hillCrests);
-        v.mix(a.hardBias);
-        v.mix(a.wetBias);
-        v.mix(a.coverBias);
-        v.mix(a.palette);
-        v.mix(a.piece);
-        v.mix(a.pieceHeight);
-        v.mix(a.pieceRadius);
-        v.mix(a.erosionCut);
-    }
-}
-
-// FNV-1a over every field (visitParams): the cache keys.
-u64 hashParams(const ZoneParams& p);
+// The cache key of the params: FNV-1a over every reflected field plus
+// the archetype table IN FORCE (zoneArchetypesOf: the defaults when the
+// stack ships none) — an empty table and a copy of the default table
+// are the same key, as they are the same zones.
+u64 hashKey(const ZoneParams& p);
 
 } // namespace render::terraingen

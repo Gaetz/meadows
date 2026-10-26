@@ -5,264 +5,35 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/FrameLanes.hpp"
 
 namespace render {
 
 // Per-frame constants shared by every landscape shader, uploaded once per
-// frame to UBO binding 0. std140: keep every member vec4/mat4-sized so the
-// C++ layout matches GLSL with no padding surprises. Must match the FrameUbo
-// block in shaders/common.glsl field for field — and new fields are only
-// ever APPENDED at the end of the struct (never inserted), so both sides
-// stay in sync.
+// frame to UBO binding 0. Generated lane by lane from MEADOWS_FRAME_LANES
+// (FrameLanes.hpp — the table carries each channel's meaning); the GLSL
+// FrameUbo block of shaders/frame_ubo.glsl is generated from the same
+// table, so both sides cannot drift. std140: every member vec4/mat4-sized.
+// To change the UBO: edit the table, regenerate the shader block, run
+// tests/FrameLanesTest.cpp (see FrameLanes.hpp for the workflow).
 struct FrameUniforms {
-    Mat4 viewProj {};
-    Mat4 invViewProj {};   // NDC -> world, for fullscreen ray reconstruction
-    Vec4 cameraPos {};     // xyz = world position, w unused
-    Vec4 time {};          // x = seconds since scene start, yzw unused
-    Vec4 sunDirection {};  // xyz = normalized, points TOWARD the sun
-    Vec4 sunColor {};      // rgb = sun light color, w = sun disc intensity
-    Vec4 sunGlowColor {};  // rgb = sky halo/afterglow (outlives the disc)
-    Vec4 ambientColor {};  // rgb = sky ambient term, w = stylized-lighting
-                           // blend (0 classic wrap, 1 BotW step ramp)
-    Vec4 zenithColor {};      // rgb = sky gradient top
-    Vec4 horizonColor {};     // rgb = horizon on the SUN side (warm at dusk)
-    Vec4 horizonFarColor {};  // rgb = horizon opposite the sun (already night)
-    Vec4 terrainInfo {};      // x = sea level, y = snow line (m),
-                              // z = splat UV scale (tiles/meter), w unused
-    Vec4 postInfo {};         // x = filmic tonemap (0/1), y = exposure
-    Vec4 fogInfo {};          // x = density, y = height falloff (1/m),
-                              // z = low-altitude boost, w = start distance (m)
-    array<Mat4, 3> sunViewProj {}; // world -> cascade shadow clip space
-    Vec4 cascadeSplits {};    // xyz = cascade far view-distances (m)
-    Vec4 shadowInfo {};       // xyz = world texel size per cascade,
-                              // w = shadow strength (0 = shadows off)
-    Vec4 screenInfo {};       // xy = viewport size (px), zw = 1/size
-    Vec4 cloudInfo {};        // x = coverage [0,1], y = layer height (m),
-                              // z = pattern scale (1/m), w = shadow strength
-    Vec4 sunScreen {};        // xy = sun position in screen UV, z = shaft
-                              // visibility fade, w = god-ray intensity
-    Vec4 cloudMapInfo {};     // xy = baked cloud-field center (world XZ),
-                              // z = 1/span, w unused
-    Vec4 waterMapInfo {};     // xy = pool-depth map center (world XZ),
-                              // z = 1/span, w unused
-    Vec4 windInfo {};         // x = accumulated wind time (s, speed-scaled —
-                              // keeps cloud/wave phase continuous when the
-                              // weather changes the wind), y = sway strength,
-                              // z = water chop multiplier, w unused
-    // The terrain light map (far terrain shadows + sky aperture).
-    Vec4 terrainLightInfo {}; // xy = map center (world XZ), z = 1/span,
-                              // w = strength (0 = feature off)
-    // Submersion: x = the EFFECTIVE water surface Y above the
-    // camera (sea level outdoors, a volume's top when inside one,
-    // -1e6 = dry) — the tonemap submersion reads this, not seaLevel.
-    Vec4 submersionInfo { -1.0e6f, 0.0f, 0.0f, 0.0f };
-    // The interior key-light shadow — world -> light clip
-    // for the ONE castsShadow light nearest the camera.
-    Mat4 keyShadowViewProj {};
-    Vec4 keyShadowInfo {}; // xyz = that light's position, w = active
-    // Weather: x = storm front 0-1 (horizon cumulonimbus),
-    // y = rain intensity 0-1 (streaks + wetness).
-    Vec4 stormInfo {};
-    // World -> top-down ortho clip for the rain
-    // occlusion depth (no rain under roofs).
-    Mat4 rainOcclusionViewProj {};
-    // Interactive grass bending — xy = the player's
-    // feet XZ, z = feet Y, w = bend radius (0 = off, e.g. Fly mode).
-    Vec4 grassBendInfo {};
-    // The meadow's tuning, live
-    // from the render panel's "Grass" category (GrassRenderTuning).
-    Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
-    // x = blade height (m), y = half width (m), z/w = high-detail near/far
-    Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
-    // x/y = density thinning start/end (m), z = far density floor,
-    // w = width compensation at far density (wider blades, same mass)
-    Vec4 grassBaseTint { 1.0f, 1.0f, 1.0f, 140.0f };
-    // rgb = base tint × root ground albedo, w = distance fade start (m)
-    Vec4 grassTipTint { 1.0f, 1.0f, 1.0f, 190.0f };
-    // rgb = tip tint × root ground albedo, w = distance fade end (m)
-    // The GiTechnique switch — surface shaders
-    // swap their ambient term for the merged cascade-0 sample (gi.glsl)
-    // when x = 1. Zero = Classic, byte-identical exterior.
-    Vec4 giInfo {};     // x = technique (0/1), y = intensity,
-                        // z = edge fade width (m), w = grid resolution
-    Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
-    // The GI ramp: x = band count between floor and classic ambient
-    // (0 = smooth), y = anti-aliasing width across a band edge,
-    // z = GI ambient floor (fraction of classic — grid-border seam killer).
-    Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f };
-    // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
-    // xy = mip window start/end of the blend. z = mirror-pass flag (the
-    // planar reflection sets 1): billboard cards re-aim at the mirrored
-    // camera, so their winding does NOT flip with the pass's inverted
-    // front face — tree.vert flips the card corners instead. w free.
-    Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
-    // Fog sun single-scatter (docs/RENDERING.md V1): x = strength
-    // (weather-crossfaded), y = phase exponent, zw free.
-    Vec4 fogSunInfo { 0.5f, 8.0f, 0.0f, 0.0f };
-    // Stylized diffuse ramp (stylized.glsl): xy = terminator smoothstep
-    // edges, zw = full-light smoothstep edges.
-    Vec4 stylizedDiffuseInfo { 0.02f, 0.09f, 0.32f, 0.40f };
-    // Stylized shadow snap: xy = window edges, z = shadow floor,
-    // w = half-tone level of the diffuse ramp.
-    Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
-    // Clustered forward (docs/RENDERING.md §5): x = clustered path active
-    // (0 = legacy 24-light loop), y = cluster grid far reach (m) — the
-    // froxel slicing's far, so both grids share their z slices; zw free.
-    Vec4 clusterInfo { 0.0f, 800.0f, 0.0f, 0.0f };
-    // Key-shadow ATLAS (docs/RENDERING.md §5 B6): up to 4 shadowed lights,
-    // one 1024^2 tile each in the 2048^2 key-shadow target. A light finds
-    // its tile through LightsUbo windowInfo.z (slot+1, 0 = unshadowed);
-    // keyShadowViewProj/keyShadowInfo above are the retired single-light
-    // fields (append-only: they stay, zeroed).
-    array<Mat4, 4> keyShadowAtlasViewProj {};
-    // Grass shading knobs (render panel "Grass", grass.vert/.frag):
-    // x = root-AO floor (1 = none), y = tip sheen strength, z = near
-    // blade-normal share (0 = blades light like the ground), w free.
-    Vec4 grassShadeInfo { 1.0f, 0.5f, 0.0f, 0.0f };
-    // x/y = whole-blade brightness hash range (min/max),
-    // z = blade middle darkening, w = backscatter strength.
-    Vec4 grassBladeInfo { 1.0f, 1.0f, 0.0f, 0.0f };
-    // Stylized specular band on characters/props (mesh/skinned.frag):
-    // x = strength, y = band threshold (lower = wider highlight),
-    // z = Blinn-Phong exponent, w free.
-    Vec4 stylizedSpecInfo { 0.35f, 0.35f, 24.0f, 0.0f };
-    // Ground mist (mist.frag, docs/RENDERING.md §3.5): x = extinction
-    // sigma (1/m, weather-crossfaded; 0 = feature off — THE shader gate),
-    // y = reach (m), z = coverage threshold, w = coverage softness.
-    Vec4 mistInfo { 0.0f, 1200.0f, 0.5f, 0.6f };
-    // x = coverage pattern scale (1/m), y = erosion noise scale (1/m),
-    // z = erosion strength, w = lift (m, raises the baked mist top).
-    Vec4 mistShapeInfo { 0.0035f, 0.02f, 0.2f, 49.0f };
-    // Mist valley map (MistMap): xy = bake center (world XZ),
-    // z = 1/span, w = max mist-top Y (bounds the raymarch's slab clip).
-    Vec4 mistMapInfo {};
-    // x = erode with the baked NoiseVolume (0 = analytic fbm3 — the A/B
-    // and the no-caps fallback), y = march steps, z = erosion detail
-    // dropout distance (m; beyond it the march skips the noise taps),
-    // w = sun-beam gain (the normalized phase alone is too dim against
-    // the full-sky ambient).
-    Vec4 mistDetailInfo { 0.0f, 16.0f, 400.0f, 10.0f };
-    // Mist light shaping (the silver-lining kit): x = forward HG lobe g
-    // (higher = tighter, brighter rim toward the sun), y = backscatter
-    // lobe weight, z = ambient gain (lower darkens the mist body so the
-    // sun beam pops), w = ambient floor in shadow.
-    Vec4 mistLightInfo { 0.95f, 0.8f, 1.25f, 0.6f };
-    // Fog altitude envelope: x = ceiling falloff (1/m above sea level,
-    // weather-crossfaded) — the fog is a GROUND layer, so upward rays
-    // exit it and the sky stays readable while the horizon keeps its
-    // fog and ray curtains. y = horizon-closure distance (m, 0 = off),
-    // z = the streaming ring (m — the far mesh's sink bias). w free.
-    Vec4 fogLayerInfo { 0.0035f, 0.0f, 0.0f, 0.0f };
-    // Volumetric sky clouds (skyclouds.frag, §8 contract): x = active
-    // (also gates the 2D dome layer off), y = slab thickness (m),
-    // z = extinction sigma (1/m), w = erosion strength. The slab BASE is
-    // the weather's cloud height (cloudInfo.y); coverage/scale stay the
-    // shared cloudInfo lanes so the baked ground shadows match.
-    Vec4 cloudVolInfo { 0.0f, 440.0f, 0.065f, 0.31f };
-    // x = body sun gain (multi-octave scattering — the soft luminous
-    // core), y = body HG lobe g, z = ambient gain, w = LINING gain (the
-    // direct-transmission term exp(-tau)·HG — the silver lining).
-    Vec4 cloudVolLightInfo { 19.9f, 0.3f, 0.9f, 30.2f };
-    // x = thickness<->coverage spread (at 4 a full sky is 5x thick),
-    // y = lining HG lobe g (tighter = the halo hugs the sun), z = powder
-    // strength (dark-edge term away from the sun), w = puffiness (the
-    // fractal edge-erosion pass — cauliflower florets).
-    Vec4 cloudVolShapeInfo { 3.4f, 0.8f, 1.0f, 0.5f };
-    // x = rim gain (silhouette glow where the cloud is thin along the
-    // VIEW ray — the sun-path lining cannot produce it), y = rim HG
-    // lobe g, z = storm darkening 0..10, EXPONENTIAL (exp(-storm×cov):
-    // ambient fully, sun body at 85%, bases fastest; lining and rim
-    // keep their fire), w free (the sky-ray tail lived here, removed).
-    Vec4 cloudVolRimInfo { 25.0f, 0.75f, 7.4f, 0.0f };
-    // Ground-mist extras: x = puffiness (fractal edge florets on the
-    // patch borders — the cloud recipe ported), yzw free.
-    Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
-    // x = water debug view mode (0 off; see RenderTuningPanels' Water
-    // combo), yzw free.
-    Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Retired lane (was the WaterInfoMap info, E5) — kept zeroed,
-    // never removed nor renumbered (append-only FrameUbo).
-    Vec4 waterReserved0 { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Seasons: x = autumn blend 0..1, y = leaf fall 0..1, zw free.
-    // Applied per leaf-mask atlas slot through leafSeason below.
-    Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Per atlas slot: rgb = autumn tint, a = seasonality (0 = evergreen).
-    Vec4 leafSeason[8] {};
-    // Splat material detail (docs/PAYSAGE.md §1.6): x = height-blend
-    // band depth (0 = plain weighted blend), yzw reserved for the detail
-    // fade / POM knobs of the later bricks.
-    Vec4 splatDetailInfo { 0.15f, 0.0f, 0.0f, 0.0f };
-    // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
-    // w = valid.
-    Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Splat anti-repetition + POM: x = bi-frequency variety strength
-    // (0 = off — the second, non-harmonic tap that keeps the 4 m tile
-    // grid from ever repeating exactly), y = POM self-shadow strength,
-    // z = POM relief depth (uv units), w = tree bark textures resident
-    // (tree.frag gate).
-    Vec4 splatVarietyInfo { 0.5f, 0.0f, 0.03f, 0.0f };
-    // Grass species table (GrassSpecies.hpp is the source; FrameComposer
-    // copies it) — grass.vert indexes by the instance's species lane.
-    // Shape: x height (scatter-side), y width, z lean, w tip profile.
-    Vec4 grassSpeciesShape[6] {};
-    Vec4 grassSpeciesBase[6] {}; // rgb tint x ground albedo, w free
-    Vec4 grassSpeciesTip[6] {};  // rgb tint, w free
-    // SSAO (ssao.frag): x = strength, y = world radius (m), zw reserved.
-    Vec4 ssaoInfo { 0.85f, 0.7f, 0.0f, 0.0f };
-    // Terrain surface response: x = per-material AO strength (cooked
-    // ORM), y = wetness darkening, z = wet sheen, w = snow sheen. The
-    // sheen is the only specular the stylized terrain has — it lives
-    // exclusively on wet/snowy ground, dry land stays pure diffuse.
-    Vec4 surfSheenInfo { 0.7f, 0.6f, 0.5f, 0.04f };
-    // Real-time water sim window (WaterSystem): xy = window ORIGIN
-    // (min corner), z = 1/span, w = valid.
-    Vec4 waterSimMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
-    // x = trusted inset (m), y = edge fade band (m), z = debug mode
-    // (0 normal, 1 force baked, 2 seam overlay), w free.
-    Vec4 waterSimTuneInfo { 64.0f, 32.0f, 0.0f, 0.0f };
-    // Frozen sim windows (WaterSystem::simFrozen — static meshes of
-    // past window states, drawn beyond the live rect): per entry
-    // xy = window ORIGIN (min corner), z = 1/span (0 = slot empty),
-    // w free. Array order is oldest -> NEWEST (the shader resolves
-    // overlaps by recency).
-    Vec4 waterSimFrozen[4] {};
-    // Fire scorch mask (FireScorchMap::info): xy = window origin,
-    // z = 1/texel, w = cells per side (0 = nothing burnt).
-    Vec4 fireScorchInfo {};
-    // The burnt ground's look (FireLook): info = {bed intensity (0 =
-    // off), pulse, erode, noise volume ready}; hot = ember colour (rgb) +
-    // coal scale (w); cold = ember colour (rgb) + ash (w); char = the
-    // charred colour (rgb) + grass cull threshold (w).
-    Vec4 fireEmberInfo {};
-    Vec4 fireEmberHot {};
-    Vec4 fireEmberCold {};
-    Vec4 fireCharInfo {};
-    // The flames' flipbook (RenderSnapshot::FlameSheet): {columns, rows,
-    // fps, frame aspect}. Look: {HDR boost, posterize bands (0 = off), 0, 0}.
-    Vec4 fireFlameInfo {};
-    Vec4 fireFlameLook {};
-    // The wind's DIRECTION (xy = unit XZ the wind blows toward, from the
-    // weather's windDirectionDeg), z = gust strength lane (reserved),
-    // w free. The strength and clock stay in windInfo (append-only).
-    Vec4 windDirInfo { 1.0f, 0.0f, 0.0f, 0.0f };
-    // Fog optical-tail compression (applyFog): x = knee distance (m —
-    // kept above the froxel reach cap so the volumetric band and the
-    // weather TOMLs never see it), y = tail factor (fraction of each
-    // meter past the knee that still counts as optical depth; 1 =
-    // legacy), z = sea-quad half-span (m — the water sheet follows the
-    // farthest terrain ring), w free.
-    Vec4 fogTailInfo { 2500.0f, 0.30f, 9000.0f, 0.0f };
+#define MEADOWS_FRAME_LANE_INIT(...) { __VA_ARGS__ }
+#define MEADOWS_FRAME_LANE_MEMBER(cppType, cppName, init, glslType, glslName, \
+                                  count, doc)                                 \
+    cppType cppName MEADOWS_FRAME_LANE_INIT init;
+    MEADOWS_FRAME_LANES(MEADOWS_FRAME_LANE_MEMBER)
+#undef MEADOWS_FRAME_LANE_MEMBER
+#undef MEADOWS_FRAME_LANE_INIT
 };
 
-// --- std140 layout lock (audit U3-3) -------------------------------------------------
-// The GLSL FrameUbo block (shaders/common.glsl) mirrors this struct by
-// COMMENT only; one member inserted mid-struct (instead of appended) or one
-// non-vec4-multiple member silently desyncs every offset after it and
-// corrupts ~14 shaders at once (the "UBO lesson"). These asserts pin the
-// byte offsets the shaders compile against. To append a member: add it LAST
-// in BOTH files, add its offset line here, and bump the size assert. If an
-// assert fires on an insertion, you are about to break every existing
-// shader read — append instead.
+// --- std140 layout lock -----------------------------------------------------
+// The shaders compile against the GLSL block generated from the same table,
+// so a table edit moves both sides together; these asserts pin the byte
+// offsets independently of the generator, catching a non-vec4-multiple
+// member (std140 padding the C++ struct does not have) and a frame_ubo.glsl
+// not regenerated after the edit (its block would then disagree with these
+// numbers). After a table edit, rewrite the list: tests/FrameLanesTest.cpp
+// walks the lanes and checks each offset against the running std140 size.
 static_assert(offsetof(FrameUniforms, viewProj) == 0);
 static_assert(offsetof(FrameUniforms, invViewProj) == 64);
 static_assert(offsetof(FrameUniforms, cameraPos) == 128);
@@ -288,61 +59,62 @@ static_assert(offsetof(FrameUniforms, waterMapInfo) == 608);
 static_assert(offsetof(FrameUniforms, windInfo) == 624);
 static_assert(offsetof(FrameUniforms, terrainLightInfo) == 640);
 static_assert(offsetof(FrameUniforms, submersionInfo) == 656);
-static_assert(offsetof(FrameUniforms, keyShadowViewProj) == 672);
-static_assert(offsetof(FrameUniforms, keyShadowInfo) == 736);
-static_assert(offsetof(FrameUniforms, stormInfo) == 752);
-static_assert(offsetof(FrameUniforms, rainOcclusionViewProj) == 768);
-static_assert(offsetof(FrameUniforms, grassBendInfo) == 832);
-static_assert(offsetof(FrameUniforms, grassShapeInfo) == 848);
-static_assert(offsetof(FrameUniforms, grassLodInfo) == 864);
-static_assert(offsetof(FrameUniforms, grassBaseTint) == 880);
-static_assert(offsetof(FrameUniforms, grassTipTint) == 896);
-static_assert(offsetof(FrameUniforms, giInfo) == 912);
-static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
-static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
-static_assert(offsetof(FrameUniforms, leafLodInfo) == 960);
-static_assert(offsetof(FrameUniforms, fogSunInfo) == 976);
-static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 992);
-static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 1008);
-static_assert(offsetof(FrameUniforms, clusterInfo) == 1024);
-static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 1040);
-static_assert(offsetof(FrameUniforms, grassShadeInfo) == 1296);
-static_assert(offsetof(FrameUniforms, grassBladeInfo) == 1312);
-static_assert(offsetof(FrameUniforms, stylizedSpecInfo) == 1328);
-static_assert(offsetof(FrameUniforms, mistInfo) == 1344);
-static_assert(offsetof(FrameUniforms, mistShapeInfo) == 1360);
-static_assert(offsetof(FrameUniforms, mistMapInfo) == 1376);
-static_assert(offsetof(FrameUniforms, mistDetailInfo) == 1392);
-static_assert(offsetof(FrameUniforms, mistLightInfo) == 1408);
-static_assert(offsetof(FrameUniforms, fogLayerInfo) == 1424);
-static_assert(offsetof(FrameUniforms, cloudVolInfo) == 1440);
-static_assert(offsetof(FrameUniforms, cloudVolLightInfo) == 1456);
-static_assert(offsetof(FrameUniforms, cloudVolShapeInfo) == 1472);
-static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1488);
-static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1504);
-static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
-static_assert(offsetof(FrameUniforms, waterReserved0) == 1536);
-static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
-static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
-static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1696);
-static_assert(offsetof(FrameUniforms, terrainShadeMapInfo) == 1712);
-static_assert(offsetof(FrameUniforms, splatVarietyInfo) == 1728);
-static_assert(offsetof(FrameUniforms, grassSpeciesShape) == 1744);
-static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1840);
-static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1936);
-static_assert(offsetof(FrameUniforms, ssaoInfo) == 2032);
-static_assert(offsetof(FrameUniforms, surfSheenInfo) == 2048);
-static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 2064);
-static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 2080);
-static_assert(offsetof(FrameUniforms, waterSimFrozen) == 2096);
-static_assert(offsetof(FrameUniforms, fireScorchInfo) == 2160);
-static_assert(offsetof(FrameUniforms, fireEmberInfo) == 2176);
-static_assert(offsetof(FrameUniforms, fireCharInfo) == 2224);
-static_assert(offsetof(FrameUniforms, fireFlameInfo) == 2240);
-static_assert(offsetof(FrameUniforms, windDirInfo) == 2272);
-static_assert(offsetof(FrameUniforms, fogTailInfo) == 2288);
-static_assert(sizeof(FrameUniforms) == 2304,
-              "FrameUniforms grew: append-only, update common.glsl in "
-              "lockstep, then bump this");
+static_assert(offsetof(FrameUniforms, stormInfo) == 672);
+static_assert(offsetof(FrameUniforms, rainOcclusionViewProj) == 688);
+static_assert(offsetof(FrameUniforms, grassBendInfo) == 752);
+static_assert(offsetof(FrameUniforms, grassShapeInfo) == 768);
+static_assert(offsetof(FrameUniforms, grassLodInfo) == 784);
+static_assert(offsetof(FrameUniforms, grassBaseTint) == 800);
+static_assert(offsetof(FrameUniforms, grassTipTint) == 816);
+static_assert(offsetof(FrameUniforms, giInfo) == 832);
+static_assert(offsetof(FrameUniforms, giGridInfo) == 848);
+static_assert(offsetof(FrameUniforms, giBandInfo) == 864);
+static_assert(offsetof(FrameUniforms, leafLodInfo) == 880);
+static_assert(offsetof(FrameUniforms, fogSunInfo) == 896);
+static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 912);
+static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 928);
+static_assert(offsetof(FrameUniforms, clusterInfo) == 944);
+static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 960);
+static_assert(offsetof(FrameUniforms, grassShadeInfo) == 1216);
+static_assert(offsetof(FrameUniforms, grassBladeInfo) == 1232);
+static_assert(offsetof(FrameUniforms, stylizedSpecInfo) == 1248);
+static_assert(offsetof(FrameUniforms, mistInfo) == 1264);
+static_assert(offsetof(FrameUniforms, mistShapeInfo) == 1280);
+static_assert(offsetof(FrameUniforms, mistMapInfo) == 1296);
+static_assert(offsetof(FrameUniforms, mistDetailInfo) == 1312);
+static_assert(offsetof(FrameUniforms, mistLightInfo) == 1328);
+static_assert(offsetof(FrameUniforms, fogLayerInfo) == 1344);
+static_assert(offsetof(FrameUniforms, cloudVolInfo) == 1360);
+static_assert(offsetof(FrameUniforms, cloudVolLightInfo) == 1376);
+static_assert(offsetof(FrameUniforms, cloudVolShapeInfo) == 1392);
+static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1408);
+static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1424);
+static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1440);
+static_assert(offsetof(FrameUniforms, seasonInfo) == 1456);
+static_assert(offsetof(FrameUniforms, leafSeason) == 1472);
+static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1600);
+static_assert(offsetof(FrameUniforms, terrainShadeMapInfo) == 1616);
+static_assert(offsetof(FrameUniforms, splatVarietyInfo) == 1632);
+static_assert(offsetof(FrameUniforms, grassSpeciesShape) == 1648);
+static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1744);
+static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1840);
+static_assert(offsetof(FrameUniforms, ssaoInfo) == 1936);
+static_assert(offsetof(FrameUniforms, surfSheenInfo) == 1952);
+static_assert(offsetof(FrameUniforms, waterSimMapInfo) == 1968);
+static_assert(offsetof(FrameUniforms, waterSimTuneInfo) == 1984);
+static_assert(offsetof(FrameUniforms, waterSimFrozen) == 2000);
+static_assert(offsetof(FrameUniforms, fireScorchInfo) == 2064);
+static_assert(offsetof(FrameUniforms, fireEmberInfo) == 2080);
+static_assert(offsetof(FrameUniforms, fireEmberHot) == 2096);
+static_assert(offsetof(FrameUniforms, fireEmberCold) == 2112);
+static_assert(offsetof(FrameUniforms, fireCharInfo) == 2128);
+static_assert(offsetof(FrameUniforms, fireFlameInfo) == 2144);
+static_assert(offsetof(FrameUniforms, fireFlameLook) == 2160);
+static_assert(offsetof(FrameUniforms, windDirInfo) == 2176);
+static_assert(offsetof(FrameUniforms, fogTailInfo) == 2192);
+static_assert(offsetof(FrameUniforms, vegInfo) == 2208);
+static_assert(sizeof(FrameUniforms) == 2224,
+              "FrameUniforms changed: regenerate frame_ubo.glsl and rewrite "
+              "the offset list above (tests/FrameLanesTest.cpp prints both)");
 
 } // namespace render

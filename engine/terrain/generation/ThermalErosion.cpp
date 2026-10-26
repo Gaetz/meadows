@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include "engine/reflect/Fields.hpp"
 
 namespace render::terraingen {
 
@@ -137,6 +138,18 @@ vector<f32> roundRidges(const GridSpec& spec, const vector<f32>& height,
         out[i] = height[i] - w * prominence;
     }
     return out;
+}
+
+u64 hashKey(const ThermalParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(ThermalParams::staticTypeInfo(), &p, h);
+    return h.value;
+}
+
+u64 hashKey(const RidgeRoundParams& p) {
+    core::Fnv64 h;
+    reflect::hashReflected(RidgeRoundParams::staticTypeInfo(), &p, h);
+    return h.value;
 }
 
 } // namespace render::terraingen

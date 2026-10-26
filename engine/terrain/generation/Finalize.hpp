@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/FineErosion.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
@@ -74,7 +75,37 @@ struct FinalizeParams {
     // after a visual review.
     f32 strataAmplitude { 0.0f }; // meters of ledge displacement
     f32 strataPeriod { 14.0f };   // meters of altitude per band
+    // Every scalar; `fine` (nested params) is hashed explicitly in
+    // hashKey — reflection is flat.
+    REFLECT_BEGIN(FinalizeParams, void)
+        REFLECT_FIELD(upsampleFactor)
+        REFLECT_FIELD(riverDepthCoef)
+        REFLECT_FIELD(riverDepthMin)
+        REFLECT_FIELD(riverDepthMax)
+        REFLECT_FIELD(bankShoulder)
+        REFLECT_FIELD(streamDepthMax)
+        REFLECT_FIELD(fleuveDepthMax)
+        REFLECT_FIELD(fleuveBankShoulder)
+        REFLECT_FIELD(fordDepth)
+        REFLECT_FIELD(fordRadius)
+        REFLECT_FIELD(bankMaxCut)
+        REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(beachBand)
+        REFLECT_FIELD(wetnessReach)
+        REFLECT_FIELD(flowLogSpan)
+        REFLECT_FIELD(reliefAmplitude)
+        REFLECT_FIELD(reliefWavelength)
+        REFLECT_FIELD(fineMinX)
+        REFLECT_FIELD(fineMinZ)
+        REFLECT_FIELD(fineSpan)
+        REFLECT_FIELD(lakeDepthCoef)
+        REFLECT_FIELD(lakeDepthMax)
+        REFLECT_FIELD(strataAmplitude)
+        REFLECT_FIELD(strataPeriod)
+    REFLECT_END()
 };
+
+u64 hashKey(const FinalizeParams& p);
 
 struct FinalizeResult {
     GridSpec fineSpec;

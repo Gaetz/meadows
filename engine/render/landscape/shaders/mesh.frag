@@ -30,20 +30,20 @@ void main() {
     // Wetness (exterior only — the interior flag gates it).
     albedo *= mix(1.0, 0.75,
                   clamp(uStormInfo.y, 0.0, 1.0) *
-                      (1.0 - uCascadeSplits.w));
+                      (1.0 - uVegInfo.y));
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
-    // Interior hemispheric ambient (uCascadeSplits.w = 1 indoors): the
+    // Interior hemispheric ambient (uVegInfo.y = 1 indoors): the
     // dead-flat constant ambient is the #1 "ugly interior" cause — floors
     // catch the bright/cool top light, ceilings the warm dark floor
     // bounce, walls sit between. Exterior stays byte-identical.
     vec3 ambient = uAmbientColor.rgb;
-    if (uCascadeSplits.w > 0.5) {
+    if (uVegInfo.y > 0.5) {
         float up = n.y * 0.5 + 0.5;
         ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
     }
-    // Stylized specular band (uStylizedSpec: x = strength,
+    // Stylized specular band (uStylizedSpecInfo: x = strength,
     // y = threshold, z = exponent) — the BotW cel highlight; the
     // stepped diffuse gates it to the lit side, uAmbientColor.w keeps
     // Classic byte-identical (the stylizedRim pattern). KEEP IN SYNC
@@ -51,9 +51,9 @@ void main() {
     vec3 viewDir = normalize(uCameraPos.xyz - vWorldPos);
     vec3 halfDir = normalize(uSunDirection.xyz + viewDir);
     float spec = stylizedSpec(pow(max(dot(n, halfDir), 0.0),
-                                  uStylizedSpec.z),
-                              uStylizedSpec.y) *
-                 uStylizedSpec.x * diffuse * uAmbientColor.w;
+                                  uStylizedSpecInfo.z),
+                              uStylizedSpecInfo.y) *
+                 uStylizedSpecInfo.x * diffuse * uAmbientColor.w;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.

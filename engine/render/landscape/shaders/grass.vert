@@ -110,7 +110,7 @@ void main() {
 
     // Species (per clump, GrassSpecies.hpp): shape scales + tints from
     // the FrameUbo tables. Height was applied at scatter (table x lane).
-    int species = clamp(int(aSpecies.x + 0.5), 0, 5);
+    int species = clamp(int(aSpecies.x + 0.5), 0, kGrassSpeciesCount - 1);
     vec4 spShape = uGrassSpeciesShape[species];
 
     // ONE per-blade brightness (stable: seeded by the root position) —

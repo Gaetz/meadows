@@ -36,8 +36,17 @@ constexpr core::Guid kSavedAbilityNs { 0x534441424c545921ull, 0x0000000000000005
 constexpr core::Guid kSavedSkillNs  { 0x5344534b494c4c21ull, 0x0000000000000006ull };
 constexpr core::Guid kSavedBountyNs { 0x5344424f554e5459ull, 0x0000000000000007ull };
 
+// One savedStatsComponents() entry: the component's TypeInfo and the
+// default instance whose values seed the generated form's slots.
+template<typename T>
+SavedStatsComponent persistedComponent() {
+    static const T kDefaults {};
+    return { &T::staticTypeInfo(), &kDefaults };
+}
+
 // Copies a component's fields into the SavedStatsForm (capture) or back
-// (apply) when the entity carries it.
+// (apply) when the entity carries it. One line per savedStatsComponents()
+// entry in captureActor / applySavedState, same order.
 template<typename T>
 void componentToSaved(ecs::Entity entity, SavedStatsForm& saved) {
     if (entity.has<T>()) {
@@ -54,7 +63,59 @@ void savedToComponent(const SavedStatsForm& saved, ecs::Entity entity) {
     }
 }
 
+constexpr SavedStatsExclusion kSavedStatsExclusions[] = {
+    { "AttributeSet", "damage",
+      "transient meta-attribute: a write is routed into health by the "
+      "PostExecute hook and reset, never holds state across a frame" },
+    { "AttributeSet", "maxHealthOverride",
+      "re-seeded at spawn by the Spawner from ActorForm.maxHealth "
+      "(the `override ?? formula` balance pin), before the saved state "
+      "applies" },
+};
+
 } // namespace
+
+std::span<const SavedStatsComponent> savedStatsComponents() {
+    // Function-local so the TypeInfos and default instances are built on
+    // first use, in a fixed order.
+    static const SavedStatsComponent kComponents[] = {
+        persistedComponent<CoreAttributes>(),
+        persistedComponent<AttributeSet>(),
+        persistedComponent<Resonance>(),
+        persistedComponent<Survival>(),
+        persistedComponent<StatusBuildup>(),
+        persistedComponent<CombatState>(),
+        persistedComponent<Equipment>(),
+        persistedComponent<VendorState>(),
+        persistedComponent<Bounty>(),
+        persistedComponent<FollowerState>(),
+    };
+    return kComponents;
+}
+
+std::span<const reflect::TypeInfo* const> savedStatsComponentTypes() {
+    static const vector<const reflect::TypeInfo*> kTypes = [] {
+        vector<const reflect::TypeInfo*> types;
+        for (const SavedStatsComponent& component : savedStatsComponents()) {
+            types.push_back(component.type);
+        }
+        return types;
+    }();
+    return kTypes;
+}
+
+std::span<const SavedStatsExclusion> savedStatsExclusions() {
+    return kSavedStatsExclusions;
+}
+
+bool isSavedStatsExcluded(std::string_view type, std::string_view field) {
+    for (const SavedStatsExclusion& entry : kSavedStatsExclusions) {
+        if (entry.type == type && entry.field == field) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void copyMatchingFields(const reflect::TypeInfo& srcType, const void* src,
                         const reflect::TypeInfo& dstType, void* dst) {
@@ -147,7 +208,7 @@ vector<data::Record> captureActor(ecs::Entity entity,
                                   const GameplayTagRegistry& registry) {
     vector<data::Record> records;
 
-    // The stat sheet — one flat record, fields mirrored by name.
+    // The stat sheet — one flat record, fields matched by name.
     SavedStatsForm stats;
     stats.parent = refGuid;
     componentToSaved<CoreAttributes>(entity, stats);

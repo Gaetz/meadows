@@ -34,7 +34,7 @@ struct WaterMaterial {
     vec4 extras;            // x foam gain
 };
 layout(std140, binding = 1) uniform WaterMaterialsUbo {
-    WaterMaterial uWaterMaterials[16];
+    WaterMaterial uWaterMaterials[kMaxWaterMaterials];
 };
 #endif
 

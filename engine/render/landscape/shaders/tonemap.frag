@@ -128,10 +128,10 @@ void main() {
     vec3 color = uPostInfo.x > 0.5 ? acesFilm(hdr) : clamp(hdr, 0.0, 1.0);
     // Per-channel ACES skews saturated warm light toward yellow-green
     // as it brightens (R rolls off first, G catches up). INDOORS
-    // (uCascadeSplits.w) blend toward a hue-preserving mapping: ACES on
+    // (uVegInfo.y) blend toward a hue-preserving mapping: ACES on
     // the luminance, original color ratio kept. The exterior keeps the
     // classic curve — sunsets live off exactly that desaturation.
-    if (uCascadeSplits.w > 0.5 && uPostInfo.x > 0.5) {
+    if (uVegInfo.y > 0.5 && uPostInfo.x > 0.5) {
         float l = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
         vec3 hueKept = hdr * (acesFilm(vec3(l)).r / max(l, 1e-4));
         color = mix(color, clamp(hueKept, 0.0, 1.0), 0.55);
