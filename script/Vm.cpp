@@ -62,6 +62,8 @@ std::optional<reflect::Value> luaToValue(const sol::object& object) {
     }
 }
 
+bool refreshEntityPointers(ScriptContext& ctx);
+
 // The `self` proxy: a usertype whose index/new_index route `self.x` to attribute
 // reads (read-only) or ScriptVars, plus tag methods.
 struct ScriptSelf {
@@ -106,7 +108,15 @@ struct ScriptSelf {
                 "' is read-only from scripts; change it through a GameplayEffect");
         }
         if (!ctx->scriptVars) {
-            return;
+            // Persistent script state lives in the reflected component
+            // (CLAUDE.md §2.8); the first write attaches it, so a script
+            // never needs the spawner to have anticipated it. Adding a
+            // component moves the entity: re-resolve every pointer.
+            if (ctx->entity.id() == 0 || !ctx->entity.is_alive()) {
+                return;
+            }
+            ctx->entity.set<ScriptVars>({});
+            refreshEntityPointers(*ctx);
         }
         const sol::object object = value;
         if (const auto converted = luaToValue(object)) {

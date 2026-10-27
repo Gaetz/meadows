@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 
+#include "gameplay/event/EventBus.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 
@@ -13,9 +14,19 @@ namespace {
 
 constexpr ImVec4 kEventColor { 0.55f, 0.75f, 1.0f, 1.0f }; // keyword blue
 
-// Events dispatched from C++ (grep `dispatch({ eventKind(...)`) — they
-// exist even when no record carries them yet. Extend when combat grows.
-const vector<str> kBuiltinEvents { "OnDeath", "OnBanditDeath" };
+// Events dispatched from C++ (gameplay::events, the registry `cooker
+// validate` checks) — they exist even when no record carries them yet.
+// The listened-to half of that registry is kBuiltinListeners below.
+const vector<str> kBuiltinEvents {
+    str { gameplay::events::AnimEvent },
+    str { gameplay::events::CallForHelp },
+    str { gameplay::events::OnAbilityUsed },
+    str { gameplay::events::OnDeath },
+    str { gameplay::events::OnDowned },
+    str { gameplay::events::OnHitTaken },
+    str { gameplay::events::OnParried },
+    str { gameplay::events::OnStagger },
+};
 // Events the C++ side LISTENS to (scene subscriptions) — a dialogue
 // node firing one is not an orphan even with zero data listeners.
 const vector<str> kBuiltinListeners { "OpenBarter", "OnPayFine" };

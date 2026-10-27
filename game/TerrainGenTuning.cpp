@@ -387,14 +387,6 @@ resolveZoneArchetypes(const data::FormDatabase& forms) {
     return out;
 }
 
-u64 hashTerrainGenTuning(const TileBakeParams& params) {
-    const data::TerrainGenTuningForm form = captureTerrainGenTuning(params);
-    core::Fnv64 h;
-    reflect::hashReflected(data::TerrainGenTuningForm::staticTypeInfo(),
-                           &form, h);
-    return h.value;
-}
-
 TileBakeParams makeTerrainBakeParams(const data::LandscapeTuningForm& tuning,
                                      const data::TerrainGenTuningForm& gen,
                                      const data::FormDatabase* forms) {

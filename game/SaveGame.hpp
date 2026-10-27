@@ -123,6 +123,9 @@ private:
         vector<gameplay::SavedItemForm> items;
         vector<gameplay::SavedInjuryForm> injuries;
         vector<gameplay::SavedAbilityForm> abilities;
+        vector<gameplay::SavedSkillForm> skills;
+        vector<gameplay::SavedBountyForm> bounties;
+        vector<gameplay::SavedScriptVarForm> scriptVars;
         bool materialized { false };
     };
     Entry& entryFor(const core::Guid& referenceId);

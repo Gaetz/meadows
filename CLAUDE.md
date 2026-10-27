@@ -205,13 +205,15 @@ buildable at all times. macOS optional later.
 ```
 /engine
   /platform     # cross-platform layer (mostly SDL3). ONE .hpp per concern;
-    /common     #   only common/ exists today — posix/linux/win32 appear the
-                #   day something needs a per-OS .cpp (§3.1 pattern)
+    /common     #   cross-platform impl; macos/ holds the one per-OS .cpp
+    /macos      #   so far — posix/linux/win32 appear the day something
+                #   needs one (§3.1 pattern)
   /core         # logging, asserts, job system, math aliases, Guid, Rng, clock
   /reflect      # reflection system (field registration, type info) — keystone
   /rhi          # graphics abstraction (interface + compute extension)
     /backends
-      /gl       # OpenGL 4.6 backend (only backend for now)
+      /gl       # OpenGL 4.6 backend (PC fallback)
+      /vulkan   # Vulkan backend (shipped renderer, macOS via MoltenVK)
   /render       # 2D sprite renderer on the RHI
     /landscape  # the custom 3D renderer (docs/RENDERING.md)
   /assets       # asset DB (GUID), loaders (stb, cgltf), async residency

@@ -346,6 +346,7 @@ new = true
 [records.fields]
 displayName = "Slay the Bandits"
 startState = "7e000000-0000-4000-8000-00000000000a"
+startEvent = "OnAcceptQuest"
 
 [[records]]
 form = "7e000000-0000-4000-8000-00000000000a"
@@ -378,7 +379,8 @@ new = true
 [records.fields]
 branch = "7e000000-0000-4000-8000-0000000000c1"
 displayName = "Defeat bandits"
-event = "OnBanditDeath"
+event = "OnDeath"
+filterTag = "Faction.Bandits"
 required = 2
 
 # Step 2: return to the guard to turn the quest in.

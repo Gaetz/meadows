@@ -312,6 +312,9 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         entry.items.clear();
         entry.injuries.clear();
         entry.abilities.clear();
+        entry.skills.clear();
+        entry.bounties.clear();
+        entry.scriptVars.clear();
         bool hasStats = false;
         for (const data::Record& record : entry.actorRecords) {
             if (record.typeId ==
@@ -340,6 +343,22 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
                 entry.abilities.push_back(
                     gameplay::formFromRecord<gameplay::SavedAbilityForm>(
                         record));
+            } else if (record.typeId ==
+                       gameplay::SavedSkillForm::staticTypeInfo().id) {
+                entry.skills.push_back(
+                    gameplay::formFromRecord<gameplay::SavedSkillForm>(
+                        record));
+            } else if (record.typeId ==
+                       gameplay::SavedBountyForm::staticTypeInfo().id) {
+                entry.bounties.push_back(
+                    gameplay::formFromRecord<gameplay::SavedBountyForm>(
+                        record));
+            } else if (record.typeId ==
+                       gameplay::SavedScriptVarForm::staticTypeInfo()
+                           .id) {
+                entry.scriptVars.push_back(
+                    gameplay::formFromRecord<
+                        gameplay::SavedScriptVarForm>(record));
             }
         }
         entry.materialized = hasStats;
@@ -357,6 +376,15 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         }
         for (const auto& ability : entry.abilities) {
             saved.abilities.push_back(&ability);
+        }
+        for (const auto& skill : entry.skills) {
+            saved.skills.push_back(&skill);
+        }
+        for (const auto& bounty : entry.bounties) {
+            saved.bounties.push_back(&bounty);
+        }
+        for (const auto& var : entry.scriptVars) {
+            saved.scriptVars.push_back(&var);
         }
     }
     return saved;

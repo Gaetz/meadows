@@ -388,3 +388,32 @@ TEST_CASE("script: spirit.jet reaches the jet callback with its launch speed") {
     bare.bindWorldActions(Vm::WorldActions {});
     CHECK(bare.run("spirit.jet('Water', 1, 1, 1, 1)", ctx).ok);
 }
+
+TEST_CASE("script: the first self.x write attaches ScriptVars to a live "
+          "entity (§2.8) and keeps the moved pointers valid") {
+    CoroWorldFixture f;
+    ecs::Entity actor = f.makeActor();
+    REQUIRE_FALSE(actor.has<script::ScriptVars>());
+
+    Vm vm;
+    script::ScriptContext ctx = f.contextFor(actor);
+    // The write adds a component (archetype move); the read right after
+    // goes through the re-resolved attribute pointer.
+    const auto result =
+        vm.run("self.visits = 2\nhealthAfter = self.health", ctx);
+    REQUIRE(result.ok);
+    REQUIRE(actor.has<script::ScriptVars>());
+    const auto& vars = actor.get<script::ScriptVars>().vars;
+    REQUIRE(vars.contains("visits"));
+    CHECK(std::get<f32>(vars.at("visits")) == doctest::Approx(2.0f));
+    CHECK(ctx.scriptVars == &actor.get_mut<script::ScriptVars>());
+    REQUIRE(vm.getNumber("healthAfter").has_value());
+    CHECK(*vm.getNumber("healthAfter") ==
+          doctest::Approx(gameplay::currentValueOf(
+              actor.get<gameplay::AbilitySystem>(), gameplay::attr("health"))));
+
+    // A detached context (no entity handle, tests / immediate use) still
+    // drops the write silently instead of attaching to nothing.
+    script::ScriptContext detached;
+    CHECK(vm.run("self.visits = 5", detached).ok);
+}

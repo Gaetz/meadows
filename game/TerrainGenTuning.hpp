@@ -25,10 +25,6 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
 data::TerrainGenTuningForm
 captureTerrainGenTuning(const render::terraingen::TileBakeParams& params);
 
-// FNV-1a over every reflected field of the captured form: the
-// generation component of mapBakeKey (an edit = a new map).
-u64 hashTerrainGenTuning(const render::terraingen::TileBakeParams& params);
-
 // The game's bake params from its two tuning records: seed, sea level,
 // recurve (LandscapeTuningForm) + the pupitre, borders on.
 render::terraingen::TileBakeParams
