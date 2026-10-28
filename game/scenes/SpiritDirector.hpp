@@ -289,15 +289,19 @@ public:
     // The gestures' water as geometry (jet tubes, the carried blob) into
     // the snapshot — drawn with the placed-volume water look.
     void extract(render::RenderSnapshot& out, f32 timeSeconds) const;
-    // The two callers of the gestures' reset end every held gesture and
-    // the jets, then re-push the kernel's sources; they differ on the
+    // Every caller of the gestures' reset ends every held gesture and
+    // the jets, then re-pushes the kernel's sources; they differ on the
     // rest. MapChanged (the world swapped under the caster): the stroke
     // in progress is abandoned, the wall's press spot and the seized
     // rocks go with the world, the sources stay (the map's own). The
     // console's clear: the sources go too, the stroke commits, the wall
-    // and the rocks are left as they are. The fire director and the
-    // ambient fx reset beside it (LandscapeScene::resetWorldFx).
-    enum class ResetReason : u8 { MapChanged, ConsoleClear };
+    // and the rocks are left as they are. SceneExit (the scene leaves,
+    // a reload being onExit + onEnter): everything goes — sources, the
+    // stroke abandoned, rocks released — so nothing of this world leaks
+    // into the next one; build() re-reads the sources from the records.
+    // The fire director and the ambient fx reset beside it
+    // (LandscapeScene::resetWorldFx).
+    enum class ResetReason : u8 { MapChanged, ConsoleClear, SceneExit };
     void resetGestures(const SpiritContext& ctx, ResetReason reason);
 
     // The spell book (draft UI): every ability carrying a SpellForm, in

@@ -822,9 +822,9 @@ void SpiritDirector::resetGestures(const SpiritContext& ctx, ResetReason reason)
     // The steps are independent of one another (each ends its own
     // gesture and hands back its own emitters), so one order serves both
     // callers; the two lists differ only in what the flags below pick.
-    const bool clearSources = reason == ResetReason::ConsoleClear;
+    const bool clearSources = reason != ResetReason::MapChanged;
     const bool commitStroke = reason == ResetReason::ConsoleClear;
-    const bool worldGone = reason == ResetReason::MapChanged;
+    const bool worldGone = reason != ResetReason::ConsoleClear;
     if (clearSources) {
         sources.clear();
     }

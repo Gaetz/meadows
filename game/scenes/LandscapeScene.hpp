@@ -593,11 +593,14 @@ private:
     // the wind field) it reads from the spirit director.
     FireDirector fire;
     FireContext makeFireContext();
-    // The world's fx forget the world: the fire director and the ambient
-    // fx (map swap, the console's clear) — called right after
-    // SpiritDirector::resetGestures ended the gestures. Site-specific
-    // steps stay at the sites.
-    void resetWorldFx();
+    // The world's living effects forget the world, in ONE order for
+    // every caller: the gestures end (SpiritDirector::resetGestures,
+    // the reason picks what else goes), then the fire director and the
+    // ambient fx hand their emitters back. On SceneExit the particle
+    // sim is emptied too (the console's free emitters have no owner),
+    // so a reload — onExit + onEnter — starts from a world without
+    // fire. Site-specific steps stay at the sites.
+    void resetWorldFx(SpiritDirector::ResetReason reason);
     // Ground rising into characters throws them (the earth spirit's lift
     // curve, SpiritForm Earth). ONE mechanism at the ONE place the ground
     // changes — the republishTerrain funnel: every actor standing in a

@@ -1283,6 +1283,12 @@ void LandscapeScene::onExit() {
     // Leave Play/Edit through the funnel while the systems it touches
     // (capsule, screens, console, editor selection) are still alive.
     restoreMode(SceneMode::Spectator);
+    // The fire, the gestures and the ambient emitters die with the
+    // world — while the lane, the physics and the renderer they hand
+    // things back to are still alive. A reload is onExit + onEnter:
+    // without this, a burning prop or a river's emitters outlived the
+    // world they belonged to.
+    resetWorldFx(SpiritDirector::ResetReason::SceneExit);
     engine->getWindow().setRelativeMouseMode(false);
     engine->getWindow().setTextInput(false);
     // Game UI (one UiSystem per process — release before any
@@ -2140,9 +2146,7 @@ SandboxContext LandscapeScene::makeSandboxContext() {
         // escapes and the fx too; this map's springs enter the sim.
         [this] {
             interiorEscapes.clear();
-            spiritDirector.resetGestures(makeSpiritContext(),
-                                         SpiritDirector::ResetReason::MapChanged);
-            resetWorldFx();
+            resetWorldFx(SpiritDirector::ResetReason::MapChanged);
         },
         [this] { placeStartCamera(); },
         [this] { streaming.snapCellEntities(makeStreamingContext()); },
@@ -3588,9 +3592,7 @@ void LandscapeScene::createConsole() {
             return out.empty() ? str { "no spirit source" } : out;
         }
         if (verb == "clear") {
-            spiritDirector.resetGestures(makeSpiritContext(),
-                                         SpiritDirector::ResetReason::ConsoleClear);
-            resetWorldFx();
+            resetWorldFx(SpiritDirector::ResetReason::ConsoleClear);
             return "spirit sources cleared";
         }
         if (verb == "cast") {
@@ -4282,9 +4284,13 @@ AmbientFxContext LandscapeScene::makeAmbientFxContext() {
     };
 }
 
-void LandscapeScene::resetWorldFx() {
+void LandscapeScene::resetWorldFx(SpiritDirector::ResetReason reason) {
+    spiritDirector.resetGestures(makeSpiritContext(), reason);
     fire.reset(makeFireContext());
     ambientFx.reset(makeAmbientFxContext());
+    if (reason == SpiritDirector::ResetReason::SceneExit) {
+        fxSim.clear();
+    }
 }
 
 render::terrain::WaterQuery LandscapeScene::makeWaterQuery() {
