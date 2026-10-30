@@ -3,7 +3,9 @@
 #include <iterator>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <string_view>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
@@ -124,38 +126,96 @@ f32 roll01(u32 h, u32 k) {
            (1.0f / 4294967295.0f);
 }
 
+PoiType poiTypeByName(std::string_view name) {
+    for (size_t i = 0; i < std::size(kPoiTypes); ++i) {
+        if (name == kPoiTypes[i].name) {
+            return static_cast<PoiType>(i);
+        }
+    }
+    return PoiType::Count;
+}
+
+// A zone archetype's `poi` table: "type:weight" pairs separated by
+// spaces (weight 1 when omitted, unknown names skipped). Two passes
+// over the string — the sites are memoized, this runs once per site.
+std::optional<PoiType> pickNamed(const str& table, f32 roll) {
+    const auto each = [&](auto&& fn) {
+        std::string_view rest { table };
+        while (!rest.empty()) {
+            const size_t sp = rest.find(' ');
+            std::string_view tok = rest.substr(0, sp);
+            rest = sp == std::string_view::npos ? std::string_view {}
+                                                : rest.substr(sp + 1);
+            if (tok.empty()) {
+                continue;
+            }
+            const size_t colon = tok.find(':');
+            const PoiType type = poiTypeByName(tok.substr(0, colon));
+            if (type == PoiType::Count) {
+                continue;
+            }
+            f32 weight = 1.0f;
+            if (colon != std::string_view::npos) {
+                weight = static_cast<f32>(
+                    std::atof(str { tok.substr(colon + 1) }.c_str()));
+            }
+            if (weight > 0.0f) {
+                fn(type, weight);
+            }
+        }
+    };
+    f32 total = 0.0f;
+    each([&](PoiType, f32 w) { total += w; });
+    if (total <= 0.0f) {
+        return std::nullopt;
+    }
+    f32 acc = 0.0f;
+    std::optional<PoiType> out;
+    each([&](PoiType t, f32 w) {
+        if (out) {
+            return;
+        }
+        acc += w;
+        if (roll * total < acc) {
+            out = t;
+        }
+    });
+    return out;
+}
+
 // The catalogue's tables (docs/POI-CATALOGUE.md §F1): the type of a
 // site from its tier and its world sample. `alt` re-rolls (rules F2/F3).
-PoiType drawType(PoiTier tier, const WorldSample& w, u32 hash,
-                 u32 alt) {
+// A moyen nested in a zone draws from its archetype's `poi` table
+// instead (the archetype already carries the étage/massif/coast/
+// moisture conditions the context table reads).
+PoiType drawType(PoiTier tier, const WorldSample& w, u32 hash, u32 alt,
+                 const ZoneArchetype* arch) {
     const f32 r = roll01(hash, 11 + alt);
     const f32 base = glm::max(w.base, 0.0f);
     const bool arid = w.moisture < 0.38f && w.temperature > 0.58f;
     const bool cold = w.temperature < 0.34f;
     if (tier == PoiTier::Grand) {
-        if (w.sea) {
-            return w.coast > 0.4f && w.massif > 0.3f ? PoiType::Fjord
-                                                      : PoiType::Islet;
-        }
-        if (w.coast > 0.5f) {
+        // The grand is the landmark of the map (rule F2): silhouettes
+        // only — a peak, a tooth, a volcano, a headland. The mesa (rim
+        // capped at 150 m), the cirque (a 200 m rim) and the trenches
+        // (canyon, fjord) stay points of interest of the moyen tier.
+        if (w.sea || w.coast > 0.5f) {
             return PoiType::Headland;
         }
         if (w.massif > 0.4f) {
-            const Weighted t[] = { { PoiType::Summit, 70.0f },
-                                   { PoiType::Cirque, 15.0f },
-                                   { PoiType::Needle, 15.0f } };
-            return pick(t, 3, r);
+            const Weighted t[] = { { PoiType::Summit, 75.0f },
+                                   { PoiType::Needle, 25.0f } };
+            return pick(t, 2, r);
         }
-        if (base >= 450.0f) {
-            const Weighted t[] = { { PoiType::Mesa, 55.0f },
-                                   { PoiType::Summit, 30.0f },
-                                   { PoiType::Canyon, 15.0f } };
-            return pick(t, 3, r);
-        }
-        const Weighted t[] = { { PoiType::Summit, 55.0f },
-                               { PoiType::Mesa, 25.0f },
-                               { PoiType::Crater, arid ? 20.0f : 8.0f } };
+        const Weighted t[] = { { PoiType::Summit, 70.0f },
+                               { PoiType::Crater, arid ? 30.0f : 15.0f },
+                               { PoiType::Needle, 10.0f } };
         return pick(t, 3, r);
+    }
+    if (tier == PoiTier::Moyen && arch && !arch->poi.empty()) {
+        if (const auto t = pickNamed(arch->poi, r)) {
+            return *t;
+        }
     }
     if (tier == PoiTier::Petit) {
         const Weighted t[] = { { PoiType::Boulders, cold ? 45.0f : 25.0f },
@@ -305,6 +365,7 @@ u64 keyOf(const CellKey& k) {
 struct CellSite {
     bool present { false };
     PoiSite site;
+    ZoneSite zone; // the host zone (moyen with zones; valid = nested)
 };
 
 f32 cellSize(const PoiPlanParams& plan, PoiTier tier) {
@@ -321,7 +382,74 @@ f32 cellOffset(const PoiPlanParams&, PoiTier) {
     return 0.0f;
 }
 
-// Position + hash of a cell's site (type-free: the edges read it).
+// Memo of typed sites (and the moyen edges) per cell. Thread-local, so
+// workers never share it; keyed by an exact copy of ALL the params —
+// the sites' typing reads the world sample, the master network and
+// the zones, so any field can move a site.
+struct Memo {
+    WorldLayerParams world;
+    PoiPlanParams plan;
+    ZoneParams zones;
+    bool hasZones { false };
+    bool valid { false };
+    std::unordered_map<u64, CellSite> sites;
+    std::unordered_map<u64, vector<PoiSite>> rawEdges; // moyen: partners
+};
+
+// The memo is only ever CLEARED at a public entry point (memoReady):
+// the internal functions hold references into it across nested calls.
+Memo& memoFor(const WorldLayerParams&, const PoiPlanParams&) {
+    thread_local Memo memo;
+    return memo;
+}
+
+Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan,
+                const ZoneParams* zones) {
+    Memo& memo = memoFor(world, plan);
+    const bool sameZones =
+        memo.hasZones == (zones != nullptr) &&
+        (zones == nullptr || memo.zones == *zones);
+    if (!memo.valid || !(memo.world == world) || !(memo.plan == plan) ||
+        !sameZones || memo.sites.size() > 32768) {
+        memo.sites.clear();
+        memo.rawEdges.clear();
+        memo.world = world;
+        memo.plan = plan;
+        memo.hasZones = zones != nullptr;
+        if (zones) {
+            memo.zones = *zones;
+        }
+        memo.valid = true;
+    }
+    return memo;
+}
+
+// The zones the current memo nests the sites in (nullptr = none).
+const ZoneParams* memoZones(const WorldLayerParams& world,
+                            const PoiPlanParams& plan) {
+    Memo& memo = memoFor(world, plan);
+    return memo.hasZones ? &memo.zones : nullptr;
+}
+
+// The archetype a cell's site draws from (its host zone's).
+const ZoneArchetype* archetypeOf(const WorldLayerParams& world,
+                                 const PoiPlanParams& plan,
+                                 const CellSite& cell) {
+    const ZoneParams* zones = memoZones(world, plan);
+    if (!zones || !cell.zone.valid) {
+        return nullptr;
+    }
+    const vector<ZoneArchetype>& table = zoneArchetypesOf(*zones);
+    if (table.empty()) {
+        return nullptr;
+    }
+    return &table[glm::min<size_t>(cell.zone.archetype, table.size() - 1)];
+}
+
+// Position + hash of a cell's site (type-free: the edges read it). A
+// moyen with zones becomes the point of interest of its host zone: it
+// moves onto the zone's centre (a sea or start-meadow zone hosts none,
+// the site keeps its lattice point and its context typing).
 CellSite placeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
                    PoiTier tier, i32 cx, i32 cz) {
     CellSite out;
@@ -363,6 +491,16 @@ CellSite placeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
             s.z = world.startZ + std::sin(ang) * plan.grandStartClearance;
         }
     }
+    if (tier == PoiTier::Moyen) {
+        if (const ZoneParams* zones = memoZones(world, plan)) {
+            const ZoneSite host = zoneSiteAt(world, *zones, s.x, s.z);
+            if (host.valid && !host.sea && !host.startMeadow) {
+                out.zone = host;
+                s.x = host.x;
+                s.z = host.z;
+            }
+        }
+    }
     out.present = true;
     return out;
 }
@@ -371,8 +509,36 @@ f32 lerpHash(f32 lo, f32 hi, u32 hash, u32 k) {
     return glm::mix(lo, hi, roll01(hash, k));
 }
 
+// A shape that RISES from the floor — what the pedestal carries (a
+// trench, a basin, a pad or a mound stays at its own floor).
+bool risingShape(KernelShape shape) {
+    return shape == KernelShape::Cone || shape == KernelShape::Crater ||
+           shape == KernelShape::Mesa || shape == KernelShape::Ridge ||
+           shape == KernelShape::Field || shape == KernelShape::Step;
+}
+
+f32 coneRadius(const PoiPlanParams& plan, const PoiSite& s, f32 height);
+
+// The footprint the pedestal fills (the landform sits wholly on it):
+// a cone's slope-derived base, a ridge's long axis, the others' radius.
+f32 pedestalRadius(const PoiPlanParams& plan, const PoiSite& s) {
+    const PoiTypeTraits& t = poiTraits(s.type);
+    const f32 h = glm::max(s.height, 0.0f);
+    switch (t.shape) {
+    case KernelShape::Cone:
+        return glm::max(s.radius, t.needleCone
+                                      ? glm::max(h / std::tan(0.7f), 20.0f)
+                                      : coneRadius(plan, s, h));
+    case KernelShape::Crater: return glm::max(s.radius, coneRadius(plan, s, h));
+    case KernelShape::Ridge: return s.radius * 2.0f;
+    default: return s.radius;
+    }
+}
+
 // Size and shape of a typed site.
-void sizeSite(const PoiPlanParams& plan, PoiSite& s) {
+void sizeSite(const WorldLayerParams& world, const PoiPlanParams& plan,
+              CellSite& cell) {
+    PoiSite& s = cell.site;
     switch (s.tier) {
     case PoiTier::Grand:
         s.radius = lerpHash(1200.0f, 2000.0f, s.hash, 3);
@@ -407,6 +573,22 @@ void sizeSite(const PoiPlanParams& plan, PoiSite& s) {
     if (t.radiusCap > 0.0f) {
         s.radius = glm::min(s.radius, t.radiusCap);
     }
+    // Nested in the zones: the drawn height is the clearance ABOVE the
+    // highest zone floor the footprint touches — the storey difference
+    // becomes a PEDESTAL under the landform (planSampleAt feathers it
+    // over the footprint, the controls add it to the floor), so a
+    // landform on a low storey still stands over the walls of its
+    // higher neighbours instead of being swallowed by them.
+    const ZoneParams* zones = memoZones(world, plan);
+    if (zones && s.tier != PoiTier::Petit && s.height > 0.0f &&
+        risingShape(t.shape)) {
+        const f32 reach = pedestalRadius(plan, s);
+        const f32 own = cell.zone.valid
+                            ? cell.zone.storeyHeight
+                            : zoneSampleAt(world, *zones, s.x, s.z).storeyHeight;
+        const f32 highest = zoneHighestFloorNear(world, *zones, s.x, s.z, reach);
+        s.pedestal = glm::max(highest - own, 0.0f);
+    }
 }
 
 // Lexicographic rank of a cell: the lower-ranked neighbour keeps its
@@ -415,43 +597,11 @@ bool lowerRank(i32 ax, i32 az, i32 bx, i32 bz) {
     return az < bz || (az == bz && ax < bx);
 }
 
-// Memo of typed sites (and the moyen edges) per cell. Thread-local, so
-// workers never share it; keyed by an exact copy of BOTH params — the
-// sites' typing reads the world sample and the master network, so any
-// field can move a site.
-struct Memo {
-    WorldLayerParams world;
-    PoiPlanParams plan;
-    bool valid { false };
-    std::unordered_map<u64, CellSite> sites;
-    std::unordered_map<u64, vector<PoiSite>> rawEdges; // moyen: partners
-};
-
-// The memo is only ever CLEARED at a public entry point (memoReady):
-// the internal functions hold references into it across nested calls.
-Memo& memoFor(const WorldLayerParams&, const PoiPlanParams&) {
-    thread_local Memo memo;
-    return memo;
-}
-
-Memo& memoReady(const WorldLayerParams& world, const PoiPlanParams& plan) {
-    Memo& memo = memoFor(world, plan);
-    if (!memo.valid || !(memo.world == world) || !(memo.plan == plan) ||
-        memo.sites.size() > 32768) {
-        memo.sites.clear();
-        memo.rawEdges.clear();
-        memo.world = world;
-        memo.plan = plan;
-        memo.valid = true;
-    }
-    return memo;
-}
-
 // The alt-0 draw of a cell (no neighbour rule): what the rules compare.
-PoiType baseDraw(const WorldLayerParams& world, PoiTier tier,
-                 const PoiSite& s) {
-    const WorldSample w = worldSampleAt(world, s.x, s.z);
-    return drawType(tier, w, s.hash, 0);
+PoiType baseDraw(const WorldLayerParams& world, const PoiPlanParams& plan,
+                 PoiTier tier, const CellSite& cell) {
+    const WorldSample w = worldSampleAt(world, cell.site.x, cell.site.z);
+    return drawType(tier, w, cell.site.hash, 0, archetypeOf(world, plan, cell));
 }
 
 const CellSite& typedSite(const WorldLayerParams& world,
@@ -545,7 +695,8 @@ const CellSite& typedSite(const WorldLayerParams& world,
             return memo.sites.emplace(key, cell).first->second;
         }
         u32 alt = 0;
-        s.type = drawType(tier, w, s.hash, alt);
+        const ZoneArchetype* arch = archetypeOf(world, plan, cell);
+        s.type = drawType(tier, w, s.hash, alt, arch);
         if (tier == PoiTier::Grand) {
             // F2: never the same grand as a lower-ranked neighbour.
             for (u32 tries = 0; tries < 3; ++tries) {
@@ -559,7 +710,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                         const CellSite n = placeSite(world, plan, tier,
                                                      cx + dx, cz + dz);
                         if (n.present &&
-                            baseDraw(world, tier, n.site) == s.type) {
+                            baseDraw(world, plan, tier, n) == s.type) {
                             clash = true;
                             break;
                         }
@@ -568,7 +719,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 if (!clash) {
                     break;
                 }
-                s.type = drawType(tier, w, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt, arch);
             }
         } else if (tier == PoiTier::Moyen) {
             // F3: never the same type as a lower-ranked graph neighbour
@@ -592,7 +743,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                                 plan.edgeReach) {
                             continue;
                         }
-                        if (baseDraw(world, tier, n.site) == s.type) {
+                        if (baseDraw(world, plan, tier, n) == s.type) {
                             clash = true;
                             break;
                         }
@@ -601,7 +752,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 if (!clash) {
                     break;
                 }
-                s.type = drawType(tier, w, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt, arch);
             }
         }
         // Rule F5: a waterfall, a canyon or a confluence needs a
@@ -615,7 +766,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
             for (u32 tries = 0; tries < 3 && waterCourseType(s.type) &&
                                 !(hit.found && hit.dist <= plan.waterPoiReach);
                  ++tries) {
-                s.type = drawType(tier, w, s.hash, ++alt);
+                s.type = drawType(tier, w, s.hash, ++alt, arch);
             }
             if (waterCourseType(s.type)) {
                 if (hit.found && hit.dist <= plan.waterPoiReach) {
@@ -629,7 +780,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
                 }
             }
         }
-        sizeSite(plan, s);
+        sizeSite(world, plan, cell);
     }
     return memo.sites.emplace(key, cell).first->second;
 }
@@ -638,6 +789,7 @@ const CellSite& typedSite(const WorldLayerParams& world,
 
 struct KernelOut {
     f32 lift { 0.0f };
+    f32 pedestal { 0.0f };
     f32 basin { 0.0f };
     f32 mesaTop { 0.0f };
     f32 flank { 0.0f };
@@ -691,6 +843,12 @@ KernelOut kernelAt(const WorldLayerParams& world, const PoiPlanParams& plan,
     const f32 h = glm::max(s.height, 0.0f);
     const f32 depth = glm::max(-s.height, 0.0f);
     const PoiTypeTraits& traits = poiTraits(s.type);
+    if (s.pedestal > 0.0f) {
+        // The pedestal: full under the landform, feathered to the
+        // footprint's edge (a hill the site stands on, floor-like).
+        const f32 n = std::hypot(x - s.x, z - s.z) / pedestalRadius(plan, s);
+        k.pedestal = s.pedestal * (1.0f - ss(0.5f, 1.0f, n));
+    }
     switch (traits.shape) {
     case KernelShape::Cone: {
         const f32 r = traits.needleCone
@@ -895,9 +1053,10 @@ u64 hashKey(const PoiPlanParams& p) {
 }
 
 PlanSample planSampleAt(const WorldLayerParams& world,
-                        const PoiPlanParams& plan, f32 x, f32 z) {
+                        const PoiPlanParams& plan, const ZoneParams* zones,
+                        f32 x, f32 z) {
     PlanSample out;
-    memoReady(world, plan);
+    memoReady(world, plan, zones);
     // Sites: the 3x3 moyen and petit cells, the grand cells within reach
     // (a grand's cone reaches ~1 km: its own cell and the neighbours).
     f32 nearestD = 1.0e30f;
@@ -945,6 +1104,7 @@ PlanSample planSampleAt(const WorldLayerParams& world,
                 }
                 const KernelOut k = kernelAt(world, plan, s, x, z);
                 out.lift = glm::max(out.lift, k.lift);
+                out.pedestal = glm::max(out.pedestal, k.pedestal);
                 out.basin = glm::max(out.basin, k.basin);
                 out.mesaTop = glm::max(out.mesaTop, k.mesaTop);
                 out.flank = glm::max(out.flank, k.flank);
@@ -1090,9 +1250,10 @@ u8 characterPalette(u8 character) {
 }
 
 PlanCharacter planCharacterAt(const WorldLayerParams& world,
-                              const PoiPlanParams& plan, f32 x, f32 z) {
+                              const PoiPlanParams& plan,
+                              const ZoneParams* zones, f32 x, f32 z) {
     PlanCharacter out;
-    memoReady(world, plan);
+    memoReady(world, plan, zones);
     f32 nearD[3] = { 1.0e30f, 1.0e30f, 1.0e30f };
     u8 nearC[3] = { 0, 0, 0 };
     for (const PoiTier tier : { PoiTier::Grand, PoiTier::Moyen }) {
@@ -1136,10 +1297,10 @@ PlanCharacter planCharacterAt(const WorldLayerParams& world,
 }
 
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,
-                             const PoiPlanParams& plan, f32 minX, f32 minZ,
-                             f32 maxX, f32 maxZ) {
+                             const PoiPlanParams& plan, const ZoneParams* zones,
+                             f32 minX, f32 minZ, f32 maxX, f32 maxZ) {
     vector<PoiSite> out;
-    memoReady(world, plan);
+    memoReady(world, plan, zones);
     for (const PoiTier tier :
          { PoiTier::Grand, PoiTier::Moyen, PoiTier::Petit }) {
         const f32 size = cellSize(plan, tier);
@@ -1165,10 +1326,10 @@ vector<PoiSite> poiSitesNear(const WorldLayerParams& world,
 }
 
 vector<PoiEdge> poiEdgesNear(const WorldLayerParams& world,
-                             const PoiPlanParams& plan, f32 minX, f32 minZ,
-                             f32 maxX, f32 maxZ) {
+                             const PoiPlanParams& plan, const ZoneParams* zones,
+                             f32 minX, f32 minZ, f32 maxX, f32 maxZ) {
     vector<PoiEdge> out;
-    memoReady(world, plan);
+    memoReady(world, plan, zones);
     const f32 size = plan.moyenCell;
     const i32 reachCells =
         static_cast<i32>(std::ceil(plan.edgeReach / size));

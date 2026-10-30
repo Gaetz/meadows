@@ -2132,6 +2132,52 @@ briques Z0-Z5 dans le fichier de plan.
   fourchette fixe par étage de POI ; le grand tiré dans les types à
   silhouette ou doublé d'un sommet-belvédère). Aucun changement de
   terrain, pas de bump de version.
+- **2026-10-30 — Z4b livrée : les POI emboîtés dans les zones (le
+  moyen est le POI de sa zone, le grand a une silhouette, le
+  piédestal).** Go dev : « un canyon peut être un point d'intérêt,
+  mais pas un grand ». Correction du diagnostic Z4a : les trois moyens
+  sans proéminence étaient un escarpement (marche plafonnée à 120 m)
+  et des tours karstiques (cônes de 60 m) — des formes qui n'utilisent
+  pas la hauteur tirée ; les paliers voisins n'étaient que la seconde
+  cause. Livré (PoiPlan lit ZonePlan, jamais l'inverse ; toute entrée
+  du plan prend `const ZoneParams*`, `planZones(params)` dans
+  TerrainGen.hpp, nullptr = le plan seul, la référence A/B) :
+  (1) **le grand tire parmi les silhouettes seulement** — sommet,
+  aiguille, cratère, cap ; plus de canyon, fjord, mesa (rebord
+  plafonné 150 m) ni cirque (rebord 200 m) au rang de grand
+  (catalogue §F2) ; (2) **le moyen est le POI de sa zone** : son point
+  de treillis (2 048 m) se pose au centre de la zone qui le contient
+  (`zoneSiteAt`), il tire son type dans la colonne `poi` de
+  l'archétype (`ZoneArchetype.poi` / `ZoneArchetypeForm.poi`, paires
+  « type:poids », table §E bis du catalogue, donnée moddable, table C++
+  miroir) ; F3 et F5 s'appliquent par-dessus ; une zone de mer ou la
+  prairie de départ n'héberge rien ; (3) **le piédestal** : pour toute
+  forme qui s'élève, la hauteur tirée est le dégagement au-dessus du
+  plancher de zone le plus haut que l'empreinte touche
+  (`zoneHighestFloorNear`), l'écart de palier devient
+  `PoiSite.pedestal`, fondu sur l'empreinte (`PlanSample.pedestal`) et
+  ajouté au plancher par les contrôles (calme, le mur comblé ne fait
+  plus escarpement) — la zone du POI monte au niveau de sa plus haute
+  voisine. Instrument : une cible en anneau pour le cratère et la mesa
+  (le bord est vu de n'importe quel côté), la mesure « l'un des deux ».
+  Première passe (dégagement ajouté à la hauteur, sans piédestal) :
+  grand 30,8 %, moyen 63,3 % — la moitié des moyens de cette carte de
+  plateau restait basse (mesas plafonnées, tours karstiques) ; tables
+  plateau rééquilibrées vers les silhouettes (butte, aiguille).
+  **Mesuré carte (0,0), seed 1337** (bake 32 s, clé changée par la
+  table : pas de bump) : le grand est un **cratère** (sommet 1 829 m,
+  proéminence 878 m) **vu depuis 69,3 % du sol marchable** (0 % en
+  Z4a ; < 2 km 71 %, 2-4 km 78 %, > 4 km 57 %), un moyen à moins de
+  3 km depuis **66,8 %** (56,7), les deux 52,1 %, **l'un des deux
+  83,9 %** ; **15 sommets moyens sur 15 voient le grand et ≥ 2 moyens
+  (100 %, cible 90 ; 0 % en Z4a)** ; sol marchable 56 % de la terre
+  (50) ; 11 moyens sur 16 avec plus de 140 m de proéminence (7 en
+  Z4a). Les marches cacher/révéler restent à 16 % (Z4c). Coût :
+  planSampleAt 3,6 µs/appel inchangé en chaud (7 µs en balayage
+  froid : le typage lit les zones), lacs 35 (43). Cache (0,0) v123
+  recuit et copié dans le dossier debug du dev. Non fait, à décider :
+  treillis petit 350 m → pièces de zone (un mécanisme en moins, oui
+  explicite requis) ; `PoiCharacter` mort sous les zones (idem).
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

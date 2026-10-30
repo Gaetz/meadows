@@ -467,7 +467,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         // THE ZONES (docs/PAYSAGE.md §4 bis): the place's storey, wall,
         // grammar and small landform; the POI plan's kernels, walks
         // and screens on top.
-        const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
+        const PlanSample ps = planSampleAt(p.world, p.poi, &p.zones, x, z);
         const ZoneSample zs = zoneSampleAt(p.world, p.zones, x, z);
         piece.add = zs.pieceLift;
         // A clearing is walk-scale country: never a decree against a
@@ -486,12 +486,18 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         // the same ramp through the wall.
         corridor = glm::max(ps.corridor, zs.gate);
         // The storey: the zone's floor lift (zoneFloorLift — the one
-        // formula refineFloor and biomeIdAt read too).
-        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate),
+        // formula refineFloor and biomeIdAt read too), plus a site's
+        // pedestal (the POI's zone raised to its highest neighbour's
+        // floor under the landform: floor, not landform — calm, and
+        // the wall it fills no longer scarps).
+        const f32 pedestal = ps.pedestal * shoreGate;
+        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate) +
+                              pedestal,
                           0.0f);
         s.tier = etageIndexFor(p.world, s.base);
         s.corridor = corridor;
-        s.scarp = zs.wall * (1.0f - corridor);
+        s.scarp = zs.wall * (1.0f - corridor) *
+                  (1.0f - noise::smoothstep01(10.0f, 40.0f, pedestal));
         terraceRaw = glm::max(zs.terrace * p.poi.verticality, s.scarp);
         s.basinDepth = (ps.basin + zs.pieceBasin) * shoreGate;
         // The relief calms along a wall (both sides, ~250 m): a relief
@@ -516,7 +522,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z,
         characterCover = zs.coverBias;
         zonePalette = zs.palette;
     } else if (r.plan) {
-        const PlanSample ps = planSampleAt(p.world, p.poi, x, z);
+        const PlanSample ps = planSampleAt(p.world, p.poi, nullptr, x, z);
         // The intimate grid (the August landmark grid): a marked hill,
         // a knoll or a clearing every ~1.2 km between the plan's sites.
         const PieceGrid intimate { kSaltIntimate,      r.intimateCellSize,
@@ -646,11 +652,15 @@ void ProceduralControls::refineFloor(f32 x, f32 z, ControlSample& s) const {
         const f32 shoreGate =
             noise::smoothstep01(2.0f, 12.0f, glm::max(w.base, 0.0f));
         const f32 corridor = glm::max(s.corridor, zs.gate);
-        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate),
+        const f32 pedestal =
+            planSampleAt(p.world, p.poi, &p.zones, x, z).pedestal * shoreGate;
+        s.base = glm::max(w.base + zoneFloorLift(zs, corridor, shoreGate) +
+                              pedestal,
                           0.0f);
         s.tier = etageIndexFor(p.world, s.base);
         s.corridor = corridor;
-        s.scarp = zs.wall * (1.0f - corridor);
+        s.scarp = zs.wall * (1.0f - corridor) *
+                  (1.0f - noise::smoothstep01(10.0f, 40.0f, pedestal));
         return;
     }
     s.base = glm::max(glm::mix(w.base, w.baseSmooth, s.corridor), 0.0f);
@@ -680,10 +690,12 @@ u8 ProceduralControls::biomeIdAt(f32 x, f32 z, f32 corridor) const {
         // texel's refined floor used (zoneFloorLift, as refineFloor).
         const f32 shoreGate = noise::smoothstep01(2.0f, 12.0f, base);
         base = glm::max(
-            w.base + zoneFloorLift(zs, glm::max(corridor, zs.gate), shoreGate),
+            w.base + zoneFloorLift(zs, glm::max(corridor, zs.gate), shoreGate) +
+                planSampleAt(p.world, p.poi, &p.zones, x, z).pedestal * shoreGate,
             0.0f);
     } else if (p.rhythm.plan) {
-        const PlanCharacter pc = planCharacterAt(p.world, p.poi, x, z);
+        const PlanCharacter pc =
+            planCharacterAt(p.world, p.poi, planZones(p), x, z);
         coverBias = pc.coverBias;
         namedPalette = characterPalette(pc.character);
         const RhythmParams& r = p.rhythm;

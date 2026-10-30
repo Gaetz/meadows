@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/generation/WorldLayer.hpp"
+#include "engine/terrain/generation/ZonePlan.hpp"
 
 // The POI PLAN (docs/POI-CATALOGUE.md, docs/PAYSAGE.md §7.6): the points
 // of interest come FIRST, the terrain is shaped around them. Three tiers
@@ -15,6 +16,16 @@
 // relative-neighbourhood graph of edges (the walks). Pure functions of
 // (seed, x, z) memoized per cell: two maps compute the same sites and
 // the same edges on both sides of their line.
+//
+// NESTED IN THE ZONES (PAYSAGE.md §4 bis, principle 6 — the hierarchy
+// of landmarks): with a ZoneParams, a moyen is the point of interest
+// OF the zone its lattice point falls in — it moves onto the zone's
+// centre and draws its type from the archetype's `poi` table — and
+// every summit (grand or moyen) is sized to CLEAR the zone floors its
+// footprint touches, so a neighbouring storey never swallows it. The
+// grand draws only among the silhouette types: a trench is a point of
+// interest, never the landmark of the map. Without zones (the A/B
+// reference) the sites stay on their lattice, typed by context.
 
 namespace render::terraingen {
 
@@ -122,6 +133,10 @@ struct PoiSite {
     PoiType type { PoiType::Butte };
     f32 radius { 0.0f }; // footprint (m)
     f32 height { 0.0f }; // lift at the summit above the floor (m); < 0 = basin
+    // The PEDESTAL (zones): the storey difference to the highest zone
+    // floor the footprint touches, raised as floor under the landform
+    // so the drawn height keeps its meaning above the neighbours' walls.
+    f32 pedestal { 0.0f };
     f32 theta { 0.0f };  // the landform's axis (hashed; along the course for water POIs)
     u32 hash { 0 };      // the site's own salt (variants, satellites)
     i32 cellX { 0 };     // its lattice cell (identity across maps)
@@ -142,7 +157,9 @@ struct PoiPlanParams {
     f32 petitCell { 350.0f };
     f32 petitChance { 0.6f };
     // Above the story texture (ridged ranges to ~215 m at 0.8): a
-    // moyen stands clear of it, a grand twice over.
+    // moyen stands clear of it, a grand twice over. With zones, this is
+    // the CLEARANCE above the highest zone floor the footprint touches
+    // (the storey difference becomes the site's pedestal, sizeSite).
     f32 grandHeightMin { 500.0f };
     f32 grandHeightMax { 700.0f };
     f32 moyenHeightMin { 220.0f };
@@ -225,6 +242,7 @@ u64 hashKey(const PoiPlanParams& p);
 // screens, the pads, and the character region (P3 reads it).
 struct PlanSample {
     f32 lift { 0.0f };       // meters of base lift (positive kernels)
+    f32 pedestal { 0.0f };   // meters of FLOOR under a site (PoiSite::pedestal, feathered)
     f32 basin { 0.0f };      // meters of depression (basin kernels), >= 0
     f32 mesaTop { 0.0f };    // [0,1] on a flat top (mesa, crater rim)
     f32 flank { 0.0f };      // [0,1] on a cone's flank
@@ -256,8 +274,11 @@ enum class PoiCharacter : u8 {
     Count
 };
 const char* poiCharacterName(PoiCharacter c);
+// `zones` = the zones the sites nest in (nullptr = the plan alone).
+// Every entry point takes it: the sites differ with and without it.
 PlanSample planSampleAt(const WorldLayerParams& world,
-                        const PoiPlanParams& plan, f32 x, f32 z);
+                        const PoiPlanParams& plan, const ZoneParams* zones,
+                        f32 x, f32 z);
 // The character region alone (no kernels): the dominant character and
 // the blended cover bias — the per-texel palette id reads them.
 struct PlanCharacter {
@@ -265,7 +286,8 @@ struct PlanCharacter {
     f32 coverBias { 0.0f };
 };
 PlanCharacter planCharacterAt(const WorldLayerParams& world,
-                              const PoiPlanParams& plan, f32 x, f32 z);
+                              const PoiPlanParams& plan,
+                              const ZoneParams* zones, f32 x, f32 z);
 // The temperate palette a character names (0 = none: the climate's own).
 u8 characterPalette(u8 character);
 // The nearest fine master course (riviere tier) to a point, on the
@@ -282,12 +304,12 @@ PoiCourseHit poiNearestCourse(const WorldLayerParams& world,
 
 // Sites of every tier whose centre lies in the rect (world meters).
 vector<PoiSite> poiSitesNear(const WorldLayerParams& world,
-                             const PoiPlanParams& plan, f32 minX, f32 minZ,
-                             f32 maxX, f32 maxZ);
+                             const PoiPlanParams& plan, const ZoneParams* zones,
+                             f32 minX, f32 minZ, f32 maxX, f32 maxZ);
 // Edges with at least one endpoint in the rect. Each unordered pair
 // appears once; the set is identical whatever rect contains the pair.
 vector<PoiEdge> poiEdgesNear(const WorldLayerParams& world,
-                             const PoiPlanParams& plan, f32 minX, f32 minZ,
-                             f32 maxX, f32 maxZ);
+                             const PoiPlanParams& plan, const ZoneParams* zones,
+                             f32 minX, f32 minZ, f32 maxX, f32 maxZ);
 
 } // namespace render::terraingen

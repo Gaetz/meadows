@@ -286,7 +286,7 @@ void reportColdCosts(const ReportContext& ctx) {
         return ms;
     };
     const auto sites = render::terraingen::poiSitesNear(
-        cp.world, cp.poi, cx - 2500.0f, cz - 2500.0f, cx + 2500.0f,
+        cp.world, cp.poi, render::terraingen::planZones(cp), cx - 2500.0f, cz - 2500.0f, cx + 2500.0f,
         cz + 2500.0f);
     LOG_INFO("  cold: poiSitesNear (5 km rect, typing incl. the plan-free "
              "network) {:.0f} ms, {} sites",
@@ -433,7 +433,7 @@ void reportAnalyticCosts(const ReportContext& ctx) {
         return render::terraingen::worldSampleAt(cp.world, x, z).base;
     });
     timed("planSampleAt", [&](f32 x, f32 z) {
-        return render::terraingen::planSampleAt(cp.world, cp.poi, x, z)
+        return render::terraingen::planSampleAt(cp.world, cp.poi, render::terraingen::planZones(cp), x, z)
             .lift;
     });
     timed("controls.at", [&](f32 x, f32 z) {
@@ -471,7 +471,7 @@ void reportAnalyticCosts(const ReportContext& ctx) {
             .storeyHeight;
     });
     sweep("planSampleAt", [&](f32 x, f32 z) {
-        return render::terraingen::planSampleAt(cp.world, cp.poi, x, z)
+        return render::terraingen::planSampleAt(cp.world, cp.poi, render::terraingen::planZones(cp), x, z)
             .lift;
     });
     sweep("controls.at", [&](f32 x, f32 z) {
@@ -1002,13 +1002,29 @@ bool sees(const Raster& r, f32 ex, f32 ez, f32 ey, f32 tx, f32 tz, f32 ty) {
 }
 
 // A site that stands up: its summit as baked (the highest published
-// point within 30 % of its footprint radius of the centre).
+// point within 30 % of its footprint radius of the centre), plus the
+// other points of its skyline — a crater's rim and a mesa's top are
+// rings, seen from any side by their near edge.
 struct Target {
     render::terraingen::PoiSite site;
     f32 x { 0.0f };
     f32 z { 0.0f };
     f32 h { 0.0f }; // summit height
+    struct Point {
+        f32 x, z, h;
+    };
+    vector<Point> skyline; // the summit first, then the ring (if any)
 };
+
+// Any point of the target's skyline in sight.
+bool seesTarget(const Raster& r, f32 ex, f32 ez, f32 ey, const Target& t) {
+    for (const Target::Point& p : t.skyline) {
+        if (sees(r, ex, ez, ey, p.x, p.z, p.h)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 std::optional<Target> targetOf(const Raster& r,
                                const render::terraingen::PoiSite& s,
@@ -1043,6 +1059,19 @@ std::optional<Target> targetOf(const Raster& r,
     }
     if (t.h < seaLevel + 1.0f) {
         return std::nullopt;
+    }
+    t.skyline.push_back({ t.x, t.z, t.h });
+    if (shape == KernelShape::Crater || shape == KernelShape::Mesa) {
+        // The rim / the top edge: a ring through the summit's radius.
+        const f32 ring = std::hypot(t.x - s.x, t.z - s.z);
+        if (ring >= 40.0f) {
+            for (u32 k = 0; k < 8; ++k) {
+                const f32 a = static_cast<f32>(k) * 0.7853982f;
+                const f32 px = s.x + ring * std::cos(a);
+                const f32 pz = s.z + ring * std::sin(a);
+                t.skyline.push_back({ px, pz, r.sample(px, pz) });
+            }
+        }
     }
     return t;
 }
@@ -1139,7 +1168,7 @@ void reportPoiVisibility(ReportContext& ctx) {
 
     // The targets: the map's grands and moyens that stand up.
     const auto sites = render::terraingen::poiSitesNear(
-        cp.world, cp.poi, view.minX, view.minZ, view.maxX, view.maxZ);
+        cp.world, cp.poi, render::terraingen::planZones(cp), view.minX, view.minZ, view.maxX, view.maxZ);
     vector<vis::Target> grands, moyens;
     u32 grandSites = 0, moyenSites = 0;
     for (const auto& s : sites) {
@@ -1163,10 +1192,23 @@ void reportPoiVisibility(ReportContext& ctx) {
                              s.z + 1.2f * s.radius * std::sin(a));
         }
         ring *= 0.125f;
-        LOG_INFO("    {} {} at ({:.0f}, {:.0f}) r {:.0f} m lift {:.0f} m: "
+        // The host zone (archetype, storey) the site is nested in.
+        str host;
+        if (cp.rhythm.zones) {
+            const auto zone = render::terraingen::zoneSiteAt(
+                cp.world, cp.zones, s.x, s.z);
+            const auto& table = render::terraingen::zoneArchetypesOf(cp.zones);
+            if (zone.valid && !table.empty()) {
+                host = " in " +
+                       table[std::min<size_t>(zone.archetype, table.size() - 1)]
+                           .name +
+                       " storey " + std::to_string(zone.storey);
+            }
+        }
+        LOG_INFO("    {} {} at ({:.0f}, {:.0f}){} r {:.0f} m lift {:.0f} m: "
                  "baked summit {:.0f} m, prominence {:.0f} m{}",
                  s.tier == PoiTier::Grand ? "grand" : "moyen",
-                 render::terraingen::poiTypeName(s.type), s.x, s.z,
+                 render::terraingen::poiTypeName(s.type), s.x, s.z, host,
                  s.radius, s.height, summit, summit - ring,
                  t ? "" : " (no silhouette)");
     }
@@ -1176,6 +1218,7 @@ void reportPoiVisibility(ReportContext& ctx) {
     const u32 n = static_cast<u32>(view.mapSize / step);
     vector<u8> cls(static_cast<size_t>(n) * n, 0); // 0 n/a, 1 none, 2 moyen, 3 grand, 4 both
     u32 land = 0, walkable = 0, seeGrand = 0, seeMoyen = 0, seeBoth = 0;
+    u32 seeAny = 0;
     u32 nearestSeen = 0;
     u32 byBand[3] = { 0, 0, 0 }, inBand[3] = { 0, 0, 0 }; // grand at < 2, 2-4, > 4 km
     for (u32 row = 0; row < n; ++row) {
@@ -1196,7 +1239,7 @@ void reportPoiVisibility(ReportContext& ctx) {
             f32 dGrand = 1.0e9f;
             for (const vis::Target& t : grands) {
                 dGrand = glm::min(dGrand, std::hypot(t.x - x, t.z - z));
-                grand = grand || vis::sees(r, x, z, eye, t.x, t.z, t.h);
+                grand = grand || vis::seesTarget(r, x, z, eye, t);
             }
             bool moyen = false;
             const vis::Target* nearest = nullptr;
@@ -1208,16 +1251,16 @@ void reportPoiVisibility(ReportContext& ctx) {
                     nearest = &t;
                 }
                 if (d <= kMoyenReach && !moyen) {
-                    moyen = vis::sees(r, x, z, eye, t.x, t.z, t.h);
+                    moyen = vis::seesTarget(r, x, z, eye, t);
                 }
             }
-            if (nearest && vis::sees(r, x, z, eye, nearest->x, nearest->z,
-                                     nearest->h)) {
+            if (nearest && vis::seesTarget(r, x, z, eye, *nearest)) {
                 ++nearestSeen;
             }
             seeGrand += grand;
             seeMoyen += moyen;
             seeBoth += grand && moyen;
+            seeAny += grand || moyen;
             if (!grands.empty()) {
                 const u32 band = dGrand < 2000.0f ? 0 : dGrand < 4000.0f ? 1 : 2;
                 ++inBand[band];
@@ -1233,11 +1276,12 @@ void reportPoiVisibility(ReportContext& ctx) {
              grandSites, grands.size(), moyenSites, moyens.size(),
              100.0 * walkable / glm::max(land, 1u), walkable);
     LOG_INFO("  poi visibility: from the walkable ground — the grand {:.1f} %, "
-             "a moyen within 3 km {:.1f} %, both {:.1f} % (target 90), the "
-             "nearest moyen {:.1f} %; the grand by distance < 2 km {:.0f} %, "
-             "2-4 km {:.0f} %, > 4 km {:.0f} %",
+             "a moyen within 3 km {:.1f} %, both {:.1f} % (target 90), one "
+             "of them {:.1f} %, the nearest moyen {:.1f} %; the grand by "
+             "distance < 2 km {:.0f} %, 2-4 km {:.0f} %, > 4 km {:.0f} %",
              100.0 * seeGrand / wk, 100.0 * seeMoyen / wk,
-             100.0 * seeBoth / wk, 100.0 * nearestSeen / wk,
+             100.0 * seeBoth / wk, 100.0 * seeAny / wk,
+             100.0 * nearestSeen / wk,
              100.0 * byBand[0] / glm::max(inBand[0], 1u),
              100.0 * byBand[1] / glm::max(inBand[1], 1u),
              100.0 * byBand[2] / glm::max(inBand[2], 1u));
@@ -1253,11 +1297,11 @@ void reportPoiVisibility(ReportContext& ctx) {
             if (&t == &s) {
                 continue;
             }
-            seen += vis::sees(r, s.x, s.z, eye, t.x, t.z, t.h);
+            seen += vis::seesTarget(r, s.x, s.z, eye, t);
         }
         bool grand = false;
         for (const vis::Target& t : grands) {
-            grand = grand || vis::sees(r, s.x, s.z, eye, t.x, t.z, t.h);
+            grand = grand || vis::seesTarget(r, s.x, s.z, eye, t);
         }
         seenCounts.push_back(static_cast<f32>(seen));
         summitsGrand += grand;
@@ -1275,7 +1319,7 @@ void reportPoiVisibility(ReportContext& ctx) {
     // way, seen again before arrival. Both directions of every edge
     // whose ends both stand up.
     const auto edges = render::terraingen::poiEdgesNear(
-        cp.world, cp.poi, view.minX, view.minZ, view.maxX, view.maxZ);
+        cp.world, cp.poi, render::terraingen::planZones(cp), view.minX, view.minZ, view.maxX, view.maxZ);
     const auto targetFor = [&](const render::terraingen::PoiSite& s) {
         for (const vis::Target& t : moyens) {
             if (t.site.cellX == s.cellX && t.site.cellZ == s.cellZ) {
@@ -1315,7 +1359,7 @@ void reportPoiVisibility(ReportContext& ctx) {
                 z = glm::mix(wz, b.z, (d - l1) / glm::max(l2, 1.0f));
             }
             const bool seen =
-                vis::sees(r, x, z, r.sample(x, z) + kEye, tb->x, tb->z, tb->h);
+                vis::seesTarget(r, x, z, r.sample(x, z) + kEye, *tb);
             any = any || seen;
             if (u <= 0.2f) {
                 seenEarly = seenEarly || seen;

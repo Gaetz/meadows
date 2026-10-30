@@ -118,6 +118,52 @@ le scatter.
 | 2 alpin | arêtes et aiguilles (×2, dur, rough) · cirques et tarns · névés (neige) · éboulis (×1, scree) · plateau karstique à lapiaz (×0,8, dur) |
 | 3 toundra | toundra à polygones (×0,3, ×2) · lacs de fonte en chapelet (bassins P) · moraines et erratiques · forêt-toundra rabougrie · falaises de côte froide (fjord) |
 
+### E bis. Le POI d'une zone (archétypes → types moyens)
+
+Sous les zones (PAYSAGE.md §4 bis), **le moyen est le point d'intérêt de
+la zone** où tombe son point de treillis : il se pose au centre de la
+zone et tire son type dans la colonne `poi` de l'archétype
+(`ZoneArchetypeForm.poi`, paires « type:poids », les noms de ce
+catalogue ; table C++ miroir dans `ZonePlan.cpp`). Les silhouettes
+(butte, sommet, aiguille, crête, mesa) pèsent d'abord : c'est l'amer
+que l'on lit depuis la zone voisine ; l'eau et la végétation suivent
+ce que l'archétype permet. Les règles F3 (voisins de graphe
+différents) et F5 (eau sur un cours maître) s'appliquent par-dessus,
+le re-tirage restant dans la table de l'archétype. Une zone de mer ou
+la prairie de départ n'héberge rien : le site y garde son point de
+treillis et le tirage par contexte.
+
+| Archétype | `poi` (type:poids) |
+|---|---|
+| meadow | butte:30 ridge:15 mesa:10 plain-lake:15 waterfall:10 lone-tree:8 grove:7 city-pad:5 |
+| bocage | butte:30 ridge:10 grove:15 plain-lake:15 lone-tree:15 city-pad:15 |
+| hills | butte:30 ridge:25 summit:10 mesa:10 waterfall:15 canyon:10 |
+| woodedHills | butte:25 ridge:20 mesa:10 waterfall:15 grove:15 plain-lake:15 |
+| mesaPlateau | butte:35 mesa:25 needle:10 escarpment:10 canyon:15 karst-towers:5 |
+| highPlateau | summit:35 mesa:15 needle:10 cirque:15 tarn:15 canyon:10 |
+| basin | plain-lake:35 butte:25 confluence:15 grove:10 city-pad:15 |
+| marsh | plain-lake:40 butte:20 lone-tree:15 grove:15 confluence:10 |
+| badlands | hoodoos:30 mesa:25 butte:15 canyon:20 escarpment:10 |
+| rockField | needle:25 summit:20 butte:20 boulders:20 karst-towers:15 |
+| heath | butte:35 ridge:25 mesa:15 boulders:15 lone-tree:10 |
+| ridgeCountry | ridge:30 summit:25 needle:15 col:15 canyon:15 |
+| coastCliffs | headland:35 sea-cliff:25 sea-stack:15 cove:15 needle:10 |
+| lowCoast | headland:25 cove:30 islet:15 lone-tree:10 city-pad:20 |
+
+**Hauteur emboîtée : le piédestal.** Pour toute forme qui s'élève
+(cône, cratère, mesa, crête, champ, marche), la hauteur tirée par étage
+de POI (`poiMoyenHeightMin/Max`, `poiGrandHeightMin/Max`) est le
+**dégagement au-dessus du plancher de zone le plus haut que l'empreinte
+touche** ; l'écart de palier devient le **piédestal** du site
+(`PoiSite.pedestal`) : un plancher ajouté sous la forme, plein sous
+elle et fondu jusqu'au bord de l'empreinte (`PlanSample.pedestal`, lu
+par les contrôles comme un plancher de zone — calme, et le mur qu'il
+comble ne fait plus escarpement). La zone du POI monte ainsi au niveau
+de sa plus haute voisine : on la rejoint de plain-pied depuis le haut,
+elle fait falaise vers le bas, et le rebord d'une mesa ou la butte
+dépasse toujours les murs alentour. Tranchée, bassin, bosse et pad
+restent à leur plancher.
+
 ## F. Règles de répartition
 
 Le plan (`PoiPlan.cpp`) lit ces règles ; les tests les vérifient.
@@ -126,10 +172,17 @@ Le plan (`PoiPlan.cpp`) lit ces règles ; les tests les vérifient.
    biome × (côte, massif, étage, rivière à < 300 m, bassin fermé, dureté).
    Un site côtier tire dans C, un site traversé par une rivière dans B, le
    reste dans A puis D ; les lignes « M (région) » sont des caractères (§E),
-   jamais des sites.
-2. **Un grand par carte** : pic, cône volcanique, fjord, grande mesa, cirque
-   majeur. Jamais deux grands du même type sur deux cartes voisines (le hash
-   de cellule est confronté aux 8 voisines).
+   jamais des sites. **Sous les zones, le moyen tire dans la table `poi`
+   de l'archétype de sa zone** (§E bis) — l'archétype porte déjà les
+   conditions d'étage, de massif, de côte et d'humidité.
+2. **Un grand par carte, et le grand a une silhouette** : pic, aiguille,
+   cône volcanique, cap (promontoire) — jamais une tranchée (canyon,
+   fjord), une mesa (rebord plafonné à 150 m) ni un cirque (rebord de
+   200 m) : un canyon est un point d'intérêt, pas l'amer de la carte
+   (décision dev 2026-10-30, après la mesure Z4a : le grand-canyon de la
+   carte (0,0) n'était vu de nulle part). Jamais deux grands du même type
+   sur deux cartes voisines (le hash de cellule est confronté aux 8
+   voisines).
 3. **Jamais deux moyens du même type adjacents dans le graphe** (re-tirage sur
    le hash quand le voisin de rang inférieur a le même type) : la variété est
    une contrainte du graphe, pas une moyenne.

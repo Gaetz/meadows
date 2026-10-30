@@ -204,7 +204,7 @@ TEST_CASE("zones: height zones within a short walk, walls marked, corridors ramp
     for (f32 z = world.startZ - 2000.0f; z <= world.startZ + 2000.0f; z += 100.0f) {
         for (f32 x = world.startX - 2000.0f; x <= world.startX + 2000.0f;
              x += 100.0f) {
-            const PlanSample ps = planSampleAt(world, controls.params().poi, x, z);
+            const PlanSample ps = planSampleAt(world, controls.params().poi, planZones(controls.params()), x, z);
             if (ps.corridor > 0.9f) {
                 ++corridorSamples;
                 worstTerrace = glm::max(worstTerrace, controls.at(x, z).terrace);

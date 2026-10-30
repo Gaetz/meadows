@@ -855,6 +855,7 @@ struct ZoneArchetypeForm : Form {
     f32 pieceHeight { 40.0f };
     f32 pieceRadius { 120.0f };
     f32 erosionCut { 0.0f };
+    str poi; // the zone's moyen types, "type:weight" pairs (ZoneArchetype::poi)
 
     REFLECT_BEGIN(ZoneArchetypeForm, Form)
         REFLECT_FIELD(name)
@@ -882,6 +883,7 @@ struct ZoneArchetypeForm : Form {
         REFLECT_FIELD(pieceHeight)
         REFLECT_FIELD(pieceRadius)
         REFLECT_FIELD(erosionCut)
+        REFLECT_FIELD(poi)
     REFLECT_END()
 };
 

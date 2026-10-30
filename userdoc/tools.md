@@ -159,7 +159,13 @@ monde au centre de la zone), le `weight` du tirage, le `storeyBias`
 `wetBias`, `coverBias`, `palette`, et la petite forme `piece` : 1 butte,
 2 clairière, 3 mare, 4 bloc rocheux, 5 bosquet, avec `pieceHeight` et
 `pieceRadius`, et `erosionCut` : le budget d'érosion de l'intérieur de la
-zone en mètres, 0 = socle brut, 200 = versants disséqués). Un mod peut patcher une ligne (§5) ou en créer une
+zone en mètres, 0 = socle brut, 200 = versants disséqués), et `poi` : les
+types de point d'intérêt moyen qu'une zone de cette nature héberge, en
+paires « type:poids » séparées par des espaces (noms du catalogue
+`docs/POI-CATALOGUE.md`, ex. `"butte:30 ridge:15 plain-lake:15"`) — le
+moyen du plan se pose au centre de sa zone et tire là ; sa hauteur est
+le dégagement au-dessus des paliers voisins (`poiMoyenHeightMin/Max`).
+Un mod peut patcher une ligne (§5) ou en créer une
 nouvelle ; sans aucun record, le jeu utilise la même table en C++.
 Les réglages de la mosaïque elle-même (taille de cellule, pas de palier,
 nombre de paliers, tendance longue, largeur des murs, rampe des
