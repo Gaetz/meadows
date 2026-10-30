@@ -2095,6 +2095,44 @@ briques Z0-Z5 dans le fichier de plan.
   porte, crête). Hash de `MapBakerTest` ré-épinglé
   (7395177285592674686, v78).
 
+- **2026-10-30 — Z4a livrée : l'instrument `poi visibility` (mesurer
+  d'abord, comme pour Z1 et la verticalité).** Reprise du chantier
+  après ROUTAGE FIN, HORIZON et la série Q. Nouvelle section du
+  `landscape-report` (tools/cooker/LandscapeReport.cpp,
+  `reportPoiVisibility`) : lignes de vue sur le **sol publié** à 16 m
+  (ce que le joueur voit, érosion comprise), œil à 1,7 m, cibles = les
+  sommets bakés des grands et moyens du plan (point le plus haut dans
+  30 % du rayon ; un bassin, une tranchée, un pad ou une bosse n'ont pas
+  de silhouette et ne sont pas des cibles) ; sol marchable = terre sèche
+  sous 30° sur un treillis de 32 m. Les mesures de la table §G du
+  catalogue : part du sol marchable qui voit le grand, un moyen à moins
+  de 3 km, les deux (cible 90 %), le moyen le plus proche, le grand par
+  bande de distance ; depuis chaque sommet moyen, autres moyens et grand
+  vus (cible ≥ 2 + le grand sur 90 %) ; le long des marches a → w → b,
+  dans les deux sens, le but est-il vu au départ, perdu en route, revu à
+  l'arrivée (cible 80 %). Une ligne par site (type, rayon, levée prévue,
+  sommet baké, **proéminence** = sommet − anneau à 1,2 rayon),
+  `visibility.png` (vert = les deux, bleu = le grand seul, jaune = un
+  moyen seul, rouge = rien, gris = non marchable, disques = cibles), et
+  trois nombres de plus dans la ligne d'historique. Coût 0,4 s dans le
+  rapport. **Baseline carte (0,0), v121** : **le grand de la carte est
+  un canyon** — une tranchée, zéro silhouette, donc **0 % du sol voit le
+  grand** et aucun sommet moyen ne le voit ; 16 moyens dont 14 debout
+  (2 canyons) ; **un moyen à moins de 3 km visible depuis 56,7 % du sol
+  marchable, le plus proche depuis 27,1 %** ; les sommets moyens se
+  voient entre eux (médiane 7 autres) ; marches : 26 mesurées, cacher
+  puis révéler 7 (27 %), toujours en vue 1, jamais en vue 7, cachées à
+  l'arrivée 5. Sol marchable = 50 % de la terre (les gorges des cours
+  maîtres et les murs de zones font le reste). Trois moyens sur seize
+  ont une proéminence nulle ou négative malgré 226-322 m de levée
+  prévue (escarpement (1 481, 5 045) +16 m, tours karstiques (3 325,
+  4 740) −32 m, escarpement (4 623, 4 909) −67 m) : leur levée est
+  absorbée par les paliers de zones voisins — le constat qui motive
+  Z4b (hauteur = ce qu'il faut pour dépasser les murs voisins, pas une
+  fourchette fixe par étage de POI ; le grand tiré dans les types à
+  silhouette ou doublé d'un sommet-belvédère). Aucun changement de
+  terrain, pas de bump de version.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

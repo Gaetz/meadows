@@ -134,7 +134,10 @@ plugin (§5, dernier écrivain gagne par champ). Trois façons de le régler :
 - **Hors jeu** : `cooker landscape-report <gameDir> [mapX mapZ]` cuit la
   carte si son cache est périmé, écrit `plan.png` à côté des tranches et
   imprime le recensement du paysage (pente, parts de pas > 30°/45°, murs
-  par km, relief par 250 m, sol à plus de 100 m, lacs, rivières) ; une
+  par km, relief par 250 m, sol à plus de 100 m, lacs, rivières, et la
+  visibilité des points d'intérêt : part du sol marchable qui voit le
+  grand et un moyen, ce que voit chaque sommet moyen, marches qui
+  cachent puis révèlent leur but — avec `visibility.png`) ; une
   ligne d'historique par exécution dans `terrain-cache/<seed>/landscape-report.log`.
 
 Le cache des cartes est clé sur les valeurs du pupitre : changer un

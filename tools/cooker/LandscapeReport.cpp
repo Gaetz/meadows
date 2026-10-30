@@ -50,6 +50,10 @@ struct Census {
     f64 highGroundMap { 0.0 };
     u32 lakes { 0 };
     u32 rivers { 0 };
+    // POI visibility (% of the walkable ground, reportPoiVisibility).
+    f64 seeGrand { 0.0 };
+    f64 seeMoyen { 0.0 };
+    f64 seeBoth { 0.0 };
 };
 
 f32 median(vector<f32>& v) {
@@ -919,6 +923,435 @@ void reportWallsAndGates(const ReportContext& ctx) {
              far95, farthest);
 }
 
+// The POI VISIBILITY (docs/POI-CATALOGUE.md §G, docs/PAYSAGE.md §4 bis
+// principle 6): from how much of the walkable ground does one see the
+// map's grand and a moyen; what each moyen summit sees; does a walk hide
+// its destination before revealing it (the triangle). Lines of sight on
+// the PUBLISHED ground at 16 m (what the player sees, erosion included),
+// eye 1.7 m, targets = the summits of the sites as baked (the highest
+// published point inside the kernel's core). Sites outside the map rect
+// are not targets: the far terrain of a neighbour map is measured on
+// that map. Writes visibility.png next to plan.png.
+namespace vis {
+
+struct Raster {
+    f32 minX { 0.0f };
+    f32 minZ { 0.0f };
+    f32 step { 16.0f };
+    u32 n { 0 };
+    vector<f32> h;
+
+    f32 at(u32 r, u32 c) const { return h[static_cast<size_t>(r) * n + c]; }
+    // Bilinear height; outside the raster = the nearest texel.
+    f32 sample(f32 x, f32 z) const {
+        const f32 fx = glm::clamp((x - minX) / step, 0.0f,
+                                  static_cast<f32>(n - 1) - 1.0e-3f);
+        const f32 fz = glm::clamp((z - minZ) / step, 0.0f,
+                                  static_cast<f32>(n - 1) - 1.0e-3f);
+        const u32 c = static_cast<u32>(fx);
+        const u32 r = static_cast<u32>(fz);
+        const f32 tx = fx - static_cast<f32>(c);
+        const f32 tz = fz - static_cast<f32>(r);
+        const f32 a = glm::mix(at(r, c), at(r, c + 1), tx);
+        const f32 b = glm::mix(at(r + 1, c), at(r + 1, c + 1), tx);
+        return glm::mix(a, b, tz);
+    }
+    // Slope (rise / run) from central differences.
+    f32 slope(f32 x, f32 z) const {
+        const f32 hx = sample(x + step, z) - sample(x - step, z);
+        const f32 hz = sample(x, z + step) - sample(x, z - step);
+        return std::sqrt(hx * hx + hz * hz) / (2.0f * step);
+    }
+};
+
+Raster rasterOf(const game::MapView& view, f32 step) {
+    Raster r;
+    r.minX = view.minX;
+    r.minZ = view.minZ;
+    r.step = step;
+    r.n = static_cast<u32>(view.mapSize / step) + 1;
+    r.h.resize(static_cast<size_t>(r.n) * r.n);
+    for (u32 row = 0; row < r.n; ++row) {
+        for (u32 c = 0; c < r.n; ++c) {
+            r.h[static_cast<size_t>(row) * r.n + c] =
+                view.height(r.minX + c * step, r.minZ + row * step);
+        }
+    }
+    return r;
+}
+
+// Eye (ex, ez, ey) sees the target (tx, tz, ty): the ray stays above
+// the ground, marched at 8 m. The first and last 16 m are skipped —
+// the eye stands on the ground, the target IS the ground.
+bool sees(const Raster& r, f32 ex, f32 ez, f32 ey, f32 tx, f32 tz, f32 ty) {
+    const f32 dx = tx - ex;
+    const f32 dz = tz - ez;
+    const f32 len = std::sqrt(dx * dx + dz * dz);
+    if (len < 32.0f) {
+        return true;
+    }
+    constexpr f32 kStep = 8.0f;
+    for (f32 d = 16.0f; d < len - 16.0f; d += kStep) {
+        const f32 t = d / len;
+        const f32 ground = r.sample(ex + dx * t, ez + dz * t);
+        if (ground > glm::mix(ey, ty, t) + 0.5f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A site that stands up: its summit as baked (the highest published
+// point within 30 % of its footprint radius of the centre).
+struct Target {
+    render::terraingen::PoiSite site;
+    f32 x { 0.0f };
+    f32 z { 0.0f };
+    f32 h { 0.0f }; // summit height
+};
+
+std::optional<Target> targetOf(const Raster& r,
+                               const render::terraingen::PoiSite& s,
+                               f32 seaLevel) {
+    using render::terraingen::KernelShape;
+    using render::terraingen::poiTraits;
+    // Basins, pads, springs and mounds have no silhouette: not targets.
+    const KernelShape shape = poiTraits(s.type).shape;
+    if (s.height < 30.0f || shape == KernelShape::Basin ||
+        shape == KernelShape::Pad || shape == KernelShape::Mound ||
+        shape == KernelShape::Trench) {
+        return std::nullopt;
+    }
+    Target t;
+    t.site = s;
+    t.x = s.x;
+    t.z = s.z;
+    t.h = -1.0e9f;
+    const f32 core = glm::min(0.3f * s.radius, 400.0f);
+    for (f32 z = s.z - core; z <= s.z + core; z += r.step) {
+        for (f32 x = s.x - core; x <= s.x + core; x += r.step) {
+            if ((x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) > core * core) {
+                continue;
+            }
+            const f32 h = r.sample(x, z);
+            if (h > t.h) {
+                t.h = h;
+                t.x = x;
+                t.z = z;
+            }
+        }
+    }
+    if (t.h < seaLevel + 1.0f) {
+        return std::nullopt;
+    }
+    return t;
+}
+
+// Shaded ground with the visibility class painted over the walkable
+// lattice, the targets as discs.
+void writePng(const game::MapView& view, const Raster& r,
+              const vector<u8>& cls, u32 latticeN, f32 latticeStep,
+              const vector<Target>& grands, const vector<Target>& moyens) {
+    constexpr u32 kN = 1024;
+    const f32 px = view.mapSize / static_cast<f32>(kN);
+    vector<u8> pixels(static_cast<size_t>(kN) * kN * 3);
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            const f32 x = view.minX + (static_cast<f32>(col) + 0.5f) * px;
+            const f32 z = view.minZ + (static_cast<f32>(row) + 0.5f) * px;
+            const f32 h = r.sample(x, z);
+            const f32 hx = r.sample(x + r.step, z) - r.sample(x - r.step, z);
+            const f32 hz = r.sample(x, z + r.step) - r.sample(x, z - r.step);
+            const f32 nx = -hx / (2.0f * r.step);
+            const f32 nz = -hz / (2.0f * r.step);
+            const f32 len = std::sqrt(nx * nx + nz * nz + 1.0f);
+            const f32 lambert = glm::clamp(
+                (nx * -0.55f + nz * -0.55f + 0.63f) / len, 0.0f, 1.0f);
+            const f32 shade = 0.45f + 0.55f * lambert;
+            glm::vec3 tint { 0.55f, 0.55f, 0.55f }; // not walkable
+            if (h < view.seaLevel()) {
+                tint = { 0.12f, 0.25f, 0.6f };
+            } else {
+                const u32 lc = glm::min(latticeN - 1,
+                                        static_cast<u32>((x - view.minX) /
+                                                         latticeStep));
+                const u32 lr = glm::min(latticeN - 1,
+                                        static_cast<u32>((z - view.minZ) /
+                                                         latticeStep));
+                switch (cls[static_cast<size_t>(lr) * latticeN + lc]) {
+                case 1: tint = { 0.75f, 0.15f, 0.15f }; break; // sees none
+                case 2: tint = { 0.95f, 0.8f, 0.2f }; break;   // moyen only
+                case 3: tint = { 0.25f, 0.55f, 0.95f }; break; // grand only
+                case 4: tint = { 0.3f, 0.75f, 0.3f }; break;   // both
+                default: break;
+                }
+            }
+            u8* p = &pixels[(static_cast<size_t>(row) * kN + col) * 3];
+            p[0] = static_cast<u8>(255.0f * glm::clamp(tint.x * shade, 0.0f, 1.0f));
+            p[1] = static_cast<u8>(255.0f * glm::clamp(tint.y * shade, 0.0f, 1.0f));
+            p[2] = static_cast<u8>(255.0f * glm::clamp(tint.z * shade, 0.0f, 1.0f));
+        }
+    }
+    const auto disc = [&](f32 x, f32 z, i32 radius, u8 rr, u8 gg, u8 bb) {
+        const i32 cc = static_cast<i32>((x - view.minX) / px);
+        const i32 cr = static_cast<i32>((z - view.minZ) / px);
+        for (i32 dr = -radius; dr <= radius; ++dr) {
+            for (i32 dc = -radius; dc <= radius; ++dc) {
+                const i32 d2 = dr * dr + dc * dc;
+                if (d2 > radius * radius) {
+                    continue;
+                }
+                const i32 row = cr + dr, col = cc + dc;
+                if (row < 0 || col < 0 || row >= static_cast<i32>(kN) ||
+                    col >= static_cast<i32>(kN)) {
+                    continue;
+                }
+                u8* p = &pixels[(static_cast<size_t>(row) * kN + col) * 3];
+                const bool rim = d2 > (radius - 2) * (radius - 2);
+                p[0] = rim ? 0 : rr;
+                p[1] = rim ? 0 : gg;
+                p[2] = rim ? 0 : bb;
+            }
+        }
+    };
+    for (const Target& t : moyens) {
+        disc(t.x, t.z, 6, 255, 255, 255);
+    }
+    for (const Target& t : grands) {
+        disc(t.x, t.z, 11, 255, 255, 255);
+    }
+    const auto png = view.mapDir / "visibility.png";
+    stbi_write_png(png.string().c_str(), static_cast<int>(kN),
+                   static_cast<int>(kN), 3, pixels.data(),
+                   static_cast<int>(kN) * 3);
+    LOG_INFO("landscape-report: visibility -> {}", png.string());
+}
+
+} // namespace vis
+
+void reportPoiVisibility(ReportContext& ctx) {
+    using render::terraingen::PoiTier;
+    const game::MapView& view = *ctx.view;
+    const auto& cp = ctx.cp;
+    const vis::Raster r = vis::rasterOf(view, 16.0f);
+    constexpr f32 kEye = 1.7f;
+    constexpr f32 kMoyenReach = 3000.0f; // the goal of the next walk
+
+    // The targets: the map's grands and moyens that stand up.
+    const auto sites = render::terraingen::poiSitesNear(
+        cp.world, cp.poi, view.minX, view.minZ, view.maxX, view.maxZ);
+    vector<vis::Target> grands, moyens;
+    u32 grandSites = 0, moyenSites = 0;
+    for (const auto& s : sites) {
+        if (s.tier == PoiTier::Petit || !view.inside(s.x, s.z)) {
+            continue;
+        }
+        (s.tier == PoiTier::Grand ? grandSites : moyenSites) += 1;
+        const auto t = vis::targetOf(r, s, view.seaLevel());
+        if (t) {
+            (s.tier == PoiTier::Grand ? grands : moyens).push_back(*t);
+        }
+        // The site as planned and as baked: its summit, and how far it
+        // stands above the ring at 1.2 radius (prominence).
+        const f32 sx = t ? t->x : s.x;
+        const f32 sz = t ? t->z : s.z;
+        const f32 summit = r.sample(sx, sz);
+        f32 ring = 0.0f;
+        for (u32 k = 0; k < 8; ++k) {
+            const f32 a = static_cast<f32>(k) * 0.7853982f;
+            ring += r.sample(s.x + 1.2f * s.radius * std::cos(a),
+                             s.z + 1.2f * s.radius * std::sin(a));
+        }
+        ring *= 0.125f;
+        LOG_INFO("    {} {} at ({:.0f}, {:.0f}) r {:.0f} m lift {:.0f} m: "
+                 "baked summit {:.0f} m, prominence {:.0f} m{}",
+                 s.tier == PoiTier::Grand ? "grand" : "moyen",
+                 render::terraingen::poiTypeName(s.type), s.x, s.z,
+                 s.radius, s.height, summit, summit - ring,
+                 t ? "" : " (no silhouette)");
+    }
+
+    // The walkable lattice: dry land under 30 deg, 32 m apart.
+    const f32 step = 32.0f;
+    const u32 n = static_cast<u32>(view.mapSize / step);
+    vector<u8> cls(static_cast<size_t>(n) * n, 0); // 0 n/a, 1 none, 2 moyen, 3 grand, 4 both
+    u32 land = 0, walkable = 0, seeGrand = 0, seeMoyen = 0, seeBoth = 0;
+    u32 nearestSeen = 0;
+    u32 byBand[3] = { 0, 0, 0 }, inBand[3] = { 0, 0, 0 }; // grand at < 2, 2-4, > 4 km
+    for (u32 row = 0; row < n; ++row) {
+        for (u32 c = 0; c < n; ++c) {
+            const f32 x = view.minX + (static_cast<f32>(c) + 0.5f) * step;
+            const f32 z = view.minZ + (static_cast<f32>(row) + 0.5f) * step;
+            const f32 h = r.sample(x, z);
+            if (h <= view.seaLevel() + 1.0f) {
+                continue;
+            }
+            ++land;
+            if (r.slope(x, z) > 0.5774f || view.wet(x, z)) {
+                continue;
+            }
+            ++walkable;
+            const f32 eye = h + kEye;
+            bool grand = false;
+            f32 dGrand = 1.0e9f;
+            for (const vis::Target& t : grands) {
+                dGrand = glm::min(dGrand, std::hypot(t.x - x, t.z - z));
+                grand = grand || vis::sees(r, x, z, eye, t.x, t.z, t.h);
+            }
+            bool moyen = false;
+            const vis::Target* nearest = nullptr;
+            f32 dNearest = 1.0e9f;
+            for (const vis::Target& t : moyens) {
+                const f32 d = std::hypot(t.x - x, t.z - z);
+                if (d < dNearest) {
+                    dNearest = d;
+                    nearest = &t;
+                }
+                if (d <= kMoyenReach && !moyen) {
+                    moyen = vis::sees(r, x, z, eye, t.x, t.z, t.h);
+                }
+            }
+            if (nearest && vis::sees(r, x, z, eye, nearest->x, nearest->z,
+                                     nearest->h)) {
+                ++nearestSeen;
+            }
+            seeGrand += grand;
+            seeMoyen += moyen;
+            seeBoth += grand && moyen;
+            if (!grands.empty()) {
+                const u32 band = dGrand < 2000.0f ? 0 : dGrand < 4000.0f ? 1 : 2;
+                ++inBand[band];
+                byBand[band] += grand;
+            }
+            cls[static_cast<size_t>(row) * n + c] =
+                grand && moyen ? 4 : grand ? 3 : moyen ? 2 : 1;
+        }
+    }
+    const f64 wk = static_cast<f64>(glm::max(walkable, 1u));
+    LOG_INFO("  poi visibility: {} grands ({} stand up), {} moyens ({} stand "
+             "up); walkable {:.0f} % of the land ({} points at 32 m)",
+             grandSites, grands.size(), moyenSites, moyens.size(),
+             100.0 * walkable / glm::max(land, 1u), walkable);
+    LOG_INFO("  poi visibility: from the walkable ground — the grand {:.1f} %, "
+             "a moyen within 3 km {:.1f} %, both {:.1f} % (target 90), the "
+             "nearest moyen {:.1f} %; the grand by distance < 2 km {:.0f} %, "
+             "2-4 km {:.0f} %, > 4 km {:.0f} %",
+             100.0 * seeGrand / wk, 100.0 * seeMoyen / wk,
+             100.0 * seeBoth / wk, 100.0 * nearestSeen / wk,
+             100.0 * byBand[0] / glm::max(inBand[0], 1u),
+             100.0 * byBand[1] / glm::max(inBand[1], 1u),
+             100.0 * byBand[2] / glm::max(inBand[2], 1u));
+
+    // The summit rewards: from each moyen summit, >= 2 other moyens and
+    // the grand (>= 90 % of the summits).
+    u32 summitsOk = 0, summitsGrand = 0;
+    vector<f32> seenCounts;
+    for (const vis::Target& s : moyens) {
+        const f32 eye = s.h + kEye;
+        u32 seen = 0;
+        for (const vis::Target& t : moyens) {
+            if (&t == &s) {
+                continue;
+            }
+            seen += vis::sees(r, s.x, s.z, eye, t.x, t.z, t.h);
+        }
+        bool grand = false;
+        for (const vis::Target& t : grands) {
+            grand = grand || vis::sees(r, s.x, s.z, eye, t.x, t.z, t.h);
+        }
+        seenCounts.push_back(static_cast<f32>(seen));
+        summitsGrand += grand;
+        summitsOk += grand && seen >= 2;
+    }
+    LOG_INFO("  poi visibility: from the moyen summits — other moyens seen "
+             "median {:.0f}, the grand {} / {}, >= 2 moyens + the grand {} / "
+             "{} ({:.0f} %, target 90)",
+             median(seenCounts), summitsGrand, moyens.size(), summitsOk,
+             moyens.size(),
+             100.0 * summitsOk / glm::max<size_t>(moyens.size(), 1));
+
+    // The triangle along the walks: from the ground of the walk a -> w
+    // -> b (eye 1.7 m), is b's summit seen at the start, lost on the
+    // way, seen again before arrival. Both directions of every edge
+    // whose ends both stand up.
+    const auto edges = render::terraingen::poiEdgesNear(
+        cp.world, cp.poi, view.minX, view.minZ, view.maxX, view.maxZ);
+    const auto targetFor = [&](const render::terraingen::PoiSite& s) {
+        for (const vis::Target& t : moyens) {
+            if (t.site.cellX == s.cellX && t.site.cellZ == s.cellZ) {
+                return static_cast<const vis::Target*>(&t);
+            }
+        }
+        return static_cast<const vis::Target*>(nullptr);
+    };
+    u32 walks = 0, hideReveal = 0, alwaysSeen = 0, neverSeen = 0, lostAtEnd = 0;
+    const auto walk = [&](const render::terraingen::PoiSite& a,
+                          const render::terraingen::PoiSite& b, f32 wx,
+                          f32 wz) {
+        const vis::Target* tb = targetFor(b);
+        if (!tb || !view.inside(a.x, a.z) || !view.inside(b.x, b.z)) {
+            return;
+        }
+        // The polyline a -> w -> b, from a's footprint edge to b's.
+        const f32 l1 = std::hypot(wx - a.x, wz - a.z);
+        const f32 l2 = std::hypot(b.x - wx, b.z - wz);
+        const f32 total = l1 + l2;
+        const f32 from = glm::min(a.radius, 0.4f * total);
+        const f32 to = total - glm::min(0.5f * b.radius, 0.4f * total);
+        if (to - from < 200.0f) {
+            return;
+        }
+        constexpr u32 kSamples = 40;
+        bool seenEarly = false, lostMid = false, seenLate = false, any = false;
+        for (u32 i = 0; i <= kSamples; ++i) {
+            const f32 u = static_cast<f32>(i) / kSamples;
+            const f32 d = glm::mix(from, to, u);
+            f32 x, z;
+            if (d <= l1) {
+                x = glm::mix(a.x, wx, d / glm::max(l1, 1.0f));
+                z = glm::mix(a.z, wz, d / glm::max(l1, 1.0f));
+            } else {
+                x = glm::mix(wx, b.x, (d - l1) / glm::max(l2, 1.0f));
+                z = glm::mix(wz, b.z, (d - l1) / glm::max(l2, 1.0f));
+            }
+            const bool seen =
+                vis::sees(r, x, z, r.sample(x, z) + kEye, tb->x, tb->z, tb->h);
+            any = any || seen;
+            if (u <= 0.2f) {
+                seenEarly = seenEarly || seen;
+            } else if (u < 0.8f) {
+                lostMid = lostMid || !seen;
+            } else {
+                seenLate = seenLate || seen;
+            }
+        }
+        ++walks;
+        if (!any) {
+            ++neverSeen;
+        } else if (seenEarly && lostMid && seenLate) {
+            ++hideReveal;
+        } else if (!lostMid && seenEarly && seenLate) {
+            ++alwaysSeen;
+        } else if (!seenLate) {
+            ++lostAtEnd;
+        }
+    };
+    for (const auto& e : edges) {
+        walk(e.a, e.b, e.wx, e.wz);
+        walk(e.b, e.a, e.wx, e.wz);
+    }
+    LOG_INFO("  poi visibility: the walks — {} measured, hide then reveal "
+             "{} ({:.0f} %, target 80), always in view {}, never in view {}, "
+             "hidden on arrival {}",
+             walks, hideReveal, 100.0 * hideReveal / glm::max(walks, 1u),
+             alwaysSeen, neverSeen, lostAtEnd);
+
+    ctx.census.seeGrand = 100.0 * seeGrand / wk;
+    ctx.census.seeMoyen = 100.0 * seeMoyen / wk;
+    ctx.census.seeBoth = 100.0 * seeBoth / wk;
+    vis::writePng(view, r, cls, n, step, grands, moyens);
+}
+
 // Rivers hugging a map line: nodes within 150 m of the map's four
 // border lines, per tier, and the longest run of consecutive nodes
 // that stays there. Leaves the worst run's last node in the context
@@ -1164,7 +1597,9 @@ void appendHistoryLine(const ReportContext& ctx) {
             << c.relief250Spawn << " rise95 " << c.rise100p95 << " high "
             << c.highGroundSpawn << " % | map relief250 " << c.relief250Map
             << " high " << c.highGroundMap << " % lakes " << c.lakes
-            << " rivers " << c.rivers << "\n";
+            << " rivers " << c.rivers << " | poi grand " << c.seeGrand
+            << " % moyen " << c.seeMoyen << " % both " << c.seeBoth
+            << " %\n";
     }
 }
 
@@ -1222,6 +1657,7 @@ int landscapeReport(char** argv, int argc) {
     reportContinent(ctx);
     reportLakesVsZones(ctx);
     reportWallsAndGates(ctx);
+    reportPoiVisibility(ctx);
     reportRiversVsMapLines(ctx);
     reportMasterCourses(ctx);
     reportGroundAcrossLine(ctx);
