@@ -54,12 +54,6 @@ struct ZoneArchetype {
     // may cut, a floor under the calm/rough rule): 0 = the socle's own
     // (raw); hill country, badlands and ranges dissect.
     f32 erosionCut { 0.0f };
-    // The zone's POINT OF INTEREST (docs/POI-CATALOGUE.md §E): the
-    // weighted types a moyen site nested in a zone of this archetype
-    // draws from, as "type:weight" pairs separated by spaces (the
-    // catalogue's type names, PoiPlan.cpp kPoiTypes). Empty = the
-    // plan's context table (the pre-zone draw).
-    str poi;
 
     bool operator==(const ZoneArchetype&) const = default;
 
@@ -88,7 +82,6 @@ struct ZoneArchetype {
         REFLECT_FIELD(pieceHeight)
         REFLECT_FIELD(pieceRadius)
         REFLECT_FIELD(erosionCut)
-        REFLECT_FIELD(poi)
     REFLECT_END()
 };
 
@@ -234,30 +227,6 @@ inline f32 zoneFloorLift(const ZoneSample& zs, f32 corridor, f32 shoreGate) {
 // The archetype index alone (cheap: no kernels) — the per-texel palette.
 u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
                     f32 x, f32 z);
-
-// The zone a point belongs to, as a SITE: its centre, archetype, storey
-// and floor — what the POI plan nests a moyen in (PoiPlan: the site
-// moves onto the zone's centre, takes the archetype's `poi` table, and
-// its height clears the floors around). Sea and start-meadow zones are
-// flagged: they host no landform.
-struct ZoneSite {
-    bool valid { false };
-    f32 x { 0.0f };
-    f32 z { 0.0f };
-    u32 hash { 0 };
-    u32 archetype { 0 };
-    i32 storey { 0 };
-    f32 storeyHeight { 0.0f };
-    bool sea { false };
-    bool startMeadow { false };
-};
-ZoneSite zoneSiteAt(const WorldLayerParams& world, const ZoneParams& zones,
-                    f32 x, f32 z);
-// The highest zone floor (storeyHeight) among the zones whose centre
-// lies within `radius` of (x, z), the host zone included — the floor a
-// landform must clear to stand above its neighbours' walls.
-f32 zoneHighestFloorNear(const WorldLayerParams& world,
-                         const ZoneParams& zones, f32 x, f32 z, f32 radius);
 
 const vector<ZoneArchetype>& defaultZoneArchetypes();
 const vector<ZoneArchetype>& zoneArchetypesOf(const ZoneParams& zones);

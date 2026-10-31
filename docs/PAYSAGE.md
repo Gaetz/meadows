@@ -2132,52 +2132,51 @@ briques Z0-Z5 dans le fichier de plan.
   fourchette fixe par étage de POI ; le grand tiré dans les types à
   silhouette ou doublé d'un sommet-belvédère). Aucun changement de
   terrain, pas de bump de version.
-- **2026-10-30 — Z4b livrée : les POI emboîtés dans les zones (le
-  moyen est le POI de sa zone, le grand a une silhouette, le
-  piédestal).** Go dev : « un canyon peut être un point d'intérêt,
-  mais pas un grand ». Correction du diagnostic Z4a : les trois moyens
-  sans proéminence étaient un escarpement (marche plafonnée à 120 m)
-  et des tours karstiques (cônes de 60 m) — des formes qui n'utilisent
-  pas la hauteur tirée ; les paliers voisins n'étaient que la seconde
-  cause. Livré (PoiPlan lit ZonePlan, jamais l'inverse ; toute entrée
-  du plan prend `const ZoneParams*`, `planZones(params)` dans
-  TerrainGen.hpp, nullptr = le plan seul, la référence A/B) :
-  (1) **le grand tire parmi les silhouettes seulement** — sommet,
-  aiguille, cratère, cap ; plus de canyon, fjord, mesa (rebord
-  plafonné 150 m) ni cirque (rebord 200 m) au rang de grand
-  (catalogue §F2) ; (2) **le moyen est le POI de sa zone** : son point
-  de treillis (2 048 m) se pose au centre de la zone qui le contient
-  (`zoneSiteAt`), il tire son type dans la colonne `poi` de
-  l'archétype (`ZoneArchetype.poi` / `ZoneArchetypeForm.poi`, paires
-  « type:poids », table §E bis du catalogue, donnée moddable, table C++
-  miroir) ; F3 et F5 s'appliquent par-dessus ; une zone de mer ou la
-  prairie de départ n'héberge rien ; (3) **le piédestal** : pour toute
-  forme qui s'élève, la hauteur tirée est le dégagement au-dessus du
-  plancher de zone le plus haut que l'empreinte touche
-  (`zoneHighestFloorNear`), l'écart de palier devient
-  `PoiSite.pedestal`, fondu sur l'empreinte (`PlanSample.pedestal`) et
-  ajouté au plancher par les contrôles (calme, le mur comblé ne fait
-  plus escarpement) — la zone du POI monte au niveau de sa plus haute
-  voisine. Instrument : une cible en anneau pour le cratère et la mesa
-  (le bord est vu de n'importe quel côté), la mesure « l'un des deux ».
-  Première passe (dégagement ajouté à la hauteur, sans piédestal) :
-  grand 30,8 %, moyen 63,3 % — la moitié des moyens de cette carte de
-  plateau restait basse (mesas plafonnées, tours karstiques) ; tables
-  plateau rééquilibrées vers les silhouettes (butte, aiguille).
-  **Mesuré carte (0,0), seed 1337** (bake 32 s, clé changée par la
-  table : pas de bump) : le grand est un **cratère** (sommet 1 829 m,
-  proéminence 878 m) **vu depuis 69,3 % du sol marchable** (0 % en
-  Z4a ; < 2 km 71 %, 2-4 km 78 %, > 4 km 57 %), un moyen à moins de
-  3 km depuis **66,8 %** (56,7), les deux 52,1 %, **l'un des deux
-  83,9 %** ; **15 sommets moyens sur 15 voient le grand et ≥ 2 moyens
-  (100 %, cible 90 ; 0 % en Z4a)** ; sol marchable 56 % de la terre
-  (50) ; 11 moyens sur 16 avec plus de 140 m de proéminence (7 en
-  Z4a). Les marches cacher/révéler restent à 16 % (Z4c). Coût :
-  planSampleAt 3,6 µs/appel inchangé en chaud (7 µs en balayage
-  froid : le typage lit les zones), lacs 35 (43). Cache (0,0) v123
-  recuit et copié dans le dossier debug du dev. Non fait, à décider :
-  treillis petit 350 m → pièces de zone (un mécanisme en moins, oui
-  explicite requis) ; `PoiCharacter` mort sous les zones (idem).
+
+- **2026-10-30/31 — Z4b tentée, mesurée, RETIRÉE (commit `e08d047`
+  puis revert ; le code reste lisible par `git show e08d047`).** Go
+  dev : « un canyon peut être un point d'intérêt, mais pas un grand ».
+  Livré en une brique : PoiPlan lisant ZonePlan (jamais l'inverse,
+  `planZones(params)`), le moyen posé au centre de sa zone et typé dans
+  une table `poi` « type:poids » par archétype (`ZoneArchetypeForm.poi`,
+  catalogue §E bis), le grand tiré dans les silhouettes seules
+  (sommet, aiguille, cratère, cap), et le **piédestal** : la hauteur
+  tirée devenue dégagement au-dessus du plancher de zone le plus haut
+  touché par l'empreinte, l'écart de palier ajouté sous la forme comme
+  un plancher fondu sur l'empreinte, le mur comblé effacé. Mesure (0,0) :
+  grand 0 → 69 %, moyen 57 → 67 %, sommets 0/14 → 15/15. **Verdict dev
+  en jeu : plateaux énormément soulevés, variété des paysages largement
+  diminuée.** Le rapport le confirme : relief moyen à 250 m 87 → 61 m,
+  médiane des murs 35 → 21 m, rivières 327 → 230, lacs 43 → 35. Deux
+  causes mesurées : (1) **le piédestal soulève le sol, pas le repère** —
+  son empreinte est la base du cône (430 à 1 050 m pour un moyen, 1,8 km
+  pour le grand) et il prend le palier MAXIMUM de 5 à 12 zones ; un
+  moyen tous les 2 km, c'est ~40 % de la tuile tirée vers le palier le
+  plus haut de son voisinage et l'escalier de Z2-Z3 gommé ; (2) **le
+  changement de types a retiré les creux** — dès la première passe, sans
+  piédestal, le relief tombait à 46 m et les rivières à 227 : le grand
+  canyon et les trois canyons moyens, plus cinq escarpements, portaient
+  une grande part du relief et du drainage de cette carte. Essai de
+  correction (Z4b bis, non commité) : piédestal en bouton à 0, moyen et
+  grand posés sur la **zone la plus haute** de leur maille, grand = sommet
+  (cratère aride seulement), tables rééquilibrées vers canyon/escarpement.
+  Mesure : relief 43 m, murs 24 m, rivières 234, grand 38 %, moyen 53 %
+  — pire des deux côtés : la règle « zone la plus haute » envoie 14
+  moyens sur 16 dans le même archétype (highPlateau), dont 3 tarns sans
+  silhouette, les canyons re-tirent faute de cours maître à 450 m sur les
+  hauts plateaux (F5), et le grand tombe sur la zone centrale d'un moyen.
+  **Leçons** : le relief et la variété de cette carte tiennent aux
+  tranchées et aux marches (canyon, escarpement) autant qu'à l'escalier
+  des zones — un changement de distribution des types est un changement
+  de paysage, à mesurer comme tel (relief, murs, rivières) avant la
+  visibilité ; adapter le sol au repère (piédestal) ou le repère au point
+  haut (snap) homogénéise tous deux, le premier les paliers, le second les
+  hôtes ; la prochaine tentative de Z4b part de Z4a intact (types par
+  contexte, points de treillis) et ne change qu'une chose à la fois, le
+  grand à silhouette d'abord, chaque pas mesuré sur les quatre chiffres
+  de sol ET la visibilité. Retour à l'état Z4a : cache (0,0) recuit à la
+  clé Z4a et recopié dans le dossier debug du dev. Reste acquis de la
+  décision dev : un canyon est un POI, jamais le grand.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

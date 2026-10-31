@@ -219,12 +219,12 @@ vector<u8> renderTerrainMap(const ProceduralControls& controls,
         };
         const Rgb walk { 0.95f, 0.85f, 0.2f };
         for (const PoiEdge& e :
-             poiEdgesNear(world, plan, planZones(controls.params()), minX, minZ, maxX, maxZ)) {
+             poiEdgesNear(world, plan, minX, minZ, maxX, maxZ)) {
             line(e.a.x, e.a.z, e.wx, e.wz, walk);
             line(e.wx, e.wz, e.b.x, e.b.z, walk);
         }
         for (const PoiSite& s :
-             poiSitesNear(world, plan, planZones(controls.params()), minX, minZ, maxX, maxZ)) {
+             poiSitesNear(world, plan, minX, minZ, maxX, maxZ)) {
             Rgb c { 0.9f, 0.2f, 0.2f };
             switch (poiTraits(s.type).family) {
             case PoiFamily::Relief: break;

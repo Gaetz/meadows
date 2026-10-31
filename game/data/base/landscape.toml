@@ -665,9 +665,7 @@ sideMinFraction = 0.5
 # conditions on the world sample at the zone's site (etage, massif, coast,
 # moisture in [0,1]); the grammar draws the zone (relief, benches, crests,
 # palette, its small landform `piece`: 1 knoll, 2 clearing, 3 pond, 4 rock
-# knob, 5 grove mound) and `poi`: the moyen types a zone of this nature
-# hosts, "type:weight" pairs (names of docs/POI-CATALOGUE.md). Mirrors the
-# C++ default table (ZonePlan.cpp).
+# knob, 5 grove mound). Mirrors the C++ default table (ZonePlan.cpp).
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000001"
@@ -700,7 +698,6 @@ piece = 1
 pieceHeight = 35.0
 pieceRadius = 140.0
 erosionCut = 0.0
-poi = "butte:30 ridge:15 mesa:10 plain-lake:15 waterfall:10 lone-tree:8 grove:7 city-pad:5"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000002"
@@ -733,7 +730,6 @@ piece = 5
 pieceHeight = 8.0
 pieceRadius = 90.0
 erosionCut = 0.0
-poi = "butte:30 ridge:10 grove:15 plain-lake:15 lone-tree:15 city-pad:15"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000003"
@@ -766,7 +762,6 @@ piece = 1
 pieceHeight = 50.0
 pieceRadius = 160.0
 erosionCut = 40.0
-poi = "butte:30 ridge:25 summit:10 mesa:10 waterfall:15 canyon:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000004"
@@ -799,7 +794,6 @@ piece = 2
 pieceHeight = 0.0
 pieceRadius = 150.0
 erosionCut = 20.0
-poi = "butte:25 ridge:20 mesa:10 waterfall:15 grove:15 plain-lake:15"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000005"
@@ -832,7 +826,6 @@ piece = 4
 pieceHeight = 15.0
 pieceRadius = 45.0
 erosionCut = 15.0
-poi = "butte:35 mesa:25 needle:10 escarpment:10 canyon:15 karst-towers:5"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000006"
@@ -865,7 +858,6 @@ piece = 3
 pieceHeight = 6.0
 pieceRadius = 80.0
 erosionCut = 20.0
-poi = "summit:35 mesa:15 needle:10 cirque:15 tarn:15 canyon:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000007"
@@ -898,7 +890,6 @@ piece = 3
 pieceHeight = 8.0
 pieceRadius = 180.0
 erosionCut = 0.0
-poi = "plain-lake:35 butte:25 confluence:15 grove:10 city-pad:15"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000008"
@@ -931,7 +922,6 @@ piece = 3
 pieceHeight = 4.0
 pieceRadius = 120.0
 erosionCut = 0.0
-poi = "plain-lake:40 butte:20 lone-tree:15 grove:15 confluence:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-000000000009"
@@ -964,7 +954,6 @@ piece = 4
 pieceHeight = 20.0
 pieceRadius = 50.0
 erosionCut = 120.0
-poi = "hoodoos:30 mesa:25 butte:15 canyon:20 escarpment:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000a"
@@ -997,7 +986,6 @@ piece = 4
 pieceHeight = 12.0
 pieceRadius = 40.0
 erosionCut = 80.0
-poi = "needle:25 summit:20 butte:20 boulders:20 karst-towers:15"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000b"
@@ -1030,7 +1018,6 @@ piece = 1
 pieceHeight = 25.0
 pieceRadius = 150.0
 erosionCut = 10.0
-poi = "butte:35 ridge:25 mesa:15 boulders:15 lone-tree:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000c"
@@ -1063,7 +1050,6 @@ piece = 4
 pieceHeight = 25.0
 pieceRadius = 60.0
 erosionCut = 160.0
-poi = "ridge:30 summit:25 needle:15 col:15 canyon:15"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000d"
@@ -1096,7 +1082,6 @@ piece = 4
 pieceHeight = 15.0
 pieceRadius = 50.0
 erosionCut = 60.0
-poi = "headland:35 sea-cliff:25 sea-stack:15 cove:15 needle:10"
 
 [[records]]
 form = "7a0e0000-0000-4000-8000-00000000000e"
@@ -1129,7 +1114,6 @@ piece = 1
 pieceHeight = 12.0
 pieceRadius = 80.0
 erosionCut = 0.0
-poi = "headland:25 cove:30 islet:15 lone-tree:10 city-pad:20"
 
 # --- River-source dressing (F4, docs/PAYSAGE.md §7.8) -----------------
 # A soft water mist at every true course head; the dressing form maps a

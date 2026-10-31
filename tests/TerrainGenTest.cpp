@@ -897,7 +897,7 @@ TEST_CASE("controls v3: calm is the rule, pieces and massifs the "
     }
     // A POI's own lift leaves the calm family at its summit.
     const auto sites = poiSitesNear(controls.params().world,
-                                    controls.params().poi, planZones(controls.params()), -8192.0f,
+                                    controls.params().poi, -8192.0f,
                                     -8192.0f, 16384.0f, 16384.0f);
     u32 checked = 0;
     for (const PoiSite& site : sites) {
@@ -1059,7 +1059,7 @@ TEST_CASE("variety at 45 s: an event every 250 m along a walk") {
     MacroParams macro;
     macro.hillChainWavelength = controls.params().rhythm.crestWavelength;
     macro.bedWavelength = controls.params().rhythm.bedWavelength;
-    const auto sites = poiSitesNear(world, controls.params().poi, planZones(controls.params()), -4000.0f,
+    const auto sites = poiSitesNear(world, controls.params().poi, -4000.0f,
                                     -4000.0f, 12192.0f, 12192.0f);
     const auto poiNear = [&](f32 x, f32 z) {
         for (const PoiSite& s : sites) {
@@ -1198,7 +1198,7 @@ TEST_CASE("verticality: the plan terraces the country into cliffs") {
     for (f32 z = world.startZ - 2000.0f; z <= world.startZ + 2000.0f; z += 100.0f) {
         for (f32 x = world.startX - 2000.0f; x <= world.startX + 2000.0f;
              x += 100.0f) {
-            const PlanSample ps = planSampleAt(world, hard.params().poi, planZones(hard.params()), x, z);
+            const PlanSample ps = planSampleAt(world, hard.params().poi, x, z);
             if (ps.corridor > 0.9f) {
                 ++corridorSamples;
                 worstTerrace = glm::max(worstTerrace, hard.at(x, z).terrace);

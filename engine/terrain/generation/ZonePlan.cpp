@@ -34,8 +34,6 @@ struct Zone {
     i32 storey { 0 };
     f32 storeyHeight { 0.0f }; // storey x step x start gate
     f32 pieceScale { 1.0f };   // hashed size variation of the piece
-    bool sea { false };
-    bool startMeadow { false };
 };
 
 struct Memo {
@@ -187,8 +185,6 @@ const Zone& zoneCell(const WorldLayerParams& world, const ZoneParams& zones,
     zone.pieceScale = glm::mix(0.8f, 1.25f, roll01(zone.hash, 3));
     zone.archetype = raw.archetype;
     zone.storey = raw.storey;
-    zone.sea = raw.sea;
-    zone.startMeadow = raw.startMeadow;
     if (!raw.sea && !raw.startMeadow) {
         const vector<ZoneArchetype>& table = zoneArchetypesOf(zones);
         // The bowl rule: a zone never sits below ALL its neighbours
@@ -335,8 +331,7 @@ const vector<ZoneArchetype>& defaultZoneArchetypes() {
                              i32 bias, f32 relief, f32 wavelength,
                              f32 terrace, f32 step, f32 crests, f32 hard,
                              f32 wet, f32 cover, u32 palette, u32 piece,
-                             f32 pieceH, f32 pieceR, f32 cut,
-                             const char* poi) {
+                             f32 pieceH, f32 pieceR, f32 cut) {
             ZoneArchetype a;
             a.name = name;
             a.weight = weight;
@@ -362,41 +357,23 @@ const vector<ZoneArchetype>& defaultZoneArchetypes() {
             a.pieceHeight = pieceH;
             a.pieceRadius = pieceR;
             a.erosionCut = cut;
-            a.poi = poi;
             t.push_back(a);
         };
         //   name           w    etage      massif     coast      moisture   bias relief wl   terr step crest hard  wet   cover pal piece h    r
-        //   The poi column: the moyen types of a zone of this nature
-        //   (silhouettes first — the landmark read from the next zone;
-        //   water and vegetation types as the archetype allows).
-        row("meadow",       1.2f, 0.0f, 0.62f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.8f, 0, 1.0f, 1.0f, 0.15f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 35.0f, 140.0f, 0.0f,
-            "butte:30 ridge:15 mesa:10 plain-lake:15 waterfall:10 lone-tree:8 grove:7 city-pad:5");
-        row("bocage",       1.0f, 0.0f, 0.55f, 0.0f, 0.4f, 0.0f, 0.5f, 0.45f, 0.9f, 0, 0.8f, 0.8f, 0.1f, 30.0f, 0.0f, 0.0f, 0.1f, 0.0f, 7, 5, 8.0f, 90.0f, 0.0f,
-            "butte:30 ridge:10 grove:15 plain-lake:15 lone-tree:15 city-pad:15");
-        row("hills",        1.0f, 0.3f, 0.75f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.3f, 0.9f, 0.3f, 30.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0, 1, 50.0f, 160.0f, 40.0f,
-            "butte:30 ridge:25 summit:10 mesa:10 waterfall:15 canyon:10");
-        row("woodedHills",  0.9f, 0.25f, 0.8f, 0.0f, 0.6f, 0.0f, 0.5f, 0.5f, 1.0f, 0, 1.2f, 0.85f, 0.4f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 6, 2, 0.0f, 150.0f, 20.0f,
-            "butte:25 ridge:20 mesa:10 waterfall:15 grove:15 plain-lake:15");
-        row("mesaPlateau",  0.9f, 0.35f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.7f, 1, 0.6f, 1.4f, 0.9f, 40.0f, 0.0f, 0.35f, -0.2f, -0.1f, 5, 4, 15.0f, 45.0f, 15.0f,
-            "butte:35 mesa:25 needle:10 escarpment:10 canyon:15 karst-towers:5");
-        row("highPlateau",  0.6f, 0.5f, 1.0f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 1.0f, 2, 0.7f, 1.2f, 0.6f, 45.0f, 0.0f, 0.2f, -0.1f, 0.2f, 4, 3, 6.0f, 80.0f, 20.0f,
-            "summit:35 mesa:15 needle:10 cirque:15 tarn:15 canyon:10");
-        row("basin",        0.6f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 1.0f, -1, 0.5f, 1.1f, 0.0f, 30.0f, 0.0f, 0.0f, 0.4f, 0.0f, 0, 3, 8.0f, 180.0f, 0.0f,
-            "plain-lake:35 butte:25 confluence:15 grove:10 city-pad:15");
-        row("marsh",        0.5f, 0.0f, 0.45f, 0.0f, 0.3f, 0.0f, 0.5f, 0.6f, 1.0f, 0, 0.35f, 1.2f, 0.0f, 30.0f, 0.0f, -0.1f, 0.6f, 0.2f, 9, 3, 4.0f, 120.0f, 0.0f,
-            "plain-lake:40 butte:20 lone-tree:15 grove:15 confluence:10");
-        row("badlands",     0.5f, 0.3f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.45f, 0, 1.5f, 0.35f, 0.7f, 15.0f, 0.0f, 0.3f, -0.2f, -0.3f, 5, 4, 20.0f, 50.0f, 120.0f,
-            "hoodoos:30 mesa:25 butte:15 canyon:20 escarpment:10");
-        row("rockField",    0.4f, 0.4f, 1.0f, 0.3f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.0f, 0.9f, 0.5f, 30.0f, 0.0f, 0.4f, -0.1f, 0.1f, 0, 4, 12.0f, 40.0f, 80.0f,
-            "needle:25 summit:20 butte:20 boulders:20 karst-towers:15");
-        row("heath",        0.8f, 0.2f, 0.8f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.7f, 0, 0.9f, 1.8f, 0.5f, 30.0f, 0.0f, 0.1f, -0.1f, 0.3f, 4, 1, 25.0f, 150.0f, 10.0f,
-            "butte:35 ridge:25 mesa:15 boulders:15 lone-tree:10");
-        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f, 160.0f,
-            "ridge:30 summit:25 needle:15 col:15 canyon:15");
-        row("coastCliffs",  1.0f, 0.25f, 1.0f, 0.0f, 1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 1, 0.8f, 1.0f, 0.8f, 40.0f, 0.0f, 0.3f, 0.0f, 0.0f, 0, 4, 15.0f, 50.0f, 60.0f,
-            "headland:35 sea-cliff:25 sea-stack:15 cove:15 needle:10");
-        row("lowCoast",     1.0f, 0.0f, 0.4f, 0.0f, 0.4f, 0.5f, 1.0f, 0.0f, 1.0f, 0, 0.4f, 0.6f, 0.0f, 30.0f, 0.0f, -0.1f, 0.0f, -0.2f, 5, 1, 12.0f, 80.0f, 0.0f,
-            "headland:25 cove:30 islet:15 lone-tree:10 city-pad:20");
+        row("meadow",       1.2f, 0.0f, 0.62f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.8f, 0, 1.0f, 1.0f, 0.15f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 35.0f, 140.0f, 0.0f);
+        row("bocage",       1.0f, 0.0f, 0.55f, 0.0f, 0.4f, 0.0f, 0.5f, 0.45f, 0.9f, 0, 0.8f, 0.8f, 0.1f, 30.0f, 0.0f, 0.0f, 0.1f, 0.0f, 7, 5, 8.0f, 90.0f, 0.0f);
+        row("hills",        1.0f, 0.3f, 0.75f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.3f, 0.9f, 0.3f, 30.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0, 1, 50.0f, 160.0f, 40.0f);
+        row("woodedHills",  0.9f, 0.25f, 0.8f, 0.0f, 0.6f, 0.0f, 0.5f, 0.5f, 1.0f, 0, 1.2f, 0.85f, 0.4f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 6, 2, 0.0f, 150.0f, 20.0f);
+        row("mesaPlateau",  0.9f, 0.35f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.7f, 1, 0.6f, 1.4f, 0.9f, 40.0f, 0.0f, 0.35f, -0.2f, -0.1f, 5, 4, 15.0f, 45.0f, 15.0f);
+        row("highPlateau",  0.6f, 0.5f, 1.0f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 1.0f, 2, 0.7f, 1.2f, 0.6f, 45.0f, 0.0f, 0.2f, -0.1f, 0.2f, 4, 3, 6.0f, 80.0f, 20.0f);
+        row("basin",        0.6f, 0.0f, 0.7f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 1.0f, -1, 0.5f, 1.1f, 0.0f, 30.0f, 0.0f, 0.0f, 0.4f, 0.0f, 0, 3, 8.0f, 180.0f, 0.0f);
+        row("marsh",        0.5f, 0.0f, 0.45f, 0.0f, 0.3f, 0.0f, 0.5f, 0.6f, 1.0f, 0, 0.35f, 1.2f, 0.0f, 30.0f, 0.0f, -0.1f, 0.6f, 0.2f, 9, 3, 4.0f, 120.0f, 0.0f);
+        row("badlands",     0.5f, 0.3f, 0.9f, 0.0f, 0.6f, 0.0f, 0.5f, 0.0f, 0.45f, 0, 1.5f, 0.35f, 0.7f, 15.0f, 0.0f, 0.3f, -0.2f, -0.3f, 5, 4, 20.0f, 50.0f, 120.0f);
+        row("rockField",    0.4f, 0.4f, 1.0f, 0.3f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0, 1.0f, 0.9f, 0.5f, 30.0f, 0.0f, 0.4f, -0.1f, 0.1f, 0, 4, 12.0f, 40.0f, 80.0f);
+        row("heath",        0.8f, 0.2f, 0.8f, 0.0f, 0.5f, 0.0f, 0.5f, 0.3f, 0.7f, 0, 0.9f, 1.8f, 0.5f, 30.0f, 0.0f, 0.1f, -0.1f, 0.3f, 4, 1, 25.0f, 150.0f, 10.0f);
+        row("ridgeCountry", 1.0f, 0.3f, 1.0f, 0.5f, 1.0f, 0.0f, 0.5f, 0.0f, 1.0f, 1, 1.4f, 1.0f, 0.5f, 35.0f, 150.0f, 0.3f, -0.1f, 0.0f, 0, 4, 25.0f, 60.0f, 160.0f);
+        row("coastCliffs",  1.0f, 0.25f, 1.0f, 0.0f, 1.0f, 0.5f, 1.0f, 0.0f, 1.0f, 1, 0.8f, 1.0f, 0.8f, 40.0f, 0.0f, 0.3f, 0.0f, 0.0f, 0, 4, 15.0f, 50.0f, 60.0f);
+        row("lowCoast",     1.0f, 0.0f, 0.4f, 0.0f, 0.4f, 0.5f, 1.0f, 0.0f, 1.0f, 0, 0.4f, 0.6f, 0.0f, 30.0f, 0.0f, -0.1f, 0.0f, -0.2f, 5, 1, 12.0f, 80.0f, 0.0f);
         return t;
     }();
     return table;
@@ -623,48 +600,6 @@ u32 zoneArchetypeAt(const WorldLayerParams& world, const ZoneParams& zones,
     Memo& memo = memoFor(world, zones);
     const Nearest n = nearestZones(world, zones, memo, x, z);
     return n.a ? n.a->archetype : 0u;
-}
-
-ZoneSite zoneSiteAt(const WorldLayerParams& world, const ZoneParams& zones,
-                    f32 x, f32 z) {
-    ZoneSite out;
-    Memo& memo = memoFor(world, zones);
-    const Nearest n = nearestZones(world, zones, memo, x, z);
-    if (!n.a) {
-        return out;
-    }
-    out.valid = true;
-    out.x = n.a->x;
-    out.z = n.a->z;
-    out.hash = n.a->hash;
-    out.archetype = n.a->archetype;
-    out.storey = n.a->storey;
-    out.storeyHeight = n.a->storeyHeight;
-    out.sea = n.a->sea;
-    out.startMeadow = n.a->startMeadow;
-    return out;
-}
-
-f32 zoneHighestFloorNear(const WorldLayerParams& world,
-                         const ZoneParams& zones, f32 x, f32 z, f32 radius) {
-    Memo& memo = memoFor(world, zones);
-    // The lattice sits half a cell off the origin (rawCell): the cell
-    // whose nominal site is nearest, then every cell a jittered site
-    // within reach may live in.
-    const i32 cx = static_cast<i32>(std::floor(x / zones.cellSize - 0.5f));
-    const i32 cz = static_cast<i32>(std::floor(z / zones.cellSize - 0.5f));
-    const i32 reach =
-        1 + static_cast<i32>(std::ceil(radius / zones.cellSize));
-    f32 highest = 0.0f;
-    for (i32 dz = -reach; dz <= reach; ++dz) {
-        for (i32 dx = -reach; dx <= reach; ++dx) {
-            const Zone& zone = zoneCell(world, zones, memo, cx + dx, cz + dz);
-            if (std::hypot(zone.x - x, zone.z - z) <= radius) {
-                highest = glm::max(highest, zone.storeyHeight);
-            }
-        }
-    }
-    return highest;
 }
 
 u64 hashKey(const ZoneParams& p) {

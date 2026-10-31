@@ -291,13 +291,6 @@ struct ProceduralControlParams {
 
 u64 hashKey(const ProceduralControlParams& p);
 
-// The zones the POI plan nests its sites in under these params
-// (nullptr when the zones are off): what every PoiPlan entry point
-// takes, so a caller never reads the sites of a different layering.
-inline const ZoneParams* planZones(const ProceduralControlParams& p) {
-    return p.rhythm.zones ? &p.zones : nullptr;
-}
-
 class ProceduralControls final : public ControlSource {
 public:
     explicit ProceduralControls(const ProceduralControlParams& params)

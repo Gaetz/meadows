@@ -376,7 +376,7 @@ TEST_CASE("variety transect diagnostic" * doctest::skip()) {
     // The plan's sites: a moyen/grand within 250 m or a petit within
     // 80 m of the walker is a point of interest met.
     const auto sites = poiSitesNear(controls.params().world,
-                                    controls.params().poi, planZones(controls.params()), w.minX - 500.0f,
+                                    controls.params().poi, w.minX - 500.0f,
                                     w.minZ - 500.0f, w.maxX + 500.0f,
                                     w.maxZ + 500.0f);
     const auto poiNear = [&](f32 x, f32 z) {

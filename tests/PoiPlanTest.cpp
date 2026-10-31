@@ -40,8 +40,8 @@ u64 edgeKey(const PoiEdge& e) {
 
 TEST_CASE("poi plan: deterministic and typed") {
     const ProceduralControlParams pc = paramsFor(1337);
-    const auto a = poiSitesNear(pc.world, pc.poi, planZones(pc), 0.0f, 0.0f, 8192.0f, 8192.0f);
-    const auto b = poiSitesNear(pc.world, pc.poi, planZones(pc), 0.0f, 0.0f, 8192.0f, 8192.0f);
+    const auto a = poiSitesNear(pc.world, pc.poi, 0.0f, 0.0f, 8192.0f, 8192.0f);
+    const auto b = poiSitesNear(pc.world, pc.poi, 0.0f, 0.0f, 8192.0f, 8192.0f);
     REQUIRE(a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i) {
         CHECK(a[i].x == b[i].x);
@@ -52,7 +52,7 @@ TEST_CASE("poi plan: deterministic and typed") {
     }
     // Another seed moves them.
     const ProceduralControlParams other = paramsFor(42);
-    const auto c = poiSitesNear(other.world, other.poi, planZones(other), 0.0f, 0.0f, 8192.0f, 8192.0f);
+    const auto c = poiSitesNear(other.world, other.poi, 0.0f, 0.0f, 8192.0f, 8192.0f);
     bool moved = c.size() != a.size();
     for (size_t i = 0; !moved && i < a.size(); ++i) {
         moved = a[i].x != c[i].x;
@@ -89,7 +89,7 @@ TEST_CASE("poi plan: densities per 8 km map") {
             const bool landMap = wet == 0;
             landMaps += landMap;
             const auto sites =
-                poiSitesNear(pc.world, pc.poi, planZones(pc), x0, z0, x0 + 8192.0f, z0 + 8192.0f);
+                poiSitesNear(pc.world, pc.poi, x0, z0, x0 + 8192.0f, z0 + 8192.0f);
             u32 g = 0, m = 0, p = 0;
             vector<const PoiSite*> ms;
             for (const PoiSite& s : sites) {
@@ -137,8 +137,8 @@ TEST_CASE("poi plan: symmetric at a map line") {
     // rect and from the east map's rect are the SAME objects: the plan
     // has no per-map state.
     const ProceduralControlParams pc = paramsFor(1337);
-    const auto west = poiEdgesNear(pc.world, pc.poi, planZones(pc), 0.0f, 0.0f, 8192.0f, 8192.0f);
-    const auto east = poiEdgesNear(pc.world, pc.poi, planZones(pc), 8192.0f, 0.0f, 16384.0f, 8192.0f);
+    const auto west = poiEdgesNear(pc.world, pc.poi, 0.0f, 0.0f, 8192.0f, 8192.0f);
+    const auto east = poiEdgesNear(pc.world, pc.poi, 8192.0f, 0.0f, 16384.0f, 8192.0f);
     std::map<u64, PoiEdge> byKey;
     for (const PoiEdge& e : west) {
         byKey[edgeKey(e)] = e;
@@ -159,7 +159,7 @@ TEST_CASE("poi plan: symmetric at a map line") {
     // One row of maps may genuinely hold no east-west walk across its
     // line: the seam guarantee is that SOME walk crosses SOME map
     // line here — count the horizontal line too.
-    const auto north = poiEdgesNear(pc.world, pc.poi, planZones(pc), 0.0f, 8192.0f,
+    const auto north = poiEdgesNear(pc.world, pc.poi, 0.0f, 8192.0f,
                                     8192.0f, 16384.0f);
     for (const PoiEdge& e : north) {
         shared += (e.a.z < 8192.0f) != (e.b.z < 8192.0f) ? 1u : 0u;
@@ -178,9 +178,9 @@ TEST_CASE("poi plan: symmetric at a map line") {
 
 TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
     const ProceduralControlParams pc = paramsFor(1337);
-    const auto sites = poiSitesNear(pc.world, pc.poi, planZones(pc), -8192.0f, -8192.0f,
+    const auto sites = poiSitesNear(pc.world, pc.poi, -8192.0f, -8192.0f,
                                     16384.0f, 16384.0f);
-    const auto edges = poiEdgesNear(pc.world, pc.poi, planZones(pc), -8192.0f, -8192.0f,
+    const auto edges = poiEdgesNear(pc.world, pc.poi, -8192.0f, -8192.0f,
                                     16384.0f, 16384.0f);
     std::map<u64, u32> degree;
     u32 alike = 0;
@@ -220,7 +220,7 @@ TEST_CASE("poi plan: the graph links every moyen, never two alike adjacent") {
 TEST_CASE("poi plan: the start cell's grand stands clear of the spawn") {
     for (const u32 seed : { 1u, 42u, 1337u, 2024u }) {
         const ProceduralControlParams pc = paramsFor(seed);
-        const auto sites = poiSitesNear(pc.world, pc.poi, planZones(pc), 0.0f, 0.0f, 8192.0f, 8192.0f);
+        const auto sites = poiSitesNear(pc.world, pc.poi, 0.0f, 0.0f, 8192.0f, 8192.0f);
         for (const PoiSite& s : sites) {
             if (s.tier == PoiTier::Grand) {
                 CHECK(std::hypot(s.x - pc.world.startX, s.z - pc.world.startZ) >=
@@ -239,8 +239,7 @@ TEST_CASE("poi plan: the terrain reads the plan") {
     const ProceduralControls controls { pc };
     const auto& world = controls.params().world;
     const auto& plan = controls.params().poi;
-    const auto* zones = planZones(controls.params());
-    const auto sites = poiSitesNear(world, plan, zones, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
+    const auto sites = poiSitesNear(world, plan, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
     u32 summits = 0, basins = 0, pads = 0;
     for (const PoiSite& s : sites) {
         const ControlSample c = controls.at(s.x, s.z);
@@ -262,7 +261,7 @@ TEST_CASE("poi plan: the terrain reads the plan") {
     MESSAGE("checked summits ", summits, ", basins ", basins, ", pads ", pads);
     CHECK(summits >= 10);
     CHECK(basins >= 3);
-    const auto edges = poiEdgesNear(world, plan, zones, 0.0f, 0.0f, 8192.0f, 8192.0f);
+    const auto edges = poiEdgesNear(world, plan, 0.0f, 0.0f, 8192.0f, 8192.0f);
     u32 corridors = 0;
     for (const PoiEdge& e : edges) {
         const ControlSample c = controls.at(e.wx, e.wz);
@@ -294,7 +293,6 @@ TEST_CASE("poi plan: belvedere candidates around the start" * doctest::skip()) {
     pc.seed = 1337;
     const ProceduralControls controls { pc };
     const auto sites = poiSitesNear(controls.params().world, controls.params().poi,
-                                    planZones(controls.params()),
                                     4096.0f - 2500.0f, 4096.0f - 2500.0f,
                                     4096.0f + 2500.0f, 4096.0f + 2500.0f);
     for (const PoiSite& s : sites) {
@@ -314,7 +312,6 @@ TEST_CASE("poi plan: characters cover the land in shares, blended at borders") {
     const ProceduralControls controls { pc };
     const auto& world = controls.params().world;
     const auto& plan = controls.params().poi;
-    const auto* zones = planZones(controls.params());
     u32 counts[6] = {};
     u32 land = 0;
     f32 worstJump = 0.0f;
@@ -329,8 +326,8 @@ TEST_CASE("poi plan: characters cover the land in shares, blended at borders") {
             ++land;
             // The POI characters (the plan's own, under the zones the
             // archetype takes their place in ControlSample::character).
-            ++counts[planCharacterAt(world, plan, zones, x, z).character % 6];
-            const PlanSample ps = planSampleAt(world, plan, zones, x, z);
+            ++counts[planCharacterAt(world, plan, x, z).character % 6];
+            const PlanSample ps = planSampleAt(world, plan, x, z);
             CHECK(ps.reliefMul >= 0.35f);
             CHECK(ps.reliefMul <= 1.3f);
             CHECK(ps.wavelengthMul >= 0.65f);
@@ -361,7 +358,6 @@ TEST_CASE("poi plan: water points of interest sit on a master course") {
     const ProceduralControls controls { pc };
     const auto& world = controls.params().world;
     const auto& plan = controls.params().poi;
-    const auto* zones = planZones(controls.params());
     ProceduralControlParams dry = pc;
     dry.rhythm.plan = false;
     const ProceduralControls dryControls { dry };
@@ -371,7 +367,7 @@ TEST_CASE("poi plan: water points of interest sit on a master course") {
     net.fleuveArea = 1.5e6f;
     const auto rivers = masterRiversNear(dryControls, macro, net, -9000.0f,
                                          -9000.0f, 17000.0f, 17000.0f);
-    const auto sites = poiSitesNear(world, plan, zones, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
+    const auto sites = poiSitesNear(world, plan, -8192.0f, -8192.0f, 16384.0f, 16384.0f);
     u32 water = 0, nearAny = 0, moyens = 0;
     for (const PoiSite& s : sites) {
         if (s.tier != PoiTier::Moyen) {
