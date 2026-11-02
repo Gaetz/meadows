@@ -1415,6 +1415,373 @@ void reportRiversVsMapLines(ReportContext& ctx) {
     ctx.longestZ = longestZ;
 }
 
+// River sections: the published ground cut ACROSS every ribbon. A
+// river reads as one channel when the water under its ribbon is one
+// wet run; two wet runs with a thin dry strip between them (the groove
+// the erosion dug beside the groove the carve dug) is a SPLIT bed. The
+// deepest sample's lateral offset from the axis tells how far the
+// course sits from its own thalweg; the banks at halfWidth + 30 m tell
+// how incised the water runs; the surface drop per ~50 m of course,
+// weighted by length, tells whether the water visibly descends.
+void reportRiverSections(const ReportContext& ctx) {
+    const game::MapView& view = *ctx.view;
+    const auto underLake = [&](f32 x, f32 z) {
+        for (const auto& lake : view.lakes) {
+            if (lake.covers(x, z)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    std::optional<render::terraingen::ContinentGround> continent;
+    if (ctx.params.continent.enabled) {
+        const auto& net = ctx.params.network;
+        continent = render::terraingen::loadContinentGround(
+            ctx.cacheDir, ctx.params, view.mapSize,
+            render::terraingen::continentSuperIndex(net, view.centreX()),
+            render::terraingen::continentSuperIndex(net, view.centreZ()));
+    }
+    constexpr f32 kWetMargin = 0.2f;   // ground this far under the water
+    constexpr f32 kSliverMax = 12.0f;  // dry strip still "thin"
+    constexpr f32 kBankOut = 30.0f;    // bank probe beyond the ribbon
+    u32 sections = 0, split = 0, sliver = 0, dryInRibbon = 0;
+    u32 byTier[3] = {}, splitByTier[3] = {};
+    vector<f32> offsets;   // |deepest - axis| / halfWidth
+    vector<f32> sliverW;   // dry strip width (m) of split sections
+    vector<f32> sliverH;   // dry strip crest above the water (m)
+    vector<f32> gapM;      // axis-to-second-channel distance (m)
+    vector<f32> bankLow;   // the lower bank at hw + 30 m, above water
+    vector<f32> bankHigh;  // the higher bank
+    vector<f32> ribbonDry; // % of the ribbon's width standing dry
+    struct Example {
+        f32 x, z, surface, hw, gap, width, crest;
+        u32 tier;
+    };
+    vector<Example> examples;
+    for (const auto& river : view.rivers) {
+        const size_t count = river.points.size();
+        if (count < 9) {
+            continue;
+        }
+        for (size_t i = 3; i + 3 < count; i += 2) {
+            const auto& pt = river.points[i];
+            if (underLake(pt.x, pt.z) || pt.halfWidth < 0.5f) {
+                continue;
+            }
+            if (pt.x < view.minX + 40.0f || pt.x > view.maxX - 40.0f ||
+                pt.z < view.minZ + 40.0f || pt.z > view.maxZ - 40.0f) {
+                continue;
+            }
+            const auto& fw = river.points[i + 1];
+            const auto& bw = river.points[i - 1];
+            const f32 dx = fw.x - bw.x;
+            const f32 dz = fw.z - bw.z;
+            const f32 len = std::sqrt(dx * dx + dz * dz);
+            if (len < 0.5f) {
+                continue;
+            }
+            const f32 px = -dz / len;
+            const f32 pz = dx / len;
+            const f32 hw = pt.halfWidth;
+            const f32 reach = glm::max(2.5f * hw, hw + 16.0f);
+            // 1 m samples across; the ribbon is |d| <= hw.
+            const i32 half = static_cast<i32>(std::ceil(reach));
+            vector<u8> wet(static_cast<size_t>(2 * half + 1), 0);
+            f32 deepest = 1.0e30f;
+            f32 deepestD = 0.0f;
+            u32 ribbonN = 0, ribbonDryN = 0;
+            for (i32 k = -half; k <= half; ++k) {
+                const f32 d = static_cast<f32>(k);
+                const f32 g = view.height(pt.x + px * d, pt.z + pz * d);
+                const bool w = g < pt.surface - kWetMargin;
+                wet[static_cast<size_t>(k + half)] = w ? 1 : 0;
+                if (g < deepest) {
+                    deepest = g;
+                    deepestD = d;
+                }
+                if (std::abs(d) <= hw) {
+                    ++ribbonN;
+                    ribbonDryN += w ? 0 : 1;
+                }
+            }
+            ++sections;
+            const u32 tier = glm::min(pt.tier, 2u);
+            ++byTier[tier];
+            offsets.push_back(std::abs(deepestD) / hw);
+            if (ribbonN > 0) {
+                ribbonDry.push_back(100.0f * static_cast<f32>(ribbonDryN) /
+                                    static_cast<f32>(ribbonN));
+                if (ribbonDryN > 0) {
+                    ++dryInRibbon;
+                }
+            }
+            const f32 gL = view.height(pt.x - px * (hw + kBankOut),
+                                       pt.z - pz * (hw + kBankOut)) -
+                           pt.surface;
+            const f32 gR = view.height(pt.x + px * (hw + kBankOut),
+                                       pt.z + pz * (hw + kBankOut)) -
+                           pt.surface;
+            bankLow.push_back(glm::min(gL, gR));
+            bankHigh.push_back(glm::max(gL, gR));
+            // Wet runs across: the axis run and the nearest other run.
+            i32 axisK = 0;
+            if (!wet[static_cast<size_t>(half)]) {
+                // Axis dry: the nearest wet sample inside the ribbon
+                // stands in for it.
+                i32 best = half + 1;
+                for (i32 k = -half; k <= half; ++k) {
+                    if (wet[static_cast<size_t>(k + half)] &&
+                        std::abs(k) <= static_cast<i32>(hw) + 1 &&
+                        std::abs(k) < std::abs(best)) {
+                        best = k;
+                    }
+                }
+                if (best > half) {
+                    continue; // no water under the ribbon at all
+                }
+                axisK = best;
+            }
+            i32 runLo = axisK, runHi = axisK;
+            while (runLo > -half && wet[static_cast<size_t>(runLo - 1 + half)]) {
+                --runLo;
+            }
+            while (runHi < half && wet[static_cast<size_t>(runHi + 1 + half)]) {
+                ++runHi;
+            }
+            // The nearest other wet run on either side, its dry gap.
+            f32 gap = 0.0f, width = 0.0f, crest = 0.0f;
+            i32 secondK = 0;
+            bool found = false;
+            for (const i32 dir : { -1, 1 }) {
+                i32 k = dir < 0 ? runLo - 1 : runHi + 1;
+                i32 dry = 0;
+                f32 top = -1.0e30f;
+                while (k >= -half && k <= half &&
+                       !wet[static_cast<size_t>(k + half)]) {
+                    const f32 d = static_cast<f32>(k);
+                    top = glm::max(top,
+                                   view.height(pt.x + px * d, pt.z + pz * d) -
+                                       pt.surface);
+                    ++dry;
+                    k += dir;
+                }
+                if (k < -half || k > half || dry == 0) {
+                    continue; // reached the probe's end: one channel
+                }
+                // A second run must hold real water: 3 m+ wide.
+                i32 w2 = 0;
+                i32 kk = k;
+                while (kk >= -half && kk <= half &&
+                       wet[static_cast<size_t>(kk + half)]) {
+                    ++w2;
+                    kk += dir;
+                }
+                if (w2 < 3) {
+                    continue;
+                }
+                const f32 dryW = static_cast<f32>(dry);
+                if (!found || dryW < width) {
+                    found = true;
+                    width = dryW;
+                    crest = top;
+                    secondK = k;
+                    gap = std::abs(static_cast<f32>(secondK));
+                }
+            }
+            if (!found) {
+                continue;
+            }
+            ++split;
+            ++splitByTier[tier];
+            gapM.push_back(gap);
+            if (width <= kSliverMax) {
+                ++sliver;
+                sliverW.push_back(width);
+                sliverH.push_back(crest);
+                if (examples.size() < 6 && crest > 0.3f) {
+                    examples.push_back({ pt.x, pt.z, pt.surface, hw, gap,
+                                         width, crest, tier });
+                }
+            }
+        }
+    }
+    if (sections == 0) {
+        LOG_INFO("  river sections: none measurable");
+        return;
+    }
+    const auto pct = [&](u32 n) {
+        return 100.0f * static_cast<f32>(n) / static_cast<f32>(sections);
+    };
+    LOG_INFO("  river sections ({} cuts, r/R/F {}/{}/{}): split bed {} "
+             "({:.1f} %; by tier {}/{}/{}), thin sliver (dry strip <= "
+             "{:.0f} m) {} ({:.1f} %), width median {:.1f} m, crest above "
+             "water median {:.2f} / p90 {:.2f} m, second channel at "
+             "median {:.1f} m from the axis",
+             sections, byTier[0], byTier[1], byTier[2], split, pct(split),
+             splitByTier[0], splitByTier[1], splitByTier[2], kSliverMax,
+             sliver, pct(sliver), median(sliverW), median(sliverH),
+             percentile(sliverH, 90), median(gapM));
+    LOG_INFO("  river sections: deepest sample off the axis median {:.2f} / "
+             "p90 {:.2f} halfWidths; ribbon with dry ground {} ({:.1f} %), "
+             "dry share of the ribbon median {:.0f} / p90 {:.0f} %; banks "
+             "at hw + {:.0f} m above the water: lower median {:.1f} / p90 "
+             "{:.1f} m, higher median {:.1f} / p90 {:.1f} m",
+             median(offsets), percentile(offsets, 90), dryInRibbon,
+             pct(dryInRibbon), median(ribbonDry), percentile(ribbonDry, 90),
+             kBankOut, median(bankLow), percentile(bankLow, 90),
+             median(bankHigh), percentile(bankHigh, 90));
+    for (const Example& e : examples) {
+        LOG_INFO("    sliver: tier {} at ({:.0f}, {:.0f}) surf {:.1f} hw "
+                 "{:.1f}: second channel {:.0f} m off, dry strip {:.0f} m "
+                 "wide, crest +{:.2f} m",
+                 e.tier, e.x, e.z, e.surface, e.hw, e.gap, e.width,
+                 e.crest);
+    }
+    // Two transverse profiles (ground - water, 2 m steps) for the eye.
+    for (size_t n = 0; n < glm::min<size_t>(examples.size(), 2); ++n) {
+        const Example& e = examples[n];
+        // Re-find the perpendicular from the nearest course point.
+        f32 px = 0.0f, pz = 0.0f;
+        f32 bestD2 = 1.0e30f;
+        for (const auto& river : view.rivers) {
+            for (size_t i = 1; i + 1 < river.points.size(); ++i) {
+                const auto& pt = river.points[i];
+                const f32 d2 = (pt.x - e.x) * (pt.x - e.x) +
+                               (pt.z - e.z) * (pt.z - e.z);
+                if (d2 < bestD2) {
+                    bestD2 = d2;
+                    const f32 dx = river.points[i + 1].x - river.points[i - 1].x;
+                    const f32 dz = river.points[i + 1].z - river.points[i - 1].z;
+                    const f32 len = glm::max(std::sqrt(dx * dx + dz * dz), 0.01f);
+                    px = -dz / len;
+                    pz = dx / len;
+                }
+            }
+        }
+        // Published ground and the continent ground (stage 1, 16 m)
+        // across +-160 m: whether the slot the water runs in was dug
+        // by the erosion or by the finalize.
+        std::string line, cont;
+        for (i32 d = -160; d <= 160; d += 8) {
+            const f32 x = e.x + px * static_cast<f32>(d);
+            const f32 z = e.z + pz * static_cast<f32>(d);
+            char buf[16];
+            std::snprintf(buf, sizeof(buf), "%+.0f ",
+                          view.height(x, z) - e.surface);
+            line += buf;
+            f32 h = 0.0f;
+            if (continent && continent->heightAt(x, z, h)) {
+                std::snprintf(buf, sizeof(buf), "%+.0f ", h - e.surface);
+            } else {
+                std::snprintf(buf, sizeof(buf), "- ");
+            }
+            cont += buf;
+        }
+        LOG_INFO("    profile ({:.0f}, {:.0f}) hw {:.0f}, -160..+160 m by 8, "
+                 "published - water: {}",
+                 e.x, e.z, e.hw, line);
+        LOG_INFO("    profile ({:.0f}, {:.0f}) continent - water:      {}",
+                 e.x, e.z, cont);
+    }
+    // Along the two longest fleuves: water, published axis ground,
+    // continent axis ground and the lower bank, every ~250 m — the
+    // flats and falls of the profile against the floor they ride.
+    {
+        vector<size_t> fleuves;
+        for (size_t r = 0; r < view.rivers.size(); ++r) {
+            const auto& river = view.rivers[r];
+            if (river.points.size() > 40 && river.tier == 2) {
+                fleuves.push_back(r);
+            }
+        }
+        std::sort(fleuves.begin(), fleuves.end(), [&](size_t a, size_t b) {
+            return view.rivers[a].points.size() > view.rivers[b].points.size();
+        });
+        for (size_t n = 0; n < glm::min<size_t>(fleuves.size(), 2); ++n) {
+            const auto& river = view.rivers[fleuves[n]];
+            std::string line;
+            f32 arc = 0.0f, nextAt = 0.0f;
+            for (size_t i = 1; i + 1 < river.points.size(); ++i) {
+                const auto& pt = river.points[i];
+                arc += std::hypot(pt.x - river.points[i - 1].x,
+                                  pt.z - river.points[i - 1].z);
+                if (arc < nextAt) {
+                    continue;
+                }
+                nextAt += 250.0f;
+                const f32 dx = river.points[i + 1].x - river.points[i - 1].x;
+                const f32 dz = river.points[i + 1].z - river.points[i - 1].z;
+                const f32 len = glm::max(std::sqrt(dx * dx + dz * dz), 0.01f);
+                const f32 px = -dz / len;
+                const f32 pz = dx / len;
+                const f32 out = pt.halfWidth + 30.0f;
+                const f32 bank = glm::min(
+                    view.height(pt.x - px * out, pt.z - pz * out),
+                    view.height(pt.x + px * out, pt.z + pz * out));
+                f32 c = 0.0f;
+                const bool hasC = continent && continent->heightAt(pt.x, pt.z, c);
+                char buf[96];
+                std::snprintf(buf, sizeof(buf), "[%.1fkm w%.0f g%+.0f c%s%.0f b%+.0f] ",
+                              arc / 1000.0f, pt.surface,
+                              view.height(pt.x, pt.z) - pt.surface,
+                              hasC ? (c - pt.surface >= 0 ? "+" : "") : "?",
+                              hasC ? c - pt.surface : 0.0f, bank - pt.surface);
+                line += buf;
+            }
+            LOG_INFO("  fleuve {} ({} pts, hw {:.0f}-{:.0f} m) along: w water, "
+                     "g axis ground - w, c continent - w, b lower bank - w: {}",
+                     fleuves[n], river.points.size(),
+                     river.points.front().halfWidth,
+                     river.points.back().halfWidth, line);
+        }
+    }
+    // Longitudinal: the water slope per ~48 m of course, length-weighted.
+    f64 lenTotal = 0.0, lenFlat = 0.0, lenGentle = 0.0, lenSteep = 0.0;
+    vector<f32> slopes;
+    f64 dropTotal = 0.0;
+    u32 courses = 0;
+    for (const auto& river : view.rivers) {
+        const size_t count = river.points.size();
+        if (count < 8) {
+            continue;
+        }
+        ++courses;
+        dropTotal += river.points.front().surface - river.points.back().surface;
+        for (size_t i = 0; i + 6 < count; i += 6) {
+            f32 arc = 0.0f;
+            for (size_t k = i + 1; k <= i + 6; ++k) {
+                arc += std::hypot(river.points[k].x - river.points[k - 1].x,
+                                  river.points[k].z - river.points[k - 1].z);
+            }
+            if (arc < 1.0f) {
+                continue;
+            }
+            const f32 slope =
+                (river.points[i].surface - river.points[i + 6].surface) / arc;
+            slopes.push_back(100.0f * slope);
+            lenTotal += arc;
+            if (slope < 0.003f) {
+                lenFlat += arc;
+            } else if (slope < 0.02f) {
+                lenGentle += arc;
+            } else if (slope >= 0.08f) {
+                lenSteep += arc;
+            }
+        }
+    }
+    if (lenTotal > 0.0) {
+        LOG_INFO("  river slopes ({} courses, {:.1f} km, mean drop per "
+                 "course {:.0f} m): flat < 0.3 % on {:.0f} % of the length, "
+                 "gentle 0.3-2 % on {:.0f} %, steep >= 8 % on {:.0f} %; "
+                 "slope median {:.2f} / p90 {:.2f} %",
+                 courses, lenTotal / 1000.0,
+                 courses ? dropTotal / courses : 0.0,
+                 100.0 * lenFlat / lenTotal, 100.0 * lenGentle / lenTotal,
+                 100.0 * lenSteep / lenTotal, median(slopes),
+                 percentile(slopes, 90));
+    }
+}
+
 // The MASTER network's own courses (128 m, routed on the border-SHAPED
 // surface): if a master course hugs the line, the imprint carves it
 // there whatever the bake does afterwards. Then each fleuve course
@@ -1681,6 +2048,7 @@ int landscapeReport(char** argv, int argc) {
     reportWallsAndGates(ctx);
     reportPoiVisibility(ctx);
     reportRiversVsMapLines(ctx);
+    reportRiverSections(ctx);
     reportMasterCourses(ctx);
     reportGroundAcrossLine(ctx);
     reportBorderLines(ctx);
