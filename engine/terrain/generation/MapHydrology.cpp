@@ -1696,7 +1696,13 @@ void HydroReleveling::cutSaddles() {
         }
         return false;
     };
-    const auto notchAt = [&](const RiverPoint& pt) {
+    // `maxCut`: the run's burial — no cell beside the course loses
+    // more than that (plus a margin). Unbounded, the notch's 0.7
+    // flanks reached 100 m out and cut every wall a buried run
+    // passed along down to the water: 450 m cuts from 30 m
+    // burials, most of a map's cut volume (measured). The course's
+    // own texel always reaches the water.
+    const auto notchAt = [&](const RiverPoint& pt, f32 maxCut) {
         const f32 level0 = pt.surface - kSaddleFloor;
         const f32 bandHalf =
             glm::clamp(pt.halfWidth * 1.6f, 6.0f, 48.0f);
@@ -1733,6 +1739,9 @@ void HydroReleveling::cutSaddles() {
                 const f32 target = level0 + 0.15f * inner +
                                    0.7f * lateral;
                 const f32 delta = target - preGround[p];
+                if (dist > texel && -delta > maxCut) {
+                    continue;
+                }
                 if (delta < out.pierceDelta[p]) {
                     out.pierceDelta[p] = delta;
                     out.ground[p] = preGround[p] + delta;
@@ -1779,7 +1788,7 @@ void HydroReleveling::cutSaddles() {
                 const size_t b =
                     j + 1 < count ? j + 1 : j;
                 for (size_t k = a; k <= b; ++k) {
-                    notchAt(river.points[k]);
+                    notchAt(river.points[k], worst + 2.0f);
                 }
                 ++stats.saddleRuns;
             }

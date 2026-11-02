@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/Finalize.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 
 #include <algorithm>
@@ -67,6 +68,92 @@ u8 toU8(f32 v01) {
     return static_cast<u8>(
         glm::clamp(v01 * 255.0f + 0.5f, 0.0f, 255.0f));
 }
+
+} // namespace
+
+void carveCoarseDrainage(const GridSpec& coarse, const vector<f32>& eroded,
+                         const GridSpec& target, vector<f32>& grid,
+                         f32 half) {
+    if (half <= 0.0f || eroded.size() != coarse.cells() ||
+        grid.size() != target.cells()) {
+        return;
+    }
+    const i32 cn = static_cast<i32>(coarse.n);
+    const i32 tn = static_cast<i32>(target.n);
+    const f32 tMaxX =
+        target.originX + static_cast<f32>(tn - 1) * target.texelSize;
+    const f32 tMaxZ =
+        target.originZ + static_cast<f32>(tn - 1) * target.texelSize;
+    const f32 reach = coarse.texelSize * 1.5f + half;
+    const auto range = coarse.cellRange(target.originX - reach,
+                                        target.originZ - reach,
+                                        tMaxX + reach, tMaxZ + reach);
+    for (i32 cz = glm::max(range.r0, 0); cz <= glm::min(range.r1, cn - 1);
+         ++cz) {
+        for (i32 cx = glm::max(range.c0, 0);
+             cx <= glm::min(range.c1, cn - 1); ++cx) {
+            const f32 hc = eroded[static_cast<size_t>(cz) * coarse.n +
+                                  static_cast<size_t>(cx)];
+            i32 rx = cx;
+            i32 rz = cz;
+            f32 steepest = 0.0f;
+            for (const Neighbour& nb : kNeighbours8) {
+                const i32 px = cx + nb.dx;
+                const i32 pz = cz + nb.dz;
+                if (px < 0 || pz < 0 || px >= cn || pz >= cn) {
+                    continue;
+                }
+                const f32 drop =
+                    (hc - eroded[static_cast<size_t>(pz) * coarse.n +
+                                 static_cast<size_t>(px)]) /
+                    nb.dist;
+                if (drop > steepest) {
+                    steepest = drop;
+                    rx = px;
+                    rz = pz;
+                }
+            }
+            if (steepest <= 0.0f) {
+                continue; // a pit or a flat: nothing drains from here
+            }
+            const f32 hr = eroded[static_cast<size_t>(rz) * coarse.n +
+                                  static_cast<size_t>(rx)];
+            const f32 ax = coarse.x(static_cast<u32>(cx));
+            const f32 az = coarse.z(static_cast<u32>(cz));
+            const f32 bx = coarse.x(static_cast<u32>(rx));
+            const f32 bz = coarse.z(static_cast<u32>(rz));
+            const f32 dx = bx - ax;
+            const f32 dz = bz - az;
+            const f32 len2 = dx * dx + dz * dz;
+            const auto tRange = target.cellRange(
+                glm::min(ax, bx) - half, glm::min(az, bz) - half,
+                glm::max(ax, bx) + half, glm::max(az, bz) + half);
+            for (i32 tz = glm::max(tRange.r0, 0);
+                 tz <= glm::min(tRange.r1, tn - 1); ++tz) {
+                const f32 z = target.z(static_cast<u32>(tz));
+                for (i32 tx = glm::max(tRange.c0, 0);
+                     tx <= glm::min(tRange.c1, tn - 1); ++tx) {
+                    const f32 x = target.x(static_cast<u32>(tx));
+                    const f32 t = glm::clamp(
+                        ((x - ax) * dx + (z - az) * dz) / len2, 0.0f,
+                        1.0f);
+                    const f32 qx = ax + t * dx - x;
+                    const f32 qz = az + t * dz - z;
+                    const f32 dist = std::sqrt(qx * qx + qz * qz);
+                    if (dist > half) {
+                        continue;
+                    }
+                    const f32 profile = hc + t * (hr - hc) + 0.7f * dist;
+                    f32& h = grid[static_cast<size_t>(tz) * target.n +
+                                  static_cast<size_t>(tx)];
+                    h = glm::min(h, profile);
+                }
+            }
+        }
+    }
+}
+
+namespace {
 
 } // namespace
 
@@ -205,6 +292,8 @@ FinalizeResult finalizeGround(const GridSpec& coarse,
                 }
             }
         }
+        carveCoarseDrainage(coarse, eroded, midSpec, mid,
+                            params.drainageCarveHalf);
         FineErosionResult amplified =
             amplifyFine(midSpec, mid, allow, discharge, params.fine,
                         fineScale ? &scale : nullptr, cancel);
@@ -269,6 +358,8 @@ FinalizeResult finalizeGround(const GridSpec& coarse,
                            col] = bicubicGrid(coarse, eroded, u, v);
             }
         }
+        carveCoarseDrainage(coarse, eroded, out.fineSpec, out.height,
+                            params.drainageCarveHalf);
     }
     // Bilinear incision sample (m) at world coords; 0 outside the fine
     // window or when amplification is off.
@@ -600,10 +691,11 @@ void carveRiverBeds(WaterPass& w, const vector<f32>& preCarve) {
                     if (n <= 1.0f) {
                         // Parabolic bed up to the waterline at the bank.
                         const f32 bed = surface - depth * (1.0f - n * n);
-                        out.height[i] = glm::min(
-                            out.height[i],
-                            glm::max(glm::min(out.height[i], bed),
-                                     floorCut));
+                        out.height[i] = glm::max(
+                            glm::min(out.height[i],
+                                     glm::max(glm::min(out.height[i], bed),
+                                              floorCut)),
+                            preCarve[i] - params.bedCutMax);
                     } else if (n <= 1.0f + params.bankShoulder) {
                         // Bank shoulder: never below the waterline, and
                         // blending up into the untouched hillside.
@@ -613,11 +705,12 @@ void carveRiverBeds(WaterPass& w, const vector<f32>& preCarve) {
                                                 n);
                         const f32 cap =
                             glm::mix(surface, out.height[i], blend);
-                        out.height[i] = glm::min(
-                            out.height[i],
-                            glm::max(glm::min(out.height[i],
-                                              glm::max(cap, surface)),
-                                     floorCut));
+                        out.height[i] = glm::max(
+                            glm::min(out.height[i],
+                                     glm::max(glm::min(out.height[i],
+                                                       glm::max(cap, surface)),
+                                              floorCut)),
+                            preCarve[i] - params.shoulderCutMax);
                     }
                 }
             }

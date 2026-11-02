@@ -411,6 +411,15 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             priorityFloodFill(spec, ground, params.seaLevel,
                               params.minSlope, &epsScalePierce);
         const auto floodEnd = std::chrono::steady_clock::now();
+        // The basins of a pass are read on the pass-START ground, the
+        // surface `filled` was computed from; the notches land on
+        // `ground`. Reading the live ground made every cell a ramp had
+        // just lowered look like a basin hundreds of metres deep (its
+        // filled level still the old one) — pierced in turn with
+        // another 3 km ramp: ramps begat basins begat ramps, a mean
+        // 18 m cut over a map, order- and window-dependent (the
+        // trenches and cliffs on the map lines, measured).
+        const vector<f32> passGround = ground;
         // Accumulation on this pass's surface: the notch band is cut
         // at the LAW gabarit of the discharge crossing the gate — the
         // course that will run there (sizing it on the basin's cell
@@ -424,7 +433,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             if (passArea.empty()) {
                 const auto t0 = std::chrono::steady_clock::now();
                 passArea =
-                    routeFlow(spec, filled, ground, params.seaLevel)
+                    routeFlow(spec, filled, passGround, params.seaLevel)
                         .area;
                 routeSec += std::chrono::duration<f64>(
                                 std::chrono::steady_clock::now() - t0)
@@ -435,12 +444,14 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         vector<u32> label(cells, 0);
         u32 nextLabel = 0;
         u32 pierced = 0;
+        u32 gorges = 0; // locks at/over lakeDeepPierce — the gorge cuts
+        f32 deepestLock = 0.0f;
         vector<u32> stack;
         vector<u32> component;
         for (size_t seed = 0; seed < cells; ++seed) {
             if (label[seed] != 0 ||
-                filled[seed] - ground[seed] <= params.minLakeDepth ||
-                ground[seed] <= params.seaLevel) {
+                filled[seed] - passGround[seed] <= params.minLakeDepth ||
+                passGround[seed] <= params.seaLevel) {
                 continue;
             }
             ++nextLabel;
@@ -448,13 +459,13 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             label[seed] = nextLabel;
             component.clear();
             f32 level = filled[seed];
-            f32 floor = ground[seed];
+            f32 floor = passGround[seed];
             while (!stack.empty()) {
                 const u32 i = stack.back();
                 stack.pop_back();
                 component.push_back(i);
                 level = glm::min(level, filled[i]);
-                floor = glm::min(floor, ground[i]);
+                floor = glm::min(floor, passGround[i]);
                 const i32 cx = static_cast<i32>(i % spec.n);
                 const i32 cz = static_cast<i32>(i / spec.n);
                 for (i32 dz = -1; dz <= 1; ++dz) {
@@ -468,9 +479,9 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                             static_cast<size_t>(pz) * spec.n +
                             static_cast<size_t>(px);
                         if (label[p] == 0 &&
-                            filled[p] - ground[p] >
+                            filled[p] - passGround[p] >
                                 params.minLakeDepth &&
-                            ground[p] > params.seaLevel) {
+                            passGround[p] > params.seaLevel) {
                             label[p] = nextLabel;
                             stack.push_back(static_cast<u32>(p));
                         }
@@ -564,10 +575,25 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                         const size_t p =
                             static_cast<size_t>(pz) * spec.n +
                             static_cast<size_t>(px);
+                        // The band drains a basin lockDepth deep: no
+                        // cell beside the course loses more than that.
+                        // Unbounded, the band (up to 192 m wide) carved
+                        // every canyon wall its ramp ran along down to
+                        // the ramp — 300 m cuts from 20 m basins, half
+                        // the cut volume of a map (measured). The
+                        // course cell itself always reaches the ramp.
+                        if (dist > 0.0f &&
+                            passGround[p] - target > lockDepth + 2.0f) {
+                            continue;
+                        }
                         ground[p] = glm::min(ground[p], target);
                     }
                 }
             };
+            if (lockDepth >= params.lakeDeepPierce) {
+                ++gorges;
+                deepestLock = glm::max(deepestLock, lockDepth);
+            }
             lowerBand(gate, ramp);
             size_t cur = pour;
             // ~3 km of downstream ramp in world length, texel-free.
@@ -607,9 +633,9 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             }
             ++pierced;
         }
-        LOG_INFO("pierce pass {}: {} basins, {} pierced | flood "
-                 "{:.2f} s, route {:.2f} s",
-                 pass, nextLabel, pierced,
+        LOG_INFO("pierce pass {}: {} basins, {} pierced ({} gorges, "
+                 "deepest lock {:.0f} m) | flood {:.2f} s, route {:.2f} s",
+                 pass, nextLabel, pierced, gorges, deepestLock,
                  std::chrono::duration<f64>(floodEnd - passStart)
                      .count(),
                  routeSec);

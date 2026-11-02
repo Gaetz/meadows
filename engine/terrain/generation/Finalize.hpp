@@ -41,6 +41,19 @@ struct FinalizeParams {
     // never a trench to dig (a stream along a 270 m zone wall notched
     // it to the waterline over a 2 m band).
     f32 bankMaxCut { 3.0f };
+    // The most a bank SHOULDER texel may lose (m). The shoulder blends
+    // the bank back into the hillside; unbounded, it brought every
+    // wall within reach of a course down to its waterline — 400 m
+    // cuts along the fleuves, a quarter of a slice's ground moved
+    // (measured). Floodplain bumps flatten, cliffs stand.
+    f32 shoulderCutMax { 12.0f };
+    // The most a BED texel may lose (m): the course is as wide as its
+    // discharge law says, its valley as narrow as the erosion dug it
+    // (one texel in the steep country) — the bed band crossed the
+    // walls and cut them to the water (400 m, measured). The bed
+    // reaches its depth on the floor; against a wall it stops here
+    // and the ribbon beyond is under the rock.
+    f32 bedCutMax { 20.0f };
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach
@@ -50,6 +63,15 @@ struct FinalizeParams {
     // macro texels; the runtime detail noise adds the last octaves.
     f32 reliefAmplitude { 1.1f };
     f32 reliefWavelength { 42.0f };
+    // Drainage-preserving upsample: along every coarse cell's D8
+    // descent to its receiver, the fine ground is lowered to the
+    // linear profile between the two cells inside this half-width
+    // (35-degree sides). A texel-wide coarse channel interpolated
+    // bicubically became a chain of closed bowls as deep as the
+    // channel (hundreds of metres at a pierced gorge), which the map
+    // hydrology then drained through kilometres of window-dependent
+    // trench — the seam at every map line. 0 = off (legacy).
+    f32 drainageCarveHalf { 8.0f };
     // Fine window: the sub-rect of the coarse grid that is upsampled and
     // refined (world meters, clamped to the coarse rect). Zero span =
     // the whole grid (tests, tools). The bake restricts it to
@@ -89,12 +111,15 @@ struct FinalizeParams {
         REFLECT_FIELD(fordDepth)
         REFLECT_FIELD(fordRadius)
         REFLECT_FIELD(bankMaxCut)
+        REFLECT_FIELD(shoulderCutMax)
+        REFLECT_FIELD(bedCutMax)
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(beachBand)
         REFLECT_FIELD(wetnessReach)
         REFLECT_FIELD(flowLogSpan)
         REFLECT_FIELD(reliefAmplitude)
         REFLECT_FIELD(reliefWavelength)
+        REFLECT_FIELD(drainageCarveHalf)
         REFLECT_FIELD(fineMinX)
         REFLECT_FIELD(fineMinZ)
         REFLECT_FIELD(fineSpan)
@@ -106,6 +131,19 @@ struct FinalizeParams {
 };
 
 u64 hashKey(const FinalizeParams& p);
+
+// The drainage-preserving carve of a grid resampled from a coarser one
+// (FinalizeParams::drainageCarveHalf): for each coarse cell with a
+// strictly lower D8 neighbour, the target texels within `half` of the
+// segment joining the two cell centres are lowered to the linear
+// profile between the cells plus a 35-degree lateral rise. Lowering
+// only, per cell pair, bounded support. Shared by the slice finalize
+// (the published ground) and the map hydrology window past the rect
+// (the stage-1 resampled at the routing texel): a texel-wide coarse
+// channel resampled finer is otherwise a chain of closed bowls.
+void carveCoarseDrainage(const GridSpec& coarse, const vector<f32>& eroded,
+                         const GridSpec& target, vector<f32>& grid,
+                         f32 half);
 
 struct FinalizeResult {
     GridSpec fineSpec;
