@@ -52,6 +52,12 @@ f32 sandboxFallbackHeight(const SandboxTerrain& sb, f32 x, f32 z) {
             return h;
         }
     }
+    // The continent ground carries the border shaping already.
+    for (const SandboxTerrain::Continent& c : sb.continents) {
+        if (overviewHeight(c.grid, c.heights, x, z, h)) {
+            return h;
+        }
+    }
     const terraingen::ProceduralControls controls { sb.controls };
     const f32 ha = terraingen::macroHeightAnalytic(controls, sb.macro, x, z);
     // Bounded-map border transitions: the same pure border-line shaping

@@ -171,6 +171,9 @@ MasterNetwork computeMasterNetwork(const ProceduralControls& controls,
 // the game and the cooker to terrain-cache/<seed>; empty = the
 // in-memory memo only (tests, benches).
 void setMasterNetworkCacheDir(const std::filesystem::path& dir);
+// The dir set above (empty = none): the continent grounds live next to
+// the networks (ContinentGround.hpp).
+std::filesystem::path masterNetworkCacheDir();
 
 // Master rivers of every super cell overlapping the aabb (ownership
 // by head cell — deterministic for all callers), pruned to courses

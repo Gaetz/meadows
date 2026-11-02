@@ -82,6 +82,9 @@ inline TileBakeParams gameLikeParams(u32 seed = 1337) {
     // the slices).
     params.controls.zones.mapSize =
         params.tileSize * static_cast<f32>(game::kMapTilesPerSide);
+    // No continent ground: a 65 km coarse erosion per test is the
+    // cooker's job; the maps here erode alone (bit-exact legacy).
+    params.continent.enabled = false;
     return params;
 }
 

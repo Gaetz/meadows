@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "engine/terrain/TerrainBase.hpp"
+#include "engine/terrain/generation/ContinentGround.hpp"
 #include "engine/terrain/generation/Finalize.hpp"
 #include "engine/terrain/generation/FluvialErosion.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
@@ -102,6 +103,10 @@ struct TileBakeParams {
     // into the macro BEFORE the imprint and the erosion. .valid =
     // false = no transitions (the windowed path never sets it).
     MapGridSpec mapGrid;
+    // Stage 0 bis — the continent ground a map's stage-1 is cut from
+    // (ContinentGround.hpp): one erosion per continent, every map
+    // reads the same valleys and gorges across its lines.
+    ContinentGroundParams continent;
     FinalizeParams finalize;
     // Solver parameters shared with the sim's boundary sources and the
     // offline oracle (the per-tile option-D solve itself is purged —
@@ -216,8 +221,18 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
 // aborts at the next pass/iteration boundary and returns a PARTIAL
 // result — shutdown only. Callers must discard it: never cache it to
 // disk, never publish it to the streamer.
+// `coarse` (nullable): the continent ground (stage 0 bis) this window
+// is CUT from — the erosion and the piercing already ran over the
+// whole continent; only the macro fields are synthesized here. Null =
+// the lone erosion of the window (the continent's own bake, benches).
 TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
-                          const std::atomic<bool>* cancel = nullptr);
+                          const std::atomic<bool>* cancel = nullptr,
+                          const ContinentGround* coarse = nullptr);
+// The same recipe on an explicit window (the continent's own bake
+// runs it over a super cell at its coarse texel).
+TileStage1 bakeTileStage1(const TileBakeParams& params, const GridSpec& sim,
+                          const ContinentGround* coarse,
+                          const std::atomic<bool>* cancel);
 
 // ONE tile through the PRODUCTION (map) pipeline: a 1x1-slice map —
 // stage-1 with a basin-resolving apron, the shared map hydrology, one
@@ -323,7 +338,7 @@ bool lakeReachesPoint(const vector<Lake>& lakes, f32 x, f32 z);
 // stale caches keep the old landscape. The map cache key also hashes
 // the generation pupitre (game::mapBakeKey): an edited parameter is a
 // new map on its own; a changed C++ DEFAULT still needs this bump.
-constexpr u32 kTileBakeVersion = 123;
+constexpr u32 kTileBakeVersion = 124;
 
 // The production stage-1 apron of a map (game::bakeMap): the ring past
 // the map rect that the erosion simulates and the rim basins resolve

@@ -290,6 +290,10 @@ void setMasterNetworkCacheDir(const std::filesystem::path& dir) {
     gCacheDir = dir;
 }
 
+std::filesystem::path masterNetworkCacheDir() {
+    return cacheDirCopy();
+}
+
 namespace {
 
 constexpr u32 kSaltRouteDither = 0xd17e4000u;

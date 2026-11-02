@@ -182,6 +182,12 @@ private:
     u32 loadNeighbourOverviews(
         const SandboxContext& ctx, render::SandboxTerrain& sb,
         const render::terraingen::TileBakeParams& bakeParams) const;
+    // Loads the cached continent grounds of the super cells within
+    // the horizon of the active map that `sb` does not hold yet;
+    // returns how many landed. Read-only: a bake writes them.
+    u32 loadContinentGrounds(
+        const SandboxContext& ctx, render::SandboxTerrain& sb,
+        const render::terraingen::TileBakeParams& bakeParams) const;
     // Reselects the resident lakes from the registry around `focus`
     // (bbox distance, previous-map residents kept). Returns true when
     // membership changed — the caller republishes the water bodies.

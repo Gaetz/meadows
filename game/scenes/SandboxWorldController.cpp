@@ -13,6 +13,7 @@
 #include "engine/terrain/HeightPatches.hpp"
 #include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/WaterBodies.hpp"
+#include "engine/terrain/generation/ContinentGround.hpp"
 #include "engine/terrain/generation/WaterSolve.hpp"
 #include "game/MapBaker.hpp"
 #include "game/TerrainCollision.hpp"
@@ -137,6 +138,50 @@ u32 SandboxWorldController::loadNeighbourOverviews(
     if (added > 0) {
         LOG_INFO("Sandbox terrain: {} neighbour overview(s) loaded ({} held)",
                  added, sb.neighbourOverviews.size());
+    }
+    return added;
+}
+
+u32 SandboxWorldController::loadContinentGrounds(
+    const SandboxContext& ctx, render::SandboxTerrain& sb,
+    const render::terraingen::TileBakeParams& bakeParams) const {
+    if (!bakeParams.continent.enabled || !sb.grid.valid) {
+        return 0;
+    }
+    // The super cells under the horizon (3 maps past the active
+    // one each way): one in the common case, four at a corner.
+    const auto root = cacheRoot(ctx.tuning.terrainSeed);
+    const f32 size = sb.grid.mapSize;
+    const f32 reach = 3.0f * size;
+    const f32 minX = static_cast<f32>(mapX_) * size - reach;
+    const f32 minZ = static_cast<f32>(mapZ_) * size - reach;
+    const f32 maxX = static_cast<f32>(mapX_ + 1) * size + reach;
+    const f32 maxZ = static_cast<f32>(mapZ_ + 1) * size + reach;
+    const auto& net = bakeParams.network;
+    u32 added = 0;
+    for (i32 sz = render::terraingen::continentSuperIndex(net, minZ);
+         sz <= render::terraingen::continentSuperIndex(net, maxZ); ++sz) {
+        for (i32 sx = render::terraingen::continentSuperIndex(net, minX);
+             sx <= render::terraingen::continentSuperIndex(net, maxX);
+             ++sx) {
+            bool held = false;
+            for (const auto& c : sb.continents) {
+                held = held || (c.superX == sx && c.superZ == sz);
+            }
+            if (held) {
+                continue;
+            }
+            if (auto ground = render::terraingen::loadContinentOverview(
+                    root, bakeParams, size, sx, sz)) {
+                sb.continents.push_back({ sx, sz, ground->grid,
+                                          std::move(ground->height) });
+                ++added;
+            }
+        }
+    }
+    if (added > 0) {
+        LOG_INFO("Sandbox terrain: {} continent ground(s) loaded ({} held)",
+                 added, sb.continents.size());
     }
     return added;
 }
@@ -275,10 +320,18 @@ void SandboxWorldController::updatePrefetch(const SandboxContext& ctx, f32 dt,
     // the neighbour's own truth — and bump the content stamp on that
     // rect.
     auto next = std::make_shared<render::SandboxTerrain>(*sandbox);
-    if (loadNeighbourOverviews(ctx, *next, ctx.mapBakeParams()) > 0) {
+    const render::terraingen::TileBakeParams bakeParams =
+        ctx.mapBakeParams();
+    const u32 overviews = loadNeighbourOverviews(ctx, *next, bakeParams);
+    // A continent ground landing (the first bake of the session wrote
+    // it) re-grounds the whole horizon past the overviews.
+    const u32 continents = loadContinentGrounds(ctx, *next, bakeParams);
+    if (overviews + continents > 0) {
         render::TerrainParams& tp = ctx.terrainParams;
-        tp.contentEvents.push(tp.contentStamp + 1, minX - size, minZ - size,
-                              minX + 2.0f * size, minZ + 2.0f * size);
+        const f32 reach = continents > 0 ? 4.0f * size : size;
+        tp.contentEvents.push(tp.contentStamp + 1, minX - reach,
+                              minZ - reach, minX + size + reach,
+                              minZ + size + reach);
         ++tp.contentStamp;
         tp.sandbox = next;
     }
@@ -346,6 +399,7 @@ void SandboxWorldController::applyMap(const SandboxContext& ctx, i32 mapX,
                  overview->grid.texelSize);
     }
     loadNeighbourOverviews(ctx, *sandbox, bakeParams);
+    loadContinentGrounds(ctx, *sandbox, bakeParams);
     params.sandbox = sandbox;
     ctx.activeSnowLine = ctx.tuning.sandboxSnowLine;
     streamer_ = std::make_unique<TerrainBakeStreamer>(bakeParams, root,

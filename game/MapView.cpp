@@ -3,6 +3,7 @@
 #include <string>
 
 #include "engine/terrain/WaterQuery.hpp"
+#include "engine/terrain/generation/ContinentGround.hpp"
 #include "game/MapBaker.hpp"
 #include "game/TerrainBakeStreamer.hpp"
 #include "world/terrain/TerrainRegions.hpp"
@@ -60,6 +61,30 @@ std::optional<MapView> loadMapView(const TileBakeParams& params, i32 mapX,
     if (const auto overview = loadMapOverview(view.mapDir)) {
         sandbox->overviewGrid = overview->grid;
         sandbox->overview = overview->heights;
+    }
+    // The continent ground(s) under the map and its neighbours: the
+    // instruments read the horizon the game shows.
+    if (params.continent.enabled) {
+        const auto& net = params.network;
+        const f32 reach = view.mapSize;
+        for (i32 sz = render::terraingen::continentSuperIndex(
+                 net, view.minZ - reach);
+             sz <= render::terraingen::continentSuperIndex(
+                       net, view.maxZ + reach);
+             ++sz) {
+            for (i32 sx = render::terraingen::continentSuperIndex(
+                     net, view.minX - reach);
+                 sx <= render::terraingen::continentSuperIndex(
+                           net, view.maxX + reach);
+                 ++sx) {
+                if (auto ground = render::terraingen::loadContinentOverview(
+                        cacheRoot, params, view.mapSize, sx, sz)) {
+                    sandbox->continents.push_back(
+                        { sx, sz, ground->grid,
+                          std::move(ground->height) });
+                }
+            }
+        }
     }
     view.sandbox = sandbox;
 

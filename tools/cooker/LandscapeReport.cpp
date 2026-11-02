@@ -17,6 +17,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/terrain/generation/ContinentGround.hpp"
 #include "engine/terrain/generation/MapExport.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
 #include "engine/terrain/generation/PoiPlan.hpp"
@@ -1542,6 +1543,27 @@ void reportGroundAcrossLine(const ReportContext& ctx) {
         storey += buf;
     }
     LOG_INFO("  analytic: {}", an);
+    if (ctx.params.continent.enabled) {
+        const auto& net = ctx.params.network;
+        const auto continent = render::terraingen::loadContinentGround(
+            ctx.cacheDir, ctx.params, view.mapSize,
+            render::terraingen::continentSuperIndex(net, view.centreX()),
+            render::terraingen::continentSuperIndex(net, view.centreZ()));
+        str cont;
+        for (f32 d = -400.0f; d <= 400.0f; d += 32.0f) {
+            const f32 x = vertical ? line + d : longestX;
+            const f32 z = vertical ? longestZ : line + d;
+            f32 h = 0.0f;
+            char buf[20];
+            if (continent && continent->heightAt(x, z, h)) {
+                std::snprintf(buf, sizeof(buf), "%.0f ", h);
+            } else {
+                std::snprintf(buf, sizeof(buf), "- ");
+            }
+            cont += buf;
+        }
+        LOG_INFO("  continent ground: {}", cont);
+    }
     LOG_INFO("  base: {}", base);
     LOG_INFO("  plateau (POI lift): {}", plateau);
     LOG_INFO("  basinDepth: {}", basin);

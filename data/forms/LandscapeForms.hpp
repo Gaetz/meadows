@@ -618,6 +618,9 @@ struct TerrainGenTuningForm : Form {
     f32 bakeRoughCut { 250.0f };
     f32 bakeDimpleFillMax { 20.0f };
     f32 bakeKeepCrestFade { 0.35f };
+    // Stage 0 bis (ContinentGround.hpp): one erosion per continent,
+    // the maps cut from it. Off = every map erodes alone (A/B).
+    bool bakeContinentGround { true };
     i32 bakeFluvialIterations { 48 };
     f32 bakeFluvialK { 0.08f };
     f32 bakeUpliftRate { 1.5f };
@@ -782,6 +785,7 @@ struct TerrainGenTuningForm : Form {
         REFLECT_FIELD(bakeRoughCut)
         REFLECT_FIELD(bakeDimpleFillMax)
         REFLECT_FIELD(bakeKeepCrestFade)
+        REFLECT_FIELD(bakeContinentGround)
         REFLECT_FIELD(bakeFluvialIterations)
         REFLECT_FIELD(bakeFluvialK)
         REFLECT_FIELD(bakeUpliftRate)

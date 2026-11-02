@@ -144,6 +144,27 @@ Le cache des cartes est clé sur les valeurs du pupitre : changer un
 réglage invalide la carte, qui se re-cuit à la demande (le jeu, le cooker
 et les tests partagent le même mappage `game::makeTerrainBakeParams`).
 
+### Le sol continent (étage 0 bis)
+
+Depuis le 2026-11-02 l'érosion n'est plus cuite carte par carte : une
+passe unique érode et perce **tout le continent** (la super-cellule de
+49 km du réseau maître) à 16 m, et chaque carte en **découpe** son
+étape 1. Deux cartes voisines lisent donc le même réseau de vallées :
+la couture d'une ligne ouverte est passée de 34 m à 3,6 m RMS, et la
+cuisson d'une carte de 35 à 15 s. Le prix : la **première** cuisson
+d'un continent dure ~4 min et prend ~2,7 Go (une fois, en fond dans le
+jeu, ou par `cooker pre-bake`), et laisse dans `terrain-cache/<seed>/`
+un `continent_<sx>_<sz>_<clé>.bin` (128 Mo : sol érodé + dépôts) et son
+survol `_ov.bin` (4 Mo, 64 m) que l'horizon du jeu lit au-delà des
+cartes cuites. Un réglage de l'étape 1 ou de la percée change la clé et
+recuit le continent ; un réglage de finalize ou d'eau ne recuit que la
+carte. `bakeContinentGround = false` (pupitre, champ « bake ») ou
+`cooker bake-map … --no-continent` rend l'ancien pipeline (chaque
+carte érode seule) pour une comparaison A/B. `bake-map` imprime alors
+deux miroirs (le survol 64 m, puis le sol continent) et le bake de
+carte trace sa dérive par rapport au continent après la phase sol et
+à la publication, plus le census de la percée (`pierce delta`).
+
 ### La table d'archétypes des zones
 
 Le sandbox est une mosaïque de zones d'environ 1 km, chacune d'un

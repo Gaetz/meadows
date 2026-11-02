@@ -134,6 +134,7 @@ struct BakeMapArgs {
     bool pair { false };
     i32 pairX { 0 };
     i32 pairZ { 0 };
+    bool continent { true }; // stage 0 bis A/B: off = lone erosion
 };
 
 // What the steps share once the game's params are resolved: the slice
@@ -165,6 +166,8 @@ bool parseArgs(char** argv, int argc, BakeMapArgs& args) {
         } else if (std::strcmp(argv[i], "--export-plugin") == 0 &&
                    i + 1 < argc) {
             args.exportName = argv[++i];
+        } else if (std::strcmp(argv[i], "--no-continent") == 0) {
+            args.continent = false;
         } else if (std::strcmp(argv[i], "--pair") == 0 && i + 2 < argc) {
             args.pair = true;
             args.pairX = std::atoi(argv[++i]);
@@ -213,6 +216,7 @@ bool loadGameParams(BakeMapContext& ctx) {
     params = game::makeTerrainBakeParams(
         tuning, data::resolveTerrainGenTuning(forms), &forms);
     params.mapGrid.valid = args.borders; // MapBaker fills the spec
+    params.continent.enabled = params.continent.enabled && args.continent;
 
     ctx.cacheDir = args.gameDir / "terrain-cache" /
                    std::to_string(tuning.terrainSeed);
@@ -362,8 +366,28 @@ void reportMirrorCalibration(const BakeMapContext& ctx) {
             glm::mix(at(c0, r0), at(c0 + 1, r0), tu),
             glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), tu), tv);
     };
-    LOG_INFO("bake-map: mirror report vs {}",
-             overview ? "the 64 m overview" : "the shaped analytic");
+    // The continent ground under the map (when baked): the SECOND
+    // mirror — how far the fine ground drifts from the band every
+    // map of the continent shares (the seam budget of a map line).
+    std::optional<render::terraingen::ContinentGround> continent;
+    if (params.continent.enabled) {
+        const f32 mapSize = tileSize * static_cast<f32>(tilesPerSide);
+        const f32 cx = (static_cast<f32>(ctx.args.mapX) + 0.5f) * mapSize;
+        const f32 cz = (static_cast<f32>(ctx.args.mapZ) + 0.5f) * mapSize;
+        continent = render::terraingen::loadContinentGround(
+            ctx.cacheDir, params, mapSize,
+            render::terraingen::continentSuperIndex(params.network, cx),
+            render::terraingen::continentSuperIndex(params.network, cz));
+    }
+    const auto continentAt = [&](f32 x, f32 z, f32 analytic) {
+        f32 h = analytic;
+        if (continent) {
+            continent->heightAt(x, z, h);
+        }
+        return h;
+    };
+    const auto bands = [&](const char* label, const auto& groundAt) {
+    LOG_INFO("bake-map: mirror report vs {}", label);
     constexpr u32 kBands = 12;
     f64 sum[kBands] = {};
     f32 worstBand[kBands] = {};
@@ -381,7 +405,7 @@ void reportMirrorCalibration(const BakeMapContext& ctx) {
                 for (f32 x = slice->originX + 128.0f;
                      x < slice->originX + slice->spanX() - 128.0f;
                      x += 96.0f) {
-                    const f32 fallback = fallbackAt(
+                    const f32 fallback = groundAt(
                         x, z,
                         render::terraingen::applyMapGridShape(
                             controls, params.macro, gridSpec, x, z,
@@ -419,6 +443,12 @@ void reportMirrorCalibration(const BakeMapContext& ctx) {
                  b * 100, (b + 1) * 100,
                  sum[b] / static_cast<f64>(n[b]), worstBand[b],
                  n[b]);
+    }
+    };
+    bands(overview ? "the 64 m overview" : "the shaped analytic",
+          fallbackAt);
+    if (continent) {
+        bands("the continent ground", continentAt);
     }
 }
 

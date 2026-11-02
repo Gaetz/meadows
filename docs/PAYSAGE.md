@@ -90,16 +90,17 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
 ### 1.3 Le pipeline de bake d'une carte (`game::bakeMap`, headless `engine/terrain/generation/`)
 
 ```
-[étage 0] computeMasterNetwork — 128 m, super-cellule = LA carte (24 576 + apron 8 192 m = 321²), sur macroHeightAnalytic, mémo process
-[stage 1] bakeTileStage1 — 16 m, carte + apron kMapApron 3 072 m = 1921² (~80 s)
+[étage 0] computeMasterNetwork — 128 m, super-cellule = UN continent (49 152 + apron 8 192 m = 513²), sur macroHeightAnalytic, mémo process + cache disque
+[étage 0 bis] continentGroundFor (ContinentGround.hpp) — la recette de l'étape 1 + pierceLakeOutlets sur TOUTE la super-cellule à 16 m (4097², ~230 s, 2,7 Go, une fois par continent), cache disque continent_<sx>_<sz>_<clé>.bin (eroded + deposit) + _ov.bin (survol 64 m pour l'horizon du jeu)
+[stage 1] bakeTileStage1 — 16 m, carte + apron kMapApron 3 072 m = 897² : synthèse des champs de contrôle (~3 s) puis DÉCOUPE de eroded/deposit dans le continent (cropFromContinent, nœud à nœud) ; sans continent (`bakeContinentGround` off, bench, tests) l'érosion locale ci-dessous (~10 s)
    synthesizeMacro (contrôles sur lattice 64 m, biome par texel) → applyMapGridShape → imprintMasterChannels (fleuves CONSTRUITS avant érosion)
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   pierceLakeOutlets (≤16 passes, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
-   finalizeTerrain : bicubique 16→4→2 m, amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
-   (0,5 / 4 / 7 m, gués 0,4 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
+   finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
+   (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
    crop → lacs (propriété = centre de bbox) → reconcileLakesWithTerrain v2 (par composante) → rivières clippées → reconcileRiversWithTerrain
 [publication] tile_<tx>_<tz>_v68.trg (TRG3) + .twb (TWB3) + overview.bin (MOV1, 64 m) + manifest.txt (écrit EN DERNIER)
 [runtime] TerrainBakeStreamer = lecteur de tranches + orchestrateur d'UN bakeMap de fond ; prefetch 1 408 m ; far-water depuis les .twb
@@ -2177,6 +2178,93 @@ briques Z0-Z5 dans le fichier de plan.
   de sol ET la visibilité. Retour à l'état Z4a : cache (0,0) recuit à la
   clé Z4a et recopié dans le dossier debug du dev. Reste acquis de la
   décision dev : un canyon est un POI, jamais le grand.
+
+- **2026-11-02 — Le sol continent (étage 0 bis) : une érosion par
+  continent, les cartes en sont des découpes ; les trois raboteuses
+  bornées.** Point de départ : le dev voit des **falaises sur le bord des
+  cartes** et veut un terrain continu (« éviter que le joueur se rende
+  compte qu'il y a des frontières »), et propose une cuisson hiérarchique
+  (une grande passe par île, puis le détail par carte). Mesure d'abord :
+  sur (0,0) les quatre lignes sont Ouvertes, rempart et chaîne inactifs ;
+  la couture (0,0)/(1,0) mesurée par `bake-map --pair` = **34,1 m RMS /
+  317 m max**, 107 orphelins d'eau ; transect ligne sud : tranchée de
+  260 m dans le sol cuit là où l'analytique est plat. Le diagnostic a
+  pris la journée et s'est déplacé trois fois, chaque pas mesuré par un
+  instrument posé pour l'occasion (`continent drift` par étage dans
+  `MapBaker`, census `pierce delta`, dump de la fenêtre) :
+  1. **Première tentative, continent à 64 m + épinglage de la bande
+     grossière** (bicubique de la différence aux nœuds, avant et après
+     l'érosion de carte) : épinglage exact à l'étape 1 (dérive 0,00 m)
+     mais sol publié à −38 m de moyenne du continent, couture 46 m :
+     l'érosion fine de 16 m par carte (RMS 27-33 m) est aussi grande que
+     la bande grossière, et un solveur global par carte ne se raccorde
+     jamais. Un continent à 64 m lissé (`pinBlur`) ne change rien.
+  2. **Continent à 16 m = l'étape 1 des cartes** (4097² sur la
+     super-cellule 49 km + tablier 8 km : 174 s d'étape 1 + 53 s de
+     percée, **227 s, 2,7 Go de pointe, 64 + 64 Mo** sur disque + survol
+     64 m de 4 Mo) : la carte ne synthétise plus que ses champs de
+     contrôle (3,4 s) et **découpe** `eroded`/`deposit` dans le
+     continent (`cropFromContinent`, copie nœud à nœud, même treillis).
+     Dérive après le finalize : RMS 2-4 m. Et pourtant couture 29 m : la
+     **percée des exutoires** par carte re-creusait 6-9 m de moyenne,
+     20 % des texels de plus de 10 m, jusqu'à 640 m, sur un sol identique.
+  3. **Trois raboteuses non bornées, toutes dans la phase eau par carte,
+     donc dépendantes de la fenêtre et de l'ordre** — c'étaient elles, les
+     tranchées, les falaises de bord ET une bonne part du « relief » de
+     Z4a :
+     - `pierceLakeOutlets` lisait les bassins d'une passe sur le sol
+       **vivant** (modifié par les rampes des percées précédentes) avec
+       le `filled` du début de passe : chaque cellule abaissée par une
+       rampe voisine devenait un bassin au verrou fictif de 100-500 m,
+       percé à son tour avec 3 km de rampe — les rampes engendraient des
+       bassins qui engendraient des rampes (−18 à −24 m de moyenne par
+       carte, 5 500 percées, 264-373 gorges). Corrigé : bassins lus sur
+       le sol de début de passe (`passGround`).
+     - La **bande** de la percée (jusqu'à 192 m de large, flancs 0,7)
+       coupait toute paroi longée par sa rampe jusqu'au niveau de la
+       rampe (300 m de coupe pour un bassin de 20 m). Bornée : aucune
+       cellule hors de l'axe ne perd plus que le verrou + 2 m.
+     - La **coupe de selle** (`cutSaddles`) : même géométrie, même
+       défaut (450 m de coupe pour 30 m d'enfouissement) ; bornée par
+       l'excès du run + 2 m.
+     - Le **carve des lits** (`carveRiverBeds`) : la loi de largeur
+       donne 20-200 m à des cours dont le chenal érodé fait un texel ; le
+       lit et l'épaulement de berge rabotaient les parois jusqu'à l'eau
+       (−26 m de moyenne sur une tranche, −440 m au pire) ; `bankMaxCut`
+       bornait le plancher, pas la coupe. Bornés par texel et par rapport
+       au sol pré-carve : `bedCutMax` 20 m, `shoulderCutMax` 12 m.
+     - Et le **suréchantillonnage** 16 → 8/2 m d'un chenal d'un texel
+       (bicubique ou bilinéaire) en faisait une chaîne de cuvettes aussi
+       profondes que le chenal, que la percée drainait : la **gravure de
+       drainage** (`carveCoarseDrainage`, par paire de cellules D8, à
+       support borné) abaisse le sol fin au profil linéaire entre une
+       cellule et son récepteur, dans le finalize et dans la marge de la
+       fenêtre d'hydrologie.
+  **Résultat (carte (0,0)/(1,0), ligne Ouverte)** : couture **3,6 m RMS /
+  56 m max** (34,1 / 317), orphelins 64 (107) ; correctifs seuls, sans
+  continent : 20,5 / 213. Bake de carte **15 s** (3,4 s de champs + 11,7 s
+  de tranches ; 35 s avant). Percée par carte −1,2 m de moyenne (−18).
+  Horizon : le repli du jeu lit le survol du continent après les survols
+  des cartes (`SandboxTerrain::continents`, chargé au démarrage et au
+  poll de 2 s), l'analytique n'est plus vu qu'en mer. **Les quatre
+  chiffres de sol bougent** : relief 250 m 87 → 73 m, médiane des murs
+  35 → 19 m, lacs 43 → 61 (37 naturels), rivières 327 → 291, visibilité
+  du moyen 56,7 → 55,8 %. Une part du relief et des murs de Z4a était
+  les tranchées des raboteuses ; c'est au dev de dire en jeu si le
+  paysage y a perdu. Instruments livrés : `bake-map --no-continent`
+  (A/B), second miroir « vs the continent ground », census `pierce
+  delta`, `continent drift` après la phase A et à la publication, ligne
+  `continent ground` du transect du rapport. Fenêtre d'hydrologie
+  essayée à 3 km (= portée des rampes) : couture 3,0 au lieu de 3,6 m
+  pour +4 s par carte — gardée à 1 km. Clé de continent = entrées de
+  l'étape 1 et de la percée seulement (un bouton de finalize ne recuit
+  pas quatre minutes de continent) ; `kTileBakeVersion` 124, cache (0,0),
+  (1,0) et continent recopiés chez le dev. Limites connues : 2,7 Go de
+  pointe et 4 min à la première cuisson d'un continent (pré-cuit pour le
+  continent de départ ; une bascule de continent en jeu = ces 4 min en
+  fond) ; max de couture 56 m en un point (une rampe de percée vue d'un
+  seul côté) ; le `budget` d'étape 1 n'est plus produit en mode découpe
+  (aucun lecteur).
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

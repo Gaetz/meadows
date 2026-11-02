@@ -31,6 +31,7 @@ constexpr i32 kMapTilesPerSide = 2; // 2 x 4096 m = 8192 m — the Skyrim
                                     // ONE continent (§7.8 E1c)
 
 struct MapBakeStats {
+    f64 continentSeconds { 0.0 }; // 0 when cached or disabled
     f64 stage1Seconds { 0.0 };
     f64 sliceSeconds { 0.0 };
     u32 slicesWritten { 0 };

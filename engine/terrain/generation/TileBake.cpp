@@ -447,6 +447,48 @@ void flareRiverMouths(const HydrologyParams& hydrology, f32 seaLevel,
     }
 }
 
+// A map's stage-1 window CUT out of the continent ground: the two grids
+// share texel and lattice (the continent is baked at the maps' texel on
+// the master lattice, the map window sits on it), so a node copies its
+// node — bit-identical for every map that covers it. A misaligned pair
+// (bench params) samples bilinearly instead.
+vector<f32> cropFromContinent(const GridSpec& sim, const GridSpec& cg,
+                              const vector<f32>& src) {
+    vector<f32> dst(sim.cells());
+    if (src.size() != cg.cells()) {
+        return dst;
+    }
+    const f32 du = (sim.originX - cg.originX) / cg.texelSize;
+    const f32 dv = (sim.originZ - cg.originZ) / cg.texelSize;
+    const bool aligned =
+        std::abs(sim.texelSize - cg.texelSize) < 1.0e-3f &&
+        std::abs(du - std::round(du)) < 1.0e-3f &&
+        std::abs(dv - std::round(dv)) < 1.0e-3f;
+    if (aligned) {
+        const i32 c0 = static_cast<i32>(std::lround(du));
+        const i32 r0 = static_cast<i32>(std::lround(dv));
+        for (u32 row = 0; row < sim.n; ++row) {
+            const i32 r = glm::clamp(r0 + static_cast<i32>(row), 0,
+                                     static_cast<i32>(cg.n) - 1);
+            for (u32 col = 0; col < sim.n; ++col) {
+                const i32 c = glm::clamp(c0 + static_cast<i32>(col), 0,
+                                         static_cast<i32>(cg.n) - 1);
+                dst[static_cast<size_t>(row) * sim.n + col] =
+                    src[static_cast<size_t>(r) * cg.n +
+                        static_cast<size_t>(c)];
+            }
+        }
+        return dst;
+    }
+    for (u32 row = 0; row < sim.n; ++row) {
+        for (u32 col = 0; col < sim.n; ++col) {
+            dst[static_cast<size_t>(row) * sim.n + col] =
+                bilinearWorld(cg, src, sim.x(col), sim.z(row));
+        }
+    }
+    return dst;
+}
+
 } // namespace
 
 BiomeCharacter biomeCharacter(const GridSpec& spec,
@@ -482,12 +524,20 @@ BiomeCharacter biomeCharacter(const GridSpec& spec,
 }
 
 TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
+                          const std::atomic<bool>* cancel,
+                          const ContinentGround* coarse) {
+    return bakeTileStage1(params, simSpecFor(params, tx, tz), coarse,
+                          cancel);
+}
+
+TileStage1 bakeTileStage1(const TileBakeParams& params, const GridSpec& sim,
+                          const ContinentGround* coarse,
                           const std::atomic<bool>* cancel) {
     const auto cancelled = [cancel] {
         return cancel && cancel->load(std::memory_order_relaxed);
     };
     TileStage1 out;
-    out.sim = simSpecFor(params, tx, tz);
+    out.sim = sim;
 
     ProceduralControlParams controlParams = params.controls;
     controlParams.seed = params.worldSeed;
@@ -521,6 +571,38 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
     shapeMapBorders(params, controls, out.sim, macro);
     fillCalmDimples(params, out.sim, macro);
     lap("borders+dimple");
+    // The common tail: the calm family fused with the carved valley
+    // floors, the control fields handed down, the phase line.
+    const auto finish = [&]() -> TileStage1 {
+        out.calm = macro.calm;
+        fuseValleyFloors(params, out.sim, out.eroded, out.calm);
+        out.seaDist = std::move(macro.seaDist);
+        out.biome = std::move(macro.biome);
+        out.gentle = std::move(macro.gentle);
+        out.uplift = std::move(macro.uplift);
+        out.trunk = macro.trunk;
+        lap("fusion");
+        LOG_INFO("stage-1 [{:.0f}, {:.0f}] {}x{} at {:.0f} m: {} | total "
+                 "{:.1f} s",
+                 out.sim.originX, out.sim.originZ, out.sim.n, out.sim.n,
+                 out.sim.texelSize, phases,
+                 std::chrono::duration<f64>(
+                     std::chrono::steady_clock::now() - phaseStart)
+                     .count());
+        return std::move(out);
+    };
+    if (coarse != nullptr && coarse->valid()) {
+        // Stage 0 bis: the erosion and the piercing already ran over the
+        // whole continent — this window is a crop of them. The macro
+        // fields above stay the map's (pure per texel: identical to the
+        // continent's where the two windows overlap).
+        out.macroHeight = macro.height;
+        out.eroded = cropFromContinent(out.sim, coarse->grid, coarse->height);
+        out.deposit =
+            cropFromContinent(out.sim, coarse->grid, coarse->deposit);
+        lap("continent crop");
+        return finish();
+    }
     const vector<f32> imprintKeep =
         imprintFleuves(params, controls, macroParams, out.sim, macro);
     BiomeCharacter character = erosionCharacter(params, out.sim, macro);
@@ -569,20 +651,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz,
         }
     }
     lap("rounding");
-    out.calm = macro.calm;
-    fuseValleyFloors(params, out.sim, out.eroded, out.calm);
-    out.seaDist = std::move(macro.seaDist);
-    out.biome = std::move(macro.biome);
-    out.gentle = std::move(macro.gentle);
-    out.uplift = std::move(macro.uplift);
-    out.trunk = macro.trunk;
-    lap("fusion");
-    LOG_INFO("stage-1 ({}, {}) {}x{}: {} | total {:.1f} s", tx, tz,
-             out.sim.n, out.sim.n, phases,
-             std::chrono::duration<f64>(std::chrono::steady_clock::now() -
-                                        phaseStart)
-                 .count());
-    return out;
+    return finish();
 }
 
 MapHydrology extractMapHydrology(
@@ -638,6 +707,27 @@ MapHydrology extractMapHydrology(
         for (u32 col = 0; col < out.window.n; ++col) {
             out.ground[static_cast<size_t>(row) * out.window.n + col] =
                 ground.at(out.window.x(col), out.window.z(row));
+        }
+    }
+    // Past the rect the window is the stage-1 resampled at the routing
+    // texel: the same drainage-preserving carve the slices got, or
+    // every diagonal 16 m channel out there is a chain of bowls the
+    // piercing drains through kilometres of trench INTO the map.
+    if (params.finalize.drainageCarveHalf > 0.0f) {
+        vector<f32> carved = out.ground;
+        carveCoarseDrainage(mapS1.sim, mapS1.eroded, out.window, carved,
+                            params.finalize.drainageCarveHalf);
+        for (u32 row = 0; row < out.window.n; ++row) {
+            const f32 z = out.window.z(row);
+            for (u32 col = 0; col < out.window.n; ++col) {
+                const f32 x = out.window.x(col);
+                if (x < mapMinX || x > mapMinX + mapSize || z < mapMinZ ||
+                    z > mapMinZ + mapSize) {
+                    const size_t i =
+                        static_cast<size_t>(row) * out.window.n + col;
+                    out.ground[i] = carved[i];
+                }
+            }
         }
     }
     lap("fill");
@@ -1120,6 +1210,7 @@ u64 hashKey(const TileBakeParams& p) {
     h.mix(hashKey(p.network));
     h.mix(hashKey(p.imprint));
     h.mix(hashKey(p.mapGrid));
+    h.mix(hashKey(p.continent));
     h.mix(hashKey(p.finalize));
     h.mix(hashKey(p.waterSolve));
     h.mix(static_cast<u32>(p.biomeErosion.size()));

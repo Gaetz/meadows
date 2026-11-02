@@ -6,6 +6,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -163,6 +165,7 @@ struct MapBakeRun {
 
     std::filesystem::path mapDir;
     TileBakeParams mapParams;
+    sptr<const ContinentGround> coarse; // stage 0 bis, when enabled
     TileStage1 mapS1;
     std::chrono::steady_clock::time_point s2Start;
     vector<FinalizeResult> grounds;
@@ -171,6 +174,55 @@ struct MapBakeRun {
     vector<f32> ovFine;
     MapBakeStats stats;
 };
+
+// The DRIFT of a ground from the continent at the continent's own
+// nodes inside the map rect — what the finalize, then the water,
+// displaced from the shared ground (the seam budget of a map line).
+// `at(x, z)` samples the ground; NaN = no sample there.
+void logContinentDrift(const MapBakeRun& run, const char* label,
+                       const std::function<f32(f32, f32)>& at) {
+    if (!run.coarse) {
+        return;
+    }
+    const GridSpec& cg = run.coarse->grid;
+    const f32 mapSize = run.mapParams.tileSize;
+    const f32 minX = static_cast<f32>(run.mapX) * mapSize;
+    const f32 minZ = static_cast<f32>(run.mapZ) * mapSize;
+    const auto range = cg.cellRange(minX, minZ, minX + mapSize,
+                                    minZ + mapSize);
+    f64 sum = 0.0, sum2 = 0.0;
+    f32 worst = 0.0f;
+    u32 n = 0;
+    for (i32 r = glm::max(range.r0, 0);
+         r <= glm::min(range.r1, static_cast<i32>(cg.n) - 1); ++r) {
+        for (i32 c = glm::max(range.c0, 0);
+             c <= glm::min(range.c1, static_cast<i32>(cg.n) - 1); ++c) {
+            const f32 x = cg.x(static_cast<u32>(c));
+            const f32 z = cg.z(static_cast<u32>(r));
+            if (x < minX || x >= minX + mapSize || z < minZ ||
+                z >= minZ + mapSize) {
+                continue;
+            }
+            const f32 h = at(x, z);
+            if (std::isnan(h)) {
+                continue;
+            }
+            const f32 d =
+                h - run.coarse->height[static_cast<size_t>(r) * cg.n +
+                                       static_cast<size_t>(c)];
+            sum += d;
+            sum2 += static_cast<f64>(d) * d;
+            worst = glm::max(worst, std::abs(d));
+            ++n;
+        }
+    }
+    if (n > 0) {
+        LOG_INFO("map bake ({}, {}): continent drift {} — mean {:+.2f} m, "
+                 "RMS {:.2f} m, max {:.2f} m ({} nodes)",
+                 run.mapX, run.mapZ, label, sum / n,
+                 std::sqrt(sum2 / n), worst, n);
+    }
+}
 
 bool createMapDir(MapBakeRun& run) {
     run.mapDir = mapCacheDir(run.cacheDir, run.mapX, run.mapZ);
@@ -200,9 +252,34 @@ bool bakeGlobalStage1(MapBakeRun& run) {
         mapParams.mapGrid.mapSize = mapParams.tileSize;
         mapParams.mapGrid.seaLevel = params.macro.seaLevel;
     }
+    // Stage 0 bis: the continent ground of the super cell holding the
+    // map (its network apron covers the map's whole stage-1 window),
+    // computed once per continent and cached — the band every map
+    // of the continent shares. Keyed on the UNMODIFIED game params
+    // and the map size, like the runtime horizon's loader.
+    sptr<const ContinentGround>& coarse = run.coarse;
+    if (params.continent.enabled) {
+        const auto cStart = std::chrono::steady_clock::now();
+        const f32 mapSize = mapParams.tileSize;
+        const f32 cx = (static_cast<f32>(run.mapX) + 0.5f) * mapSize;
+        const f32 cz = (static_cast<f32>(run.mapZ) + 0.5f) * mapSize;
+        const i32 sx = continentSuperIndex(mapParams.network, cx);
+        const i32 sz = continentSuperIndex(mapParams.network, cz);
+        coarse = continentGroundFor(params, mapSize, sx, sz, run.cancel);
+        run.stats.continentSeconds = secondsSince(cStart);
+        if (run.cancelled()) {
+            run.stats.cancelled = true;
+            return false;
+        }
+        if (!coarse) {
+            LOG_WARN("map bake ({}, {}): no continent ground — lone "
+                     "erosion",
+                     run.mapX, run.mapZ);
+        }
+    }
     const auto s1Start = std::chrono::steady_clock::now();
     run.mapS1 = bakeTileStage1(mapParams, run.mapX, run.mapZ,
-                               run.cancel);
+                               run.cancel, coarse.get());
     run.stats.stage1Seconds = secondsSince(s1Start);
     if (run.cancelled()) {
         run.stats.cancelled = true;
@@ -272,6 +349,20 @@ bool bakeSliceGrounds(MapBakeRun& run) {
         run.stats.cancelled = true;
         return false;
     }
+    logContinentDrift(run, "after the ground pass (A)", [&](f32 x, f32 z) {
+        for (const FinalizeResult& g : grounds) {
+            const GridSpec& fs = g.fineSpec;
+            const auto cell = fs.cellOf(x, z);
+            if (cell.col < 0 || cell.row < 0 ||
+                cell.col >= static_cast<i32>(fs.n) ||
+                cell.row >= static_cast<i32>(fs.n)) {
+                continue;
+            }
+            return g.height[static_cast<size_t>(cell.row) * fs.n +
+                            static_cast<size_t>(cell.col)];
+        }
+        return std::numeric_limits<f32>::quiet_NaN();
+    });
     return true;
 }
 
@@ -343,6 +434,25 @@ bool extractHydrology(MapBakeRun& run) {
         return false;
     }
     const MapHydrology& mapHydro = run.mapHydro;
+    if (!mapHydro.pierceDelta.empty()) {
+        f64 sum = 0.0;
+        f32 deepest = 0.0f;
+        u32 cut1 = 0, cut10 = 0;
+        for (const f32 d : mapHydro.pierceDelta) {
+            sum += d;
+            deepest = glm::min(deepest, d);
+            cut1 += d < -1.0f;
+            cut10 += d < -10.0f;
+        }
+        LOG_INFO("map bake ({}, {}): pierce delta — mean {:+.2f} m, "
+                 "deepest {:.1f} m, {:.1f} % texels cut > 1 m, {:.1f} % "
+                 "> 10 m",
+                 run.mapX, run.mapZ,
+                 sum / static_cast<f64>(mapHydro.pierceDelta.size()),
+                 deepest,
+                 100.0 * cut1 / mapHydro.pierceDelta.size(),
+                 100.0 * cut10 / mapHydro.pierceDelta.size());
+    }
     LOG_INFO("map bake ({}, {}): map hydrology {}x{} in {:.1f} s — {} "
              "lake(s), {} river(s)",
              run.mapX, run.mapZ, mapHydro.window.n, mapHydro.window.n,
@@ -521,6 +631,17 @@ bool writeOverview(MapBakeRun& run) {
                     : s1;
         }
     }
+    logContinentDrift(run, "published ground", [&](f32 x, f32 z) {
+        const auto cell = overview.grid.cellOf(x, z);
+        if (cell.col < 0 || cell.row < 0 ||
+            cell.col >= static_cast<i32>(overview.grid.n) ||
+            cell.row >= static_cast<i32>(overview.grid.n)) {
+            return std::numeric_limits<f32>::quiet_NaN();
+        }
+        return overview.heights[static_cast<size_t>(cell.row) *
+                                    overview.grid.n +
+                                static_cast<size_t>(cell.col)];
+    });
     std::ofstream file { run.mapDir / "overview.bin",
                          std::ios::binary | std::ios::trunc };
     const auto write = [&](const auto& value) {
@@ -571,10 +692,10 @@ bool writeManifest(MapBakeRun& run) {
         return false;
     }
     LOG_INFO("map bake ({}, {}): {} slice(s) in {:.1f} s (+ {:.1f} s "
-             "stage-1) -> {}",
+             "stage-1, {:.1f} s continent) -> {}",
              run.mapX, run.mapZ, run.stats.slicesWritten,
              run.stats.sliceSeconds, run.stats.stage1Seconds,
-             run.mapDir.string());
+             run.stats.continentSeconds, run.mapDir.string());
     return true;
 }
 

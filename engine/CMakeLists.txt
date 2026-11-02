@@ -53,6 +53,7 @@ add_library(meadows STATIC
     terrain/generation/MapGrid.cpp
     terrain/generation/ZonePlan.cpp
     terrain/generation/MasterNetwork.cpp
+    terrain/generation/ContinentGround.cpp
     terrain/generation/TerrainGen.cpp
     terrain/generation/WorldLayer.cpp
     terrain/generation/ThermalErosion.cpp

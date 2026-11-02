@@ -146,6 +146,9 @@ constexpr Lane<TileBakeParams, f32> kBakeLanesF32[] = {
     { &TileBakeParams::dimpleFillMax, &Tuning::bakeDimpleFillMax },
     { &TileBakeParams::keepCrestFade, &Tuning::bakeKeepCrestFade },
 };
+constexpr Lane<tg::ContinentGroundParams, bool> kContinentLanesBool[] = {
+    { &tg::ContinentGroundParams::enabled, &Tuning::bakeContinentGround },
+};
 constexpr Lane<tg::FluvialParams, f32> kFluvialLanesF32[] = {
     { &tg::FluvialParams::k, &Tuning::bakeFluvialK },
     { &tg::FluvialParams::upliftRate, &Tuning::bakeUpliftRate },
@@ -269,6 +272,7 @@ void applyTerrainGenTuning(const data::TerrainGenTuningForm& form,
     params.macro.tiers[3].reliefWavelength = form.macroReliefWavelengthEtage3;
     params.macro.tiers[2].terrace = form.macroPlateauTerrace;
     reflect::applyLanes(params, form, kBakeLanesF32);
+    reflect::applyLanes(params.continent, form, kContinentLanesBool);
     reflect::applyLanes(params.fluvial, form, kFluvialLanesF32);
     reflect::applyLanes(params.fluvial, form, kFluvialLanesI32);
     reflect::applyLanes(params.thermal, form, kThermalLanesF32);
@@ -321,6 +325,7 @@ captureTerrainGenTuning(const TileBakeParams& params) {
     form.macroReliefWavelengthEtage3 = params.macro.tiers[3].reliefWavelength;
     form.macroPlateauTerrace = params.macro.tiers[2].terrace;
     reflect::captureLanes(params, form, kBakeLanesF32);
+    reflect::captureLanes(params.continent, form, kContinentLanesBool);
     reflect::captureLanes(params.fluvial, form, kFluvialLanesF32);
     reflect::captureLanes(params.fluvial, form, kFluvialLanesI32);
     reflect::captureLanes(params.thermal, form, kThermalLanesF32);

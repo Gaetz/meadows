@@ -43,6 +43,18 @@ struct SandboxTerrain {
         vector<f32> heights;
     };
     vector<Overview> neighbourOverviews;
+    // The CONTINENT grounds (generation/ContinentGround.hpp) of the
+    // super cells around the active map: the fallback past every
+    // overview — the horizon beyond an unbaked neighbour shows the
+    // carved continent (already border-shaped), not the uncarved
+    // analytic. Loaded by the scene as the cache holds them.
+    struct Continent {
+        i32 superX { 0 };
+        i32 superZ { 0 };
+        terraingen::GridSpec grid;
+        vector<f32> heights;
+    };
+    vector<Continent> continents;
 };
 
 // The fallback ground of the generated world at (x, z): the map's 64 m
