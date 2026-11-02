@@ -1733,6 +1733,69 @@ void reportRiverSections(const ReportContext& ctx) {
                      fleuves[n], river.points.size(),
                      river.points.front().halfWidth,
                      river.points.back().halfWidth, line);
+            // Zoom: the longest run of flat water (< 0.1 m per point)
+            // with a bank over 20 m, every 3rd point (24 m) — what the
+            // slot the flat water runs in is made of.
+            {
+                size_t bestA = 0, bestB = 0;
+                size_t a = 0;
+                for (size_t i = 1; i <= river.points.size(); ++i) {
+                    bool cont = i < river.points.size();
+                    if (cont) {
+                        const auto& p = river.points[i];
+                        const auto& q = river.points[i - 1];
+                        const f32 dx = p.x - q.x, dz = p.z - q.z;
+                        const f32 len = glm::max(std::hypot(dx, dz), 0.01f);
+                        const f32 out = p.halfWidth + 30.0f;
+                        const f32 bank = glm::min(
+                            view.height(p.x + dz / len * out, p.z - dx / len * out),
+                            view.height(p.x - dz / len * out, p.z + dx / len * out));
+                        cont = std::abs(q.surface - p.surface) < 0.1f &&
+                               bank - p.surface > 20.0f;
+                    }
+                    if (!cont) {
+                        if (i - a > bestB - bestA) {
+                            bestA = a;
+                            bestB = i;
+                        }
+                        a = i;
+                    }
+                }
+                if (bestB > bestA + 6) {
+                    std::string zoom;
+                    for (size_t i = bestA; i < bestB; i += 3) {
+                        const auto& p = river.points[i];
+                        const size_t j = i + 1 < river.points.size() ? i + 1 : i;
+                        const size_t k = i > 0 ? i - 1 : i;
+                        const f32 dx = river.points[j].x - river.points[k].x;
+                        const f32 dz = river.points[j].z - river.points[k].z;
+                        const f32 len = glm::max(std::hypot(dx, dz), 0.01f);
+                        const f32 out = p.halfWidth + 30.0f;
+                        const f32 bank = glm::min(
+                            view.height(p.x + dz / len * out, p.z - dx / len * out),
+                            view.height(p.x - dz / len * out, p.z + dx / len * out));
+                        f32 c = 0.0f;
+                        const bool hasC = continent && continent->heightAt(p.x, p.z, c);
+                        bool inLake = false;
+                        for (const auto& lake : view.lakes) {
+                            if (lake.covers(p.x, p.z)) {
+                                inLake = true;
+                                break;
+                            }
+                        }
+                        char buf[96];
+                        std::snprintf(buf, sizeof(buf), "[w%.1f g%+.0f c%+.0f b%+.0f hw%.0f%s] ",
+                                      p.surface, view.height(p.x, p.z) - p.surface,
+                                      hasC ? c - p.surface : 0.0f, bank - p.surface,
+                                      p.halfWidth, inLake ? " L" : "");
+                        zoom += buf;
+                    }
+                    LOG_INFO("    flat-in-gorge run of {} pts from ({:.0f}, {:.0f}), "
+                             "every 24 m: {}",
+                             bestB - bestA, river.points[bestA].x,
+                             river.points[bestA].z, zoom);
+                }
+            }
         }
     }
     // Longitudinal: the water slope per ~48 m of course, length-weighted.
@@ -1815,6 +1878,51 @@ void reportMasterCourses(const ReportContext& ctx) {
              "within 150 m of a line, longest run {} nodes (last at "
              "{:.0f}, {:.0f})",
              master.size(), mNear, mTotal, mRun, mX, mZ);
+    // The master bed the imprint stamps (reprofileMasterCourse): how
+    // much of it is flood-flat and how deep the bowls under it are —
+    // the stage-1 side of the "rivers have no slope" question (the
+    // imprint's bed floats over the bowls; the pierce drains them).
+    {
+        u32 nodes = 0, lakeNodes = 0, bowlNodes = 0;
+        vector<f32> depths;
+        f64 lenAll = 0.0, flatBed = 0.0, steepBed = 0.0;
+        for (const auto& river : master) {
+            if (river.nodes.size() < 3) {
+                continue;
+            }
+            const auto bed = render::terraingen::reprofileMasterCourse(
+                river, ctx.params.imprint, ctx.params.macro.seaLevel);
+            for (size_t k = 0; k < river.nodes.size(); ++k) {
+                ++nodes;
+                lakeNodes += (river.nodes[k].flags &
+                              render::terraingen::kMasterNodeLake) != 0
+                                 ? 1
+                                 : 0;
+                bowlNodes += river.nodes[k].depth >
+                                     ctx.params.imprint.bedDepth + 1.0f
+                                 ? 1
+                                 : 0;
+                depths.push_back(river.nodes[k].depth);
+                if (k + 1 < river.nodes.size()) {
+                    const f32 run = glm::max(bed.arc[k + 1] - bed.arc[k], 1.0f);
+                    const f32 sB = (bed.surface[k] - bed.surface[k + 1]) / run;
+                    lenAll += run;
+                    flatBed += sB < 0.003f ? run : 0.0f;
+                    steepBed += sB >= 0.08f ? run : 0.0f;
+                }
+            }
+        }
+        const f64 L = glm::max(lenAll, 1.0);
+        LOG_INFO("  master bed profiles: {} nodes ({} lake nodes, {} in a bowl "
+                 "deeper than the bed; bowl depth median {:.0f} / p90 {:.0f} "
+                 "/ max {:.0f} m), {:.1f} km; imprinted bed flat < 0.3 % on "
+                 "{:.0f} %, steep >= 8 % on {:.0f} %",
+                 nodes, lakeNodes, bowlNodes, median(depths),
+                 percentile(depths, 90.0f),
+                 depths.empty() ? 0.0f
+                                : *std::max_element(depths.begin(), depths.end()),
+                 lenAll / 1000.0, 100.0 * flatBed / L, 100.0 * steepBed / L);
+    }
     for (const auto& river : master) {
         if (river.nodes.empty()) {
             continue;

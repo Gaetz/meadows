@@ -445,6 +445,8 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         u32 nextLabel = 0;
         u32 pierced = 0;
         u32 gorges = 0; // locks at/over lakeDeepPierce — the gorge cuts
+        u32 rampsRun = 0, rampStepsAll = 0, rampStepsMax = 0;
+        f64 rampSlopeSum = 0.0;
         f32 deepestLock = 0.0f;
         vector<u32> stack;
         vector<u32> component;
@@ -595,17 +597,65 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 deepestLock = glm::max(deepestLock, lockDepth);
             }
             lowerBand(gate, ramp);
-            size_t cur = pour;
             // ~3 km of downstream ramp in world length, texel-free.
             const u32 maxRampSteps = static_cast<u32>(
                 std::lround(3072.0f / spec.texelSize));
+            const f32 minGradient =
+                glm::max(params.riverMinGradient, 1.0e-3f);
+            f32 rampSlope = minGradient;
+            if (params.pierceRampSlope > minGradient) {
+                // The landing: walk the steepest filled descent (the
+                // ramp's own path below) and take the STEEPEST straight
+                // line from the notch down to a cell of it — the ramp
+                // lands on the ground as early as the cap allows
+                // instead of trenching at the minimum gradient toward
+                // a far daylight. Steeper than the cap: the cap (a
+                // reduced fall where the ground first dips under it).
+                f32 steepest = -1.0e30f;
+                size_t probe = pour;
+                for (u32 step = 1; step <= maxRampSteps; ++step) {
+                    const f32 run = static_cast<f32>(step) * spec.texelSize;
+                    steepest = glm::max(steepest, (ramp - ground[probe]) / run);
+                    if (steepest >= params.pierceRampSlope) {
+                        break;
+                    }
+                    const i32 cx = static_cast<i32>(probe % spec.n);
+                    const i32 cz = static_cast<i32>(probe / spec.n);
+                    size_t next = probe;
+                    f32 lowest = filled[probe];
+                    for (i32 dz = -1; dz <= 1; ++dz) {
+                        for (i32 dx = -1; dx <= 1; ++dx) {
+                            const i32 px = cx + dx;
+                            const i32 pz = cz + dz;
+                            if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                                continue;
+                            }
+                            const size_t p =
+                                static_cast<size_t>(pz) * spec.n +
+                                static_cast<size_t>(px);
+                            if (filled[p] < lowest) {
+                                lowest = filled[p];
+                                next = p;
+                            }
+                        }
+                    }
+                    if (next == probe) {
+                        break;
+                    }
+                    probe = next;
+                }
+                rampSlope = glm::clamp(steepest, minGradient,
+                                       params.pierceRampSlope);
+            }
+            size_t cur = pour;
+            u32 rampSteps = 0;
             for (u32 step = 0; step < maxRampSteps; ++step) {
-                ramp -= glm::max(params.riverMinGradient, 1.0e-3f) *
-                        spec.texelSize;
+                ramp -= rampSlope * spec.texelSize;
                 if (ground[cur] <= ramp) {
                     break; // daylight: the land already falls away
                 }
                 lowerBand(cur, ramp);
+                ++rampSteps;
                 const i32 cx = static_cast<i32>(cur % spec.n);
                 const i32 cz = static_cast<i32>(cur / spec.n);
                 size_t next = cur;
@@ -632,10 +682,23 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 cur = next;
             }
             ++pierced;
+            if (rampSteps > 0) {
+                ++rampsRun;
+                rampStepsAll += rampSteps;
+                rampStepsMax = glm::max(rampStepsMax, rampSteps);
+                rampSlopeSum += rampSlope;
+            }
         }
         LOG_INFO("pierce pass {}: {} basins, {} pierced ({} gorges, "
-                 "deepest lock {:.0f} m) | flood {:.2f} s, route {:.2f} s",
-                 pass, nextLabel, pierced, gorges, deepestLock,
+                 "deepest lock {:.0f} m), ramps {} (mean {:.0f} m, longest "
+                 "{:.0f} m, slope mean {:.1f} %) | flood {:.2f} s, route "
+                 "{:.2f} s",
+                 pass, nextLabel, pierced, gorges, deepestLock, rampsRun,
+                 rampsRun ? static_cast<f32>(rampStepsAll) * spec.texelSize /
+                                static_cast<f32>(rampsRun)
+                          : 0.0f,
+                 static_cast<f32>(rampStepsMax) * spec.texelSize,
+                 rampsRun ? 100.0 * rampSlopeSum / rampsRun : 0.0,
                  std::chrono::duration<f64>(floodEnd - passStart)
                      .count(),
                  routeSec);

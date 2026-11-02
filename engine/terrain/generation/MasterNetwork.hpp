@@ -52,6 +52,13 @@ struct MasterNode {
     // runoff (passe EAU E4a) — what the width/tier laws read. Equals
     // `area` when the weights are off or neutral.
     f32 qArea { 0.0f };
+    // m of routed surface standing over the terrain at the node: the
+    // flood depth of the bowl the course crosses (every zone is a
+    // basin behind its walls — two thirds of the nodes ride a flood
+    // surface tens of metres over the ground, measured). Read by the
+    // report's master-profile census; the imprint's bed floats over
+    // those bowls, the outlet pierce drains them (Hydrology.hpp).
+    f32 depth { 0.0f };
     u32 flags { 0 };    // kMasterNode* (E5: lake-crossing nodes)
     u32 headType { 0 }; // E6: source typology of the course's head
 };
@@ -215,6 +222,18 @@ struct MasterImprintParams {
 };
 
 u64 hashKey(const MasterImprintParams& p);
+
+// The bed profile the imprint stamps along one course: the node
+// surface after the downstream lower-only minimum-gradient walk,
+// with the cumulative course length. Shared by the imprint and the
+// report's master-profile census so both read the same bed.
+struct MasterBedProfile {
+    vector<f32> surface;
+    vector<f32> arc;
+};
+MasterBedProfile reprofileMasterCourse(const MasterRiver& river,
+                                       const MasterImprintParams& imprint,
+                                       f32 seaLevel);
 // `extraKeep` (sim.cells(), caller-zeroed) receives the erosion
 // protection to max into the bake's keep grid. Width law shared with
 // classifyRivers (Hydrology.hpp RiverWidthLaw, on the node's qArea) so

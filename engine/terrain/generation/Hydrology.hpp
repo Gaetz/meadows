@@ -214,6 +214,17 @@ struct HydrologyParams {
     // them on one map (measured). A destination lake is deep AND
     // broad; ~10 ha, in m² (texel-free).
     f32 lakeKeepArea { 400.0f * 16.0f * 16.0f };
+    // The notch's downstream ramp: the STEEPEST straight line from
+    // the gate down to a cell of the steepest descent within the
+    // ramp's reach, capped at this slope (a visible rapid through the
+    // gate that lands on the ground) and floored at riverMinGradient.
+    // At the minimum gradient alone the ramp ran flat through the
+    // wall for up to 3 km and dropped off its outer slope as a fall —
+    // flat water in a slot as deep as the lock, then a waterfall: the
+    // dev's "rivers have no slope, they dig the mountain". The cap
+    // trades slope for slot depth ((cap - gradient) x ramp length);
+    // 4 % measured too deep. 0 = the minimum-gradient ramp (A/B).
+    f32 pierceRampSlope { 0.02f };
     // Mouth flare (estuaries): a course that reaches the sea opens
     // over its last metres — half-width ramps to x mouthFlare. The
     // ribbon and the bed carve both read hw, so the bed follows.
@@ -280,6 +291,7 @@ struct HydrologyParams {
         REFLECT_FIELD(pierceMinArea)
         REFLECT_FIELD(pierceMinDepth)
         REFLECT_FIELD(lakeKeepArea)
+        REFLECT_FIELD(pierceRampSlope)
         REFLECT_FIELD(mouthFlare)
         REFLECT_FIELD(mouthFlareLength)
         REFLECT_FIELD(riverArea)

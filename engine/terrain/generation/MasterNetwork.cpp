@@ -97,6 +97,7 @@ void chaikinSmooth(MasterRiver& river) {
             m.surface = glm::mix(a.surface, b.surface, t);
             m.area = glm::mix(a.area, b.area, t);
             m.qArea = glm::mix(a.qArea, b.qArea, t);
+            m.depth = glm::mix(a.depth, b.depth, t);
             m.flags = t < 0.5f ? a.flags : b.flags;
             m.headType = a.headType;
             return m;
@@ -137,8 +138,8 @@ u64 networkFileKey(const ProceduralControls& controls,
     h.mix(hashKey(controls.params()));
     h.mix(hashKey(macro));
     h.mix(hashKey(params));
-    const u32 version = 2; // the file format below (MNW2: qArea,
-                           // flags, headType on the node)
+    const u32 version = 3; // the file format below (MNW3: qArea,
+                           // depth, flags, headType on the node)
     h.mix(version);
     return h.value;
 }
@@ -158,7 +159,7 @@ bool readNetworkFile(const std::filesystem::path& path, MasterNetwork& out) {
     }
     char magic[4];
     file.read(magic, 4);
-    if (!file || std::memcmp(magic, "MNW2", 4) != 0) {
+    if (!file || std::memcmp(magic, "MNW3", 4) != 0) {
         return false;
     }
     f32 originX = 0.0f, originZ = 0.0f, texel = 0.0f;
@@ -205,7 +206,7 @@ void writeNetworkFile(const std::filesystem::path& path,
         if (!file) {
             return;
         }
-        file.write("MNW2", 4);
+        file.write("MNW3", 4);
         const u32 n = net.grid.n;
         const u32 riverCount = static_cast<u32>(net.rivers.size());
         file.write(reinterpret_cast<const char*>(&net.grid.originX),
@@ -452,8 +453,9 @@ MasterNetwork computeMasterNetworkUncached(
                                   ? kMasterNodeLake
                                   : 0u;
             river.nodes.push_back({ out.grid.x(col), out.grid.z(row),
-                                    filled[i], flow.area[i],
-                                    qAreaOf[i], flags, headType });
+                                    filled[i], flow.area[i], qAreaOf[i],
+                                    glm::max(filled[i] - height[i], 0.0f),
+                                    flags, headType });
             if (claimed[i]) {
                 break; // joined an earlier course (confluence)
             }
@@ -541,6 +543,33 @@ vector<MasterRiver> masterRiversNear(const ProceduralControls& controls,
     return out;
 }
 
+MasterBedProfile reprofileMasterCourse(const MasterRiver& river,
+                                       const MasterImprintParams& imprint,
+                                       f32 seaLevel) {
+    MasterBedProfile bed;
+    const size_t count = river.nodes.size();
+    if (count == 0) {
+        return bed;
+    }
+    // Downstream lower-only walk with a minimum gradient: the
+    // flood-flat stretches of the routed surface become a bed that
+    // FLOWS instead of ponding.
+    bed.surface.resize(count);
+    bed.arc.resize(count);
+    bed.surface[0] = river.nodes[0].surface;
+    bed.arc[0] = 0.0f;
+    for (size_t k = 1; k < count; ++k) {
+        const f32 dist = std::hypot(river.nodes[k].x - river.nodes[k - 1].x,
+                                    river.nodes[k].z - river.nodes[k - 1].z);
+        bed.arc[k] = bed.arc[k - 1] + dist;
+        bed.surface[k] = glm::max(
+            glm::min(bed.surface[k - 1] - imprint.minGradient * dist,
+                     river.nodes[k].surface),
+            seaLevel - 2.0f);
+    }
+    return bed;
+}
+
 void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
                            vector<f32>& extraKeep,
                            const ProceduralControls& controls,
@@ -556,25 +585,13 @@ void imprintMasterChannels(const GridSpec& sim, MacroResult& macro,
         masterRiversNear(controls, macroParams, network, sim.originX,
                          sim.originZ, simMaxX, simMaxZ);
     const i32 n = static_cast<i32>(sim.n);
-    vector<f32> surf;
     for (const MasterRiver& river : rivers) {
         if (river.nodes.size() < 2) {
             continue;
         }
-        // Reprofile: downstream lower-only walk with a minimum
-        // gradient — the flood-flat stretches of the routed surface
-        // become a bed that FLOWS instead of ponding.
-        surf.resize(river.nodes.size());
-        surf[0] = river.nodes[0].surface;
-        for (size_t k = 1; k < river.nodes.size(); ++k) {
-            const f32 dist = std::hypot(
-                river.nodes[k].x - river.nodes[k - 1].x,
-                river.nodes[k].z - river.nodes[k - 1].z);
-            surf[k] = glm::max(
-                glm::min(surf[k - 1] - imprint.minGradient * dist,
-                         river.nodes[k].surface),
-                network.seaLevel - 2.0f);
-        }
+        const MasterBedProfile bed =
+            reprofileMasterCourse(river, imprint, network.seaLevel);
+        const vector<f32>& surf = bed.surface;
         for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
             const MasterNode& a = river.nodes[s];
             const MasterNode& b = river.nodes[s + 1];
