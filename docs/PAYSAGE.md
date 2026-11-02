@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2265,6 +2265,64 @@ briques Z0-Z5 dans le fichier de plan.
   fond) ; max de couture 56 m en un point (une rampe de percée vue d'un
   seul côté) ; le `budget` d'étape 1 n'est plus produit en mode découpe
   (aucun lecteur).
+
+- **2026-11-02 (suite) — Les fleuves ont une pente, le ruban épouse sa
+  vallée (B1, B2 ; B3 sans objet).** Retour dev après le tour en jeu du sol
+  continent : « les fleuves sont très souvent séparés par un liseré rocheux
+  très fin entre les deux berges » et « pourquoi les fleuves n'ont-ils pas
+  de pente ? ils ont l'air de creuser la montagne ». Instrument d'abord
+  (`0142a58`, « river sections ») : 8 530 coupes transversales sous les
+  rubans de (0,0) — lit fendu 9,9 % (fleuves 16 %), liseré fin ≤ 12 m
+  5,8 %, rocher hors d'eau dans 59 % des rubans, berges à 30 m du ruban
+  médiane +12/+33 m (p90 167/274), ligne d'eau plate < 0,3 % sur 27 % de la
+  longueur et ≥ 8 % sur 34 %. Le diagnostic s'est déplacé deux fois :
+  1. **Écarté par la mesure : une marche de rampe à l'empreinte de
+     l'étape 1** (enveloppe basse du lit sous un plafond de pente local,
+     depuis l'embouchure, lacs conservés). Le census « master bed
+     profiles » du rapport (nouveau, avec `MasterNode::depth`, fichier
+     réseau MNW3) a montré que **74 % du lit maître est plat parce que deux
+     tiers des nœuds chevauchent une surface d'inondation 26 m médians /
+     173 m p90 au-dessus du sol** : chaque zone est une cuvette derrière ses
+     murs, le lit imprimé flotte au-dessus, c'est la percée qui vide les
+     cuvettes. Deux recuissons pour rien (profil fin inchangé, relief
+     +8 à +14 m) ; code retiré, le refactor `reprofileMasterCourse` et le
+     census restent.
+  2. **La cause : la rampe aval de la percée.** `pierceLakeOutlets`
+     encoche la porte au niveau du fond du bassin + 0,3 m puis descendait à
+     `riverMinGradient` (0,2 %) sur 3 km au plus avant que le sol ne
+     reprenne : de l'eau plate dans une fente aussi profonde que le verrou,
+     puis une chute sur le flanc extérieur du mur — l'escalier ET « creuse la
+     montagne ». Mesuré par la statistique de rampes de chaque passe
+     (1 506 rampes sur la carte, 83 m de moyenne, 3 072 m au plus, pente
+     0,2 %).
+  **B1 (`99548ee`) : la rampe = la ligne droite la plus raide de l'encoche
+  jusqu'à une cellule atteignable de la descente, plafonnée
+  (`pierceRampSlope`, 0 = l'ancienne rampe).** Plafond 4 % : plats 27 → 6 %
+  mais relief 250 m 73 → 96 m, murs 19 → 23 m, lacs 70 → 46, pente autour du
+  spawn 55 → 78 % (la fente s'approfondit de (pente − 0,2 %) × longueur).
+  **Retenu 2 %** : plats 27 → 11 %, douce 0,3-2 % 19 → 25 %, orphelins d'eau
+  sur la ligne (0,0)/(1,0) 64 → 26, couture 3,6 → 3,3 m RMS, lacs naturels
+  37 → 40, relief 73 → 89 m, spawn 55 → 64 % — au dev de juger en jeu.
+  Continent et cartes recuits (clé de percée dans la clé de continent).
+  **B2 (`e970099`) : la passe « valley » du re-leveling** (après
+  `narrowSteep`) : de chaque côté le fond s'arrête où le sol fin dépasse
+  l'eau de 8 m ; le ruban est re-assis au milieu de ce fond (prendre le
+  seul côté étroit rétrécissait à 2 m les fleuves collés à leur paroi) et en
+  prend la moitié, jamais plus que la loi ; décalage lissé à pas borné,
+  érosion puis moyenne sur 3 points, plancher 1,2 m, extrémités et points
+  sous un lac fixes. Mesuré : rocher hors d'eau dans le ruban 62 → 24 % des
+  coupes, lit fendu 8,7 → 5,4 % dont **2 coupes sur 8 994 fendues dans le
+  ruban**, liseré 5,3 → 5,0 % (2 dans le ruban ; le reste est une rigole
+  parallèle hors ruban, à 15 m médians de l'axe), crête à sec p90 5,1 →
+  1,8 m, couture 3,25 → 3,08 m ; 24 620 points ajustés, −392 km de
+  demi-largeur, 51 km de re-seat ; relief, murs, lacs, visibilité
+  inchangés. **B3** (le carve atteint toujours la ligne d'eau dans le ruban)
+  **sans objet** : le résidu dans le ruban est nul. `kTileBakeVersion` 125
+  (B2 ne change aucun paramètre : la clé seule n'aurait pas invalidé),
+  caches (0,0), (1,0) et continent recopiés chez le dev. Reste visible :
+  les rigoles parallèles hors ruban (gravure de drainage ou ancien talweg
+  après le re-seat) et les tronçons enterrés (g + 130-200 m sur deux
+  fleuves) — pistes pour une brique ultérieure.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
