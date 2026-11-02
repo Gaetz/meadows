@@ -46,6 +46,9 @@ struct HydroRelevelStats {
     f64 fillShift { 0.0 };      // |profile fill - routed surface|, m
     size_t poolLakes { 0 };     // discovered pools emitted as lakes
     size_t saddleRuns { 0 };    // short buried runs the cut grounded
+    size_t valleyFitted { 0 };  // points whose ribbon narrowed to its valley
+    f64 valleyShrink { 0.0 };   // half-width those points lost, m (sum)
+    f64 valleyShift { 0.0 };    // |lateral re-seat| of the fitted points, m (sum)
 };
 
 // Runs the re-leveling passes on `out` (courses, lakes, pierceDelta

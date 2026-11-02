@@ -1445,6 +1445,7 @@ void reportRiverSections(const ReportContext& ctx) {
     constexpr f32 kSliverMax = 12.0f;  // dry strip still "thin"
     constexpr f32 kBankOut = 30.0f;    // bank probe beyond the ribbon
     u32 sections = 0, split = 0, sliver = 0, dryInRibbon = 0;
+    u32 splitIn = 0, sliverIn = 0; // second channel starting INSIDE the ribbon
     u32 byTier[3] = {}, splitByTier[3] = {};
     vector<f32> offsets;   // |deepest - axis| / halfWidth
     vector<f32> sliverW;   // dry strip width (m) of split sections
@@ -1594,8 +1595,11 @@ void reportRiverSections(const ReportContext& ctx) {
             ++split;
             ++splitByTier[tier];
             gapM.push_back(gap);
+            const bool inside = gap <= hw;
+            splitIn += inside ? 1 : 0;
             if (width <= kSliverMax) {
                 ++sliver;
+                sliverIn += inside ? 1 : 0;
                 sliverW.push_back(width);
                 sliverH.push_back(crest);
                 if (examples.size() < 6 && crest > 0.3f) {
@@ -1613,14 +1617,15 @@ void reportRiverSections(const ReportContext& ctx) {
         return 100.0f * static_cast<f32>(n) / static_cast<f32>(sections);
     };
     LOG_INFO("  river sections ({} cuts, r/R/F {}/{}/{}): split bed {} "
-             "({:.1f} %; by tier {}/{}/{}), thin sliver (dry strip <= "
-             "{:.0f} m) {} ({:.1f} %), width median {:.1f} m, crest above "
-             "water median {:.2f} / p90 {:.2f} m, second channel at "
-             "median {:.1f} m from the axis",
+             "({:.1f} %; by tier {}/{}/{}; {} inside the ribbon), thin "
+             "sliver (dry strip <= {:.0f} m) {} ({:.1f} %; {} inside the "
+             "ribbon), width median {:.1f} m, crest above water median "
+             "{:.2f} / p90 {:.2f} m, second channel at median {:.1f} m from "
+             "the axis",
              sections, byTier[0], byTier[1], byTier[2], split, pct(split),
-             splitByTier[0], splitByTier[1], splitByTier[2], kSliverMax,
-             sliver, pct(sliver), median(sliverW), median(sliverH),
-             percentile(sliverH, 90), median(gapM));
+             splitByTier[0], splitByTier[1], splitByTier[2], splitIn,
+             kSliverMax, sliver, pct(sliver), sliverIn, median(sliverW),
+             median(sliverH), percentile(sliverH, 90), median(gapM));
     LOG_INFO("  river sections: deepest sample off the axis median {:.2f} / "
              "p90 {:.2f} halfWidths; ribbon with dry ground {} ({:.1f} %), "
              "dry share of the ribbon median {:.0f} / p90 {:.0f} %; banks "

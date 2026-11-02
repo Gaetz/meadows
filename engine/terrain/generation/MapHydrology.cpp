@@ -180,6 +180,7 @@ struct HydroReleveling {
     void capSlopes();
     void smoothProfiles();
     void narrowSteep();
+    void fitValleys();
     void reclampTributaries();
     void softenMapSeams();
     void reseatPonds();
@@ -1542,6 +1543,135 @@ void HydroReleveling::narrowSteep() {
     }
 }
 
+// The ribbon fits its valley: the width law reads the discharge,
+// never the ground, so a fleuve's law width crossed gorges a fifth
+// as wide — the carve shaved the walls to the waterline over the
+// whole ribbon (the dev's "fleuve creuse la montagne") and, once
+// bounded, left pre-carve terraces at the waterline inside it: the
+// thin rock slivers between two channels (16 % of the fleuve cuts,
+// measured). On each side the floor ends where the fine ground
+// stands more than kValleyWall above the water. The ribbon is
+// RE-SEATED in the middle of that floor (the routed axis hugs the
+// wall foot: taking the narrower side alone shrank fleuves to 2 m
+// against their walls, measured) and takes half its width, never
+// more than the law's — the lateral shift is smoothed along the
+// course and its step bounded so no kink appears, then the fit is
+// checked against the walls again, eroded and averaged over 3 points
+// (the result never exceeds the raw fit: no ribbon reaches its wall,
+// the edge does not flicker texel to texel), floored at the law's
+// minimum. Course ends, junction tails and points under a lake sheet
+// stay put.
+void HydroReleveling::fitValleys() {
+    constexpr f32 kValleyWall = 8.0f; // m above the water = the wall
+    constexpr f32 kStep = 2.0f;       // m across the ribbon
+    constexpr f32 kMinHalf = 1.2f;
+    constexpr f32 kMaxShiftStep = 0.5f; // m of shift per m of course
+    constexpr size_t kFixedEnds = 2;
+    vector<f32> left, right, shift, px, pz, fit, eroded;
+    for (size_t r = 0; r < riverCount; ++r) {
+        River& river = rivers[r];
+        const size_t count = river.points.size();
+        if (count < 2 * kFixedEnds + 3) {
+            continue;
+        }
+        const vector<f32>& lv = lakeLvls[r];
+        left.assign(count, 0.0f);
+        right.assign(count, 0.0f);
+        shift.assign(count, 0.0f);
+        px.assign(count, 0.0f);
+        pz.assign(count, 0.0f);
+        // Walls on each side, up to the law's half-width.
+        for (size_t i = 0; i < count; ++i) {
+            const RiverPoint& p = river.points[i];
+            left[i] = right[i] = p.halfWidth;
+            const RiverPoint& fw = river.points[i + 1 < count ? i + 1 : i];
+            const RiverPoint& bw = river.points[i > 0 ? i - 1 : i];
+            const f32 dx = fw.x - bw.x;
+            const f32 dz = fw.z - bw.z;
+            const f32 len = std::hypot(dx, dz);
+            if (len < 0.01f) {
+                continue;
+            }
+            px[i] = -dz / len;
+            pz[i] = dx / len;
+            if (lv[i] > -1.0e17f || i < kFixedEnds || i + kFixedEnds >= count) {
+                continue; // measured for nothing: fixed below
+            }
+            const f32 wall = p.surface + kValleyWall;
+            for (f32 d = kStep; d < p.halfWidth; d += kStep) {
+                if (fineAt(p.x - px[i] * d, p.z - pz[i] * d) > wall) {
+                    left[i] = d;
+                    break;
+                }
+            }
+            for (f32 d = kStep; d < p.halfWidth; d += kStep) {
+                if (fineAt(p.x + px[i] * d, p.z + pz[i] * d) > wall) {
+                    right[i] = d;
+                    break;
+                }
+            }
+            shift[i] = 0.5f * (right[i] - left[i]);
+        }
+        // Smooth the lateral shift and bound its step along the course.
+        for (int pass = 0; pass < 2; ++pass) {
+            fit = shift;
+            for (size_t i = 1; i + 1 < count; ++i) {
+                shift[i] = (fit[i - 1] + fit[i] + fit[i + 1]) / 3.0f;
+            }
+        }
+        for (size_t i = 1; i < count; ++i) {
+            const f32 ds = glm::max(
+                std::hypot(river.points[i].x - river.points[i - 1].x,
+                           river.points[i].z - river.points[i - 1].z),
+                0.01f);
+            shift[i] = glm::clamp(shift[i], shift[i - 1] - kMaxShiftStep * ds,
+                                  shift[i - 1] + kMaxShiftStep * ds);
+        }
+        for (size_t i = count - 1; i-- > 0;) {
+            const f32 ds = glm::max(
+                std::hypot(river.points[i].x - river.points[i + 1].x,
+                           river.points[i].z - river.points[i + 1].z),
+                0.01f);
+            shift[i] = glm::clamp(shift[i], shift[i + 1] - kMaxShiftStep * ds,
+                                  shift[i + 1] + kMaxShiftStep * ds);
+        }
+        // Fixed points never move; the fit against the walls from the
+        // re-seated axis.
+        fit.resize(count);
+        for (size_t i = 0; i < count; ++i) {
+            const RiverPoint& p = river.points[i];
+            if (lv[i] > -1.0e17f || i < kFixedEnds || i + kFixedEnds >= count) {
+                shift[i] = 0.0f;
+                fit[i] = p.halfWidth;
+                continue;
+            }
+            fit[i] = glm::min(p.halfWidth,
+                              glm::min(left[i] + shift[i], right[i] - shift[i]));
+        }
+        eroded.resize(count);
+        for (size_t i = 0; i < count; ++i) {
+            const size_t a = i > 0 ? i - 1 : i;
+            const size_t b = i + 1 < count ? i + 1 : i;
+            eroded[i] = glm::min(fit[i], glm::min(fit[a], fit[b]));
+        }
+        for (size_t i = 0; i < count; ++i) {
+            const size_t a = i > 0 ? i - 1 : i;
+            const size_t b = i + 1 < count ? i + 1 : i;
+            const f32 mean = (eroded[a] + eroded[i] + eroded[b]) / 3.0f;
+            RiverPoint& p = river.points[i];
+            const f32 hw = glm::max(glm::min(p.halfWidth, mean), kMinHalf);
+            if (hw < p.halfWidth - 0.01f || std::abs(shift[i]) > 0.01f) {
+                ++stats.valleyFitted;
+                stats.valleyShrink += p.halfWidth - hw;
+                stats.valleyShift += std::abs(shift[i]);
+            }
+            p.halfWidth = hw;
+            p.x += px[i] * shift[i];
+            p.z += pz[i] * shift[i];
+        }
+    }
+}
+
 // Tributaries were filled against their receiver's surface
 // BEFORE the pool re-seat and the cascade coalescing moved it:
 // a lowered stem left hanging lips at confluences. Re-clamp
@@ -1820,6 +1950,7 @@ const RelevelPass kRelevelPasses[] = {
     { "slope", [](HydroReleveling& c) { c.capSlopes(); } },
     { "smooth", [](HydroReleveling& c) { c.smoothProfiles(); } },
     { "narrow", [](HydroReleveling& c) { c.narrowSteep(); } },
+    { "valley", [](HydroReleveling& c) { c.fitValleys(); } },
     { "clamps",
       [](HydroReleveling& c) {
           c.reclampTributaries();
