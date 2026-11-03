@@ -323,7 +323,9 @@ layout(std140, binding = 0) uniform FrameUbo {
     // skinned/locallights switch to the hemispheric ambient + wrap/bounce
     // and tonemap.frag to the hue-preserving curve indoors; 0 keeps the
     // exterior byte-identical), z = real-tree fade-out distance (m) - the
-    // far impostors fade IN against it (far_tree.vert), w = free. In BASE:
+    // far impostors fade IN against it (far_tree.vert), w = real-tree
+    // handoff band (m, dither dissolve; < 0 = the legacy scale shrink -
+    // propPresence, prop_encoding.glsl). In BASE:
     // the reflection pass reads the same flags.
     vec4 uVegInfo;
 };
