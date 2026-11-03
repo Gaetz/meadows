@@ -646,9 +646,39 @@ void carveRiverBeds(WaterPass& w, const vector<f32>& preCarve) {
                     // wall disagreement, not a channel: digging there
                     // cut 150 m slot canyons one texel wide through
                     // the walls (razor cliffs, measured). Detail bumps
-                    // to shave stay well inside the envelope.
+                    // to shave stay well inside the envelope. The
+                    // routing window has the last word: where one of
+                    // the four window cells around the spot is wet at
+                    // the course's level, the fine wall is the
+                    // bilinear pinch of a one-cell channel between two
+                    // diagonal cells (half a wall at every corner of
+                    // the staircase), not terrain — the bed is dug
+                    // through it, bounded by bedCutMax like any bed.
+                    f32 windowFloor = 1.0e30f;
+                    if (!w.hydro.filled.empty()) {
+                        const i32 hn = static_cast<i32>(w.hydroSpec.n);
+                        const i32 hx = static_cast<i32>(std::floor(
+                            (px - w.hydroSpec.originX) /
+                            w.hydroSpec.texelSize));
+                        const i32 hz = static_cast<i32>(std::floor(
+                            (pz - w.hydroSpec.originZ) /
+                            w.hydroSpec.texelSize));
+                        for (i32 dz = 0; dz <= 1; ++dz) {
+                            for (i32 dx = 0; dx <= 1; ++dx) {
+                                const i32 cx =
+                                    glm::clamp(hx + dx, 0, hn - 1);
+                                const i32 cz =
+                                    glm::clamp(hz + dz, 0, hn - 1);
+                                windowFloor = glm::min(
+                                    windowFloor,
+                                    w.hydro.filled[static_cast<size_t>(cz) *
+                                                       w.hydroSpec.n +
+                                                   static_cast<size_t>(cx)]);
+                            }
+                        }
+                    }
                     if (glm::mix(a.surface, b.surface, t) <
-                        centerGround -
+                        glm::min(centerGround, windowFloor) -
                             (tierDepthMax + params.bankMaxCut + 4.0f)) {
                         continue;
                     }

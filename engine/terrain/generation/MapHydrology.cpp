@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <queue>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -1968,10 +1970,70 @@ HydroRelevelStats relevelMapHydrology(
     const MapGroundSampler& ground, const vector<f32>& preGround,
     MapHydrology& out, const std::function<void(const char*)>& lap) {
     HydroReleveling ctx { params, hydrology, ground, preGround, out };
+    // Buried course length after each pass (axis ground over the
+    // surface by > 2 / 10 / 30 m, outside the window lakes) against the
+    // fine ground the carves will see — and at extraction against the
+    // window ground the routing ran on: the window-vs-fine
+    // disagreement is the first column, every pass's own share follows.
+    f64 courseKm = 0.0;
+    f64 buried10 = 0.0, buried30 = 0.0;
+    const auto buriedKm = [&](bool windowGround) {
+        f64 total = 0.0, buried = 0.0;
+        buried10 = buried30 = 0.0;
+        for (const River& river : out.hydro.rivers) {
+            for (size_t i = 1; i < river.points.size(); ++i) {
+                const RiverPoint& a = river.points[i - 1];
+                const RiverPoint& b = river.points[i];
+                const f32 len = std::hypot(b.x - a.x, b.z - a.z);
+                total += len;
+                bool inLake = false;
+                for (const Lake& lake : out.hydro.lakes) {
+                    if (lake.covers(b.x, b.z)) {
+                        inLake = true;
+                        break;
+                    }
+                }
+                if (inLake) {
+                    continue;
+                }
+                f32 g;
+                if (windowGround) {
+                    g = b.x >= out.window.originX && b.x <= ctx.winMaxX &&
+                                b.z >= out.window.originZ && b.z <= ctx.winMaxZ
+                            ? bilinearWorld(out.window, out.ground, b.x, b.z)
+                            : b.surface;
+                } else {
+                    g = ctx.fineAt(b.x, b.z);
+                }
+                const f32 over = g - b.surface;
+                buried += over > 2.0f ? len : 0.0f;
+                buried10 += over > 10.0f ? len : 0.0f;
+                buried30 += over > 30.0f ? len : 0.0f;
+            }
+        }
+        courseKm = total / 1000.0;
+        buried10 /= 1000.0;
+        buried30 /= 1000.0;
+        return buried / 1000.0;
+    };
+    char buf[128];
+    const f64 fine2 = buriedKm(false);
+    const f64 fine10 = buried10, fine30 = buried30;
+    const f64 win2 = buriedKm(true);
+    std::snprintf(buf, sizeof(buf),
+                  "extract %.1f/%.1f/%.1f (window %.1f/%.1f/%.1f)", fine2,
+                  fine10, fine30, win2, buried10, buried30);
+    std::string trail = buf;
     for (const RelevelPass& pass : kRelevelPasses) {
         pass.run(ctx);
         lap(pass.name);
+        const f64 k2 = buriedKm(false);
+        std::snprintf(buf, sizeof(buf), " | %s %.1f/%.1f/%.1f", pass.name,
+                      k2, buried10, buried30);
+        trail += buf;
     }
+    LOG_INFO("releveling buried km > 2/10/30 m (of {:.1f}): {}", courseKm,
+             trail);
     return ctx.stats;
 }
 

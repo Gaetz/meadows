@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta)
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta) ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2515,6 +2515,78 @@ briques Z0-Z5 dans le fichier de plan.
   `VegetationScatterTest` inchangé (le refactor est à l'identique :
   même ordre de tirages). Pas d'A/B : l'ancien semis n'était qu'un
   autre tirage, l'A/B « Far impostors from grid » reste.
+
+- **2026-11-03 (suite) — Les tronçons enterrés : l'eau publiée reste
+  dans son chenal (bump v126, caches livrés ; verdict dev en jeu
+  attendu).** Résidu décidé par le dev après le sol low poly : les
+  cours dont l'axe publié passe sous le sol (13 % des coupes de (0,0),
+  19 % de (1,1)). **Instruments d'abord.** Census « buried runs » du
+  rapport (runs de points dont le sol d'axe dépasse l'eau de > 2 m, hors
+  lacs, famille par ce qui les entoure) sur (0,0) : 242 runs, 15,4 km
+  sur 130,6 (11,8 %), longueur médiane 50 m, enterrement médian 34 m /
+  p90 176 m ; sillon à côté (< 2 m à moins de 60 m) 3,5 km, continent
+  lui-même au-dessus de l'eau 11,6 km, étage fin seul 0,2 km. Puis la
+  **trace par passe du re-leveling** (km enterrés > 2 / 10 / 30 m contre
+  le sol fin après chaque passe, et contre la grille de routage à
+  l'extraction) : extraction 61,6 km (54,2 contre la grille ELLE-MÊME) →
+  recentrage 46 → fill 76 → pente 87 → coupe de selle 38,8 → publié 15,4
+  après le carve. Et contre la grille : 54 km au point, mais 11,5 km à
+  une cellule près et 3,5 à deux — **la polyligne publiée quitte son
+  chenal de moins de 8 m**.
+  Deux causes à la publication (`smoothRiver`) : (1) la surface était
+  relue sur la trace brute par FRACTION d'abscisse curviligne, or un
+  escalier 8-connexe est jusqu'à 41 % plus long que sa courbe lissée :
+  le profil glissait le long du cours (26,8 km mappés > 2 m à côté,
+  10 km > 10 m ; 1 284 points « re-bounded > 5 m » = nappes en l'air,
+  chute d'une gorge posée à des centaines de mètres de son encoche).
+  Fix : **projection** sur la trace brute (sommet le plus proche,
+  recherche monotone vers l'aval, puis le segment) → 3,7 / 0,7 km,
+  40 points re-bounded. (2) Le lissage (3 laplaciens 0,55 + spline 8 m)
+  repasse les lacets DANS les fentes : le point lissé sur la paroi.
+  Fix : **rappel dans le chenal** — un point qui lit sec dans la
+  fenêtre (fill au point > eau + 2 m) glisse par bissection vers sa
+  position brute jusqu'à lire mouillé, puis seuls les pas étirés
+  au-delà de 12 m sont re-coupés (le contrat des 8 m de publication,
+  test `steps.back() < 24` ; un ré-échantillonnage complet remettait un
+  tiers des points sur les coins entre deux points rappelés) → enterré
+  au point contre la fenêtre 54,2 → 17,1 km, > 30 m 6,1 → 0,7 km. Côté sol fin : un chenal
+  d'une cellule entre deux cellules diagonales est PINCÉ par le
+  bilinéaire (une demi-paroi à chaque coin de l'escalier) ; le carve
+  S5c y voyait un désaccord fenêtre/fin (porte anti-fente) et ne
+  creusait pas. Fix : **la porte demande à la fenêtre** (min des 4
+  cellules `filled` autour du point) : chenal mouillé au niveau du cours
+  → le lit est creusé, borné par bedCutMax comme tout lit.
+  **Mesuré et écarté** : (a) la fente des rampes de percée — centre
+  coupé au-delà de la borne des flancs (verrou + 2) : 3 400 cellules de
+  rampe en fente sur la carte, 5 200 au continent (stats « ridges » de
+  la passe de percée) ; règle `pierceRidgeGorge` (borne des flancs =
+  max(verrou, coupe du centre) + 2) : enterré 13,4 → 14,9 km et lacs
+  naturels 14 → 10 → **A/B, OFF par défaut** ; (b) le sol connecté
+  (empreinte du fill et du recentrage = fond relié, portée ≥ 1,5
+  cellule) : recentrage 44 → 35 km mais lacs 15 → 7 et publié −0,5 km →
+  retiré ; (c) plafond de mare `kPoolMax` 2,5 → 40 m (des mares au lieu
+  de tunnels sous les remontées du fond) : enterré −10 %, +4 lacs dont
+  une mare de 45 m de fond → **décision dev**, pas touché.
+  **Résultat (0,0)** : enterré 15,4 → 13,7 km (11,8 → 10,0 %), médiane
+  34 → 27 m, runs > 32 m 125 → 109 ; relief, murs, pentes des cours,
+  liserés inchangés ; **lacs naturels 40 → 10** : les lacs perdus sont
+  les mares que le fill posait sur les nappes en l'air (les 1 284
+  points re-bounded) — des artefacts, à vérifier à l'œil.
+  **Structure du résidu** (la trace) : à l'extraction 37,6 km contre le
+  sol fin (8,4 > 10 m, 3,9 > 30 m) = le désaccord fenêtre/fin = chenaux
+  d'UNE cellule (percée du continent à 16 m, incision fluviale) pincés
+  à l'upsampling ; puis le fill (`kPoolMax` 2,5 / recouvrement 1 %)
+  tient l'eau sous toute remontée du fond > 2,5 m : tunnels 34 → 78 km ;
+  la coupe de selle en remet 40 au sol, le carve creuse le reste
+  jusqu'à bedCutMax → 13,7 km publiés. Trois leviers, tous décision
+  dev : élargir les chenaux d'une cellule À LA SOURCE (flancs de
+  percée au continent, talus après incision), des mares au lieu de
+  tunnels (`kPoolMax`), étendre la coupe de selle aux runs longs ou
+  profonds. Instruments permanents : census « buried runs » du rapport,
+  ligne « published courses » de l'hydrologie, trace par passe du
+  re-leveling, stats « ridges » de la percée. `kTileBakeVersion` 126
+  (champ réfléchi ajouté + code), continent + (0,0) + (1,0) recuits et
+  recopiés chez le dev ; hash MapBakerTest ré-épinglé.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

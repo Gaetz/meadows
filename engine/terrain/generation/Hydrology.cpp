@@ -39,9 +39,10 @@ namespace {
 // Grid-traced courses are runs of 8 m steps in the 8 grid directions —
 // straight lines with hard 45° corners. Simplify (drop the stair-steps),
 // smooth through the remaining corners (core::smoothPolyline — the
-// carve pass then follows the same curve as the surface), re-derive the
-// widths by arc length, and clamp the surface monotone downstream (the
-// interpolating spline may overshoot on y).
+// carve pass then follows the same curve as the surface), read the
+// surface and width back from the raw trace by PROJECTION, and clamp
+// the surface monotone downstream (the interpolating spline may
+// overshoot on y).
 void smoothRiver(River& river, const GridSpec& spec,
                  const vector<f32>& filled,
                  const HydrologyParams& params) {
@@ -59,17 +60,9 @@ void smoothRiver(River& river, const GridSpec& spec,
     }
     vector<Vec3> raw;
     raw.reserve(river.points.size());
-    vector<f32> rawArc;
     vector<f32> rawWidth;
-    f32 arc = 0.0f;
-    for (size_t i = 0; i < river.points.size(); ++i) {
-        const RiverPoint& pt = river.points[i];
-        if (i > 0) {
-            arc += std::hypot(pt.x - river.points[i - 1].x,
-                              pt.z - river.points[i - 1].z);
-        }
+    for (const RiverPoint& pt : river.points) {
         raw.push_back({ pt.x, pt.surface, pt.z });
-        rawArc.push_back(arc);
         rawWidth.push_back(pt.halfWidth);
     }
     // Simplify BELOW the publication scale (0.3 x kCourseTexel =
@@ -100,29 +93,109 @@ void smoothRiver(River& river, const GridSpec& spec,
     // Resample the smooth course at a regular step (a straight river
     // simplifies to two points — it still needs dense samples so the
     // ORIGINAL surface profile survives below). The y of the spline is
-    // discarded: surface and width are re-read from the raw polyline by
-    // arc-length fraction, then the surface is clamped monotone.
-    vector<Vec3> course;
-    course.push_back(smooth.front());
+    // discarded: surface and width are re-read from the raw polyline at
+    // each point's projection onto it, then the surface is clamped
+    // monotone.
     const f32 stepLen = texel * 0.5f;
-    for (size_t i = 1; i < smooth.size(); ++i) {
-        const Vec3& a = smooth[i - 1];
-        const Vec3& b = smooth[i];
-        const f32 len = std::hypot(b.x - a.x, b.z - a.z);
-        const u32 divs =
-            glm::max(1u, static_cast<u32>(std::ceil(len / stepLen)));
-        for (u32 s = 1; s <= divs; ++s) {
-            const f32 t = static_cast<f32>(s) / static_cast<f32>(divs);
-            course.push_back(glm::mix(a, b, t));
+    // Resample at the publication step; segments up to `keepBelow`
+    // long are kept whole (0 = every segment is cut to the step).
+    const auto resample = [&](const vector<Vec3>& in, f32 keepBelow) {
+        vector<Vec3> out;
+        out.push_back(in.front());
+        for (size_t i = 1; i < in.size(); ++i) {
+            const Vec3& a = in[i - 1];
+            const Vec3& b = in[i];
+            const f32 len = std::hypot(b.x - a.x, b.z - a.z);
+            const u32 divs =
+                len <= keepBelow
+                    ? 1u
+                    : glm::max(1u,
+                               static_cast<u32>(std::ceil(len / stepLen)));
+            for (u32 s = 1; s <= divs; ++s) {
+                const f32 t = static_cast<f32>(s) / static_cast<f32>(divs);
+                out.push_back(glm::mix(a, b, t));
+            }
         }
+        return out;
+    };
+    // Projection onto the raw trace: the smoothed course stays within
+    // a few metres of the trace it came from, so each published point
+    // reads its level and width from the nearest raw vertex, searched
+    // FORWARD from the previous match (monotone along the course), then
+    // along that vertex's segment. Mapping by arc-length FRACTION slid
+    // the profile along the course wherever the staircase trace and the
+    // smooth curve differ in length ratio (a diagonal reach is 41 %
+    // longer than its straightened curve): a gorge drop landed hundreds
+    // of metres from its notch — water tens of metres under the ground
+    // upstream, a sheet in the air downstream (measured: 27 km of a
+    // map's courses mapped > 2 m off, 10 km > 10 m).
+    const auto projectOnRaw = [&](const Vec3& p, size_t& seg, f32& t) {
+        constexpr size_t kProjectWindow = 64;
+        const size_t hiK = glm::min(seg + kProjectWindow, raw.size() - 1);
+        f32 bestD2 = 1.0e30f;
+        for (size_t k = seg; k <= hiK; ++k) {
+            const f32 ddx = raw[k].x - p.x;
+            const f32 ddz = raw[k].z - p.z;
+            const f32 d2 = ddx * ddx + ddz * ddz;
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                seg = k;
+            }
+        }
+        const size_t next = glm::min(seg + 1, raw.size() - 1);
+        const f32 ax = raw[next].x - raw[seg].x;
+        const f32 az = raw[next].z - raw[seg].z;
+        const f32 l2 = ax * ax + az * az;
+        t = l2 > 1.0e-3f
+                ? glm::clamp(((p.x - raw[seg].x) * ax + (p.z - raw[seg].z) * az) /
+                                 l2,
+                             0.0f, 1.0f)
+                : 0.0f;
+    };
+    vector<Vec3> course = resample(smooth, 0.0f);
+    // Wall pull-back: a smoothed point that climbed out of its channel
+    // (the fill at the point stands above the water it carries) slides
+    // back toward its raw position until it reads wet again — the curve
+    // stays smooth where the floor is wide and follows the trace where
+    // the channel is one cell (ironing a switchback inside a slot put
+    // the course on the slot's wall: 6 km of a map's courses stood
+    // > 30 m above their own water at extraction, measured). Only the
+    // steps the pull stretched past 1.5 x the publication step are
+    // split again (a full resample put a third of the points back on
+    // the corners between two pulled ones).
+    {
+        constexpr f32 kWall = 2.0f;
+        size_t seg = 0;
+        for (Vec3& p : course) {
+            f32 t = 0.0f;
+            projectOnRaw(p, seg, t);
+            const size_t next = glm::min(seg + 1, raw.size() - 1);
+            const f32 level = glm::mix(raw[seg].y, raw[next].y, t);
+            const auto dry = [&](const Vec3& q) {
+                return bilinearWorld(spec, filled, q.x, q.z) - level > kWall;
+            };
+            if (!dry(p)) {
+                continue;
+            }
+            const Vec3 rawP = glm::mix(raw[seg], raw[next], t);
+            if (dry(rawP)) {
+                p = rawP;
+                continue;
+            }
+            Vec3 lo = p;
+            Vec3 hi = rawP;
+            for (i32 it = 0; it < 6; ++it) {
+                const Vec3 mid = (lo + hi) * 0.5f;
+                if (dry(mid)) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            p = hi;
+        }
+        course = resample(course, stepLen * 1.5f);
     }
-    const f32 rawTotal = glm::max(rawArc.back(), 1.0e-3f);
-    f32 courseTotal = 0.0f;
-    for (size_t i = 1; i < course.size(); ++i) {
-        courseTotal += std::hypot(course[i].x - course[i - 1].x,
-                                  course[i].z - course[i - 1].z);
-    }
-    courseTotal = glm::max(courseTotal, 1.0e-3f);
     // Width character (rivers should not all look alike): a per-river
     // factor hashed from the head position plus a slow modulation along
     // the course — deterministic, so the cache stays reproducible.
@@ -144,13 +217,9 @@ void smoothRiver(River& river, const GridSpec& spec,
                               course[i].z - course[i - 1].z);
             outArc += step;
         }
-        const f32 rawAt = outArc / courseTotal * rawTotal;
-        while (seg + 1 < rawArc.size() && rawArc[seg + 1] < rawAt) {
-            ++seg;
-        }
-        const size_t next = glm::min(seg + 1, rawArc.size() - 1);
-        const f32 span = glm::max(rawArc[next] - rawArc[seg], 1.0e-3f);
-        const f32 t = glm::clamp((rawAt - rawArc[seg]) / span, 0.0f, 1.0f);
+        f32 t = 0.0f;
+        projectOnRaw(course[i], seg, t);
+        const size_t next = glm::min(seg + 1, raw.size() - 1);
         // Gradient ratchet: the raw level is a priority-flood surface —
         // flat across every filled stretch (they read as ponds). The
         // water must DESCEND through them (minGradient), while never
@@ -448,6 +517,13 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         u32 rampsRun = 0, rampStepsAll = 0, rampStepsMax = 0;
         f64 rampSlopeSum = 0.0;
         f32 deepestLock = 0.0f;
+        // Ridge cells: a course cell cut deeper than the basin's lock
+        // (a ridge across the ramp). With pierceRidgeGorge the band
+        // follows it; bounded by the lock alone it left a one-cell
+        // slot (the flank cells counted as left).
+        u32 slotCells = 0, slotRamps = 0, slotFlanksSkipped = 0;
+        f32 slotDeepest = 0.0f;
+        bool rampHadSlot = false;
         vector<u32> stack;
         vector<u32> component;
         for (size_t seed = 0; seed < cells; ++seed) {
@@ -554,6 +630,17 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
             const auto lowerBand = [&](size_t center, f32 level0) {
                 const i32 cx = static_cast<i32>(center % spec.n);
                 const i32 cz = static_cast<i32>(center / spec.n);
+                const f32 centreCut = passGround[center] - level0;
+                if (centreCut > lockDepth + 2.0f) {
+                    ++slotCells;
+                    rampHadSlot = true;
+                    slotDeepest = glm::max(slotDeepest, centreCut);
+                }
+                const f32 flankBound =
+                    (params.pierceRidgeGorge
+                         ? glm::max(lockDepth, centreCut)
+                         : lockDepth) +
+                    2.0f;
                 for (i32 dz = -bandR; dz <= bandR; ++dz) {
                     for (i32 dx = -bandR; dx <= bandR; ++dx) {
                         const i32 px = cx + dx;
@@ -578,14 +665,17 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                             static_cast<size_t>(pz) * spec.n +
                             static_cast<size_t>(px);
                         // The band drains a basin lockDepth deep: no
-                        // cell beside the course loses more than that.
-                        // Unbounded, the band (up to 192 m wide) carved
-                        // every canyon wall its ramp ran along down to
-                        // the ramp — 300 m cuts from 20 m basins, half
-                        // the cut volume of a map (measured). The
-                        // course cell itself always reaches the ramp.
+                        // cell beside the course loses more than that
+                        // (or more than the course cell itself loses,
+                        // pierceRidgeGorge). Unbounded, the band (up to
+                        // 192 m wide) carved every canyon wall its ramp
+                        // ran along down to the ramp — 300 m cuts from
+                        // 20 m basins, half the cut volume of a map
+                        // (measured). The course cell itself always
+                        // reaches the ramp.
                         if (dist > 0.0f &&
-                            passGround[p] - target > lockDepth + 2.0f) {
+                            passGround[p] - target > flankBound) {
+                            slotFlanksSkipped += centreCut > lockDepth + 2.0f;
                             continue;
                         }
                         ground[p] = glm::min(ground[p], target);
@@ -596,6 +686,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 ++gorges;
                 deepestLock = glm::max(deepestLock, lockDepth);
             }
+            rampHadSlot = false;
             lowerBand(gate, ramp);
             // ~3 km of downstream ramp in world length, texel-free.
             const u32 maxRampSteps = static_cast<u32>(
@@ -682,6 +773,7 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
                 cur = next;
             }
             ++pierced;
+            slotRamps += rampHadSlot ? 1 : 0;
             if (rampSteps > 0) {
                 ++rampsRun;
                 rampStepsAll += rampSteps;
@@ -691,14 +783,16 @@ void pierceLakeOutlets(const GridSpec& spec, vector<f32>& ground,
         }
         LOG_INFO("pierce pass {}: {} basins, {} pierced ({} gorges, "
                  "deepest lock {:.0f} m), ramps {} (mean {:.0f} m, longest "
-                 "{:.0f} m, slope mean {:.1f} %) | flood {:.2f} s, route "
-                 "{:.2f} s",
+                 "{:.0f} m, slope mean {:.1f} %) | ridges: {} ramps, {} "
+                 "cells, deepest {:.0f} m, {} flank cells left | flood "
+                 "{:.2f} s, route {:.2f} s",
                  pass, nextLabel, pierced, gorges, deepestLock, rampsRun,
                  rampsRun ? static_cast<f32>(rampStepsAll) * spec.texelSize /
                                 static_cast<f32>(rampsRun)
                           : 0.0f,
                  static_cast<f32>(rampStepsMax) * spec.texelSize,
                  rampsRun ? 100.0 * rampSlopeSum / rampsRun : 0.0,
+                 slotRamps, slotCells, slotDeepest, slotFlanksSkipped,
                  std::chrono::duration<f64>(floodEnd - passStart)
                      .count(),
                  routeSec);
@@ -1132,6 +1226,60 @@ HydrologyResult extractHydrology(const GridSpec& spec,
     }
     LOG_INFO("hydrology: {} smoothed course points re-bounded > 5 m",
              reBound);
+    // Where the published points stand against the routing grid they
+    // came from: course length whose surface lies > 2 m under the
+    // ground at the point, under the lowest cell within 1 and 2 cells
+    // (lateral tolerance 8 / 16 m), and under the FILL at the point
+    // (the profile slid along the course or the ratchet dug).
+    {
+        f64 total = 0.0, underCell = 0.0, under1 = 0.0, under2 = 0.0,
+            underFill = 0.0;
+        const auto lowestAround = [&](f32 x, f32 z, i32 r) {
+            const i32 cx = static_cast<i32>(std::lround(
+                (x - spec.originX) / spec.texelSize));
+            const i32 cz = static_cast<i32>(std::lround(
+                (z - spec.originZ) / spec.texelSize));
+            f32 lo = 1.0e30f;
+            for (i32 dz = -r; dz <= r; ++dz) {
+                for (i32 dx = -r; dx <= r; ++dx) {
+                    const i32 px = cx + dx;
+                    const i32 pz = cz + dz;
+                    if (px < 0 || pz < 0 || px >= n || pz >= n) {
+                        continue;
+                    }
+                    lo = glm::min(lo, height[static_cast<size_t>(pz) * spec.n +
+                                             static_cast<size_t>(px)]);
+                }
+            }
+            return lo;
+        };
+        for (const River& river : out.rivers) {
+            for (size_t i = 1; i < river.points.size(); ++i) {
+                const RiverPoint& a = river.points[i - 1];
+                const RiverPoint& b = river.points[i];
+                const f32 len = std::hypot(b.x - a.x, b.z - a.z);
+                total += len;
+                if (acceptedLake[static_cast<size_t>(glm::clamp(
+                        static_cast<i32>(std::lround((b.z - spec.originZ) / spec.texelSize)), 0, n - 1)) * spec.n +
+                                 static_cast<size_t>(glm::clamp(
+                        static_cast<i32>(std::lround((b.x - spec.originX) / spec.texelSize)), 0, n - 1))]) {
+                    continue;
+                }
+                const f32 g = bilinearWorld(spec, height, b.x, b.z) - b.surface;
+                const f32 f = bilinearWorld(spec, out.filled, b.x, b.z) - b.surface;
+                underCell += g > 2.0f ? len : 0.0f;
+                under1 += lowestAround(b.x, b.z, 1) - b.surface > 2.0f ? len : 0.0f;
+                under2 += lowestAround(b.x, b.z, 2) - b.surface > 2.0f ? len : 0.0f;
+                underFill += f > 2.0f ? len : 0.0f;
+            }
+        }
+        LOG_INFO("hydrology: published courses {:.1f} km — surface > 2 m "
+                 "under the ground at the point {:.1f} km, under the lowest "
+                 "cell within 1 cell {:.1f} km, within 2 cells {:.1f} km, "
+                 "under the fill at the point {:.1f} km",
+                 total / 1000.0, underCell / 1000.0, under1 / 1000.0,
+                 under2 / 1000.0, underFill / 1000.0);
+    }
     out.lakes.insert(out.lakes.end(),
                      std::make_move_iterator(ponds.begin()),
                      std::make_move_iterator(ponds.end()));

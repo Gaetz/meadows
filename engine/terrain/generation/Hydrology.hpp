@@ -225,6 +225,21 @@ struct HydrologyParams {
     // trades slope for slot depth ((cap - gradient) x ramp length);
     // 4 % measured too deep. 0 = the minimum-gradient ramp (A/B).
     f32 pierceRampSlope { 0.02f };
+    // The band's flank bound follows the course cell: a ridge ACROSS
+    // the ramp (the course cell itself cut deeper than the basin's
+    // lock) gets a gorge as deep as that cut, with the notch's own
+    // flanks. Bounded by the lock alone, the course cell still reached
+    // the ramp but no flank could follow: a one-cell slot the bilinear
+    // fine transfer and the smoothed polylines cannot sit in — the
+    // course published metres to a hundred metres under the terrain
+    // (the buried runs, PAYSAGE §7.8). A wall ALONG the ramp is still
+    // bounded: there the course cell's own cut is small. OFF by
+    // measure: on map (0,0) the gorges dug under ~450 ramps drained
+    // natural lakes (14 -> 10) and left MORE buried course (13.4 ->
+    // 14.9 km) — a slot is better served by the course staying inside
+    // it (smoothRiver's pull-back) and by the bed carve's window gate.
+    // The knob stays for the A/B.
+    bool pierceRidgeGorge { false };
     // Mouth flare (estuaries): a course that reaches the sea opens
     // over its last metres — half-width ramps to x mouthFlare. The
     // ribbon and the bed carve both read hw, so the bed follows.
@@ -292,6 +307,7 @@ struct HydrologyParams {
         REFLECT_FIELD(pierceMinDepth)
         REFLECT_FIELD(lakeKeepArea)
         REFLECT_FIELD(pierceRampSlope)
+        REFLECT_FIELD(pierceRidgeGorge)
         REFLECT_FIELD(mouthFlare)
         REFLECT_FIELD(mouthFlareLength)
         REFLECT_FIELD(riverArea)

@@ -1853,6 +1853,154 @@ void reportRiverSections(const ReportContext& ctx) {
                  100.0 * lenSteep / lenTotal, median(slopes),
                  percentile(slopes, 90));
     }
+    // Buried runs: consecutive course points whose published axis
+    // ground stands > 2 m above the water (outside lakes), as RUNS.
+    // Each run is sorted into one family by what surrounds it:
+    //   groove  — a lower ground (< +2 m) within 60 m beside the axis:
+    //             the polyline rides a spur next to its real channel;
+    //   inherit — no groove and the continent ground is itself above
+    //             the water there: the map routed water through
+    //             terrain the continent never pierced;
+    //   fine    — no groove, continent at or under the water: the fine
+    //             stage (erosion, carve gate) raised the ground back.
+    {
+        constexpr f32 kBuried = 2.0f;
+        constexpr f32 kGrooveOut = 60.0f;
+        constexpr f32 kBorder = 100.0f;
+        struct Run {
+            f32 x, z, len, worst, groove, cont;
+            u32 tier, family; // 0 groove, 1 inherit, 2 fine
+            bool border;
+        };
+        vector<Run> runs;
+        f64 courseLen = 0.0, buriedLen = 0.0;
+        f64 lenByTier[3] = {}, buriedByTier[3] = {};
+        for (const auto& river : view.rivers) {
+            const size_t count = river.points.size();
+            if (count < 3) {
+                continue;
+            }
+            const u32 tier = glm::min(static_cast<u32>(river.tier), 2u);
+            vector<f32> excess(count, 0.0f);
+            vector<f32> seg(count, 0.0f);
+            vector<u8> flag(count, 0);
+            for (size_t i = 0; i < count; ++i) {
+                const auto& pt = river.points[i];
+                excess[i] = view.height(pt.x, pt.z) - pt.surface;
+                flag[i] = excess[i] > kBuried && !underLake(pt.x, pt.z) ? 1 : 0;
+                if (i > 0) {
+                    seg[i] = std::hypot(pt.x - river.points[i - 1].x,
+                                        pt.z - river.points[i - 1].z);
+                    courseLen += seg[i];
+                    lenByTier[tier] += seg[i];
+                }
+            }
+            size_t i = 0;
+            while (i < count) {
+                if (!flag[i]) {
+                    ++i;
+                    continue;
+                }
+                size_t j = i;
+                f32 len = 0.0f, worst = excess[i];
+                size_t worstAt = i;
+                while (j + 1 < count && flag[j + 1]) {
+                    ++j;
+                    len += seg[j];
+                    if (excess[j] > worst) {
+                        worst = excess[j];
+                        worstAt = j;
+                    }
+                }
+                buriedLen += len;
+                buriedByTier[tier] += len;
+                // Groove probe at the deepest burial, across the course.
+                const auto& pt = river.points[worstAt];
+                const size_t fwI = worstAt + 1 < count ? worstAt + 1 : worstAt;
+                const size_t bwI = worstAt > 0 ? worstAt - 1 : worstAt;
+                const f32 dx = river.points[fwI].x - river.points[bwI].x;
+                const f32 dz = river.points[fwI].z - river.points[bwI].z;
+                const f32 dl = glm::max(std::hypot(dx, dz), 0.01f);
+                const f32 px = -dz / dl;
+                const f32 pz = dx / dl;
+                f32 groove = 1.0e30f;
+                for (f32 d = 4.0f; d <= pt.halfWidth + kGrooveOut; d += 4.0f) {
+                    groove = glm::min(groove,
+                                      view.height(pt.x + px * d, pt.z + pz * d) -
+                                          pt.surface);
+                    groove = glm::min(groove,
+                                      view.height(pt.x - px * d, pt.z - pz * d) -
+                                          pt.surface);
+                }
+                f32 c = 0.0f;
+                const bool hasC = continent && continent->heightAt(pt.x, pt.z, c);
+                const f32 cont = hasC ? c - pt.surface : -1.0e30f;
+                const u32 family = groove < kBuried ? 0u
+                                   : cont > kBuried  ? 1u
+                                                     : 2u;
+                const bool border =
+                    pt.x < view.minX + kBorder || pt.x > view.maxX - kBorder ||
+                    pt.z < view.minZ + kBorder || pt.z > view.maxZ - kBorder;
+                runs.push_back({ pt.x, pt.z, len, worst, groove, cont, tier,
+                                 family, border });
+                i = j + 1;
+            }
+        }
+        if (!runs.empty() && courseLen > 0.0) {
+            u32 byFamily[3] = {}, byFamilyBorder[3] = {};
+            f64 lenByFamily[3] = {};
+            vector<f32> lens, worsts;
+            u32 shortRuns = 0, deepRuns = 0, shallowRuns = 0;
+            for (const Run& r : runs) {
+                ++byFamily[r.family];
+                lenByFamily[r.family] += r.len;
+                byFamilyBorder[r.family] += r.border ? 1 : 0;
+                lens.push_back(r.len);
+                worsts.push_back(r.worst);
+                shortRuns += r.len <= 160.0f && r.worst <= 32.0f ? 1 : 0;
+                shallowRuns += r.worst <= 8.0f ? 1 : 0;
+                deepRuns += r.worst > 32.0f ? 1 : 0;
+            }
+            const auto pctLen = [](f64 part, f64 whole) {
+                return whole > 0.0 ? 100.0 * part / whole : 0.0;
+            };
+            LOG_INFO("  buried runs (axis ground > {:.0f} m over the water, "
+                     "outside lakes): {} runs, {:.1f} of {:.1f} km ({:.1f} %; by "
+                     "tier r/R/F {:.1f}/{:.1f}/{:.1f} %), length median {:.0f} / "
+                     "p90 {:.0f} m, burial median {:.1f} / p90 {:.1f} m; saddle-"
+                     "sized (<= 160 m, <= 32 m) {}, shallow <= 8 m {}, deep > 32 "
+                     "m {}",
+                     kBuried, runs.size(), buriedLen / 1000.0, courseLen / 1000.0,
+                     pctLen(buriedLen, courseLen),
+                     pctLen(buriedByTier[0], lenByTier[0]),
+                     pctLen(buriedByTier[1], lenByTier[1]),
+                     pctLen(buriedByTier[2], lenByTier[2]), median(lens),
+                     percentile(lens, 90), median(worsts),
+                     percentile(worsts, 90), shortRuns, shallowRuns, deepRuns);
+            LOG_INFO("  buried runs by family: groove beside (< {:.0f} m within "
+                     "{:.0f} m) {} runs {:.1f} km ({} at a map line), continent "
+                     "above the water too {} runs {:.1f} km ({} at a line), fine "
+                     "stage only {} runs {:.1f} km ({} at a line)",
+                     kBuried, kGrooveOut, byFamily[0], lenByFamily[0] / 1000.0,
+                     byFamilyBorder[0], byFamily[1], lenByFamily[1] / 1000.0,
+                     byFamilyBorder[1], byFamily[2], lenByFamily[2] / 1000.0,
+                     byFamilyBorder[2]);
+            std::sort(runs.begin(), runs.end(), [](const Run& a, const Run& b) {
+                return a.len > b.len;
+            });
+            for (size_t n = 0; n < glm::min<size_t>(runs.size(), 8); ++n) {
+                const Run& r = runs[n];
+                LOG_INFO("    buried run tier {} at ({:.0f}, {:.0f}): {:.0f} m "
+                         "long, burial {:.0f} m, groove beside {:+.0f} m, "
+                         "continent {:+.0f} m, {}{}",
+                         r.tier, r.x, r.z, r.len, r.worst,
+                         r.groove < 1.0e29f ? r.groove : 0.0f,
+                         r.cont > -1.0e29f ? r.cont : 0.0f,
+                         r.family == 0 ? "groove" : r.family == 1 ? "inherit" : "fine",
+                         r.border ? ", at a map line" : "");
+            }
+        }
+    }
 }
 
 // The MASTER network's own courses (128 m, routed on the border-SHAPED
