@@ -2304,6 +2304,8 @@ FrameComposerInputs WorldRenderer::composerInputs(
                                       render::TerrainSystem::kChunkSize
                                 : 0.0f,
         .treeFadeEnd = vegetation.treeFadeEnd(),
+        .treeHandoffBand =
+            tuning.treeDitherHandoff ? tuning.treeHandoffBand : -1.0f,
         .seasonAutumn = tuning.seasonAutumn,
         .seasonLeafFall = tuning.seasonLeafFall,
         .leafSeason = vegetation.leafSeason(),

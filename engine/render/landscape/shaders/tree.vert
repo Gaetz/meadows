@@ -28,6 +28,9 @@ layout(location = 8) out vec3 vObjNormal;
 // Height above the instance base — the ground-anchor blend (tree.frag).
 layout(location = 6) out float vGroundDelta;
 layout(location = 9) out float vBurn; // the fire's canopy burn at this tree
+// Presence at the end of the reach (propPresence): tree.frag dithers the
+// prop out by it under the dither handoff; 1 = untouched.
+layout(location = 10) out float vPresence;
 
 void main() {
     float yaw = aParams.x;
@@ -56,10 +59,14 @@ void main() {
                             : aUv.x;
 
     // Distance fade, per category: trees carry to the fog line, rocks
-    // and bushes bow out earlier.
+    // and bushes bow out earlier. The handoff mode (prop_encoding.glsl,
+    // uVegInfo.w) decides whether the prop shrinks here (legacy) or
+    // keeps its size and dissolves in the fragment (dither).
     float fadeEnd = propFadeEnd(aParams);
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float fade = 1.0 - smoothstep(fadeEnd * 0.86, fadeEnd, dist);
+    float presence = propPresence(fadeEnd, dist);
+    bool dither = ditherHandoff();
+    float fade = dither ? 1.0 : presence;
     // Density ramp for the SHORT-REACH textured clutter (the grass
     // prefix idea, per instance): a stable hash key thins the field with
     // distance — near shows everything, far a deterministic subset. This
@@ -135,5 +142,6 @@ void main() {
     vWorldPos = world;
     vGroundDelta = world.y - aPosScale.y;
     vBurn = burn;
+    vPresence = dither ? presence : 1.0;
     gl_Position = uViewProj * vec4(world, 1.0);
 }

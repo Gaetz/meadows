@@ -2453,6 +2453,36 @@ briques Z0-Z5 dans le fichier de plan.
   rapprocher la bascule vrais arbres / impostors (880 m) pour rendre du
   budget d'arbres réels.
 
+- **2026-11-03 (suite) — La bascule arbre réel / impostor par tramage
+  (validé en jeu par le dev).** Verdict dev sur
+  les impostors cuits : « beaucoup mieux » (commit `e212fd9`), mais
+  « l'arbre 3D a l'air de pousser » à la bascule. Cause : `tree.vert` (et
+  le caster `shadow_prop.vert`) réduisaient l'arbre vers sa base sur les
+  derniers 14 % de sa portée (`1 − smoothstep(0,86·reach, reach)`), et
+  l'impostor s'estompait en face (0,8 → 1,0 de la portée) : une
+  croissance visible, puis un double peuplement. La question du dev —
+  « la transparence aurait un coût ? » — oui pour un vrai mélange alpha
+  (tri, pas d'écriture de profondeur, surdessin dans une passe
+  translucide), non pour le **tramage d'écran** (IGN) que l'impostor
+  utilisait déjà : un `discard` par pixel, profondeur conservée, zéro
+  mélange. Règle unique `propPresence` (`prop_encoding.glsl`, lue par
+  `uVegInfo.w`) : **DITHER** (w ≥ 0, défaut 40 m, plafonné à 14 % de la
+  portée) — le prop garde sa taille, `tree.frag` jette les pixels où sa
+  présence ne bat pas le bruit, `far_tree.frag` garde exactement les
+  pixels complémentaires (même bruit, même distance 3D) ; le caster
+  d'ombre trame de même dans l'espace des texels d'ombre, le PCF en fait
+  un fondu doux ; les quads d'impostor entièrement absents sont écrasés
+  au sommet (plus de pleine forêt discardée pixel par pixel dans
+  l'anneau). **LEGACY** (w < 0) = le rétrécissement d'avant, A/B « Tree/
+  impostor dither handoff » + curseur « Tree handoff band (m) » (panneau
+  terrain, section Vegetation ; 1 m = quasi-apparition immédiate). La
+  règle couvre tous les props (rochers, buissons : fondu par tramage sur
+  14 % de leur portée au lieu du rétrécissement). Boot sandbox 40 s
+  Release propre. Limite connue : impostors et arbres réels sont deux
+  semis indépendants (masque de forêt vs scatter de chunk), la
+  complémentarité est statistique, pas arbre par arbre — levée par la
+  brique suivante (semis commun).
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

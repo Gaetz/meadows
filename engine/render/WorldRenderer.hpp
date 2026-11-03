@@ -388,6 +388,13 @@ public:
         // A/B: far-tree impostors read the baked atlas of the real
         // variants (TreeImpostorAtlas); off = the analytic discs.
         bool bakedTreeImpostors { true };
+        // Real-tree / far-impostor handoff (A/B): on = the tree keeps its
+        // size and dissolves by screen dither over treeHandoffBand
+        // metres at the end of its reach, the impostor dissolving the
+        // complementary pixels; off = the tree shrinks to its base over
+        // the last 14 % while the impostor fades in (the "growing" look).
+        bool treeDitherHandoff { true };
+        f32 treeHandoffBand { 40.0f }; // m, capped at 14 % of the reach
         bool mist { true };         // ground-mist raymarch (§3.5)
         // Live mist tuning (panel "Ground mist"); density/coverage are
         // weather-owned and ride AtmosphereParams instead.

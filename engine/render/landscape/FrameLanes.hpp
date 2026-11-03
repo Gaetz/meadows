@@ -370,7 +370,9 @@ using FrameVec4x8 = Vec4[8];
       "skinned/locallights switch to the hemispheric ambient + wrap/bounce\n" \
       "and tonemap.frag to the hue-preserving curve indoors; 0 keeps the\n" \
       "exterior byte-identical), z = real-tree fade-out distance (m) - the\n" \
-      "far impostors fade IN against it (far_tree.vert), w = free. In BASE:\n" \
+      "far impostors fade IN against it (far_tree.vert), w = real-tree\n" \
+      "handoff band (m, dither dissolve; < 0 = the legacy scale shrink -\n" \
+      "propPresence, prop_encoding.glsl). In BASE:\n" \
       "the reflection pass reads the same flags.")
 
 // Scalars both sides must agree on. The GLSL side reads them from the

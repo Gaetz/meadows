@@ -76,6 +76,9 @@ struct FrameComposerInputs {
     // Real-tree fade-out distance — the far impostors fade IN against
     // it (uVegInfo.z) so the handoff tracks the vegetation ring.
     f32 treeFadeEnd { 880.0f };
+    // Real-tree / impostor handoff (uVegInfo.w): band in metres of the
+    // dither dissolve; < 0 = the legacy scale shrink (Tuning A/B).
+    f32 treeHandoffBand { 40.0f };
     // Seasons: autumn tint blend and leaf fall (0..1 each), applied per
     // leaf-mask atlas slot through `leafSeason` (rgb tint, a =
     // seasonality — VegetationSystem::leafSeason()).

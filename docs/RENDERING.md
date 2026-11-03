@@ -852,6 +852,15 @@ radius — the checklist, for the next time a cap hides somewhere:
   azimuth tiles, un-premultiplies by the baked coverage and lights
   with an ellipsoid normal. The analytic discs stay as the A/B
   (`ImpostorPush.info.x`). Journal: `docs/PAYSAGE.md` §7.7.
+- **Real-tree / impostor handoff** (`propPresence`, `prop_encoding.glsl`,
+  `uVegInfo.w`): the prop keeps its size and dissolves by screen dither
+  (IGN, depth writes kept, no blending) over a band at the end of its
+  reach — `tree.frag` keeps the pixels whose presence beats the noise,
+  `far_tree.frag` the complement, `shadow_prop.frag` dithers the caster
+  in shadow-texel space (PCF softens it). Fully absent impostor quads
+  collapse in the vertex shader. A/B (`Tuning::treeDitherHandoff`, off =
+  the legacy scale shrink over the last 14 %) + band slider in the
+  terrain panel, Vegetation.
 - **ChunkOcclusion** rings/rays follow the ring (`configure`): reach =
   the full ring, fan doubles past 1 km so a ray still subtends < 1
   chunk. Horizon table cost grows with both.

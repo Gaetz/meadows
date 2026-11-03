@@ -400,6 +400,10 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r,
         // reflected range) accepts up to 24.
         ImGui::SliderInt("Veg view radius (chunks)",
                          &vegetation.viewRadius, 4, 15);
+        ImGui::Checkbox("Tree/impostor dither handoff (A/B)",
+                        &r.tuning.treeDitherHandoff);
+        ImGui::SliderFloat("Tree handoff band (m)",
+                           &r.tuning.treeHandoffBand, 1.0f, 200.0f, "%.0f");
         rangedSliderInt<&Tuning::vegHighDetailRadius>(
             "Veg high-detail radius", vegetation.highDetailRadius);
         // 80-face twins within; 20-face ultra beyond.

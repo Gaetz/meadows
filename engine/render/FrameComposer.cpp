@@ -101,7 +101,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // impostor handoff and shades its props with the same interior
         // flag as the main view.
         .vegInfo = { in.barkEnabled ? 1.0f : 0.0f,
-                     in.interiorMode ? 1.0f : 0.0f, in.treeFadeEnd, 0.0f },
+                     in.interiorMode ? 1.0f : 0.0f, in.treeFadeEnd,
+                     in.treeHandoffBand },
     };
 
     // Post-init (a C array cannot take a designated initializer from

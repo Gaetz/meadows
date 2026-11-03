@@ -2,6 +2,7 @@
 #include "compat.glsl"
 #include "common.glsl"
 #include "sky.glsl"
+#include "view_util.glsl"
 #include "prop_encoding.glsl"
 
 layout(binding = 0) uniform sampler2D uLeafMask;
@@ -92,10 +93,17 @@ layout(location = 6) in float vGroundDelta;
 layout(location = 7) in vec4 vObjPos;
 layout(location = 8) in vec3 vObjNormal;
 layout(location = 9) in float vBurn;
+layout(location = 10) in float vPresence;
 
 layout(location = 0) out vec4 fragColor;
 
 void main() {
+    // End-of-reach handoff to the far impostor: a screen-dither dissolve
+    // (depth writes kept, no blending); far_tree.frag keeps the
+    // complementary pixels of the same noise.
+    if (vPresence < 1.0 && vPresence <= ignJitter(gl_FragCoord.xy)) {
+        discard;
+    }
     // Leaf cards: cutout through the shared leaf-cluster mask, plus a
     // per-leaf shade roll (r channel) so a card reads as many leaves.
     // Mip averaging thins alpha-tested coverage until distant foliage

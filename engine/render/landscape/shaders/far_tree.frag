@@ -25,6 +25,7 @@ layout(location = 1) in vec2 vUv;
 layout(location = 2) in vec4 vParams;
 layout(location = 3) in float vFade;
 layout(location = 4) in vec3 vToCam;
+layout(location = 5) in float vHandoff;
 layout(location = 0) out vec4 fragColor;
 
 const float kRows = 5.0;        // atlas rows = tree variants
@@ -43,8 +44,10 @@ vec3 hueRoll(float jitter) {
 
 void main() {
     // Dither dissolve for the distance fades (IGN — keeps depth writes).
+    // vHandoff is the real tree's presence: it keeps the pixels where
+    // its presence beats the same noise (tree.frag), we keep the rest.
     float ign = ignJitter(gl_FragCoord.xy);
-    if (vFade <= ign) {
+    if (vFade <= ign || vHandoff > ign) {
         discard;
     }
     float cloudVis = cloudShadowFactor(vWorldPos);

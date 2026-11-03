@@ -15,6 +15,7 @@ layout(std140, binding = 1) uniform ShadowUbo { mat4 uLightViewProj; };
 // Leaf-mask uv for cards; kNoCardUv = not a card. The caster must cut the
 // same holes as tree.frag or canopy shadows stay full rectangles.
 layout(location = 0) out vec2 vCardUv;
+layout(location = 1) out float vPresence; // see tree.vert
 
 void main() {
     float yaw = aParams.x;
@@ -35,7 +36,9 @@ void main() {
     // The textured plants never reach this caster — drawDepth skips
     // their families — but the mirror keeps the contract.
     float fadeEnd = propFadeEnd(aParams);
-    float fade = 1.0 - smoothstep(fadeEnd * 0.86, fadeEnd, dist);
+    float presence = propPresence(fadeEnd, dist);
+    bool dither = ditherHandoff();
+    float fade = dither ? 1.0 : presence;
     // The PEBBLE family (kFamilies: castsShadow = false) casts no
     // shadow: drawDepth already skips its variant slots, so this scale
     // guard only reaches explicit (showcase) instances. Expressed as a
@@ -77,5 +80,6 @@ void main() {
         vCardUv = vec2((uv01.x + slot) / kPropCardSlotCount, uv01.y);
     }
 
+    vPresence = dither ? presence : 1.0;
     gl_Position = uLightViewProj * vec4(world, 1.0);
 }

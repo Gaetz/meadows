@@ -1,11 +1,14 @@
 #version 460 core
 #include "compat.glsl"
 #include "common.glsl"
+#include "prop_encoding.glsl"
 
 // Far-tree impostors (FarTerrain): one cylindrical billboard per
-// instance, corners from the vertex index (no per-vertex buffer). Fades
-// in where the real trees end and out into the veil — the dissolve
-// happens in the fragment (depth-write-friendly dither discard).
+// instance, corners from the vertex index (no per-vertex buffer). Takes
+// over where the real trees end (the handoff mode of propPresence:
+// dither = the complement of the real tree's dissolve, legacy = a
+// fade-in alongside its shrink) and fades out into the veil — the
+// dissolves happen in the fragment (depth-write-friendly dither discard).
 // Two looks share the quad (uImpostorInfo.x): the baked atlas
 // (TreeImpostorAtlas — the real variant rendered from 16 directions;
 // the quad spans the tile's box, 2 x kBoxHalf of the tree's "fit"
@@ -26,6 +29,7 @@ layout(location = 1) out vec2 vUv; // x in [-0.5,0.5], y in [0,1]
 layout(location = 2) out vec4 vParams;
 layout(location = 3) out float vFade;
 layout(location = 4) out vec3 vToCam;
+layout(location = 5) out float vHandoff; // real tree's presence (dither mode)
 
 const float kBoxHalf = 0.75;
 
@@ -54,16 +58,29 @@ void main() {
         p = ground + right * (c.x * h * abs(aParams.z)) +
             vec3(0.0, c.y * h, 0.0);
     }
-    vWorldPos = p;
-    vUv = c;
-    vParams = aParams;
-    vToCam = toCam;
-    // In past the real-tree fade (uVegInfo.z tracks the vegetation
+    // In past the real-tree reach (uVegInfo.z tracks the vegetation
     // ring), out into the fog veil. The fade-out ends at kFarTreeFar, the
     // INNER ring's Config.treeFar (FarTerrain, WorldRenderer's create):
     // the bake stops scattering impostors there — change both together.
     float fadeEnd = max(uVegInfo.z, 100.0);
-    vFade = smoothstep(fadeEnd * 0.8, fadeEnd + 20.0, d) *
-            (1.0 - smoothstep(kFarTreeFar - 1000.0, kFarTreeFar, d));
+    float veil = 1.0 - smoothstep(kFarTreeFar - 1000.0, kFarTreeFar, d);
+    if (ditherHandoff()) {
+        // Same distance as tree.vert measures, so the two dissolves are
+        // complements pixel for pixel.
+        vHandoff = propPresence(fadeEnd, length(toCam));
+        vFade = veil;
+    } else {
+        vHandoff = 0.0;
+        vFade = smoothstep(fadeEnd * 0.8, fadeEnd + 20.0, d) * veil;
+    }
+    // Nothing to draw: collapse the quad instead of discarding every
+    // fragment (the whole wood inside the vegetation ring).
+    if (vFade <= 0.0 || vHandoff >= 1.0) {
+        p = ground;
+    }
+    vWorldPos = p;
+    vUv = c;
+    vParams = aParams;
+    vToCam = toCam;
     gl_Position = uViewProj * vec4(p, 1.0);
 }

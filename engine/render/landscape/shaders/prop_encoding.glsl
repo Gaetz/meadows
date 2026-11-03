@@ -70,3 +70,20 @@ bool hasBark(float lane) {
 float barkYaw(float lane) {
     return lane - 1.0;
 }
+
+// Real prop presence at `dist` (1 = drawn, 0 = gone) at the end of its
+// reach, under the handoff mode uVegInfo.w selects (requires common.glsl):
+// DITHER (w >= 0): the prop keeps its size, the fragment dissolves it by
+// screen dither over w metres (capped at 14 % of the reach) while the far
+// impostor keeps the complementary pixels (far_tree.*); LEGACY (w < 0):
+// tree.vert / shadow_prop.vert scale the prop to its base by this value
+// over the last 14 % and the impostor fades in alongside.
+bool ditherHandoff() {
+    return uVegInfo.w >= 0.0;
+}
+
+float propPresence(float fadeEnd, float dist) {
+    float band = ditherHandoff() ? min(max(uVegInfo.w, 1.0), fadeEnd * 0.14)
+                                 : fadeEnd * 0.14;
+    return 1.0 - smoothstep(fadeEnd - band, fadeEnd, dist);
+}
