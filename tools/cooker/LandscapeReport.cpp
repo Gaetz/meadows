@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <unordered_map>
 
 #include <stb_image_write.h>
 
@@ -17,6 +18,8 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/render/landscape/TerrainSystem.hpp"
+#include "engine/terrain/TerrainNoise.hpp"
 #include "engine/terrain/generation/ContinentGround.hpp"
 #include "engine/terrain/generation/MapExport.hpp"
 #include "engine/terrain/generation/MasterNetwork.hpp"
@@ -259,6 +262,7 @@ struct ReportContext {
     u64 key { 0 };
     f32 longestX { 0.0f };
     f32 longestZ { 0.0f };
+    std::optional<Vec2> zoomAt; // --at x z: the local dump
 };
 
 // Distance from (x, z) to the nearest of the map's four border lines.
@@ -2105,12 +2109,362 @@ void appendHistoryLine(const ReportContext& ctx) {
     }
 }
 
+// The terrain mesh the game draws, at one LOD, at (x, z): the chunk
+// mesher's vertices (multiples of `spacing`, meshHeight = the min over
+// the flow-gated support at coarse LODs) and its triangulation (the
+// i00-i11 diagonal). Vertices are memoised per LOD: a census touches
+// each one many times.
+struct LodMesh {
+    const render::TerrainParams& tp;
+    f32 spacing;
+    std::unordered_map<u64, f32> vertices;
+
+    f32 vertex(i64 ix, i64 iz) {
+        const u64 key = (static_cast<u64>(static_cast<u32>(ix)) << 32) |
+                        static_cast<u64>(static_cast<u32>(iz));
+        const auto it = vertices.find(key);
+        if (it != vertices.end()) {
+            return it->second;
+        }
+        const f32 h = render::terrain::meshHeight(
+            tp, static_cast<f32>(ix) * spacing, static_cast<f32>(iz) * spacing,
+            spacing);
+        vertices.emplace(key, h);
+        return h;
+    }
+    f32 at(f32 x, f32 z) {
+        const f32 fx = std::floor(x / spacing);
+        const f32 fz = std::floor(z / spacing);
+        const auto ix = static_cast<i64>(fx);
+        const auto iz = static_cast<i64>(fz);
+        const f32 tx = x / spacing - fx;
+        const f32 tz = z / spacing - fz;
+        const f32 h00 = vertex(ix, iz);
+        const f32 h11 = vertex(ix + 1, iz + 1);
+        if (tz >= tx) { // triangle i00, i01, i11
+            const f32 h01 = vertex(ix, iz + 1);
+            return h00 + (h11 - h01) * tx + (h01 - h00) * tz;
+        }
+        const f32 h10 = vertex(ix + 1, iz); // triangle i00, i11, i10
+        return h00 + (h10 - h00) * tx + (h11 - h10) * tz;
+    }
+};
+
+// The drawn mesh against the water, LOD by LOD: a coarse LOD bridges
+// a bed narrower than its spacing shut and the ground then stands
+// above the ribbon (the dev's "sol low poly au-dessus de la rivière").
+// Same cuts as the river sections; per LOD the cuts whose axis the
+// mesh covers and the share of the ribbon's width it covers.
+void reportLodMeshVsWater(const ReportContext& ctx) {
+    const game::MapView& view = *ctx.view;
+    const auto underLake = [&](f32 x, f32 z) {
+        for (const auto& lake : view.lakes) {
+            if (lake.covers(x, z)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    constexpr f32 kWetMargin = 0.2f;
+    constexpr u32 kLods = render::TerrainSystem::kLodCount;
+    vector<LodMesh> meshes;
+    for (u32 lod = 0; lod < kLods; ++lod) {
+        meshes.push_back({ view.tp,
+                           render::TerrainSystem::kChunkSize /
+                               static_cast<f32>(render::TerrainSystem::lodQuads(lod)) });
+    }
+    u32 cuts = 0;
+    u32 axisOver[kLods] = {}, axisOverTier[kLods][3] = {};
+    u32 byTier[3] = {};
+    u64 ribbonN = 0, ribbonOver[kLods] = {};
+    // Where the published ground itself stands over the water at the
+    // axis: a carve residue (under 1 m), a terrace, or a buried stretch.
+    u32 dryAxisBand[4] = {}; // < 1 m, 1-5 m, 5-20 m, > 20 m
+    for (const auto& river : view.rivers) {
+        const size_t count = river.points.size();
+        if (count < 9) {
+            continue;
+        }
+        for (size_t i = 3; i + 3 < count; i += 2) {
+            const auto& pt = river.points[i];
+            if (underLake(pt.x, pt.z) || pt.halfWidth < 0.5f ||
+                !view.inside(pt.x, pt.z, 40.0f)) {
+                continue;
+            }
+            const auto& fw = river.points[i + 1];
+            const auto& bw = river.points[i - 1];
+            const f32 dx = fw.x - bw.x;
+            const f32 dz = fw.z - bw.z;
+            const f32 len = std::sqrt(dx * dx + dz * dz);
+            if (len < 0.5f) {
+                continue;
+            }
+            const f32 px = -dz / len;
+            const f32 pz = dx / len;
+            const u32 tier = glm::min(pt.tier, 2u);
+            ++cuts;
+            ++byTier[tier];
+            const i32 half = static_cast<i32>(pt.halfWidth);
+            const f32 axisUp = view.height(pt.x, pt.z) - pt.surface;
+            if (axisUp >= -kWetMargin) {
+                ++dryAxisBand[axisUp < 1.0f ? 0 : axisUp < 5.0f ? 1
+                                            : axisUp < 20.0f ? 2 : 3];
+            }
+            for (u32 lod = 0; lod < kLods; ++lod) {
+                bool over = false;
+                for (i32 k = -half; k <= half; ++k) {
+                    const f32 d = static_cast<f32>(k);
+                    const f32 m = meshes[lod].at(pt.x + px * d, pt.z + pz * d);
+                    const bool above = m >= pt.surface - kWetMargin;
+                    if (lod == 0) {
+                        ++ribbonN;
+                    }
+                    ribbonOver[lod] += above ? 1 : 0;
+                    over = over || (k == 0 && above);
+                }
+                if (over) {
+                    ++axisOver[lod];
+                    ++axisOverTier[lod][tier];
+                }
+            }
+        }
+    }
+    if (cuts == 0) {
+        return;
+    }
+    LOG_INFO("  lod mesh vs water: published ground over the water at the "
+             "axis: < 1 m {}, 1-5 m {}, 5-20 m {}, > 20 m {} of {} cuts",
+             dryAxisBand[0], dryAxisBand[1], dryAxisBand[2], dryAxisBand[3],
+             cuts);
+    for (u32 lod = 0; lod < kLods; ++lod) {
+        LOG_INFO("  lod mesh vs water: LOD{} ({:.0f} m): mesh above the "
+                 "water at the axis {} / {} cuts ({:.1f} %; r/R/F {}/{}/{} "
+                 "of {}/{}/{}), {:.1f} % of the ribbon's width",
+                 lod, meshes[lod].spacing, axisOver[lod], cuts,
+                 100.0f * static_cast<f32>(axisOver[lod]) /
+                     static_cast<f32>(cuts),
+                 axisOverTier[lod][0], axisOverTier[lod][1],
+                 axisOverTier[lod][2], byTier[0], byTier[1], byTier[2],
+                 100.0 * static_cast<f64>(ribbonOver[lod]) /
+                     static_cast<f64>(glm::max<u64>(ribbonN, 1)));
+    }
+    // Lake sheets: the floor is carved lakeDepthCoef m per m from the
+    // shore, so near the rim it lies within a few dm of the sheet — a
+    // coarse LOD drawn between a bank vertex and a rim vertex crosses
+    // the sheet well inside the lake. Per LOD, the share of the lakes'
+    // cells (their 8 m masks) the mesh covers.
+    u64 lakeCells = 0, lakeOver[kLods] = {}, lakeDry = 0;
+    for (const auto& lake : view.lakes) {
+        if (lake.mask.empty()) {
+            continue;
+        }
+        for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+            for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                if (!lake.mask[static_cast<size_t>(mz) * lake.maskWidth + mx]) {
+                    continue;
+                }
+                const f32 x = lake.minX + (static_cast<f32>(mx) + 0.5f) * lake.maskTexel;
+                const f32 z = lake.minZ + (static_cast<f32>(mz) + 0.5f) * lake.maskTexel;
+                if (!view.inside(x, z, 40.0f)) {
+                    continue;
+                }
+                ++lakeCells;
+                lakeDry += view.height(x, z) >= lake.level - kWetMargin ? 1 : 0;
+                for (u32 lod = 0; lod < kLods; ++lod) {
+                    lakeOver[lod] +=
+                        meshes[lod].at(x, z) >= lake.level - kWetMargin ? 1 : 0;
+                }
+            }
+        }
+    }
+    if (lakeCells > 0) {
+        std::string line;
+        for (u32 lod = 0; lod < kLods; ++lod) {
+            char buf[48];
+            std::snprintf(buf, sizeof(buf), " LOD%u %.1f %%", lod,
+                          100.0 * static_cast<f64>(lakeOver[lod]) /
+                              static_cast<f64>(lakeCells));
+            line += buf;
+        }
+        LOG_INFO("  lod mesh vs water: lake cells ({} of {} lakes) with the "
+                 "mesh above the sheet: ground {:.1f} %,{}",
+                 lakeCells, view.lakes.size(),
+                 100.0 * static_cast<f64>(lakeDry) / static_cast<f64>(lakeCells),
+                 line);
+    }
+}
+
+// --at x z: the ribbons near one point, their ground, flow gate and
+// drawn mesh at every LOD, and a transverse cut — for a spot the dev
+// names in game.
+void reportZoom(const ReportContext& ctx) {
+    if (!ctx.zoomAt) {
+        return;
+    }
+    const game::MapView& view = *ctx.view;
+    const Vec2 at = *ctx.zoomAt;
+    constexpr u32 kLods = render::TerrainSystem::kLodCount;
+    vector<LodMesh> meshes;
+    for (u32 lod = 0; lod < kLods; ++lod) {
+        meshes.push_back({ view.tp,
+                           render::TerrainSystem::kChunkSize /
+                               static_cast<f32>(render::TerrainSystem::lodQuads(lod)) });
+    }
+    const auto flowAt = [&](f32 x, f32 z) {
+        const render::TerrainRegion* r =
+            view.tp.base ? view.tp.base->regionAt(x, z) : nullptr;
+        return r ? render::terrain::maskSample(*r, r->flow, x, z, 0.0f) : 0.0f;
+    };
+    LOG_INFO("  zoom at ({:.0f}, {:.0f}): ground {:.1f} m, flow {:.2f}, "
+             "wet {}",
+             at.x, at.y, view.height(at.x, at.y), flowAt(at.x, at.y),
+             view.wet(at.x, at.y) ? "yes" : "no");
+    for (size_t l = 0; l < view.lakes.size(); ++l) {
+        const auto& lake = view.lakes[l];
+        if (!lake.covers(at.x, at.y)) {
+            continue;
+        }
+        std::string lods;
+        for (u32 lod = 0; lod < kLods; ++lod) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), " LOD%u %+.2f", lod,
+                          meshes[lod].at(at.x, at.y) - lake.level);
+            lods += buf;
+        }
+        LOG_INFO("    lake {} level {:.2f} m, {} cells, {} [{:.0f}..{:.0f}] x "
+                 "[{:.0f}..{:.0f}]: ground - level {:+.2f}; mesh - level at "
+                 "the point:{}",
+                 l, lake.level, lake.cells, lake.dug ? "pond" : "natural",
+                 lake.minX, lake.maxX, lake.minZ, lake.maxZ,
+                 view.height(at.x, at.y) - lake.level, lods);
+        // The lake's own census: floor and meshes against the sheet.
+        u64 n = 0, dry = 0, over[kLods] = {};
+        for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+            for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                if (!lake.mask[static_cast<size_t>(mz) * lake.maskWidth + mx]) {
+                    continue;
+                }
+                const f32 x = lake.minX + (static_cast<f32>(mx) + 0.5f) * lake.maskTexel;
+                const f32 z = lake.minZ + (static_cast<f32>(mz) + 0.5f) * lake.maskTexel;
+                ++n;
+                dry += view.height(x, z) >= lake.level - 0.2f ? 1 : 0;
+                for (u32 lod = 0; lod < kLods; ++lod) {
+                    over[lod] += meshes[lod].at(x, z) >= lake.level - 0.2f ? 1 : 0;
+                }
+            }
+        }
+        std::string line;
+        for (u32 lod = 0; lod < kLods; ++lod) {
+            char buf[48];
+            std::snprintf(buf, sizeof(buf), " LOD%u %llu", lod,
+                          static_cast<unsigned long long>(over[lod]));
+            line += buf;
+        }
+        LOG_INFO("    lake {}: {} mask cells, ground at/over the sheet {}, "
+                 "mesh over the sheet:{}",
+                 l, n, dry, line);
+        // Ground and the LOD4 mesh against the sheet on a +-48 m grid
+        // (8 m), rows along +z.
+        for (i32 dz = -48; dz <= 48; dz += 8) {
+            std::string g, m;
+            for (i32 dx = -48; dx <= 48; dx += 8) {
+                const f32 x = at.x + static_cast<f32>(dx);
+                const f32 z = at.y + static_cast<f32>(dz);
+                char buf[16];
+                const bool in = lake.covers(x, z);
+                std::snprintf(buf, sizeof(buf), "%s%+.1f ", in ? "" : "(",
+                              view.height(x, z) - lake.level);
+                g += buf;
+                std::snprintf(buf, sizeof(buf), "%s%+.1f ", in ? "" : "(",
+                              meshes[4].at(x, z) - lake.level);
+                m += buf;
+            }
+            LOG_INFO("      z{:+d}: ground {} | LOD4 {}", dz, g, m);
+        }
+    }
+    struct Near {
+        f32 d2;
+        size_t river, i;
+    };
+    vector<Near> near;
+    for (size_t r = 0; r < view.rivers.size(); ++r) {
+        const auto& pts = view.rivers[r].points;
+        for (size_t i = 1; i + 1 < pts.size(); ++i) {
+            const f32 d2 = (pts[i].x - at.x) * (pts[i].x - at.x) +
+                           (pts[i].z - at.y) * (pts[i].z - at.y);
+            if (d2 < 150.0f * 150.0f) {
+                near.push_back({ d2, r, i });
+            }
+        }
+    }
+    std::sort(near.begin(), near.end(),
+              [](const Near& a, const Near& b) { return a.d2 < b.d2; });
+    size_t shown = 0;
+    size_t lastRiver = SIZE_MAX;
+    for (const Near& n : near) {
+        if (n.river == lastRiver || shown >= 3) {
+            continue; // one point per course: the nearest
+        }
+        lastRiver = n.river;
+        ++shown;
+        const auto& river = view.rivers[n.river];
+        const auto& pt = river.points[n.i];
+        std::string lods;
+        for (u32 lod = 0; lod < kLods; ++lod) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), " LOD%u %+.1f", lod,
+                          meshes[lod].at(pt.x, pt.z) - pt.surface);
+            lods += buf;
+        }
+        LOG_INFO("    river {} tier {} pt {}/{} at ({:.0f}, {:.0f}) {:.0f} m "
+                 "away: water {:.1f}, hw {:.1f}, ground - water {:+.1f}, "
+                 "flow {:.2f}; mesh - water at the axis:{}",
+                 n.river, river.tier, n.i, river.points.size(), pt.x, pt.z,
+                 std::sqrt(n.d2), pt.surface, pt.halfWidth,
+                 view.height(pt.x, pt.z) - pt.surface, flowAt(pt.x, pt.z),
+                 lods);
+        const auto& fw = river.points[n.i + 1];
+        const auto& bw = river.points[n.i - 1];
+        const f32 dx = fw.x - bw.x;
+        const f32 dz = fw.z - bw.z;
+        const f32 len = glm::max(std::sqrt(dx * dx + dz * dz), 0.01f);
+        const f32 px = -dz / len;
+        const f32 pz = dx / len;
+        const i32 reach = static_cast<i32>(glm::max(2.0f * pt.halfWidth, 24.0f));
+        const i32 step = reach > 40 ? 4 : 2;
+        std::string ground, m2, m4;
+        for (i32 d = -reach; d <= reach; d += step) {
+            const f32 x = pt.x + px * static_cast<f32>(d);
+            const f32 z = pt.z + pz * static_cast<f32>(d);
+            char buf[16];
+            std::snprintf(buf, sizeof(buf), "%+.0f ", view.height(x, z) - pt.surface);
+            ground += buf;
+            std::snprintf(buf, sizeof(buf), "%+.0f ", meshes[2].at(x, z) - pt.surface);
+            m2 += buf;
+            std::snprintf(buf, sizeof(buf), "%+.0f ", meshes[4].at(x, z) - pt.surface);
+            m4 += buf;
+        }
+        LOG_INFO("      cut -{}..+{} m by {}, ground - water: {}", reach, reach,
+                 step, ground);
+        LOG_INFO("      LOD2 (4 m) mesh - water:         {}", m2);
+        LOG_INFO("      LOD4 (16 m) mesh - water:        {}", m4);
+    }
+    if (shown == 0) {
+        LOG_INFO("    no course within 150 m");
+    }
+}
+
 } // namespace
 
 int landscapeReport(char** argv, int argc) {
     const std::filesystem::path gameDir = argv[2];
-    const i32 mapX = argc == 5 ? std::atoi(argv[3]) : 0;
-    const i32 mapZ = argc == 5 ? std::atoi(argv[4]) : 0;
+    const i32 mapX = argc >= 5 ? std::atoi(argv[3]) : 0;
+    const i32 mapZ = argc >= 5 ? std::atoi(argv[4]) : 0;
+    std::optional<Vec2> zoomAt;
+    if (argc == 8 && std::string(argv[5]) == "--at") {
+        zoomAt = Vec2 { static_cast<f32>(std::atof(argv[6])),
+                        static_cast<f32>(std::atof(argv[7])) };
+    }
 
     // The game's data stack -> the game's bake params (pupitre included).
     const auto dataDir = gameDir / "data";
@@ -2146,6 +2500,7 @@ int landscapeReport(char** argv, int argc) {
     render::terraingen::setMasterNetworkCacheDir(cacheDir);
 
     ReportContext ctx { params, mapX, mapZ, tuning.terrainSeed, cacheDir };
+    ctx.zoomAt = zoomAt;
     reportColdCosts(ctx);
     if (!bakeIfStale(ctx) || !loadBakedMap(ctx)) {
         return 1;
@@ -2162,6 +2517,8 @@ int landscapeReport(char** argv, int argc) {
     reportPoiVisibility(ctx);
     reportRiversVsMapLines(ctx);
     reportRiverSections(ctx);
+    reportLodMeshVsWater(ctx);
+    reportZoom(ctx);
     reportMasterCourses(ctx);
     reportGroundAcrossLine(ctx);
     reportBorderLines(ctx);
