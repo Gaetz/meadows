@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de gorge** (`cutGorges` : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, clamps) → **coupe de gorge** (`cutGorges`, sur les surfaces finales et AVANT les ajustements de largeur : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V au gabarit de la loi dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) → rétrécissement (pente) → **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2645,6 +2645,36 @@ briques Z0-Z5 dans le fichier de plan.
   nouvelles, et le profil plat dans les gorges (l'eau y est au niveau
   du pied aval : un bief plat puis la descente — le profil
   longitudinal reste le sujet de capSlopes, pas de cette brique).
+  **Retour dev (5400, 4840) : « la gorge est très bien, par contre le
+  ruban d'eau est interrompu et l'eau simulée n'apparaît pas ».**
+  Nouveau zoom du rapport (`--at` imprime le cours sur ±20 points :
+  eau, demi-largeur, sol d'axe et plus bas sol du cœur contre l'eau,
+  pente, lac) : un fleuve de 19 m de demi-largeur en amont dont la
+  demi-largeur tombe à 1,2 m sur 60 m dans la gorge puis reste à 2 m
+  dans la chute. Cause : la **passe vallée** (ajustement de largeur au
+  fond, mur = sol fin > eau + 8 m) tournait AVANT la coupe de gorge et
+  mesurait la fente pincée ; la gorge était ensuite coupée au gabarit
+  du ruban rétréci (bande 6 m). Et sous 4 m de demi-largeur la sim ne
+  pose pas d'eau (seuil `pinRiverHalfWidth`, relief de ruisseau
+  seulement) : un ruban filiforme ET pas d'eau simulée, une seule
+  cause. **Fix (v128)** : la coupe de gorge passe AVANT les
+  ajustements de largeur — ordre : … lissage → clamps (surfaces
+  finales) → **gorge** (bande au gabarit de la LOI) → rétrécissement
+  (pente) → vallée (le ruban re-assis dans le fond ouvert). Au point :
+  demi-largeur 1,2 → 20 m, lit 5 à 18 m sous l'eau, chenal mouillé sur
+  30 m entre le mur et la berge. Carte (0,0) : enterré 3,2 → 3,0 km
+  (2,2 %), lacs naturels 14, murs 11,1 → 10,9/km, dérive moyenne −6,9
+  → −9,4 m (les gorges au gabarit de la loi déplacent un peu plus de
+  sol), lits scindés 6,1 → 8,0 % des coupes (le fond en V de la bande
+  au-delà du ruban lit comme un second chenal : à regarder). Essayé et
+  écarté : figer la position des points coupés pour le re-seat de la
+  vallée (la borne locale tronque la bande côté mur, le ruban se
+  retrouve collé au mur à 8 m de demi-largeur au lieu de 20 ; enterré
+  publié identique). Vu au passage : le recuit du continent n'est pas
+  déterministe (percée moyenne −0,90 → −0,88 m à paramètres égaux,
+  extraction 45 → 48 km enterrés) — à instruire.
+  `kTileBakeVersion` 128, (0,0) + (1,0) recuits (continent inchangé)
+  et recopiés chez le dev ; hash ré-épinglé.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

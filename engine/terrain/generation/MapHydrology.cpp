@@ -1826,9 +1826,10 @@ void HydroReleveling::dropRapidsFords() {
 // it is opened to the gabarit (an unbounded notch cut 450 m walls
 // from 30 m burials, most of a map's cut volume, measured). The
 // walls steepen with the depth of the cut: a shallow saddle keeps the
-// band's 0.7 flanks, a deep gorge rises at gorgeWallSlope. Legacy
-// (riverGorges off): only runs <= 160 m long and <= 32 m deep are
-// cut, the rest tunnels under the ground.
+// band's 0.7 flanks, a deep gorge rises at gorgeWallSlope. The band
+// is the course's LAW gabarit (the width fits run after this pass,
+// on the opened floor). Legacy (riverGorges off): only runs <= 160 m
+// long and <= 32 m deep are cut, the rest tunnels under the ground.
 void HydroReleveling::cutGorges() {
     constexpr f32 kSaddleMaxLen = 160.0f;   // legacy run limits
     constexpr f32 kSaddleMaxExcess = 32.0f;
@@ -1993,8 +1994,6 @@ const RelevelPass kRelevelPasses[] = {
     { "cascade", [](HydroReleveling& c) { c.coalesceCascades(); } },
     { "slope", [](HydroReleveling& c) { c.capSlopes(); } },
     { "smooth", [](HydroReleveling& c) { c.smoothProfiles(); } },
-    { "narrow", [](HydroReleveling& c) { c.narrowSteep(); } },
-    { "valley", [](HydroReleveling& c) { c.fitValleys(); } },
     { "clamps",
       [](HydroReleveling& c) {
           c.reclampTributaries();
@@ -2002,7 +2001,16 @@ const RelevelPass kRelevelPasses[] = {
           c.reseatPonds();
           c.dropRapidsFords();
       } },
+    // The gorge cut reads the FINAL surfaces (every pass above moves
+    // them) and runs BEFORE the width fits: the valley fit measures
+    // the ground the carves will see, so the floor must be open at
+    // the course's gabarit first — fitted against the pinched slot
+    // the gorge then opened, a 19 m fleuve shrank to a 1.2 m thread
+    // through its own gorge (measured dev: ribbon interrupted, no
+    // sim water under the pin width).
     { "gorge", [](HydroReleveling& c) { c.cutGorges(); } },
+    { "narrow", [](HydroReleveling& c) { c.narrowSteep(); } },
+    { "valley", [](HydroReleveling& c) { c.fitValleys(); } },
 };
 
 } // namespace

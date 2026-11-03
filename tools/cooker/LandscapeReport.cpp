@@ -2659,6 +2659,53 @@ void reportZoom(const ReportContext& ctx) {
                  step, ground);
         LOG_INFO("      LOD2 (4 m) mesh - water:         {}", m2);
         LOG_INFO("      LOD4 (16 m) mesh - water:        {}", m4);
+        // The course around the point: one line per published point
+        // over +-20 points — the water, the half-width, the ground
+        // under the axis and the lowest ground across the ribbon's
+        // core, the slope to the next point, and the lake covering
+        // it if any. Reads an interrupted ribbon or a dry sim reach
+        // off the bake (a run's end, a lake cut, a core proud of the
+        // water, a step).
+        {
+            const size_t lo = n.i >= 20 ? n.i - 20 : 0;
+            const size_t hi = glm::min(n.i + 20, river.points.size() - 1);
+            LOG_INFO("      course {} pts {}..{} (head {}, {} pts, "
+                     "lake-fed {}): i | x z | water | hw | axis-water | "
+                     "core min-water | slope % | lake", n.river, lo, hi,
+                     river.headIsSource ? "source" : "outlet",
+                     river.points.size(), river.lakeFed ? "yes" : "no");
+            for (size_t k = lo; k <= hi; ++k) {
+                const auto& p = river.points[k];
+                const auto& f = river.points[glm::min(k + 1, river.points.size() - 1)];
+                const auto& b = river.points[k > 0 ? k - 1 : 0];
+                const f32 ddx = f.x - b.x;
+                const f32 ddz = f.z - b.z;
+                const f32 dl = glm::max(std::sqrt(ddx * ddx + ddz * ddz), 0.01f);
+                const f32 nx = -ddz / dl;
+                const f32 nz = ddx / dl;
+                f32 coreMin = 1.0e30f;
+                const f32 core = glm::max(p.halfWidth - 2.0f, 0.0f);
+                for (i32 s = -4; s <= 4; ++s) {
+                    const f32 d = core * static_cast<f32>(s) / 4.0f;
+                    coreMin = glm::min(coreMin,
+                                       view.height(p.x + nx * d, p.z + nz * d));
+                }
+                const f32 seg = std::hypot(f.x - p.x, f.z - p.z);
+                const f32 slope = seg > 0.01f ? 100.0f * (p.surface - f.surface) / seg : 0.0f;
+                i32 lakeIdx = -1;
+                for (size_t l = 0; l < view.lakes.size(); ++l) {
+                    if (view.lakes[l].covers(p.x, p.z)) {
+                        lakeIdx = static_cast<i32>(l);
+                        break;
+                    }
+                }
+                LOG_INFO("        {:>4} | {:7.0f} {:7.0f} | {:7.1f} | {:5.1f} | "
+                         "{:+6.1f} | {:+6.1f} | {:+6.1f} | {}",
+                         k, p.x, p.z, p.surface, p.halfWidth,
+                         view.height(p.x, p.z) - p.surface, coreMin - p.surface,
+                         slope, lakeIdx >= 0 ? std::to_string(lakeIdx) : "-");
+            }
+        }
     }
     if (shown == 0) {
         LOG_INFO("    no course within 150 m");
