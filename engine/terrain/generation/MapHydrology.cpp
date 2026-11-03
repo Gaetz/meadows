@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/terrain/Noise.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 
 namespace render::terraingen {
@@ -96,19 +97,17 @@ namespace {
 // have dragged along in a clamp-only pass are bridged by the
 // pooling fill instead.
 constexpr f32 kEdgeTuck = 0.2f;
-// Ceiling of the fill: no point's water may stand more than a
-// pond's depth above the LOWEST fine floor upstream of it —
-// the no-floating invariant. A course routed along a fine
-// ridge the window never saw (its fine floor RISES downstream
-// by tens of metres) is tunneled at the upstream valley level,
-// buried and invisible under the ridge (the accepted trade;
-// the re-route brick owns those courses), instead of pooling
-// the whole upstream valley into a floating sheet — a plain
-// routing-level ceiling was measured 38 m above the valley
-// floor on such a reach. The slow recovery keeps one deep
-// mis-sampled pit from dragging its penalty kilometres
+// Ceiling of the fill (HydrologyParams::poolMaxDepth): no point's
+// water may stand more than a pond's depth above the LOWEST fine
+// floor upstream of it — the no-floating invariant. A course routed
+// along a fine ridge the window never saw (its fine floor RISES
+// downstream by tens of metres) is tunneled at the upstream valley
+// level instead of pooling the whole upstream valley into a floating
+// sheet — a plain routing-level ceiling was measured 38 m above the
+// valley floor on such a reach; the gorge cut (cutGorges) then opens
+// the ground down to the tunnelled water. The slow recovery keeps one
+// deep mis-sampled pit from dragging its penalty kilometres
 // downstream (the lesson of the old through-cut).
-constexpr f32 kPoolMax = 2.5f;        // wall-tunnel slack (m)
 constexpr f32 kBoundRecover = 0.01f;  // m per m of course
 
 // A course's mouth within confluence reach of another course drains
@@ -168,7 +167,7 @@ struct HydroReleveling {
     // the pierce notches (which exist only as a window delta until
     // phase C transfers them, applyPierceDelta — the same carve-only
     // transfer is sampled here). Reads out.pierceDelta LIVE, so the
-    // saddle cut's own notches feed the courses cut after them.
+    // gorge cut's own notches feed the courses cut after them.
     f32 fineAt(f32 x, f32 z) const;
 
     void recenterCourses();
@@ -187,7 +186,7 @@ struct HydroReleveling {
     void softenMapSeams();
     void reseatPonds();
     void dropRapidsFords();
-    void cutSaddles();
+    void cutGorges();
 };
 
 f32 HydroReleveling::fineAt(f32 x, f32 z) const {
@@ -883,13 +882,13 @@ void HydroReleveling::buildEnvelopes() {
         vector<f32>& bound = bounds[r];
         bound.resize(count);
         if (count > 0) {
-            bound[0] = f3[0] + kPoolMax;
+            bound[0] = f3[0] + hydrology.poolMaxDepth;
             for (size_t i = 1; i < count; ++i) {
                 const f32 ds = std::hypot(
                     river.points[i].x - river.points[i - 1].x,
                     river.points[i].z - river.points[i - 1].z);
                 bound[i] =
-                    glm::min(f3[i] + kPoolMax,
+                    glm::min(f3[i] + hydrology.poolMaxDepth,
                              bound[i - 1] + kBoundRecover * ds);
             }
         }
@@ -1814,11 +1813,32 @@ void HydroReleveling::dropRapidsFords() {
 // is a canyon trench through terrain the water should never
 // have crossed. Dig-only, written through pierceDelta so the
 // fine transfer and the S5c carve see it like any pierce.
-void HydroReleveling::cutSaddles() {
-    constexpr f32 kSaddleMaxLen = 160.0f;
+// The river is master of its floor (PAYSAGE §7.8): every run of
+// course points whose fine ground (as the carves will see it) stands
+// above the water, outside the accepted lakes, is notched down to the
+// water — a V at the course's gabarit with sloped flanks, written
+// into pierceDelta like the pierce notches. The flank bound is LOCAL
+// to each point: a cell beside the course loses at most what buries
+// the course there — the fine pinch (fine ground over the water at
+// the axis) or the ridge the window routed across (window ground
+// before the pierce over the water), whichever is taller, plus a
+// margin — so a wall the course runs ALONG stands and a ridge ACROSS
+// it is opened to the gabarit (an unbounded notch cut 450 m walls
+// from 30 m burials, most of a map's cut volume, measured). The
+// walls steepen with the depth of the cut: a shallow saddle keeps the
+// band's 0.7 flanks, a deep gorge rises at gorgeWallSlope. Legacy
+// (riverGorges off): only runs <= 160 m long and <= 32 m deep are
+// cut, the rest tunnels under the ground.
+void HydroReleveling::cutGorges() {
+    constexpr f32 kSaddleMaxLen = 160.0f;   // legacy run limits
     constexpr f32 kSaddleMaxExcess = 32.0f;
-    constexpr f32 kSaddleBuried = 2.0f; // ribbon-buried gate
-    constexpr f32 kSaddleFloor = 0.5f;  // notch under waterline
+    constexpr f32 kBuried = 2.0f;      // ribbon-buried gate
+    constexpr f32 kFloor = 0.5f;       // notch under the waterline
+    constexpr f32 kBenchSlope = 0.7f;  // the pierce band's flanks
+    constexpr f32 kMargin = 2.0f;      // over the local burial
+    const bool gorges = hydrology.riverGorges;
+    const f32 wallSlope =
+        glm::max(hydrology.gorgeWallSlope, kBenchSlope);
     const i32 n = static_cast<i32>(out.window.n);
     const auto underAcceptedLake = [&](f32 x, f32 z) {
         for (const Lake& lake : out.hydro.lakes) {
@@ -1828,20 +1848,17 @@ void HydroReleveling::cutSaddles() {
         }
         return false;
     };
-    // `maxCut`: the run's burial — no cell beside the course loses
-    // more than that (plus a margin). Unbounded, the notch's 0.7
-    // flanks reached 100 m out and cut every wall a buried run
-    // passed along down to the water: 450 m cuts from 30 m
-    // burials, most of a map's cut volume (measured). The course's
-    // own texel always reaches the water.
-    const auto notchAt = [&](const RiverPoint& pt, f32 maxCut) {
-        const f32 level0 = pt.surface - kSaddleFloor;
+    // `maxCut`: the local bound — no cell beside the course loses
+    // more than that. The course's own texel always reaches the
+    // water.
+    const auto notchAt = [&](const RiverPoint& pt, f32 maxCut,
+                             f32 side) {
+        const f32 level0 = pt.surface - kFloor;
         const f32 bandHalf =
             glm::clamp(pt.halfWidth * 1.6f, 6.0f, 48.0f);
         // Reach: band + enough flank to daylight the deepest
-        // allowed cut at the 0.7 side slope.
-        const f32 reach =
-            bandHalf + kSaddleMaxExcess / 0.7f + 8.0f;
+        // allowed cut at the side slope.
+        const f32 reach = bandHalf + maxCut / side + 8.0f;
         const f32 texel = out.window.texelSize;
         const i32 cx = static_cast<i32>(
             std::floor((pt.x - out.window.originX) / texel));
@@ -1869,7 +1886,7 @@ void HydroReleveling::cutSaddles() {
                 const f32 lateral =
                     glm::max(dist - bandHalf, 0.0f);
                 const f32 target = level0 + 0.15f * inner +
-                                   0.7f * lateral;
+                                   side * lateral;
                 const f32 delta = target - preGround[p];
                 if (dist > texel && -delta > maxCut) {
                     continue;
@@ -1881,6 +1898,9 @@ void HydroReleveling::cutSaddles() {
             }
         }
     };
+    const auto windowAt = [&](f32 x, f32 z) {
+        return bilinearWorld(out.window, preGround, x, z);
+    };
     for (size_t r = 0; r < riverCount; ++r) {
         River& river = rivers[r];
         const size_t count = river.points.size();
@@ -1889,11 +1909,14 @@ void HydroReleveling::cutSaddles() {
         }
         vector<u8> flag(count, 0);
         vector<f32> excess(count, 0.0f);
+        vector<f32> burial(count, 0.0f);
         for (size_t i = 0; i < count; ++i) {
             const RiverPoint& pt = river.points[i];
             const f32 g = fineAt(pt.x, pt.z);
             excess[i] = g - pt.surface;
-            flag[i] = excess[i] > kSaddleBuried &&
+            burial[i] = glm::max(
+                excess[i], windowAt(pt.x, pt.z) - pt.surface);
+            flag[i] = excess[i] > kBuried &&
                               !underAcceptedLake(pt.x, pt.z)
                           ? 1
                           : 0;
@@ -1914,15 +1937,34 @@ void HydroReleveling::cutSaddles() {
                 ++j;
                 worst = glm::max(worst, excess[j]);
             }
-            if (runLen <= kSaddleMaxLen &&
-                worst <= kSaddleMaxExcess) {
+            if (gorges || (runLen <= kSaddleMaxLen &&
+                           worst <= kSaddleMaxExcess)) {
                 const size_t a = i > 0 ? i - 1 : i;
                 const size_t b =
                     j + 1 < count ? j + 1 : j;
                 for (size_t k = a; k <= b; ++k) {
-                    notchAt(river.points[k], worst + 2.0f);
+                    // Local bound: the burial over k +- 2 points
+                    // (the notch of a point reaches its neighbours'
+                    // cells too).
+                    f32 local = 0.0f;
+                    for (size_t m = (k >= a + 2 ? k - 2 : a);
+                         m <= glm::min(k + 2, b); ++m) {
+                        local = glm::max(local, burial[m]);
+                    }
+                    const f32 maxCut = local + kMargin;
+                    const f32 side =
+                        gorges ? glm::mix(kBenchSlope, wallSlope,
+                                          noise::smoothstep01(
+                                              kSaddleMaxExcess * 0.5f,
+                                              kSaddleMaxExcess * 1.5f,
+                                              maxCut))
+                               : kBenchSlope;
+                    notchAt(river.points[k], maxCut, side);
                 }
-                ++stats.saddleRuns;
+                ++stats.gorgeRuns;
+                stats.gorgeDeepest =
+                    glm::max(stats.gorgeDeepest, worst);
+                stats.gorgeKm += runLen / 1000.0;
             }
             i = j + 1;
         }
@@ -1960,7 +2002,7 @@ const RelevelPass kRelevelPasses[] = {
           c.reseatPonds();
           c.dropRapidsFords();
       } },
-    { "saddle", [](HydroReleveling& c) { c.cutSaddles(); } },
+    { "gorge", [](HydroReleveling& c) { c.cutGorges(); } },
 };
 
 } // namespace

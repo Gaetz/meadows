@@ -45,7 +45,9 @@ struct HydroRelevelStats {
     size_t retracedRuns { 0 };  // buried runs the corridor replaced
     f64 fillShift { 0.0 };      // |profile fill - routed surface|, m
     size_t poolLakes { 0 };     // discovered pools emitted as lakes
-    size_t saddleRuns { 0 };    // short buried runs the cut grounded
+    size_t gorgeRuns { 0 };     // buried runs the gorge cut grounded
+    f64 gorgeKm { 0.0 };        // their length, km
+    f32 gorgeDeepest { 0.0f };  // the deepest burial cut, m
     size_t valleyFitted { 0 };  // points whose ribbon narrowed to its valley
     f64 valleyShrink { 0.0 };   // half-width those points lost, m (sum)
     f64 valleyShift { 0.0 };    // |lateral re-seat| of the fitted points, m (sum)
@@ -54,7 +56,7 @@ struct HydroRelevelStats {
 // Runs the re-leveling passes on `out` (courses, lakes, pierceDelta
 // and ground are edited in place). `hydrology` is params.hydrology
 // with seaLevel resolved; `preGround` is the window ground BEFORE the
-// outlet piercing (the saddle cut writes its notches relative to it);
+// outlet piercing (the gorge cut writes its notches relative to it);
 // `lap(name)` is called once after each pass group, in order, with
 // the phase names the hydrology log line carries.
 HydroRelevelStats relevelMapHydrology(

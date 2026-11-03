@@ -755,15 +755,16 @@ MapHydrology extractMapHydrology(
         relevelMapHydrology(params, hydrology, ground, preGround, out, lap);
     LOG_INFO("map hydrology phases: {} | total {:.1f} s | recenter {} "
              "pts | retrace {} runs | fill |ds| {:.0f} m | pools {} | "
-             "saddle {} runs | valley {} pts, -{:.0f} m of half-width, "
-             "{:.0f} m of re-seat",
+             "gorge {} runs, {:.1f} km, deepest {:.0f} m | valley {} "
+             "pts, -{:.0f} m of half-width, {:.0f} m of re-seat",
              phases,
              std::chrono::duration<f64>(std::chrono::steady_clock::now() -
                                         phaseStart)
                  .count(),
              stats.recenterMoved, stats.retracedRuns, stats.fillShift,
-             stats.poolLakes, stats.saddleRuns, stats.valleyFitted,
-             stats.valleyShrink, stats.valleyShift);
+             stats.poolLakes, stats.gorgeRuns, stats.gorgeKm,
+             stats.gorgeDeepest, stats.valleyFitted, stats.valleyShrink,
+             stats.valleyShift);
     return out;
 }
 

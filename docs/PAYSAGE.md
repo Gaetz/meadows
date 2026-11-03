@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de selle** (runs enterrés ≤160 m / ≤32 m → encoche lowerBand dans pierceDelta) ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, rétrécissement, **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié, clamps) → **coupe de gorge** (`cutGorges` : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2587,6 +2587,64 @@ briques Z0-Z5 dans le fichier de plan.
   re-leveling, stats « ridges » de la percée. `kTileBakeVersion` 126
   (champ réfléchi ajouté + code), continent + (0,0) + (1,0) recuits et
   recopiés chez le dev ; hash MapBakerTest ré-épinglé.
+
+- **2026-11-03 (suite) — La rivière maîtresse de son fond : des gorges
+  et des mares au lieu de tunnels (bump v127, caches livrés ; verdict
+  dev en jeu attendu).** Question du dev après la brique des tronçons
+  enterrés : « il y a une raison pour laquelle on veut des rivières en
+  escaliers et pas des pentes douces comme dans la réalité ? ». Non :
+  l'escalier est le symptôme de l'ordre de fabrication — le sol
+  d'abord (continent 16 m, érosion fine 3,5 m), la rivière tracée
+  dessus ensuite. Le tracé franchit des crêtes par des encoches d'une
+  cellule que le sol fin referme, et l'eau doit descendre : mare
+  jusqu'à `kPoolMax` 2,5 m, tunnel au-delà, carve borné à 20 m → les
+  13,7 km enterrés (le continent lui-même au-dessus de l'eau sur
+  10,5 km d'entre eux). Dans la réalité la rivière a taillé sa vallée :
+  une crête traversée est une gorge, un obstacle non entaillé fait un
+  lac. Décision dev : « vas-y, la rivière maîtresse de son fond ».
+  **Trois réglages dans `HydrologyParams`** (réfléchis → clé du
+  continent, bump) :
+  (1) `riverGorges` (ON) — la coupe de selle devient la **coupe de
+  gorge** (`cutGorges`, passe « gorge » du re-leveling) : tout run
+  enterré (sol fin > eau + 2 m hors lacs) est encoché jusqu'à l'eau
+  − 0,5 m, quelles que soient sa longueur et sa profondeur. Borne de
+  flanc LOCALE par point : aucune cellule à côté du cours ne perd plus
+  que ce qui enterre le cours là — max(pincement fin, crête fenêtre =
+  sol fenêtre avant percée − eau) sur ±2 points, + 2 m. Un mur LE LONG
+  du cours tient, une crête EN TRAVERS s'ouvre au gabarit (la borne
+  par run d'avant, « pire enterrement + 2 », aurait rabattu tous les
+  murs d'un long run sur sa pire coupe). OFF = les limites ≤160 m /
+  ≤32 m d'avant (A/B).
+  (2) `poolMaxDepth` 6 m (ex-`kPoolMax` 2,5) — une remontée du fond
+  ≤ 6 m fait une mare (lac masqué par discoverPools), au-delà c'est
+  une gorge.
+  (3) `gorgeWallSlope` 1,5 — parois à 56° pour les coupes profondes,
+  fondu depuis 0,7 (les flancs de la bande de percée) entre 16 et 48 m
+  de coupe.
+  **Mesuré (0,0)** : enterré 13,7 → 3,2 km (10,0 → 2,3 %), enterrement
+  médian 26,5 → 8,7 m, runs > 32 m 109 → 12 ; trace du re-leveling
+  après la coupe 39,0 → 8,9 km (> 30 m 8,6 → 1,7) ; **lacs naturels
+  10 → 14** ; plats < 0,3 % 11 → 9 % ; relief 89 m, murs 11,4 →
+  11,1/km, plus haut mur 336 m inchangés ; coupe de gorge 2 149 runs,
+  67,7 km de cours, la plus profonde 303 m ; sol publié déplacé (dérive
+  vs continent) moyenne −3,1 → −6,9 m, RMS 36 → 42 m. Résidu 3,2 km :
+  les 27 runs « continent » restants sont TOUS à une ligne de carte
+  (marge de fenêtre : la coupe de chaque carte s'arrête à sa fenêtre et
+  le voisin coupe pour SON tracé — le résidu suivant, à traiter par la
+  couture des lignes, pas par cette passe). **(1,0)** : enterré 4,6 km
+  (3,2 %), lacs naturels 26, 2 139 runs coupés sur 73,5 km, la plus
+  profonde 469 m, dérive moyenne −4,2 → −14,2 m, RMS 44 → 61 m — la
+  carte la plus accidentée paie le plus de sol.
+  **Écartés par la mesure** : mare 2,5 avec gorges (même enterré
+  3,3 km, mais lacs 14 → 10, gorge +5 km, plats 8 → 11 %) ; parois
+  0,7 (même enterré 3,1 km, mais dérive moyenne −6,9 → −18,6 m,
+  RMS 58 : trois fois plus de sol déplacé pour rien).
+  `kTileBakeVersion` 127, continent + (0,0) + (1,0) recuits et
+  recopiés chez le dev ; hash MapBakerTest ré-épinglé. À regarder en
+  jeu : les gorges (parois 56°, lues rocher par la pente), les mares
+  nouvelles, et le profil plat dans les gorges (l'eau y est au niveau
+  du pied aval : un bief plat puis la descente — le profil
+  longitudinal reste le sujet de capSlopes, pas de cette brique).
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

@@ -240,6 +240,32 @@ struct HydrologyParams {
     // it (smoothRiver's pull-back) and by the bed carve's window gate.
     // The knob stays for the A/B.
     bool pierceRidgeGorge { false };
+    // Ceiling of the map's pooling fill: a course's water stands at
+    // most this deep above the LOWEST fine floor upstream of it. A
+    // rise of the floor along the course up to this depth ponds the
+    // valley behind it (a masked lake, discoverPools); a taller rise
+    // is tunnelled by the fill and then cut open as a gorge
+    // (cutGorges). Ponds at the small obstacles, gorges at the big
+    // ones; lower, every rise becomes a gorge (2.5 m measured on map
+    // (0,0): 4 natural lakes fewer, 5 km more gorge, flat reaches
+    // 8 -> 11 % of the courses).
+    f32 poolMaxDepth { 6.0f };
+    // The river is master of its floor: every run of course whose
+    // axis ground stands above its water (outside the lakes) is cut
+    // down to the water as a gorge, whatever its length and depth.
+    // The flank bound is LOCAL — beside each point no cell loses more
+    // than the course itself is buried there (the fine pinch or the
+    // window ridge across the course, whichever is taller), so a wall
+    // the course runs ALONG stands. OFF: only the short and shallow
+    // saddles (<= 160 m, <= 32 m) are cut and the deep runs stay
+    // tunnelled under the ground (legacy A/B).
+    bool riverGorges { true };
+    // Side slope (m per m) of a deep gorge's walls; a shallow saddle
+    // keeps the pierce band's 0.7 (35-degree) flanks and the slope
+    // blends between the two with the depth of the cut. At 0.7 the
+    // gorges moved nearly three times the ground for the same
+    // burial (mean cut over map (0,0) 7 -> 19 m, measured).
+    f32 gorgeWallSlope { 1.5f };
     // Mouth flare (estuaries): a course that reaches the sea opens
     // over its last metres — half-width ramps to x mouthFlare. The
     // ribbon and the bed carve both read hw, so the bed follows.
@@ -308,6 +334,9 @@ struct HydrologyParams {
         REFLECT_FIELD(lakeKeepArea)
         REFLECT_FIELD(pierceRampSlope)
         REFLECT_FIELD(pierceRidgeGorge)
+        REFLECT_FIELD(poolMaxDepth)
+        REFLECT_FIELD(riverGorges)
+        REFLECT_FIELD(gorgeWallSlope)
         REFLECT_FIELD(mouthFlare)
         REFLECT_FIELD(mouthFlareLength)
         REFLECT_FIELD(riverArea)
