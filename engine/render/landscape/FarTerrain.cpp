@@ -290,110 +290,109 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
             return;
         }
         const f32 kTreeFar = cfg.treeFar;
-        const i32 treeCells =
-            static_cast<i32>(2.0f * kTreeFar / kTreeSpacing);
-        baked.trees.reserve(4096);
-        for (i32 tz = 0; tz < treeCells; ++tz) {
+        // Grid grounding (A/B `fromGrid`): bilinear height and a
+        // central-difference slope from the bake's own half-grid
+        // (35 m) — the whole impostor band sits inside its span.
+        // Sub-texel placement shifts vs the analytic path; the
+        // 0.3-slope gate at billboard range does not care.
+        const f32 halfStep = cell * 0.5f;
+        const auto gridHeight = [&](f32 wx, f32 wz) {
+            const f32 u = (wx - originX) / halfStep;
+            const f32 v = (wz - originZ) / halfStep;
+            const i32 c0 = static_cast<i32>(std::floor(u));
+            const i32 r0 = static_cast<i32>(std::floor(v));
+            const f32 tu = u - std::floor(u);
+            const f32 tv = v - std::floor(v);
+            const f32 a = glm::mix(halfAt(r0, c0), halfAt(r0, c0 + 1), tu);
+            const f32 b = glm::mix(halfAt(r0 + 1, c0),
+                                   halfAt(r0 + 1, c0 + 1), tu);
+            return glm::mix(a, b, tv);
+        };
+        const auto gridSlope = [&](f32 wx, f32 wz) {
+            const f32 hl = gridHeight(wx - halfStep, wz);
+            const f32 hr = gridHeight(wx + halfStep, wz);
+            const f32 hd = gridHeight(wx, wz - halfStep);
+            const f32 hu = gridHeight(wx, wz + halfStep);
+            const f32 ny =
+                2.0f * halfStep /
+                std::sqrt((hl - hr) * (hl - hr) +
+                          4.0f * halfStep * halfStep + (hd - hu) * (hd - hu));
+            return 1.0f - ny;
+        };
+        const auto ground = [&](f32 x, f32 z) {
+            return fromGrid
+                       ? TreeReplayGround { gridHeight(x, z), gridSlope(x, z) }
+                       : TreeReplayGround {
+                             terrain::height(params, x, z),
+                             1.0f - terrain::normal(params, x, z).y };
+        };
+        // Same rule as the near scatter: no impostor on lakes/rivers
+        // (the far-water sheets made the stragglers visible). The
+        // second, LOWER probe covers narrow gorges: the ~35 m grid
+        // height averages the banks in, so the probe at h sat too far
+        // above the river for the plausibility window and billboards
+        // stood mid-water.
+        const auto underWater = [&](f32 x, f32 z, f32 h, f32 margin) {
+            return terrain::underLocalWater(params, x, z, h, margin) ||
+                   terrain::underLocalWater(params, x, z, h - 16.0f, margin);
+        };
+        // The impostors ARE the real trees (kFullReplay / kThinnedBy /
+        // kThinnedKeep: FarTerrain.hpp).
+        constexpr f32 kChunk = TerrainSystem::kChunkSize;
+        const i32 cx0 =
+            static_cast<i32>(std::floor((want.x - kTreeFar) / kChunk));
+        const i32 cx1 =
+            static_cast<i32>(std::floor((want.x + kTreeFar) / kChunk));
+        const i32 cz0 =
+            static_cast<i32>(std::floor((want.y - kTreeFar) / kChunk));
+        const i32 cz1 =
+            static_cast<i32>(std::floor((want.y + kTreeFar) / kChunk));
+        baked.trees.reserve(32768);
+        constexpr u32 kBroadleaf = VegetationSystem::kBroadleafVariants;
+        constexpr u32 kAll = VegetationSystem::kTreeVariants;
+        for (i32 cz = cz0; cz <= cz1; ++cz) {
             if (stop.load(std::memory_order_relaxed)) {
                 return; // shutdown: the mailbox drops the partial bake
             }
-            // Grid grounding (A/B `fromGrid`): bilinear height and a
-            // central-difference slope from the bake's own half-grid
-            // (35 m) — the whole impostor band sits inside its span.
-            // Sub-texel placement shifts vs the analytic path; the
-            // 0.3-slope gate at billboard range does not care.
-            const f32 halfStep = cell * 0.5f;
-            const auto gridHeight = [&](f32 wx, f32 wz) {
-                const f32 u = (wx - originX) / halfStep;
-                const f32 v = (wz - originZ) / halfStep;
-                const i32 c0 = static_cast<i32>(std::floor(u));
-                const i32 r0 = static_cast<i32>(std::floor(v));
-                const f32 tu = u - std::floor(u);
-                const f32 tv = v - std::floor(v);
-                const f32 a = glm::mix(halfAt(r0, c0), halfAt(r0, c0 + 1),
-                                       tu);
-                const f32 b = glm::mix(halfAt(r0 + 1, c0),
-                                       halfAt(r0 + 1, c0 + 1), tu);
-                return glm::mix(a, b, tv);
-            };
-            const auto gridSlope = [&](f32 wx, f32 wz) {
-                const f32 hl = gridHeight(wx - halfStep, wz);
-                const f32 hr = gridHeight(wx + halfStep, wz);
-                const f32 hd = gridHeight(wx, wz - halfStep);
-                const f32 hu = gridHeight(wx, wz + halfStep);
-                const f32 ny =
-                    2.0f * halfStep /
-                    std::sqrt((hl - hr) * (hl - hr) +
-                              4.0f * halfStep * halfStep +
-                              (hd - hu) * (hd - hu));
-                return 1.0f - ny;
-            };
-            const f32 line = terrain::treeLine(params);
-            for (i32 tx = 0; tx < treeCells; ++tx) {
-                core::HashRng rng { core::hashU32(
-                    params.seed ^ 0x51e57a7bu ^
-                    core::hashU32(static_cast<u32>(tx * 73856093 ^
-                                                   tz * 19349663))) };
-                const f32 x = want.x - kTreeFar +
-                              (static_cast<f32>(tx) + rng.next()) *
-                                  kTreeSpacing;
-                const f32 z = want.y - kTreeFar +
-                              (static_cast<f32>(tz) + rng.next()) *
-                                  kTreeSpacing;
-                const f32 forest = forestAt(params, x, z);
-                if (forest < 0.05f || rng.next() >= forest * 0.6f) {
-                    continue;
-                }
-                const f32 h = fromGrid ? gridHeight(x, z)
-                                       : terrain::height(params, x, z);
-                const f32 slope =
-                    fromGrid ? gridSlope(x, z)
-                             : 1.0f - terrain::normal(params, x, z).y;
-                const f32 lineFade =
-                    1.0f - glm::smoothstep(0.82f * line, line, h);
-                if (h < params.seaLevel + 3.0f ||
-                    rng.next() >= lineFade || slope > 0.3f ||
-                    terrain::underLocalWater(params, x, z, h, 1.0f) ||
-                    terrain::underLocalWater(params, x, z, h - 16.0f,
-                                             1.0f)) {
-                    // Same rule as the near scatter: no impostor on
-                    // lakes/rivers (the far-water sheets made the
-                    // stragglers visible). The second, LOWER probe
-                    // covers narrow gorges: the ~35 m grid height
-                    // averages the banks in, so the probe at h sat
-                    // too far above the river for the plausibility
-                    // window and billboards stood mid-water.
-                    continue;
-                }
-                // Sized from the MEASURED real trees: the mesh
-                // carries ~60% of that height as canopy mass, so the
-                // billboards (85-115% of a real tree) emerge from it.
-                // Species bands mirror the near scatter: conifer belt
-                // up to the line, mixed below — a NEGATIVE width ratio
-                // flags the conical silhouette to far_tree.frag.
-                const f32 h01 = h / line;
-                const bool conifer =
-                    h01 >= 0.7f || (h01 >= 0.45f && rng.next() < 0.4f);
-                const f32 width = conifer ? -trees.widthRatio * 0.55f
-                                          : trees.widthRatio;
-                // The atlas variant of the same family (the integer
-                // part of the tint lane — far_tree reads fract() for
-                // the jitter).
-                constexpr u32 kBroadleaf = VegetationSystem::kBroadleafVariants;
-                constexpr u32 kAll = VegetationSystem::kTreeVariants;
-                const u32 variant =
-                    conifer ? kBroadleaf +
-                                  glm::min(static_cast<u32>(
-                                               rng.next() * (kAll - kBroadleaf)),
-                                           kAll - kBroadleaf - 1)
-                            : glm::min(static_cast<u32>(rng.next() * kBroadleaf),
-                                       kBroadleaf - 1);
-                baked.trees.push_back(
-                    { { x, h - 0.5f, z,
-                        trees.height * (0.85f + rng.next() * 0.3f) },
-                      { rng.next() * 64.0f,
-                        static_cast<f32>(variant) + rng.next() * 0.999f,
-                        width, trees.trunkFraction } });
+            for (i32 cx = cx0; cx <= cx1; ++cx) {
+                const Vec2 centre { (static_cast<f32>(cx) + 0.5f) * kChunk,
+                                    (static_cast<f32>(cz) + 0.5f) * kChunk };
+                const f32 keepFraction =
+                    1.0f - (1.0f - kThinnedKeep) *
+                               glm::smoothstep(kFullReplay, kThinnedBy,
+                                               glm::length(centre - want));
+                const u32 chunkHash = core::hashU32(
+                    static_cast<u32>(cx * 83492791 ^ cz * 297121507) ^
+                    0x3c6ef372u);
+                const auto keep = [&](u32 index) {
+                    return keepFraction >= 1.0f ||
+                           core::HashRng { core::hashU32(chunkHash ^ index) }
+                                   .next() < keepFraction;
+                };
+                replayTreeScatter(
+                    params, cx, cz, keep, ground, underWater,
+                    [&](const VegetationSystem::Instance& tree, u32 variant) {
+                        if (variant >= kAll) {
+                            return; // krummholz bush
+                        }
+                        // A NEGATIVE width ratio flags the conical
+                        // silhouette to far_tree.frag (analytic look);
+                        // the variant rides the integer part of the
+                        // tint lane (atlas look), the jitter its
+                        // fraction.
+                        const bool conifer = variant >= kBroadleaf;
+                        const f32 width = conifer ? -trees.widthRatio * 0.55f
+                                                  : trees.widthRatio;
+                        baked.trees.push_back(
+                            { { tree.positionScale.x, tree.positionScale.y,
+                                tree.positionScale.z,
+                                trees.heights[variant] *
+                                    tree.positionScale.w },
+                              { tree.params.z * 10.0f,
+                                static_cast<f32>(variant) +
+                                    tree.params.y * 0.999f,
+                                width, trees.trunkFraction } });
+                    });
             }
         }
     });

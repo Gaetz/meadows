@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <functional>
+
 #include <atomic>
 #include <filesystem>
 #include <iterator>
@@ -60,6 +62,9 @@ public:
         // tile's unit), y = crown start / height, z = 1 conifer,
         // w = 1 once the variant landed.
         array<Vec4, kTreeVariants> variants {};
+        // Per variant mesh height (m at unit scale; the mean until the
+        // variant lands): a replayed impostor is sized as its tree.
+        array<f32, kTreeVariants> heights {};
     };
     TreeSilhouette treeSilhouette() const;
     // Per tree variant, mesh units (x = height, y = max radial extent,
@@ -675,5 +680,27 @@ f32 forestAt(const TerrainParams& params, f32 x, f32 z);
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz,
                                               f32 treeFadeEnd = 880.0f);
+
+// The TREE rule of scatterProps replayed for one chunk by another
+// consumer (the far impostor bake): the same candidate grid, seed, draw
+// order and gates, so every emitted instance IS the tree the vegetation
+// ring will scatter there (position, variant, scale, yaw, tint). The
+// caller supplies the ground (its own height grid instead of the exact
+// terrain — a tree can only move across a gate at the margins) and the
+// local-water test; `keep(index)` thins the candidates BEFORE any
+// terrain work (a stable subset far out, the same trees whatever the
+// bake origin). The tree rule's krummholz bushes come out with their
+// bush variant — skip variants >= kTreeVariants.
+struct TreeReplayGround {
+    f32 h;
+    f32 slope; // 1 - n.y
+};
+void replayTreeScatter(
+    const TerrainParams& params, i32 cx, i32 cz,
+    const std::function<bool(u32 index)>& keep,
+    const std::function<TreeReplayGround(f32 x, f32 z)>& ground,
+    const std::function<bool(f32 x, f32 z, f32 h, f32 margin)>& underWater,
+    const std::function<void(const VegetationSystem::Instance&, u32 variant)>&
+        emit);
 
 } // namespace render

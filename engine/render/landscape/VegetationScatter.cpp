@@ -497,6 +497,76 @@ f32 forestAt(const TerrainParams& params, f32 x, f32 z) {
     return glm::clamp(forestMask(params.seed, x, z) * density, 0.0f, 1.0f);
 }
 
+// The rule loop — ONE body for scatterProps (every rule, the exact
+// terrain, the chunk buckets) and replayTreeScatter (the tree rule on the
+// caller's ground). keep / ground / water / emit are the only seams; the
+// draw order inside is the contract (VegetationScatterTest golden).
+template <class Keep, class Ground, class Water, class Emit>
+void scatterRule(const ChunkScatter& chunk, const ScatterRule& rule, i32 cx,
+                 i32 cz, Keep&& keep, Ground&& ground, Water&& water,
+                 Emit&& emit) {
+    const TerrainParams& params = chunk.params;
+    const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
+    const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
+    const VegetationSystem::PropFamilyTraits& family =
+        VegetationSystem::familyTraits(rule.family);
+    const u32 perSide =
+        static_cast<u32>(TerrainSystem::kChunkSize / rule.spacing);
+    for (u32 i = 0; i < perSide * perSide; ++i) {
+        if (!keep(i)) {
+            continue;
+        }
+        HashRng rng { hashU32(params.seed ^ rule.salt) ^
+                      hashU32(static_cast<u32>(cx * 83492791 ^
+                                               cz * 297121507) ^
+                              i) };
+        Candidate c;
+        c.x = originX +
+              (static_cast<f32>(i % perSide) + rng.next()) * rule.spacing;
+        c.z = originZ +
+              (static_cast<f32>(i / perSide) + rng.next()) * rule.spacing;
+        ground(c);
+        if (c.h < params.seaLevel + rule.seaMargin ||
+            c.slope > rule.slopeMax ||
+            (rule.belowTreeLine && c.h >= terrain::treeLine(params)) ||
+            water(c.x, c.z, c.h, rule.waterMargin)) {
+            continue;
+        }
+        Placement p { family.first,   family.count,  c.h - rule.ySink,
+                      rule.scaleMin,  rule.scaleSpan, rule.fadeEnd,
+                      rule.textured,  rule.rigid };
+        if (!rule.accept(chunk, rule, c, rng, p)) {
+            continue;
+        }
+        // Draw order is a CONTRACT: variant, scale, yaw, tint,
+        // phase — reordering reseeds every prop in the world.
+        u32 variant = p.firstVariant;
+        if (rule.pick == VariantPick::Draw) {
+            variant += glm::min(
+                static_cast<u32>(rng.next() *
+                                 static_cast<f32>(p.variantCount)),
+                p.variantCount - 1);
+        }
+        const f32 scale = p.scaleMin + rng.next() * p.scaleSpan;
+        const f32 yaw = rng.next() * core::kTau;
+        if (rule.preAccept != nullptr &&
+            !rule.preAccept(chunk, c, variant, scale, yaw, p.y)) {
+            continue;
+        }
+        const f32 tint = rng.next();
+        const f32 phase = rng.next() * core::kTau;
+        emit(VegetationSystem::Instance {
+                 .positionScale = { c.x, p.y, c.z, scale },
+                 .params = { yaw,
+                             tint, // tint jitter / thin key
+                             p.rigid ? propenc::rigidPhase(phase) : phase,
+                             p.textured ? propenc::texturedFade(p.fadeEnd)
+                                        : p.fadeEnd },
+             },
+             variant);
+    }
+}
+
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz,
                                               f32 treeFadeEnd) {
@@ -516,70 +586,54 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                   originZ + TerrainSystem::kChunkSize + 8.0f)
             : terrain::WaterBodiesSubset {};
     const ChunkScatter chunk { params, chunkWater, buckets, treeFadeEnd };
-
-    const auto candidateRng = [&](u32 salt, u32 index) {
-        return HashRng { hashU32(params.seed ^ salt) ^
-                         hashU32(static_cast<u32>(cx * 83492791 ^
-                                                  cz * 297121507) ^
-                                 index) };
-    };
-
     for (const ScatterRule& rule : kRules) {
-        const VegetationSystem::PropFamilyTraits& family =
-            VegetationSystem::familyTraits(rule.family);
-        const u32 perSide =
-            static_cast<u32>(TerrainSystem::kChunkSize / rule.spacing);
-        for (u32 i = 0; i < perSide * perSide; ++i) {
-            HashRng rng = candidateRng(rule.salt, i);
-            Candidate c;
-            c.x = originX + (static_cast<f32>(i % perSide) + rng.next()) *
-                                rule.spacing;
-            c.z = originZ + (static_cast<f32>(i / perSide) + rng.next()) *
-                                rule.spacing;
-            c.h = terrain::height(params, c.x, c.z);
-            c.n = terrain::normal(params, c.x, c.z);
-            c.slope = 1.0f - c.n.y;
-            if (c.h < params.seaLevel + rule.seaMargin ||
-                c.slope > rule.slopeMax ||
-                (rule.belowTreeLine && c.h >= terrain::treeLine(params)) ||
-                terrain::underLocalWater(params, chunkWater, c.x, c.z, c.h,
-                                         rule.waterMargin)) {
-                continue;
-            }
-            Placement p { family.first,   family.count,  c.h - rule.ySink,
-                          rule.scaleMin,  rule.scaleSpan, rule.fadeEnd,
-                          rule.textured,  rule.rigid };
-            if (!rule.accept(chunk, rule, c, rng, p)) {
-                continue;
-            }
-            // Draw order is a CONTRACT: variant, scale, yaw, tint,
-            // phase — reordering reseeds every prop in the world.
-            u32 variant = p.firstVariant;
-            if (rule.pick == VariantPick::Draw) {
-                variant += glm::min(
-                    static_cast<u32>(rng.next() *
-                                     static_cast<f32>(p.variantCount)),
-                    p.variantCount - 1);
-            }
-            const f32 scale = p.scaleMin + rng.next() * p.scaleSpan;
-            const f32 yaw = rng.next() * core::kTau;
-            if (rule.preAccept != nullptr &&
-                !rule.preAccept(chunk, c, variant, scale, yaw, p.y)) {
-                continue;
-            }
-            const f32 tint = rng.next();
-            const f32 phase = rng.next() * core::kTau;
-            buckets[variant].push_back({
-                .positionScale = { c.x, p.y, c.z, scale },
-                .params = { yaw,
-                            tint, // tint jitter / thin key
-                            p.rigid ? propenc::rigidPhase(phase) : phase,
-                            p.textured ? propenc::texturedFade(p.fadeEnd)
-                                       : p.fadeEnd },
+        scatterRule(
+            chunk, rule, cx, cz, [](u32) { return true; },
+            [&](Candidate& c) {
+                c.h = terrain::height(params, c.x, c.z);
+                c.n = terrain::normal(params, c.x, c.z);
+                c.slope = 1.0f - c.n.y;
+            },
+            [&](f32 x, f32 z, f32 h, f32 margin) {
+                return terrain::underLocalWater(params, chunkWater, x, z, h,
+                                                margin);
+            },
+            [&](const VegetationSystem::Instance& instance, u32 variant) {
+                buckets[variant].push_back(instance);
             });
-        }
     }
     return buckets;
+}
+
+void replayTreeScatter(
+    const TerrainParams& params, i32 cx, i32 cz,
+    const std::function<bool(u32 index)>& keep,
+    const std::function<TreeReplayGround(f32 x, f32 z)>& ground,
+    const std::function<bool(f32 x, f32 z, f32 h, f32 margin)>& underWater,
+    const std::function<void(const VegetationSystem::Instance&, u32 variant)>&
+        emit) {
+    static const ScatterRule* const kTreeRule = [] {
+        for (const ScatterRule& rule : kRules) {
+            if (rule.family == PropFamily::Tree) {
+                return &rule;
+            }
+        }
+        return static_cast<const ScatterRule*>(nullptr);
+    }();
+    // The tree rule reads neither the water subset nor the buckets
+    // (those serve the rock/pebble/debris hooks).
+    const terrain::WaterBodiesSubset noWater {};
+    VegetationSystem::VariantBuckets noBuckets;
+    const ChunkScatter chunk { params, noWater, noBuckets, 880.0f };
+    scatterRule(
+        chunk, *kTreeRule, cx, cz, keep,
+        [&](Candidate& c) {
+            const TreeReplayGround g = ground(c.x, c.z);
+            c.h = g.h;
+            c.slope = g.slope;
+            c.n = { 0.0f, 1.0f - g.slope, 0.0f };
+        },
+        underWater, emit);
 }
 
 } // namespace render

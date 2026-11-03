@@ -2483,6 +2483,39 @@ briques Z0-Z5 dans le fichier de plan.
   complémentarité est statistique, pas arbre par arbre — levée par la
   brique suivante (semis commun).
 
+- **2026-11-03 (suite) — Le semis commun : un impostor par vrai arbre
+  (validé en jeu par le dev).** Verdict dev sur
+  la bascule par tramage : « beaucoup mieux », mais « les impostors ne
+  sont pas au même endroit que les arbres ». Normal jusqu'ici : deux
+  semis sans rapport — les vrais arbres sur la grille par chunk de 64 m
+  (candidats tous les 8 m, semés par chunk et index, forêt × aridité
+  × 0,475), les impostors sur une grille mondiale de 20 m **ancrée sur
+  le centre de la cuisson** (donc sur la caméra : ils se déplaçaient
+  même entre deux cuissons), densité forêt × 0,6 sans aridité, taille
+  tirée. Fix : la boucle des règles de `scatterProps` devient UN corps
+  `scatterRule` à quatre coutures (keep / ground / water / emit) ; le
+  semis proche l'appelle avec le sol exact et les seaux du chunk,
+  **`replayTreeScatter`** rejoue la seule règle des arbres pour un chunk
+  avec le sol du demandeur. La cuisson lointaine (`FarTerrain`) parcourt
+  les chunks du carré ± treeFar et émet un impostor par arbre rejoué :
+  même XZ, même variante, même échelle (`TreeSilhouette::heights` par
+  variante × échelle), même lacet et même jitter de teinte — la bascule
+  par tramage est complémentaire arbre par arbre. Sol = la demi-grille
+  de cuisson (35 m, A/B `fromGrid`) : le Y diffère de quelques
+  décimètres, une porte (mer, pente, ligne des arbres, eau) peut
+  basculer un arbre en marge, rien d'autre. Eau = la sonde analytique +
+  la sonde basse (−16 m, gorges). **Éclaircissement stable** : rejouer
+  8 m sur 5,2 km = 1,7 M de candidats ; au-delà de `kFullReplay`
+  1 200 m, la fraction gardée descend en smoothstep à `kThinnedKeep`
+  0,25 à `kThinnedBy` 2 600 m, par clé de hachage (chunk, index)
+  écartée AVANT tout calcul de sol — le même sous-ensemble des mêmes
+  arbres quelle que soit l'origine de la cuisson (au loin, densité ≈
+  l'ancienne grille de 20 m). Les buissons krummholz de la règle (h01 ≥
+  1) sont ignorés. `kTreeSpacing` retiré. Golden
+  `VegetationScatterTest` inchangé (le refactor est à l'identique :
+  même ordre de tirages). Pas d'A/B : l'ancien semis n'était qu'un
+  autre tirage, l'A/B « Far impostors from grid » reste.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

@@ -33,13 +33,17 @@ class ShaderLibrary;
 // near chunks; applyFog's horizon closure moves out to reach().
 class FarTerrain {
 public:
-    // Tree impostors: cylindrical-billboard silhouettes scattered by the
-    // SAME forestMask/gates as the real trees, fading in where those end
-    // (~880 m) and out into the veil.
+    // Tree impostors: one billboard per REAL tree — the vegetation
+    // scatter's tree rule replayed chunk by chunk (replayTreeScatter),
+    // so each impostor stands where its tree will, sized and yawed like
+    // it; the handoff at the ring edge (~880 m) is complementary tree for
+    // tree. Past kFullReplay the candidates thin to a stable hash subset
+    // (kThinnedKeep by kThinnedBy): the same trees whatever the bake
+    // origin, a quarter of the worker's candidates to ground.
     static constexpr f32 kTreeNear = 700.0f;
-    // Crowns ~0.95x the height meet at this spacing — the canopy reads
-    // as a continuous mass with emergent crowns, not isolated lollipops.
-    static constexpr f32 kTreeSpacing = 20.0f;
+    static constexpr f32 kFullReplay = 1200.0f;
+    static constexpr f32 kThinnedBy = 2600.0f;
+    static constexpr f32 kThinnedKeep = 0.25f;
 
     // One FarTerrain = one camera-centered ring. The defaults are the
     // historical inner ring; the HORIZON outer ring runs the same code

@@ -852,6 +852,14 @@ radius — the checklist, for the next time a cap hides somewhere:
   azimuth tiles, un-premultiplies by the baked coverage and lights
   with an ellipsoid normal. The analytic discs stay as the A/B
   (`ImpostorPush.info.x`). Journal: `docs/PAYSAGE.md` §7.7.
+- **Far impostors = the real trees** (`replayTreeScatter`,
+  `VegetationScatter.cpp`; `FarTerrain` bake): the far bake replays the
+  vegetation scatter's tree rule chunk by chunk on its own 35 m
+  half-grid — same candidate grid, seed, draw order and gates — so each
+  billboard stands where its tree will, with its variant, scale
+  (`TreeSilhouette::heights`), yaw and tint. Past `kFullReplay` (1.2 km)
+  the candidates thin to a stable hash subset (`kThinnedKeep` 0.25 by
+  `kThinnedBy` 2.6 km), decided before any terrain work.
 - **Real-tree / impostor handoff** (`propPresence`, `prop_encoding.glsl`,
   `uVegInfo.w`): the prop keeps its size and dissolves by screen dither
   (IGN, depth writes kept, no blending) over a band at the end of its

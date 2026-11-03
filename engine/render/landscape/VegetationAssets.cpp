@@ -221,6 +221,7 @@ VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
     };
     for (u32 v = 0; v < kTreeVariants; ++v) {
         const Vec3& b = treeBounds[v];
+        out.heights[v] = b.x > 0.1f ? b.x : mean.x;
         if (b.x <= 0.1f) {
             continue;
         }
