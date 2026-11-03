@@ -1920,6 +1920,7 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     }
     if (mounted.terrain) {
         terrain.setWireframe(tuning.wireframe, frame.device, *shaders);
+        terrain.setMeshUnderWater(tuning.meshUnderWater, frame.device);
     }
     if (regenerateRequested) {
         regenerateRequested = false;

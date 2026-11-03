@@ -152,11 +152,44 @@ f32 height(const TerrainParams& params, f32 x, f32 z);
 Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step = 0.5f);
 
 // Height for a MESH vertex sampled `spacing` meters apart: identical to
-// height() at fine spacing; at coarse LODs, vertices over a baked river
-// channel (flow mask) take the MIN over their support — carved beds stay
-// open at distance instead of being bridged shut by the decimation
-// (which drowned the water surface under the coarse triangles).
+// height() at fine spacing. At coarse LODs the decimation bridges what
+// lies between two samples and the drawn ground rose through the water
+// the exact ground runs under; two rules keep it beneath:
+//  - over a baked river channel (flow mask) the vertex takes the MIN
+//    over its support — carved beds stay open at distance;
+//  - a vertex whose triangles (the square +-spacing) hold WET water —
+//    a lake sheet, or a ribbon whose exact ground lies under its
+//    surface — is clamped under the lowest such surface, so a sheet's
+//    rim at a cliff foot and a ribbon narrower than the spacing stay
+//    visible. The price is a shelf at water level no wider than the
+//    spacing (16 m at LOD4, seen from 768 m on).
+// A buried ribbon (exact ground above its surface) clamps nothing: the
+// coarse mesh never digs a trench the fine one does not have.
 f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing);
+
+// The water a chunk's coarse vertices must stay under, gathered ONCE
+// per chunk from TerrainParams::water for the rect its triangles reach
+// (the chunk bounds grown by the spacing): the lakes meeting it and
+// the ribbon segments running through it.
+struct MeshWater {
+    struct Segment {
+        Vec2 a;
+        Vec2 b;
+        f32 surfaceA;
+        f32 surfaceB;
+        f32 halfWidth;
+    };
+    vector<u32> lakes; // into WaterBodies::lakes
+    vector<Segment> segments;
+    bool empty() const { return lakes.empty() && segments.empty(); }
+};
+MeshWater meshWaterInRect(const TerrainParams& params, f32 minX, f32 minZ,
+                          f32 maxX, f32 maxZ);
+// meshHeight with the chunk's gathered water (null = no water nearby:
+// the flow rule alone). The four-argument form gathers the vertex's
+// own square — tools and tests; the mesher passes its chunk's.
+f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing,
+               const MeshWater* water);
 
 // True when terrain content changed inside [minX..maxX]x[minZ..maxZ]
 // since the consumer last baked at `seenStamp` — the rect-scoped form of

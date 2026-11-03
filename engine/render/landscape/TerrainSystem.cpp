@@ -28,7 +28,7 @@ i32 camChunk(f32 worldCoord) {
 } // namespace
 
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
-                                      i32 cz, u32 lod) {
+                                      i32 cz, u32 lod, bool underWater) {
     const u32 quads = TerrainSystem::lodQuads(lod);
     const u32 vertsPerSide = quads + 1;
     const f32 step = TerrainSystem::kChunkSize / static_cast<f32>(quads);
@@ -38,14 +38,23 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
     // any neighbor's (error grows with the sample step).
     const f32 skirtDepth = 3.0f * step;
 
-    // One flow probe per chunk: flow-free chunks (the vast majority)
-    // skip meshHeight's per-vertex region/mask lookups entirely —
-    // bit-identical, the gate could never fire (flowMaskTouches).
+    // One flow probe and one water gather per chunk: chunks with
+    // neither (the vast majority) skip meshHeight's per-vertex lookups
+    // entirely — bit-identical, no gate could fire (flowMaskTouches;
+    // an empty MeshWater clamps nothing).
     const bool flowNearby =
         step > 2.5f &&
         terrain::flowMaskTouches(params, originX, originZ,
                                  originX + TerrainSystem::kChunkSize,
                                  originZ + TerrainSystem::kChunkSize);
+    terrain::MeshWater water;
+    if (step > 2.5f && underWater) {
+        water = terrain::meshWaterInRect(
+            params, originX - step, originZ - step,
+            originX + TerrainSystem::kChunkSize + step,
+            originZ + TerrainSystem::kChunkSize + step);
+    }
+    const bool gated = flowNearby || !water.empty();
 
     vector<MeshVertex> vertices;
     vertices.reserve(vertsPerSide * vertsPerSide + 4 * vertsPerSide);
@@ -53,9 +62,9 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
         for (u32 gx = 0; gx < vertsPerSide; ++gx) {
             const f32 x = originX + static_cast<f32>(gx) * step;
             const f32 z = originZ + static_cast<f32>(gz) * step;
-            const f32 y = flowNearby
-                              ? terrain::meshHeight(params, x, z, step)
-                              : terrain::height(params, x, z);
+            const f32 y = gated ? terrain::meshHeight(params, x, z, step,
+                                                      &water)
+                                : terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             vertices.push_back({
                 .position = { x, y, z },
@@ -567,8 +576,10 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos, bool boost) {
 }
 
 void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
-    streamer.enqueueBuild(cx, cz, [chunkParams = params, cx, cz, lod] {
-        BuiltMesh built { lod, buildChunkVertices(chunkParams, cx, cz, lod) };
+    streamer.enqueueBuild(cx, cz, [chunkParams = params, cx, cz, lod,
+                                   underWater = meshUnderWater] {
+        BuiltMesh built { lod, buildChunkVertices(chunkParams, cx, cz, lod,
+                                                  underWater) };
         // Height range for the frustum AABB (skirts included: they
         // hang below, keeping the bound conservative).
         built.minY = built.vertices[0].position.y;
@@ -667,6 +678,13 @@ void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
         wireframe = enabled;
         pipeline.invalidate();
         refreshPipeline(device, shaders);
+    }
+}
+
+void TerrainSystem::setMeshUnderWater(bool enabled, rhi::Device& device) {
+    if (meshUnderWater != enabled) {
+        meshUnderWater = enabled;
+        regenerate(device);
     }
 }
 

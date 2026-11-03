@@ -425,6 +425,8 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r,
         // position; the drift only ages them.
         drawLanes<kOcclusion>(r.chunkOcclusion());
         ImGui::Checkbox("Wireframe (LOD debug)", &r.tuning.wireframe);
+        ImGui::Checkbox("Coarse LODs under the water (A/B)",
+                        &r.tuning.meshUnderWater);
     }
 }
 

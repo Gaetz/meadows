@@ -615,9 +615,14 @@ TerrainRegion bakeProceduralRegion(const TerrainParams& params, f32 originX,
     return region;
 }
 
-f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing) {
-    f32 h = height(params, x, z);
-    if (spacing <= 2.5f || !params.base) {
+namespace {
+
+constexpr f32 kMeshWetMargin = 0.2f;  // exact ground this far under = wet
+constexpr f32 kMeshUnderWater = 0.3f; // a clamped vertex sits this far under
+
+// The carved-bed rule: over the flow mask, the min over the support.
+f32 flowMin(const TerrainParams& params, f32 x, f32 z, f32 spacing, f32 h) {
+    if (!params.base) {
         return h;
     }
     const TerrainRegion* region = params.base->regionAt(x, z);
@@ -638,6 +643,122 @@ f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing) {
         }
     }
     return h;
+}
+
+// The lowest WET water surface within the square +-reach of (x, z):
+// a lake sheet sampled every half reach (a rim cell between two
+// samples still has one within reach), a ribbon at the closest point
+// of each segment — each counted only where the exact ground lies
+// under the surface. 1e30 = none.
+f32 lowestWetSurface(const TerrainParams& params, const MeshWater& water,
+                     f32 x, f32 z, f32 reach) {
+    f32 lowest = 1.0e30f;
+    const WaterBodies& bodies = *params.water;
+    for (const u32 li : water.lakes) {
+        const LakeSurface& lake = bodies.lakes[li];
+        if (lake.level >= lowest || x + reach < lake.minX ||
+            x - reach > lake.maxX || z + reach < lake.minZ ||
+            z - reach > lake.maxZ) {
+            continue;
+        }
+        const f32 step = reach * 0.5f;
+        bool wet = false;
+        for (i32 dz = -2; dz <= 2 && !wet; ++dz) {
+            for (i32 dx = -2; dx <= 2 && !wet; ++dx) {
+                const f32 sx = x + static_cast<f32>(dx) * step;
+                const f32 sz = z + static_cast<f32>(dz) * step;
+                wet = lake.covers(sx, sz) &&
+                      height(params, sx, sz) <= lake.level - kMeshWetMargin;
+            }
+        }
+        if (wet) {
+            lowest = lake.level;
+        }
+    }
+    const Vec2 p { x, z };
+    for (const MeshWater::Segment& s : water.segments) {
+        const Vec2 ab = s.b - s.a;
+        const f32 len2 = glm::dot(ab, ab);
+        const f32 t = len2 > 1.0e-6f
+                          ? glm::clamp(glm::dot(p - s.a, ab) / len2, 0.0f, 1.0f)
+                          : 0.0f;
+        const f32 surface = glm::mix(s.surfaceA, s.surfaceB, t);
+        if (surface >= lowest) {
+            continue;
+        }
+        const Vec2 c = s.a + ab * t;
+        if (glm::length(p - c) > reach + s.halfWidth) {
+            continue;
+        }
+        if (height(params, c.x, c.y) <= surface - kMeshWetMargin) {
+            lowest = surface;
+        }
+    }
+    return lowest;
+}
+
+} // namespace
+
+MeshWater meshWaterInRect(const TerrainParams& params, f32 minX, f32 minZ,
+                          f32 maxX, f32 maxZ) {
+    MeshWater out;
+    if (!params.water) {
+        return out;
+    }
+    const WaterBodies& bodies = *params.water;
+    for (u32 i = 0; i < static_cast<u32>(bodies.lakes.size()); ++i) {
+        const LakeSurface& lake = bodies.lakes[i];
+        if (lake.maxX >= minX && lake.minX <= maxX && lake.maxZ >= minZ &&
+            lake.minZ <= maxZ) {
+            out.lakes.push_back(i);
+        }
+    }
+    for (const RiverSurface& river : bodies.rivers) {
+        if (river.maxX < minX || river.minX > maxX || river.maxZ < minZ ||
+            river.minZ > maxZ) {
+            continue;
+        }
+        for (size_t i = 1; i < river.nodes.size(); ++i) {
+            const RiverNode& a = river.nodes[i - 1];
+            const RiverNode& b = river.nodes[i];
+            const f32 hw = glm::max(a.halfWidth, b.halfWidth);
+            if (glm::max(a.x, b.x) + hw < minX || glm::min(a.x, b.x) - hw > maxX ||
+                glm::max(a.z, b.z) + hw < minZ || glm::min(a.z, b.z) - hw > maxZ) {
+                continue;
+            }
+            out.segments.push_back({ { a.x, a.z },
+                                     { b.x, b.z },
+                                     a.surface,
+                                     b.surface,
+                                     hw });
+        }
+    }
+    return out;
+}
+
+f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing,
+               const MeshWater* water) {
+    f32 h = height(params, x, z);
+    if (spacing <= 2.5f) {
+        return h;
+    }
+    h = flowMin(params, x, z, spacing, h);
+    if (water && !water->empty() && params.water) {
+        const f32 lowest = lowestWetSurface(params, *water, x, z, spacing);
+        if (lowest < 1.0e29f) {
+            h = glm::min(h, lowest - kMeshUnderWater);
+        }
+    }
+    return h;
+}
+
+f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing) {
+    if (spacing <= 2.5f || !params.water) {
+        return meshHeight(params, x, z, spacing, nullptr);
+    }
+    const MeshWater water = meshWaterInRect(params, x - spacing, z - spacing,
+                                            x + spacing, z + spacing);
+    return meshHeight(params, x, z, spacing, &water);
 }
 
 bool contentTouchedSince(const TerrainParams& params, u64 seenStamp,

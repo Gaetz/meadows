@@ -822,6 +822,18 @@ radius — the checklist, for the next time a cap hides somewhere:
   bands and the pool cores (`kLod3CoreSide`/`kLod4CoreSide`) are the
   same truth, `kMaxViewRadius` is THE single slider/pool/clamp cap.
   Pools ≈ 45 MB at radius 45 (LOD4 slots are 2.6× cheaper than LOD3).
+- **Coarse LODs stay under the water** (`terrain::meshHeight`,
+  `MeshWater`): a 4-16 m triangle between a bank vertex and a bed or
+  lake-floor vertex crossed the water surface (ground drawn through a
+  sheet's rim at a cliff foot, ribbons narrower than the spacing
+  bridged shut — measured 48 % of ribbon axes and 8 % of lake cells
+  at LOD4). Every vertex whose triangles reach wet water (a sheet, or
+  a ribbon whose exact ground lies under its surface) is clamped
+  0.3 m under the lowest such surface; a buried ribbon clamps
+  nothing. Price: a water-level shelf no wider than the spacing. The
+  water is gathered once per chunk from `TerrainParams::water`; a
+  lakes-only publish re-meshes the chunks it covers; A/B in the
+  terrain panel (Culling & debug). Journal: `docs/PAYSAGE.md` §7.7.
 - **ChunkOcclusion** rings/rays follow the ring (`configure`): reach =
   the full ring, fan doubles past 1 km so a ray still subtends < 1
   chunk. Horizon table cost grows with both.

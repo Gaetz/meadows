@@ -169,6 +169,8 @@ std::optional<MapView> loadMapView(const TileBakeParams& params, i32 mapX,
     view.tp.seed = params.worldSeed;
     view.tp.base = base;
     view.tp.sandbox = sandbox;
+    // meshHeight reads the water like the game's mesher does.
+    view.tp.water = std::make_shared<render::WaterBodies>(view.bodies);
     return view;
 }
 

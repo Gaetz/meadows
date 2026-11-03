@@ -157,6 +157,10 @@ public:
     void setWireframe(bool enabled, rhi::Device& device,
                       ShaderLibrary& shaders);
     bool isWireframe() const { return wireframe; }
+    // Coarse-LOD vertices clamped under the water their triangles reach
+    // (terrain::meshHeight's water rule) — the render panel's A/B; a
+    // flip re-meshes the ring.
+    void setMeshUnderWater(bool enabled, rhi::Device& device);
 
     // Records terrain draws into the current render pass. `shadowBindGroup`
     // provides the CSM map + comparison sampler (texture unit 1). When a
@@ -327,6 +331,7 @@ private:
     array<vector<const Chunk*>, kLodCount> lodScratch;
     u32 frameIndices { 0 }; // reset in update(), summed by draw*()
     bool wireframe { false };
+    bool meshUnderWater { true };
 
     // Chunks of equal LOD share one index buffer (identical topology).
     array<rhi::UniqueBuffer, kLodCount> indexBuffers;
@@ -372,9 +377,10 @@ private:
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample
 // height/normal/color in world space at grid coord (cx, cz); the grid ring is
 // followed by the skirt ring (edge vertices extruded down). The index
-// topology depends only on the LOD.
+// topology depends only on the LOD. `underWater` = the coarse LODs'
+// water clamp (TerrainSystem::setMeshUnderWater).
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
-                                      i32 cz, u32 lod);
+                                      i32 cz, u32 lod, bool underWater = true);
 vector<u32> buildChunkIndices(u32 lod);
 
 } // namespace render

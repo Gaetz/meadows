@@ -678,20 +678,27 @@ void SandboxWorldController::update(const SandboxContext& ctx,
         publishWaterBodies(ctx);
         // A lakes-only arrival (registry landing, membership
         // refresh) changes the WATER under chunks that were
-        // scattered before it: without a re-scatter, trees and
-        // grass placed on a then-dry bed stand in the new sheet
-        // until the chunk re-streams. Ground is untouched, so
-        // only the scatter queue runs — bounded to resident
-        // chunks that a lake actually covers.
+        // meshed and scattered before it: without a re-scatter,
+        // trees and grass placed on a then-dry bed stand in the
+        // new sheet until the chunk re-streams, and without a
+        // re-mesh the coarse LODs keep bridging the sheet
+        // (meshHeight reads the water). Ground is untouched;
+        // both queues are bounded to resident chunks a lake
+        // actually covers.
         const f32 reach =
             static_cast<f32>(ctx.tuning.terrainViewRadius + 1) * 64.0f;
         vector<u64> scatterKeys;
         for (const auto& lake : lakes_) {
+            // Grown by the coarsest LOD's spacing: a vertex that far
+            // from the sheet still reaches it.
+            constexpr f32 kMeshReach = 16.0f;
             forEachChunkWithinReach(
-                Rect { lake.minX, lake.minZ, lake.maxX, lake.maxZ }, focus,
-                reach, [&](u64 key) { scatterKeys.push_back(key); });
+                Rect { lake.minX - kMeshReach, lake.minZ - kMeshReach,
+                       lake.maxX + kMeshReach, lake.maxZ + kMeshReach },
+                focus, reach, [&](u64 key) { scatterKeys.push_back(key); });
         }
         ctx.renderer.requestRescatter(scatterKeys);
+        ctx.renderer.requestRemesh(scatterKeys);
     }
 }
 

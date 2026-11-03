@@ -417,6 +417,9 @@ public:
         // z = ambient gain, w = ambient floor in shadow.
         Vec4 mistLight { 0.95f, 0.8f, 1.25f, 0.6f };
         bool wireframe { false };
+        // Coarse terrain LODs clamped under the water they reach (A/B):
+        // off = the ground bridges sheets and ribbons at distance.
+        bool meshUnderWater { true };
         bool tonemap { true };
         // BotW step lighting vs classic wrap (A/B). Off: the realistic
         // terrain-texturing look owns this branch; the panel checkbox

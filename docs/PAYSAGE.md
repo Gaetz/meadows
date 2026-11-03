@@ -2324,6 +2324,43 @@ briques Z0-Z5 dans le fichier de plan.
   après le re-seat) et les tronçons enterrés (g + 130-200 m sur deux
   fleuves) — pistes pour une brique ultérieure.
 
+- **2026-11-03 — Le sol low poly au-dessus de l'eau : les LOD grossiers
+  du terrain restent sous l'eau qu'ils touchent (côté renderer, sans
+  recuisson).** Retour dev sur (1,1) à (9350, 9500) : « le sol low poly
+  dépasse au-dessus de la rivière ». Zoom `landscape-report … --at x z`
+  (nouveau) : le point est sous un **lac naturel de 0,73 km²** (niveau
+  352,5 m, fond à −20 m) au pied d'une falaise de +100 m à 16 m de la
+  rive. Le mesher du terrain (`buildChunkVertices`) échantillonne le sol
+  exact tous les 1/2/4/8/16 m selon le LOD (64 m par chunk, bandes 1/3/
+  6/12 chunks) : un triangle de 16 m entre un sommet de falaise (+100) et
+  un sommet du fond (−20) traverse la nappe à 2,7 m du second — la rive
+  est dessinée 13 m dans le lac. Même mécanique sur les rubans : un lit
+  plus étroit que l'espacement est ponté. Le seul garde-fou existant
+  (`meshHeight` : minimum sur le support, sous le masque de drainage ≥ 0,5)
+  n'atteint ni les nappes de lac ni les rubans étroits. Census « lod mesh
+  vs water » du rapport (nouveau : le maillage que le jeu dessine,
+  reconstruit à l'identique, contre la ligne d'eau) sur (1,1) : maillage
+  au-dessus de l'eau sur l'axe des rubans LOD0 19,9 % → **LOD4 48,7 %**
+  des coupes ; cellules de lac couvertes LOD0 3,9 % → **LOD4 8,3 %**
+  (le lac du dev : 739 cellules sur 10 867). **La règle** (`meshHeight`,
+  `MeshWater`) : tout sommet d'un LOD grossier dont les triangles (le
+  carré ± espacement) touchent de l'eau MOUILLÉE — nappe de lac, ou
+  ruban dont le sol exact est sous la surface — est borné sous la plus
+  basse de ces surfaces (−0,3 m) ; un ruban enterré ne borne rien (le
+  maillage grossier ne creuse jamais une tranchée que le fin n'a pas).
+  Le prix : un plateau au niveau de l'eau large d'au plus l'espacement
+  (16 m au LOD4, vu de 768 m et plus ; 4 m au LOD2). Mesuré : (1,1) axes
+  couverts LOD4 48,7 → 16,8 % (LOD0 19,9 % = les tronçons enterrés,
+  5-20 m 518 et > 20 m 885 coupes sur 7 262 — l'autre résidu, pas
+  traité ici), largeur de ruban couverte 23,6 → 5,6 %, lacs LOD4 8,3 →
+  0,1 % (le lac du dev 739 → 0) ; (0,0) lacs LOD4 0,8 %, axes 10,5 %.
+  Branchement : les plans d'eau sont déjà dans `TerrainParams::water`
+  (règles de scatter) ; `meshWaterInRect` une fois par chunk ; une
+  arrivée de lacs seule (registre, rafraîchissement) re-maille les chunks
+  qu'elle couvre (+16 m) en plus du re-scatter ; A/B « Coarse LODs under
+  the water » dans le panneau de rendu (Culling & debug). Rien à recuire :
+  aucun bump de version.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que
