@@ -429,6 +429,8 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r,
                         &r.tuning.meshUnderWater);
         ImGui::Checkbox("Far terrain cut under resident chunks (A/B)",
                         &r.tuning.farCutUnderChunks);
+        ImGui::Checkbox("Baked tree impostors (A/B)",
+                        &r.tuning.bakedTreeImpostors);
     }
 }
 

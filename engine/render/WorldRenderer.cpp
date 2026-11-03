@@ -191,8 +191,10 @@ const WorldRenderer::SystemEntry WorldRenderer::kSystems[] = {
           r.farResidencyGroup = { d, d.createBindGroup(
               { .entries = { { .binding = 1,
                                .buffer = r.farResidencyUbo } } }) };
+          r.treeImpostors.create(d, d.caps().hdrFormats);
       },
       [](WorldRenderer& r, rhi::Device& d) {
+          r.treeImpostors.destroy(d);
           r.farResidencyGroup.reset();
           r.farResidencyUbo.reset();
           for (FarTerrain& ring : r.farRings) {
@@ -1468,7 +1470,9 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                     if (farRingEnabled(ring)) {
                         farRings[ring].draw(frame.cmd, frameBindGroup,
                                             sky.cloudMapBindGroup(),
-                                            farResidencyGroup);
+                                            farResidencyGroup,
+                                            treeImpostors.bindGroup(),
+                                            farImpostorPush);
                     }
                 }
             }
@@ -1638,7 +1642,9 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
             if (farRingEnabled(kInnerRing)) {
                 farRings[kInnerRing].draw(frame.cmd, reflectionBindGroup,
                                           sky.cloudMapBindGroup(),
-                                          farResidencyGroup);
+                                          farResidencyGroup,
+                                          treeImpostors.bindGroup(),
+                                          farImpostorPush);
             }
         }
         // Trees only: rocks and bushes are invisible in a wobbly half-res
@@ -1843,6 +1849,14 @@ void WorldRenderer::pumpStreaming(engine::FrameContext& frame, const RenderView&
                                   terrain.layerAlbedoBase(4) },
                 .field = heightFieldSnapshot(),
             };
+            farImpostorPush.info = {
+                tuning.bakedTreeImpostors && treeImpostors.ready() ? 1.0f
+                                                                   : 0.0f,
+                static_cast<f32>(render::TreeImpostorAtlas::kAzimuths),
+                static_cast<f32>(render::TreeImpostorAtlas::kElevations),
+                render::TreeImpostorAtlas::kElevationStep
+            };
+            farImpostorPush.variants = in.trees.variants;
             for (u32 ring = 0; ring < kFarRingCount; ++ring) {
                 if (farRingEnabled(ring)) {
                     farRings[ring].update(frame.device, terrain.params,
@@ -2175,6 +2189,30 @@ void WorldRenderer::render(engine::FrameContext& frame,
             return frame.device.createPipeline(
                 { .shader = shaders->get(kTonemapShader) });
         });
+    }
+
+    // The far-tree impostor atlas: re-baked (one pass, ~80 draws) when
+    // the tree variants landed or changed — before the passes that
+    // draw the far rings. The tree pipeline's layout wants the main
+    // pass's pass-level groups bound.
+    if (mounted.vegetation && mounted.terrain && tuning.bakedTreeImpostors &&
+        !vegetation.showcaseActive()) {
+        const u64 generation = vegetation.treeMeshGeneration();
+        if (treeImpostors.stale(generation)) {
+            vector<std::pair<u32, rhi::BindGroupHandle>> groups;
+            groups.emplace_back(3, sky.cloudMapBindGroup());
+            groups.emplace_back(4, terrainLightMap.bindGroup());
+            groups.emplace_back(5, keyShadowReceiverGroup.get());
+            groups.emplace_back(6, radianceCascades.applyGroup());
+            groups.emplace_back(7, terrainShadeMap.bindGroup());
+            groups.emplace_back(8, fireScorch.bindGroup());
+            if (noiseVolume.ready()) {
+                groups.emplace_back(9, noiseVolume.fireBindGroup());
+            }
+            treeImpostors.bake(frame.cmd, frame.device, vegetation, uniforms,
+                               shadows.receiverBindGroup(), groups,
+                               generation);
+        }
     }
 
     recordReflection(frame, view, uniforms, reflectionsActive);

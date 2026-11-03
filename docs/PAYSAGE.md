@@ -2412,6 +2412,47 @@ briques Z0-Z5 dans le fichier de plan.
   Culling & debug ; côté 0 = pas de coupe). Boot sandbox 30 s en Release
   sans erreur de shader ni de validation. Rien à recuire.
 
+- **2026-11-03 (suite) — Les impostors d'arbres cuits (validé en jeu par le dev :
+  « beaucoup mieux »).** Retour dev : « les impostors
+  des arbres ne ressemblent pas aux arbres ». L'impostor lointain était
+  un dessin analytique dans `far_tree.frag` (quatre disques jetés sur un
+  tronc, un cône dentelé pour les conifères, deux verts codés en dur) :
+  il ne connaissait ni la forme des arbres de colonisation ni leurs
+  teintes d'espèce. **`TreeImpostorAtlas`** : à chaque arrivée des
+  variantes d'arbres (`VegetationSystem::treeMeshGeneration`), les 5
+  variantes sont rendues avec LEUR pipeline et LEURS matériaux (cartes
+  de feuilles, teintes d'espèce, écorce) depuis 16 directions (8 azimuts
+  × 2 anneaux d'élévation, pas 0,6 rad) dans un atlas de 2048 × 640
+  (tuiles de 128 px, lignes = variantes, colonnes = vues), sous une
+  frame de cuisson : caméra orthographique par vue (16 UBO de frame, un
+  par vue, puisqu'une passe enregistrée lit le contenu final d'un
+  buffer), ambiante blanche et soleil nul (lit = albédo), sans
+  brouillard ni fermeture d'horizon, sans lumières locales, ancrage au
+  sol, saison, vent, feu ni teinte de cascade. L'arbre est mis à
+  l'échelle de son « fit » (max(hauteur, 2 × rayon) = 1) et la boîte
+  orthographique couvre ± 0,75 autour de 0,5 : l'arbre entier dans la
+  tuile quel que soit l'anneau. Une passe, ~80 petits draws, avant la
+  réflexion et la passe principale (les groupes de passe de la passe
+  principale sont liés : le layout du pipeline arbre les attend). Côté
+  dessin, `far_tree` reçoit un bloc push (`ImpostorPush` : atlas on,
+  azimuts, anneaux, pas, fit/hauteur et départ de couronne par variante
+  via `TreeSilhouette::variants`) et l'atlas à l'unité 6 (set 1) : le
+  quad couvre la boîte de la tuile, le fragment lit les deux tuiles
+  d'azimut voisines (fondu) de l'anneau le plus proche, dé-prémultiplie
+  par la couverture (alpha cuit ≈ 0,745, le relief neutre de
+  `tree.frag`), applique le roulement de teinte par instance relatif au
+  roulement neutre cuit, et éclaire avec une normale d'ellipsoïde sur le
+  quad (ambiante + soleil × ombre de nuages). La variante par impostor =
+  partie entière de la voie « teinte » de l'instance (même famille
+  feuillu/conifère que le semis, le jitter en partie fractionnaire). A/B
+  « Baked tree impostors » (panneau terrain, Culling & debug ; off = les
+  disques analytiques, inchangés). Boot sandbox 40 s Release : « 5
+  variant(s) x 16 views baked », sans erreur de shader ni de validation.
+  Pas de mips sur l'atlas (generateMipmaps hors enregistrement de frame :
+  à faire proprement si le scintillement se voit). Pistes ensuite :
+  rapprocher la bascule vrais arbres / impostors (880 m) pour rendre du
+  budget d'arbres réels.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

@@ -55,8 +55,25 @@ public:
         f32 height { 14.0f };       // mean world height (m)
         f32 widthRatio { 0.9f };    // crown width / height
         f32 trunkFraction { 0.4f }; // bare-trunk share of the height
+        // Per variant, for the baked impostor atlas (TreeImpostorAtlas):
+        // x = fit / height (fit = max(height, 2 x radial extent), the
+        // tile's unit), y = crown start / height, z = 1 conifer,
+        // w = 1 once the variant landed.
+        array<Vec4, kTreeVariants> variants {};
     };
     TreeSilhouette treeSilhouette() const;
+    // Per tree variant, mesh units (x = height, y = max radial extent,
+    // z = crown start height; zero until the variant lands).
+    const array<Vec3, kTreeVariants>& treeBoundsAll() const {
+        return treeBounds;
+    }
+    // Bumps whenever a tree variant's full-detail mesh lands (generate,
+    // reseed, authored override): the impostor atlas re-bakes on it.
+    u64 treeMeshGeneration() const { return meshGeneration; }
+    bool treeVariantReady(u32 variant) const {
+        return variant < kTreeVariants &&
+               variantMeshes[variant].indexCount != 0;
+    }
     static constexpr u32 kRockVariants = 4;
     static constexpr u32 kBushVariants = 3;
     // Forest-floor debris (stumps, fallen trunks — scanned-prop
@@ -370,6 +387,16 @@ public:
     void setShowcase(rhi::Device& device, const vector<Instance>& list);
     bool showcaseActive() const { return showcaseCount != 0; }
 
+    // The impostor atlas bake (TreeImpostorAtlas): ONE instance of
+    // `variant`'s full-detail mesh with the tree pipeline, its bark
+    // push and material groups, from `instanceBuffer` at
+    // `instanceOffset`. `frameBindGroup` is the bake's own camera.
+    void drawTreeVariantBake(rhi::CommandBuffer& cmd,
+                             rhi::BindGroupHandle frameBindGroup,
+                             rhi::BindGroupHandle shadowBindGroup,
+                             u32 variant, rhi::BufferHandle instanceBuffer,
+                             u64 instanceOffset);
+
     // Async variant reseed: the tree meshes + AO bake run on a worker
     // from a parameter SNAPSHOT (the worker never touches `this` —
     // teardown-safe); the GPU upload lands in update() on the main
@@ -527,6 +554,7 @@ private:
     // Per tree variant, mesh units: x = height, y = max radial extent,
     // z = crown start height. Zero until the variant lands.
     array<Vec3, kTreeVariants> treeBounds {};
+    u64 meshGeneration { 0 }; // treeMeshGeneration()
     struct OverrideMesh {
         MeshData high;
         MeshData low;   // empty = far draws/casters use `high`

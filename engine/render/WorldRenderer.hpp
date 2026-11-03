@@ -23,6 +23,7 @@
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/FarTerrain.hpp"
+#include "engine/render/landscape/TreeImpostorAtlas.hpp"
 #include "engine/render/landscape/FrameDecisions.hpp"
 #include "engine/render/landscape/HeightField.hpp"
 #include "engine/render/landscape/MistMap.hpp"
@@ -384,6 +385,9 @@ public:
         // half-grid instead of 5 analytic height() per candidate
         // (sub-texel placement shifts at >1 km — validate visually).
         bool farImpostorsFromGrid { true };
+        // A/B: far-tree impostors read the baked atlas of the real
+        // variants (TreeImpostorAtlas); off = the analytic discs.
+        bool bakedTreeImpostors { true };
         bool mist { true };         // ground-mist raymarch (§3.5)
         // Live mist tuning (panel "Ground mist"); density/coverage are
         // weather-owned and ride AtmosphereParams instead.
@@ -671,6 +675,10 @@ private:
     static constexpr u32 kHorizonRing = 1;
     static constexpr u32 kFarRingCount = 2;
     array<render::FarTerrain, kFarRingCount> farRings;
+    // The far-tree impostor atlas (baked from the tree variants when
+    // they land) and the push block the far rings draw with.
+    render::TreeImpostorAtlas treeImpostors;
+    render::FarTerrain::ImpostorPush farImpostorPush {};
     // The far rings' cut under the resident chunks (FarResidencyUbo,
     // far_terrain.frag): one bit per chunk of the terrain ring,
     // refilled every frame before the far draws.

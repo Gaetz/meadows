@@ -33,7 +33,7 @@ void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
                  { render::kFrameUbo, render::kFarResidencyUbo },
                  { { "uCloudMap", 2 } });
     shaders.load(kFarTreeShader, { render::kFrameUbo },
-                 { { "uCloudMap", 2 } });
+                 { { "uCloudMap", 2 }, { "uTreeAtlas", kTreeAtlasUnit } });
     // The grid topology never changes — one static index buffer.
     const u32 gridN = config.gridN;
     vector<u32> indices;
@@ -95,7 +95,8 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
                               .format = rhi::VertexFormat::F32x4,
                               .offset = offsetof(TreeInstance, params) } } } },
               .depth = render::kDepthOpaque,
-              .cull = rhi::CullMode::None });
+              .cull = rhi::CullMode::None,
+              .pushConstantSize = sizeof(ImpostorPush) });
     });
 }
 
@@ -375,11 +376,24 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                     h01 >= 0.7f || (h01 >= 0.45f && rng.next() < 0.4f);
                 const f32 width = conifer ? -trees.widthRatio * 0.55f
                                           : trees.widthRatio;
+                // The atlas variant of the same family (the integer
+                // part of the tint lane — far_tree reads fract() for
+                // the jitter).
+                constexpr u32 kBroadleaf = VegetationSystem::kBroadleafVariants;
+                constexpr u32 kAll = VegetationSystem::kTreeVariants;
+                const u32 variant =
+                    conifer ? kBroadleaf +
+                                  glm::min(static_cast<u32>(
+                                               rng.next() * (kAll - kBroadleaf)),
+                                           kAll - kBroadleaf - 1)
+                            : glm::min(static_cast<u32>(rng.next() * kBroadleaf),
+                                       kBroadleaf - 1);
                 baked.trees.push_back(
                     { { x, h - 0.5f, z,
                         trees.height * (0.85f + rng.next() * 0.3f) },
-                      { rng.next() * 64.0f, rng.next(), width,
-                        trees.trunkFraction } });
+                      { rng.next() * 64.0f,
+                        static_cast<f32>(variant) + rng.next() * 0.999f,
+                        width, trees.trunkFraction } });
             }
         }
     });
@@ -388,7 +402,9 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
 void FarTerrain::draw(rhi::CommandBuffer& cmd,
                       rhi::BindGroupHandle frameBindGroup,
                       rhi::BindGroupHandle cloudMapGroup,
-                      rhi::BindGroupHandle residencyGroup) {
+                      rhi::BindGroupHandle residencyGroup,
+                      rhi::BindGroupHandle treeAtlasGroup,
+                      const ImpostorPush& impostors) {
     if (!mailbox.ready() || pipeline.id() == 0) {
         return;
     }
@@ -405,7 +421,11 @@ void FarTerrain::draw(rhi::CommandBuffer& cmd,
     cmd.drawIndexed(indexCount);
     if (treeCount != 0 && treePipeline.id() != 0) {
         cmd.setPipeline(treePipeline);
+        cmd.setPushConstants(&impostors, sizeof(impostors));
         cmd.setBindGroup(0, frameBindGroup);
+        if (treeAtlasGroup.id != 0) {
+            cmd.setBindGroup(1, treeAtlasGroup);
+        }
         if (cloudMapGroup.id != 0) {
             cmd.setBindGroup(3, cloudMapGroup);
         }

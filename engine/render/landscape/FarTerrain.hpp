@@ -81,13 +81,26 @@ public:
                 const array<Vec3, 5>& layerAlbedos,
                 sptr<const HeightField::Snapshot> field = nullptr);
 
+    // far_tree's push block (mirrors ImpostorPush in the shaders, change
+    // both together): info.x = the baked atlas look (0 = analytic
+    // discs, the A/B), y = azimuths, z = elevation rings, w = ring step
+    // (rad); variants = TreeSilhouette::variants.
+    struct ImpostorPush {
+        Vec4 info {};
+        array<Vec4, VegetationSystem::kTreeVariants> variants {};
+    };
+    static constexpr u32 kTreeAtlasUnit = 6; // uTreeAtlas (far_tree.frag)
     // Draw in the main opaque pass, BEFORE the near terrain (depth does
     // the layering). `cloudMapGroup` at its own slot (the Vulkan rule).
     // `residencyGroup`: the FarResidencyUbo (kFarResidencyUbo) — the
     // resident near chunks the far ground is cut under; 0 = no cut.
+    // `treeAtlasGroup`: the impostor atlas (TreeImpostorAtlas) at set 1
+    // of the tree pipeline, 0 = none; `impostors`: its push block.
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle cloudMapGroup,
-              rhi::BindGroupHandle residencyGroup);
+              rhi::BindGroupHandle residencyGroup,
+              rhi::BindGroupHandle treeAtlasGroup,
+              const ImpostorPush& impostors);
 
     // Impostor grounding: true = bilinear height/slope from the bake's
     // own half-grid (35 m — sub-texel shifts at >1 km); false = the
@@ -103,7 +116,9 @@ public:
 
     struct TreeInstance {
         Vec4 positionScale; // xyz = ground point, w = tree height (m)
-        Vec4 params;        // x = crown seed, y = tint jitter, zw free
+        Vec4 params;        // x = crown seed, y = variant + tint jitter,
+                            // z = width ratio (< 0 = conifer),
+                            // w = trunk fraction
     };
 
 private:

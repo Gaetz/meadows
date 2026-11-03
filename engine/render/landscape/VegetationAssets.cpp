@@ -214,10 +214,21 @@ VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
     }
     const Vec3 mean = sum / static_cast<f32>(count);
     const f32 scale = (kTreeScaleMin + kTreeScaleMax) * 0.5f;
-    return { mean.x * scale,
-             glm::clamp(2.0f * mean.y / glm::max(mean.x, 0.1f), 0.4f,
-                        1.4f),
-             glm::clamp(mean.z / glm::max(mean.x, 0.1f), 0.05f, 0.7f) };
+    TreeSilhouette out {
+        mean.x * scale,
+        glm::clamp(2.0f * mean.y / glm::max(mean.x, 0.1f), 0.4f, 1.4f),
+        glm::clamp(mean.z / glm::max(mean.x, 0.1f), 0.05f, 0.7f)
+    };
+    for (u32 v = 0; v < kTreeVariants; ++v) {
+        const Vec3& b = treeBounds[v];
+        if (b.x <= 0.1f) {
+            continue;
+        }
+        const f32 fit = glm::max(b.x, 2.0f * b.y);
+        out.variants[v] = { fit / b.x, glm::clamp(b.z / b.x, 0.0f, 0.9f),
+                            v >= kBroadleafVariants ? 1.0f : 0.0f, 1.0f };
+    }
+    return out;
 }
 
 namespace {
@@ -261,6 +272,7 @@ void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
             }
         }
         treeBounds[variant] = { maxY, maxR, crownStart };
+        ++meshGeneration;
     }
     uploadMeshBuffers(device, mesh, variantMeshes[variant].vertexBuffer,
                       variantMeshes[variant].indexBuffer,

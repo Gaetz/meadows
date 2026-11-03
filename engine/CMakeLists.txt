@@ -118,6 +118,7 @@ add_library(meadows-render STATIC
     render/WorldRenderer.cpp
     render/landscape/ChunkOcclusion.cpp
     render/landscape/FarTerrain.cpp
+    render/landscape/TreeImpostorAtlas.cpp
     render/landscape/FxRenderer.cpp
     render/landscape/GpuOcclusion.cpp
     render/landscape/GrassSystem.cpp

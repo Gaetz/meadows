@@ -843,6 +843,15 @@ radius — the checklist, for the next time a cap hides somewhere:
   the ring (+2), refilled every frame (`TerrainSystem::collectResidency`),
   the fragment discards where the exact ground is drawn; a streaming
   hole keeps its backdrop. A/B in the terrain panel.
+- **Baked tree impostors** (`TreeImpostorAtlas`, `far_tree.*`): the
+  far-tree billboards read an atlas of the real variants — each tree
+  rendered with its own pipeline and materials from 8 azimuths × 2
+  elevation rings into 128 px tiles under a bake frame (ortho camera
+  per view, white ambient, no sun/fog/season/wind/fire), re-baked
+  when the variant meshes land. The fragment blends the two nearest
+  azimuth tiles, un-premultiplies by the baked coverage and lights
+  with an ellipsoid normal. The analytic discs stay as the A/B
+  (`ImpostorPush.info.x`). Journal: `docs/PAYSAGE.md` §7.7.
 - **ChunkOcclusion** rings/rays follow the ring (`configure`): reach =
   the full ring, fan doubles past 1 km so a ray still subtends < 1
   chunk. Horizon table cost grows with both.

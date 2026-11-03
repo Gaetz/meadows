@@ -172,6 +172,37 @@ VegetationSystem::levelMesh(const VariantMesh& mesh, u32 level) {
     }
 }
 
+void VegetationSystem::drawTreeVariantBake(rhi::CommandBuffer& cmd,
+                                           rhi::BindGroupHandle frameBindGroup,
+                                           rhi::BindGroupHandle shadowBindGroup,
+                                           u32 variant,
+                                           rhi::BufferHandle instanceBuffer,
+                                           u64 instanceOffset) {
+    if (variant >= kTreeVariants || pipeline.id() == 0) {
+        return;
+    }
+    const VariantMesh& mesh = variantMeshes[variant];
+    if (mesh.indexCount == 0) {
+        return;
+    }
+    cmd.setPipeline(pipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, mesh.albedoGroup.get().id != 0 ? mesh.albedoGroup.get()
+                                                       : leafMaskGroup.get());
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    const ColonizedTreeParams& bp = barkParamsFor(variant);
+    const BarkPush push { Vec4(bp.barkTint, bp.barkTileScale),
+                          Vec4(bp.barkHexCell, bp.barkHexSharpness, 0.0f,
+                               0.0f) };
+    cmd.setPushConstants(&push, sizeof(push));
+    cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
+    cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
+    cmd.setVertexBuffer(1, instanceBuffer, instanceOffset);
+    cmd.drawIndexed(mesh.indexCount, 1, 0, 0);
+}
+
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
