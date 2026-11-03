@@ -32,7 +32,12 @@ bool readWaterFile(const std::filesystem::path& path,
 // `grid`: the border-transition lattice — master-fleuve ribbons are
 // cut where a border reshaped the analytic ground they were routed on
 // (a sea arm drowned it, or a range buried it), so no course floats
-// over a channel the fallback terrain shows drowned.
+// over a channel the fallback terrain shows drowned. `farGround`: the
+// ground the FarTerrain draws (sandboxFallbackHeight — the continent
+// overviews past the baked maps); the master ribbons are seated on it,
+// since their routed surface is the flood of a bowl the continent
+// pierce drained (tens of metres over the floor, measured). Null =
+// the routed surfaces as they are (the A/B, and the report's "before").
 render::WaterSystem::FarWaterSet collectFarWater(
     const std::filesystem::path& cacheRoot, i32 mapX, i32 mapZ,
     f32 tileSize,
@@ -41,7 +46,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MasterNetworkParams& net,
     const render::terraingen::MapGridSpec& grid,
     const render::terraingen::RiverWidthLaw& law, f32 pinHalfWidth,
-    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan);
+    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan,
+    const render::SandboxTerrain* farGround);
 
 // A map's hydrology window reaches past its rect, so its lakes' masks
 // overshoot the map line — where the NEIGHBOUR map has its OWN

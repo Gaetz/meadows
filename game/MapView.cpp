@@ -62,6 +62,24 @@ std::optional<MapView> loadMapView(const TileBakeParams& params, i32 mapX,
         sandbox->overviewGrid = overview->grid;
         sandbox->overview = overview->heights;
     }
+    // The baked neighbours' overviews, as the game's horizon reads
+    // them before the continent.
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dz == 0) {
+                continue;
+            }
+            const i32 mx = mapX + dx;
+            const i32 mz = mapZ + dz;
+            if (!mapBakedAndValid(cacheRoot, mx, mz, tilesPerSide, &params)) {
+                continue;
+            }
+            if (auto overview = loadMapOverview(mapCacheDir(cacheRoot, mx, mz))) {
+                sandbox->neighbourOverviews.push_back(
+                    { mx, mz, overview->grid, std::move(overview->heights) });
+            }
+        }
+    }
     // The continent ground(s) under the map and its neighbours: the
     // instruments read the horizon the game shows.
     if (params.continent.enabled) {

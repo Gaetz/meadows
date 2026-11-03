@@ -42,6 +42,9 @@ struct FarWaterSet {
             f32 halfWidth { 0.0f };
         };
         vector<Node> nodes;
+        // 1 = a master-network course past every baked slice (the
+        // report tells the two populations apart); 0 = a baked one.
+        u8 master { 0 };
     };
     vector<Lake> lakes;
     vector<Ribbon> ribbons;

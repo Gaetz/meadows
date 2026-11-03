@@ -2361,6 +2361,35 @@ briques Z0-Z5 dans le fichier de plan.
   the water » dans le panneau de rendu (Culling & debug). Rien à recuire :
   aucun bump de version.
 
+- **2026-11-03 (suite) — Les rubans lointains en l'air : les cours
+  maîtres sont assis sur le sol de l'horizon.** Retour dev : « quand on
+  regarde vers une autre carte, on voit des rubans d'eau en l'air ».
+  L'eau lointaine (`collectFarWater`) a deux sources : les `.twb` cuits
+  des voisins (rubans publiés, relevés au survol 64 m de leur carte,
+  plafond +6 m) et, partout où rien n'est cuit à la version courante, les
+  cours du réseau maître à leur **surface routée** — la surface
+  d'inondation de l'étage 0 (2/3 des nœuds à 26 m médians au-dessus du
+  sol, voir le census). Avant le sol continent, le FarTerrain montrait
+  l'analytique avec l'empreinte : les surfaces y tenaient. Depuis
+  `893f85e` l'horizon montre le continent percé et vidé : la surface
+  routée flotte au-dessus des cuvettes drainées. Instrument `far water`
+  du rapport (nouveau : l'ensemble lointain tel que le jeu le gère,
+  contre `sandboxFallbackHeight` = survols des voisins cuits puis
+  continent ; le `MapView` du rapport charge désormais les survols
+  voisins comme le jeu) : cours maîtres au-delà des cartes cuites, (1,1) :
+  **99,9 % des nœuds en l'air, +87 m médians, +220 m p90**. Correctif :
+  le fournisseur capture le `SandboxTerrain` publié (survols + continents)
+  et chaque nœud maître est assis à `sol + 0,4 m`, relevé d'au plus 6 m
+  si le cours passe sous le sol (au-delà il reste enterré, l'horizon le
+  cache), sans monotonie forcée (le survol 64 m ondule le long d'un
+  cours ; un minimum courant enterrait le ruban après chaque bosse,
+  mesuré). Mesuré : 0 % en l'air, 0 % enterré, +0,4 m médians et p90. Les
+  rubans cuits sont inchangés (3,6 % en l'air par le plafond +6 m ;
+  60,7 % enterrés sous le survol 64 m dans leurs gorges : invisibles de
+  loin, le champ proche les reprend — résidu connu, pas traité).
+  `nullptr` = l'ancien comportement (A/B, et le « avant » du rapport).
+  Rien à recuire.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

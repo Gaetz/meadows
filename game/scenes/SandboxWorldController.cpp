@@ -193,7 +193,7 @@ Vec3 SandboxWorldController::probeSpawn(const SandboxContext& ctx) const {
     // The map's cached water (nothing is published yet): the probe
     // must not pick a lake bed -- the flattest ground there is.
     const render::WaterSystem::FarWaterSet water = makeFarWaterProvider(
-        ctx, mapX_, mapZ_, ctx.mapBakeParams(), sandbox->grid,
+        ctx, mapX_, mapZ_, sandbox, ctx.mapBakeParams(), sandbox->grid,
         ctx.renderer.waterSystem().simConfig().pinRiverHalfWidth)(
         (static_cast<f32>(mapX_) + 0.5f) * size,
         (static_cast<f32>(mapZ_) + 0.5f) * size, size * 0.5f);
@@ -339,6 +339,7 @@ void SandboxWorldController::updatePrefetch(const SandboxContext& ctx, f32 dt,
 
 render::WaterSystem::FarWaterFn SandboxWorldController::makeFarWaterProvider(
     const SandboxContext& ctx, i32 mapX, i32 mapZ,
+    sptr<const render::SandboxTerrain> sandbox,
     const render::terraingen::TileBakeParams& bake,
     const render::terraingen::MapGridSpec& grid, f32 pinHalfWidth) const {
     render::terraingen::ProceduralControlParams cp = bake.controls;
@@ -348,11 +349,11 @@ render::WaterSystem::FarWaterFn SandboxWorldController::makeFarWaterProvider(
     net.mapGrid = grid;
     return [cp, macro = bake.macro, net, grid, law = bake.hydrology.widthLaw(),
             pinHalfWidth, sea = ctx.tuning.seaLevel, tileSize = bake.tileSize,
-            root = cacheRoot(ctx.tuning.terrainSeed), mapX,
-            mapZ](f32 cx, f32 cz, f32 halfSpan) {
+            root = cacheRoot(ctx.tuning.terrainSeed), mapX, mapZ,
+            sandbox = std::move(sandbox)](f32 cx, f32 cz, f32 halfSpan) {
         return collectFarWater(root, mapX, mapZ, tileSize, cp, macro, net,
                                grid, law, pinHalfWidth, sea, cx, cz,
-                               halfSpan);
+                               halfSpan, sandbox.get());
     };
 }
 
@@ -437,7 +438,7 @@ void SandboxWorldController::applyMap(const SandboxContext& ctx, i32 mapX,
         // Far water: distant lakes/rivers for the FarTerrain — cached
         // .twb + master fleuves, gathered on the worker.
         ctx.renderer.waterSystem().setFarWater(makeFarWaterProvider(
-            ctx, mapX, mapZ, bakeParams, sandbox->grid,
+            ctx, mapX, mapZ, sandbox, bakeParams, sandbox->grid,
             ctx.renderer.waterSystem().simConfig().pinRiverHalfWidth));
     }
     // The base: the authored regions, plus -- on a crossing -- the

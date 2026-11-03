@@ -172,8 +172,12 @@ private:
     // The far-water provider of map (mapX, mapZ): cached .twb lakes and
     // ribbons plus the master fleuves, pure and worker-callable (the
     // water system's far layer, and the spawn probe's water oracle).
+    // `sandbox`: the published fallback ground (continent overviews
+    // included) the far ribbons are seated on — captured by the
+    // provider, immutable once published.
     render::WaterSystem::FarWaterFn
     makeFarWaterProvider(const SandboxContext& ctx, i32 mapX, i32 mapZ,
+                         sptr<const render::SandboxTerrain> sandbox,
                          const render::terraingen::TileBakeParams& bake,
                          const render::terraingen::MapGridSpec& grid,
                          f32 pinHalfWidth) const;

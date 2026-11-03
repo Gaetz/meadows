@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/generation/GridOps.hpp"
 #include "game/MapBaker.hpp"
 #include "world/terrain/TerrainRegions.hpp"
@@ -543,7 +544,8 @@ render::WaterSystem::FarWaterSet collectFarWater(
     const render::terraingen::MasterNetworkParams& net,
     const render::terraingen::MapGridSpec& grid,
     const render::terraingen::RiverWidthLaw& law, f32 pinHalfWidth,
-    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan) {
+    f32 seaLevel, f32 cx, f32 cz, f32 halfSpan,
+    const render::SandboxTerrain* farGround) {
     render::WaterSystem::FarWaterSet set;
     const f32 minX = cx - halfSpan;
     const f32 maxX = cx + halfSpan;
@@ -772,9 +774,15 @@ render::WaterSystem::FarWaterSet collectFarWater(
         }
     }
     } // neighbour map dirs
-    // Master fleuves wherever nothing was ever baked: the imprint (S1)
-    // carved their valleys into the analytic ground the FarTerrain
-    // shows, so the routed surfaces sit plausibly in them.
+    // Master fleuves wherever nothing was ever baked. Their routed
+    // surface is the stage-0 flood surface: over a zone's bowl it
+    // stands tens of metres above the floor the continent pierce
+    // drained — the ground the FarTerrain shows. Each node is seated
+    // on that ground (+0.4 m), lifted at most 6 m where the course
+    // runs under it (past that it stays buried: the far terrain hides
+    // it). Not forced monotone: the 64 m overview wobbles along a
+    // course and a running min buried the ribbon after every bump
+    // (measured); a far ribbon follows the ground it is drawn on.
     const auto inCovered = [&](f32 x, f32 z) {
         for (const Rect& r : covered) {
             if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) {
@@ -788,6 +796,7 @@ render::WaterSystem::FarWaterSet collectFarWater(
         ctl, macro, net, minX, minZ, maxX, maxZ);
     for (const render::terraingen::MasterRiver& river : masters) {
         render::WaterSystem::FarWaterSet::Ribbon run;
+        run.master = 1;
         for (const render::terraingen::MasterNode& node : river.nodes) {
             // The course was routed on the ANALYTIC ground; where a
             // border transition reshaped it (a sea arm drowned it, a
@@ -803,6 +812,7 @@ render::WaterSystem::FarWaterSet collectFarWater(
                     set.ribbons.push_back(std::move(run));
                 }
                 run = {};
+                run.master = 1;
                 continue;
             }
             // The shared width law on the effective discharge, so
@@ -811,7 +821,22 @@ render::WaterSystem::FarWaterSet collectFarWater(
             // threshold already keeps master courses ~10 m wide).
             const f32 hw =
                 render::terraingen::riverLawHalfWidth(law, node.qArea);
-            run.nodes.push_back({ node.x, node.z, node.surface, hw });
+            f32 surface = node.surface;
+            if (farGround) {
+                surface = glm::min(
+                    render::sandboxFallbackHeight(*farGround, node.x, node.z) +
+                        0.4f,
+                    node.surface + 6.0f);
+                if (surface <= seaLevel + 0.5f) {
+                    if (run.nodes.size() >= 2) {
+                        set.ribbons.push_back(std::move(run));
+                    }
+                    run = {};
+                    run.master = 1;
+                    continue;
+                }
+            }
+            run.nodes.push_back({ node.x, node.z, surface, hw });
         }
         if (run.nodes.size() >= 2) {
             set.ribbons.push_back(std::move(run));

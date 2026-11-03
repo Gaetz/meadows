@@ -30,6 +30,7 @@
 #include "game/AllForms.hpp"
 #include "game/MapBaker.hpp"
 #include "game/MapView.hpp"
+#include "game/TerrainBakeStreamer.hpp"
 #include "game/TerrainGenTuning.hpp"
 
 namespace cooker {
@@ -2294,6 +2295,68 @@ void reportLodMeshVsWater(const ReportContext& ctx) {
     }
 }
 
+// The far water the game draws past the resident map (cached .twb
+// of the neighbours, master fleuves beyond) against the ground the
+// FarTerrain shows (sandboxFallbackHeight: the neighbours' overviews,
+// then the continent): nodes hanging in the air or buried, with the
+// master ribbons routed as they are and seated on that ground.
+void reportFarWater(const ReportContext& ctx) {
+    const game::MapView& view = *ctx.view;
+    if (!view.sandbox) {
+        return;
+    }
+    render::terraingen::ProceduralControlParams cp = ctx.params.controls;
+    cp.seed = ctx.params.worldSeed;
+    render::terraingen::MasterNetworkParams net = ctx.params.network;
+    net.seaLevel = ctx.params.macro.seaLevel;
+    net.mapGrid = view.sandbox->grid;
+    constexpr f32 kPinHalfWidth = 4.0f; // the sim's pin (WaterSimControl)
+    const auto census = [&](const render::SandboxTerrain* seatOn,
+                            const char* label) {
+        const auto set = game::collectFarWater(
+            ctx.cacheDir, ctx.mapX, ctx.mapZ, ctx.params.tileSize, cp,
+            ctx.params.macro, net, view.sandbox->grid,
+            ctx.params.hydrology.widthLaw(), kPinHalfWidth,
+            ctx.params.macro.seaLevel, view.centreX(), view.centreZ(),
+            1.5f * view.mapSize, seatOn);
+        vector<f32> master, baked;
+        for (const auto& ribbon : set.ribbons) {
+            for (const auto& n : ribbon.nodes) {
+                const f32 d = n.surface -
+                              render::sandboxFallbackHeight(*view.sandbox,
+                                                            n.x, n.z);
+                (ribbon.master ? master : baked).push_back(d);
+            }
+        }
+        const auto line = [&](vector<f32>& v, const char* where) {
+            if (v.empty()) {
+                LOG_INFO("  far water ({}): {} none", label, where);
+                return;
+            }
+            u32 air = 0, buried = 0;
+            vector<f32> absd;
+            for (const f32 d : v) {
+                air += d > 2.0f ? 1 : 0;
+                buried += d < -2.0f ? 1 : 0;
+                absd.push_back(std::abs(d));
+            }
+            const f32 n = static_cast<f32>(v.size());
+            LOG_INFO("  far water ({}): {} {} nodes: in the air > 2 m "
+                     "{:.1f} %, buried < -2 m {:.1f} %, surface - horizon "
+                     "ground median {:+.1f} / p90 {:+.1f} m, |d| p90 {:.1f} m",
+                     label, where, v.size(), 100.0f * air / n,
+                     100.0f * buried / n, median(v), percentile(v, 90),
+                     percentile(absd, 90));
+        };
+        line(master, "master courses past the baked maps,");
+        line(baked, "baked ribbons of this map and its neighbours,");
+        LOG_INFO("  far water ({}): {} ribbons, {} lakes", label,
+                 set.ribbons.size(), set.lakes.size());
+    };
+    census(nullptr, "routed");
+    census(view.sandbox.get(), "seated");
+}
+
 // --at x z: the ribbons near one point, their ground, flow gate and
 // drawn mesh at every LOD, and a transverse cut — for a spot the dev
 // names in game.
@@ -2518,6 +2581,7 @@ int landscapeReport(char** argv, int argc) {
     reportRiversVsMapLines(ctx);
     reportRiverSections(ctx);
     reportLodMeshVsWater(ctx);
+    reportFarWater(ctx);
     reportZoom(ctx);
     reportMasterCourses(ctx);
     reportGroundAcrossLine(ctx);
