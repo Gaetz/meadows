@@ -147,6 +147,13 @@ WorldRenderer::Mounted WorldRenderer::resolveMounted(
 //    shared library, in this order.
 // Everything the always-on core owns (frame UBOs, mesh/skinned/rain/key-
 // shadow resources, the tonemap) stays hand-written in create().
+// far_terrain.frag's FarResidencyUbo: std140, uvec4[96] = 384 words
+// = 12 288 chunk bits, enough for the ring at kMaxViewRadius (+2).
+struct FarResidencyUbo {
+    Vec4 info; // xy = origin chunk, z = side, w = chunk size (m)
+    array<u32, 384> bits;
+};
+
 const WorldRenderer::SystemEntry WorldRenderer::kSystems[] = {
     { "terrain", &Mounted::terrain,
       [](WorldRenderer& r, rhi::Device& d, core::JobSystem& j) {
@@ -176,8 +183,18 @@ const WorldRenderer::SystemEntry WorldRenderer::kSystems[] = {
               r.farRings[ring].create(d, *r.shaders, j,
                                       kFarRingConfigs[ring]);
           }
+          r.farResidencyUbo = { d, d.createBuffer(
+              { .usage = rhi::BufferUsage::Uniform,
+                .size = sizeof(FarResidencyUbo),
+                .dynamic = true },
+              nullptr) };
+          r.farResidencyGroup = { d, d.createBindGroup(
+              { .entries = { { .binding = 1,
+                               .buffer = r.farResidencyUbo } } }) };
       },
       [](WorldRenderer& r, rhi::Device& d) {
+          r.farResidencyGroup.reset();
+          r.farResidencyUbo.reset();
           for (FarTerrain& ring : r.farRings) {
               ring.destroy(d);
           }
@@ -1450,7 +1467,8 @@ void WorldRenderer::recordMainPass(engine::FrameContext& frame,
                 for (u32 ring = kFarRingCount; ring-- > 0;) {
                     if (farRingEnabled(ring)) {
                         farRings[ring].draw(frame.cmd, frameBindGroup,
-                                            sky.cloudMapBindGroup());
+                                            sky.cloudMapBindGroup(),
+                                            farResidencyGroup);
                     }
                 }
             }
@@ -1619,7 +1637,8 @@ void WorldRenderer::recordReflection(engine::FrameContext& frame, const RenderVi
             // where the eye sees mountains.
             if (farRingEnabled(kInnerRing)) {
                 farRings[kInnerRing].draw(frame.cmd, reflectionBindGroup,
-                                          sky.cloudMapBindGroup());
+                                          sky.cloudMapBindGroup(),
+                                          farResidencyGroup);
             }
         }
         // Trees only: rocks and bushes are invisible in a wobbly half-res
@@ -1974,6 +1993,35 @@ void WorldRenderer::pumpPipelinesAndRequests(engine::FrameContext& frame) {
     }
 }
 
+// The far rings' cut under the near ground: the resident chunks of
+// the terrain ring (+2 of eviction hysteresis) as bits, side 0 when
+// the A/B is off. Same-frame: the queue-style write lands before this
+// frame's far draws, like the rain occlusion matrix.
+void WorldRenderer::updateFarResidency(rhi::Device& device,
+                                       const Vec3& cameraPos) {
+    if (!mounted.terrain || farResidencyUbo.get().id == 0) {
+        return;
+    }
+    FarResidencyUbo ubo {};
+    const i32 reach = terrain.viewRadius + 2;
+    const u32 side =
+        tuning.farCutUnderChunks ? static_cast<u32>(2 * reach + 1) : 0u;
+    if (side > 0) {
+        const i32 originCx =
+            core::chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize) -
+            reach;
+        const i32 originCz =
+            core::chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize) -
+            reach;
+        terrain.collectResidency(originCx, originCz, side, farResidencyBits);
+        const size_t words = glm::min(farResidencyBits.size(), ubo.bits.size());
+        std::copy_n(farResidencyBits.begin(), words, ubo.bits.begin());
+        ubo.info = { static_cast<f32>(originCx), static_cast<f32>(originCz),
+                     static_cast<f32>(side), TerrainSystem::kChunkSize };
+    }
+    device.updateBuffer(farResidencyUbo, &ubo, sizeof(ubo), 0);
+}
+
 void WorldRenderer::render(engine::FrameContext& frame,
                                const render::RenderSnapshot& snapshot,
                                const RenderView& view) {
@@ -2048,6 +2096,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     const ComposedFrame composed = composeFrameUniforms(inputs);
     const render::FrameUniforms& uniforms = composed.base;
     const render::FrameUniforms& frameData = composed.resolved;
+    updateFarResidency(frame.device, view.camera.position);
     if (mounted.sky && frameData.stormInfo.y > 0.003f) {
         frame.device.updateBuffer(rainOcclusionUbo,
                                   &frameData.rainOcclusionViewProj,

@@ -29,7 +29,8 @@ void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
     config = cfg;
     mailbox.create(jobSystem, config.probeName);
     // Two rings share the shaders; load() is idempotent on a live program.
-    shaders.load(kFarTerrainShader, { render::kFrameUbo },
+    shaders.load(kFarTerrainShader,
+                 { render::kFrameUbo, render::kFarResidencyUbo },
                  { { "uCloudMap", 2 } });
     shaders.load(kFarTreeShader, { render::kFrameUbo },
                  { { "uCloudMap", 2 } });
@@ -386,12 +387,16 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
 
 void FarTerrain::draw(rhi::CommandBuffer& cmd,
                       rhi::BindGroupHandle frameBindGroup,
-                      rhi::BindGroupHandle cloudMapGroup) {
+                      rhi::BindGroupHandle cloudMapGroup,
+                      rhi::BindGroupHandle residencyGroup) {
     if (!mailbox.ready() || pipeline.id() == 0) {
         return;
     }
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    if (residencyGroup.id != 0) {
+        cmd.setBindGroup(1, residencyGroup);
+    }
     if (cloudMapGroup.id != 0) {
         cmd.setBindGroup(3, cloudMapGroup);
     }

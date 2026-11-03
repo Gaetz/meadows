@@ -212,6 +212,29 @@ public:
         }
     }
 
+    // The resident chunks as one bit per chunk of the side x side
+    // window at chunk (originCx, originCz), row-major along +z, 32 per
+    // word — the far terrain's cut under the exact ground (FarTerrain,
+    // FarResidencyUbo).
+    void collectResidency(i32 originCx, i32 originCz, u32 side,
+                          vector<u32>& bits) const {
+        bits.assign((static_cast<size_t>(side) * side + 31) / 32, 0u);
+        for (const auto& [key, chunk] : streamer.chunks) {
+            if (chunk.residentLod == kNoLod) {
+                continue;
+            }
+            const i32 cx = core::chunkKeyCx(key) - originCx;
+            const i32 cz = core::chunkKeyCz(key) - originCz;
+            if (cx < 0 || cz < 0 || cx >= static_cast<i32>(side) ||
+                cz >= static_cast<i32>(side)) {
+                continue;
+            }
+            const size_t idx = static_cast<size_t>(cz) * side +
+                               static_cast<size_t>(cx);
+            bits[idx >> 5] |= 1u << (idx & 31);
+        }
+    }
+
     // Meshed maxY per resident chunk — the occlusion rebuild's target
     // table (copied only when a rebuild starts, ~1/s).
     std::unordered_map<u64, f32> chunkTops() const {

@@ -420,6 +420,9 @@ public:
         // Coarse terrain LODs clamped under the water they reach (A/B):
         // off = the ground bridges sheets and ribbons at distance.
         bool meshUnderWater { true };
+        // The far rings cut under the resident near chunks (A/B): off =
+        // the 62 m backdrop shows through the near ground in gorges.
+        bool farCutUnderChunks { true };
         bool tonemap { true };
         // BotW step lighting vs classic wrap (A/B). Off: the realistic
         // terrain-texturing look owns this branch; the panel checkbox
@@ -668,6 +671,13 @@ private:
     static constexpr u32 kHorizonRing = 1;
     static constexpr u32 kFarRingCount = 2;
     array<render::FarTerrain, kFarRingCount> farRings;
+    // The far rings' cut under the resident chunks (FarResidencyUbo,
+    // far_terrain.frag): one bit per chunk of the terrain ring,
+    // refilled every frame before the far draws.
+    rhi::UniqueBuffer farResidencyUbo;
+    rhi::UniqueBindGroup farResidencyGroup;
+    vector<u32> farResidencyBits;
+    void updateFarResidency(rhi::Device& device, const Vec3& cameraPos);
     // The inner ring follows the far-terrain toggle alone; the horizon
     // ring needs its own toggle on top.
     bool farRingEnabled(u32 ring) const {

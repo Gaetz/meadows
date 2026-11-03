@@ -834,6 +834,15 @@ radius — the checklist, for the next time a cap hides somewhere:
   water is gathered once per chunk from `TerrainParams::water`; a
   lakes-only publish re-meshes the chunks it covers; A/B in the
   terrain panel (Culling & debug). Journal: `docs/PAYSAGE.md` §7.7.
+- **The far rings are cut under the resident chunks**
+  (`FarResidencyUbo`, `far_terrain.frag`): the 62 m backdrop's min
+  envelope (35 m half-cells of the 16 m pyramid) misses slots a few
+  metres wide, and the ring-edge restoration of true heights starts at
+  0.85 × ring while LOD4 chunks stay resident to 1.0 × — the far mesh
+  bridged gorges over the exact floor. One bit per resident chunk of
+  the ring (+2), refilled every frame (`TerrainSystem::collectResidency`),
+  the fragment discards where the exact ground is drawn; a streaming
+  hole keeps its backdrop. A/B in the terrain panel.
 - **ChunkOcclusion** rings/rays follow the ring (`configure`): reach =
   the full ring, fan doubles past 1 km so a ray still subtends < 1
   chunk. Horizon table cost grows with both.

@@ -83,8 +83,11 @@ public:
 
     // Draw in the main opaque pass, BEFORE the near terrain (depth does
     // the layering). `cloudMapGroup` at its own slot (the Vulkan rule).
+    // `residencyGroup`: the FarResidencyUbo (kFarResidencyUbo) — the
+    // resident near chunks the far ground is cut under; 0 = no cut.
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
-              rhi::BindGroupHandle cloudMapGroup);
+              rhi::BindGroupHandle cloudMapGroup,
+              rhi::BindGroupHandle residencyGroup);
 
     // Impostor grounding: true = bilinear height/slope from the bake's
     // own half-grid (35 m — sub-texel shifts at >1 km); false = the

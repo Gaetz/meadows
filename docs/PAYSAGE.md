@@ -2390,6 +2390,28 @@ briques Z0-Z5 dans le fichier de plan.
   `nullptr` = l'ancien comportement (A/B, et le « avant » du rapport).
   Rien à recuire.
 
+- **2026-11-03 (suite) — Le FarTerrain est coupé sous les chunks
+  résidents.** Retour dev à (5800, 4490) sur (0,0) : « le terrain low poly
+  cache le vrai terrain ». Zoom du rapport : une gorge de 54 m de large
+  aux parois de +53 et +79 m à 27 m de l'axe ; les LOD proches y sont
+  justes (maillage − eau = sol − eau). Le fautif est le FarTerrain, le
+  fond de décor de 62 m dessiné SOUS les chunks : son enveloppe minimum
+  (demi-cellules de 35 m lues dans la pyramide à 16 m, minimum sur ± 1
+  cellule) manque les fentes de B1 (3-10 m de large, jusqu'à 60 m de
+  profondeur) et, entre 0,85 et 1,5 rayon de streaming, le shader lui
+  restitue ses vraies hauteurs alors que les chunks LOD4 sont résidents
+  jusqu'au rayon : il ponte les gorges par-dessus le vrai sol. Proposition
+  du dev retenue telle quelle : **ne pas afficher le low poly là où le high
+  poly est présent**. Chaque frame, `TerrainSystem::collectResidency`
+  donne un bit par chunk résident de l'anneau (+2) ; `FarResidencyUbo`
+  (binding 1, 96 uvec4 = 12 288 bits) le porte au fragment de
+  `far_terrain.frag`, qui `discard` sous un chunk résident. Les trous de
+  streaming gardent leur fond de décor (chunk absent = bit à 0), les
+  anneaux intérieur et horizon sont coupés pareil, la passe réflexion
+  aussi. A/B « Far terrain cut under resident chunks » (panneau terrain,
+  Culling & debug ; côté 0 = pas de coupe). Boot sandbox 30 s en Release
+  sans erreur de shader ni de validation. Rien à recuire.
+
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
 Déclencheur dev : « un gros fleuve sur la carte (0,0) alors que

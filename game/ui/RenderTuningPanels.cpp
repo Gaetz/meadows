@@ -427,6 +427,8 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r,
         ImGui::Checkbox("Wireframe (LOD debug)", &r.tuning.wireframe);
         ImGui::Checkbox("Coarse LODs under the water (A/B)",
                         &r.tuning.meshUnderWater);
+        ImGui::Checkbox("Far terrain cut under resident chunks (A/B)",
+                        &r.tuning.farCutUnderChunks);
     }
 }
 

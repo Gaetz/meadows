@@ -35,6 +35,9 @@ inline constexpr f32 kDepthBiasSlope = 2.5f;
 inline const rhi::UniformBlockBinding kFrameUbo { "FrameUbo", 0 };
 inline const rhi::UniformBlockBinding kShadowUbo { "ShadowUbo", 1 };
 inline const rhi::UniformBlockBinding kRcUbo { "RcUbo", 2 };
+// The far terrain's cut under the resident chunks (far_terrain.frag).
+inline const rhi::UniformBlockBinding kFarResidencyUbo { "FarResidencyUbo",
+                                                         1 };
 inline const rhi::UniformBlockBinding kRcCascadeUbo { "RcCascadeUbo", 4 };
 inline const rhi::UniformBlockBinding kLightsUbo { "LightsUbo", 5 };
 
