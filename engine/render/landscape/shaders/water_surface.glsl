@@ -214,17 +214,20 @@ void main() {
     // fade-to-ground painted a green rim band (measured).
     {
         int simMode = int(uWaterSimTuneInfo.z + 0.5);
-        // BROOKS (ribbons under the pin threshold) are exempt: the
-        // sim never owns them (no pin, film-only), so cutting them
-        // left dry beds beside far water that promised rivers. They
-        // have no sim twin, so the double-network artifact that
-        // killed the per-texel check cannot return through them.
-        // Margin under the threshold: the bake floors a narrowed
-        // river AT the pin width, and the interpolated half-width of
-        // such a ribbon can land a hair under it — read as a brook,
-        // the ribbon stayed drawn in the window, hanging over the
-        // gorge bed the sim's water ran down.
-        bool brook = vInfo.x > 0.001 && vInfo.x < uWaterDebugInfo.y - 0.05;
+        // BROOKS (ribbons under the pin threshold) have no sim pin:
+        // the sim films them from their head and runoff sources. Their
+        // baked ribbon may stay drawn inside the windows
+        // (uWaterDebugInfo.z = SimConfig::brookRibbonsNear): off, the
+        // sim is the only water in the window, brooks included; on,
+        // the legacy exemption (a brook the sim under-feeds keeps its
+        // ribbon rather than a dry bed). Brooks have no sim twin, so
+        // the exemption cannot bring back the double-network artifact
+        // that killed the per-texel check. Margin under the
+        // threshold: the bake floors a narrowed river AT the pin
+        // width, and the interpolated half-width of such a ribbon can
+        // land a hair under it.
+        bool brook = uWaterDebugInfo.z > 0.5 && vInfo.x > 0.001 &&
+                     vInfo.x < uWaterDebugInfo.y - 0.05;
         if (uWaterSimMapInfo.w > 0.5 && simMode != 1 && !brook) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;

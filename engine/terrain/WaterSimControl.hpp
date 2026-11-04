@@ -65,6 +65,12 @@ public:
         // must be reservoir-fed (10 m left established rivers nearly
         // dry).
         f32 pinRiverHalfWidth { 4.0f };
+        // Baked ribbons UNDER the pin threshold (brooks: no pin, the
+        // sim films them from their head/runoff sources) stay drawn
+        // inside the live and frozen windows — the legacy exemption,
+        // taken when the sim under-fed them. Off: the sim is the only
+        // water in the window, brooks included.
+        bool brookRibbonsNear { false };
         // Rain puddles — under an active storm the still films in
         // terrain dips publish at reduced thresholds (and the kernel
         // rain is storm-boosted). Off = the anti-flicker fallback.

@@ -2390,7 +2390,9 @@ FrameComposerInputs WorldRenderer::composerInputs(
         .mistPuffInfo = { tuning.mistPuffiness, 0.0f, 0.0f, 0.0f },
         .waterDebugInfo = { static_cast<f32>(tuning.waterDebug),
                             water.simConfig().pinRiverHalfWidth,
-                            0.0f, 0.0f },
+                            water.simConfig().brookRibbonsNear ? 1.0f
+                                                                : 0.0f,
+                            0.0f },
         .waterSimMapInfo = water.simMapInfo(),
         .waterSimTuneInfo = water.simTuneInfo(),
         .waterSimFrozen = water.simFrozenInfo(),

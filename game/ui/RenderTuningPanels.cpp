@@ -803,6 +803,8 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                                                 sim.fadeBand);
         rangedSlider<&Tuning::waterSimPinRiverHalfWidth>(
             "Pin rivers >= half-width (m)", sim.pinRiverHalfWidth);
+        ImGui::Checkbox("Brook ribbons in the sim window",
+                        &sim.brookRibbonsNear);
         rangedSlider<&Tuning::waterSimReservoirOutflow>(
             "Reservoir outflow (m3/s/cell)", sim.params.reservoirOutflow);
         // Baked inflow multiplier at the window's entries (1 = the true

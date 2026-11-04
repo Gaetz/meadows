@@ -303,6 +303,7 @@ struct LandscapeTuningForm : Form {
     f32 waterSimFadeBand { 32.0f };
     bool waterSimSettleGated { true };
     f32 waterSimPinRiverHalfWidth { 4.0f };
+    bool waterSimBrookRibbonsNear { false };
     f32 waterSimReservoirOutflow { 2.0f };
     // Baked river/spring inflow multiplier at the sim window's entries
     // (1 = the true runoff law).
@@ -472,8 +473,9 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD_RANGE(waterSimFadeBand, 8.0f, 64.0f, 0)
         REFLECT_FIELD(waterSimSettleGated)
         REFLECT_FIELD_RANGE(waterSimPinRiverHalfWidth, 0.0f, 40.0f, 0)
+        REFLECT_FIELD(waterSimBrookRibbonsNear)
         REFLECT_FIELD_RANGE(waterSimReservoirOutflow, 0.2f, 20.0f, 1)
-        REFLECT_FIELD_RANGE(waterSimBakedDischargeBoost, 1.0f, 8.0f, 1)
+        REFLECT_FIELD_RANGE(waterSimBakedDischargeBoost, 1.0f, 16.0f, 1)
         REFLECT_FIELD(waterSimRainPuddles)
     REFLECT_END()
 };

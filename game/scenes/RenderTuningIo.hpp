@@ -367,6 +367,7 @@ inline constexpr WorldLane<render::WaterSystem::SimConfig, bool> kWaterSim[] = {
     { &render::WaterSystem::SimConfig::enabled, &Tuning::waterSimEnabled, "Sim enabled" },
     { &render::WaterSystem::SimConfig::settleGated, &Tuning::waterSimSettleGated, "Settle-gated reveal" },
     { &render::WaterSystem::SimConfig::rainPuddles, &Tuning::waterSimRainPuddles, "Rain puddles" },
+    { &render::WaterSystem::SimConfig::brookRibbonsNear, &Tuning::waterSimBrookRibbonsNear, "Brook ribbons in the sim window" },
 };
 
 // --- Render panel: "Post-processing" ---

@@ -2761,6 +2761,33 @@ briques Z0-Z5 dans le fichier de plan.
   inchangé (FinalizeParams hors clé). Tests ciblés 59/59 (bake, hydro,
   géométrie d'eau, sim). À suivre un jour : re-seoir la surface
   publiée sur le lit pour rendre ces 15 % de ruban au lointain.
+- **2026-11-04 — Les ruisseaux cèdent aussi à la sim dans la fenêtre
+  (A/B `brookRibbonsNear`, sans recuisson).** Retour dev à
+  (5125, 3830) : « j'ai encore des rubans de petits ruisseaux qui
+  s'affichent de près — pourquoi ne pas simplement les cacher quand on
+  s'approche, en laissant la génération d'eau ? ». Le cours 86 y est un
+  ruisseau par sa loi (1,2-2,9 m) avec un îlot de trois points à 4,0 m
+  (35-37, lecture d'aire étrangère sur le raster) : de près les points
+  ≥ 4 m sont coupés et épinglés, les points < 4 m gardent leur ruban
+  cuit — l'exemption E9 option A (12/10), prise parce que la sim
+  sous-alimentait les < 4 m. Or le même lot E9 a livré les trois
+  correctifs d'alimentation (débit des vraies têtes, aire de drainage
+  réelle par point, injection distribuée) : l'exemption a survécu à sa
+  raison. **Règle rétablie : dans la fenêtre vive, la sim est la seule
+  eau, ruisseaux compris** — le shader coupe toute demi-largeur > 0
+  dans le rect vif et les rects gelés ; `uWaterDebugInfo.z` porte la
+  bascule, `SimConfig::brookRibbonsNear` (panneau Water « Brook
+  ribbons in the sim window », persistée `waterSimBrookRibbonsNear`)
+  rend l'ancien comportement. La sim n'est pas touchée : masque
+  ruisseau (publication 8/3 mm), sources de tête et ruissellement
+  distribué inchangés ; la vue « Source » nomme toujours les ruisseaux
+  en vert. Quantité d'eau (dev : « on pourrait aussi augmenter la
+  quantité d'eau générée ») : le curseur existant « Baked discharge
+  boost » (×3) ne nourrit QUE les biefs sous le seuil de pin et les
+  têtes — les biefs épinglés se servent à leur réservoir — c'est le
+  robinet des ruisseaux ; plage élargie 1-8 → 1-16. Risque nommé : un
+  ruisseau dont le film sim reste sous 8 mm est à sec de près, c'était
+  la raison d'E9. Jugement dev EN ATTENTE.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
