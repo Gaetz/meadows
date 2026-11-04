@@ -2765,6 +2765,26 @@ void reportZoom(const ReportContext& ctx) {
                          slope, lakeIdx >= 0 ? std::to_string(lakeIdx) : "-");
             }
         }
+        // Every published point of ANY course within 40 m: a
+        // tributary mouth or a sibling run hanging over the spot
+        // (the nearest-course table above cannot show it).
+        LOG_INFO("      all course points within 40 m: course i | x z | "
+                 "water | hw | tier | ground - water");
+        for (size_t r = 0; r < view.rivers.size(); ++r) {
+            const auto& other = view.rivers[r];
+            for (size_t k = 0; k < other.points.size(); ++k) {
+                const auto& p = other.points[k];
+                const f32 dx = p.x - at.x;
+                const f32 dz = p.z - at.y;
+                if (dx * dx + dz * dz > 40.0f * 40.0f) {
+                    continue;
+                }
+                LOG_INFO("        {:>4} {:>4} | {:7.0f} {:7.0f} | {:7.1f} | "
+                         "{:5.1f} | {} | {:+6.1f}",
+                         r, k, p.x, p.z, p.surface, p.halfWidth, p.tier,
+                         view.height(p.x, p.z) - p.surface);
+            }
+        }
     }
     if (shown == 0) {
         LOG_INFO("    no course within 150 m");

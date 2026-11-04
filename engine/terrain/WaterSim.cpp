@@ -861,6 +861,9 @@ void pinRivers(WaterSimState& state, const WaterBodies& bodies,
         for (size_t s = 0; s + 1 < river.nodes.size(); ++s) {
             const RiverNode& a = river.nodes[s];
             const RiverNode& b = river.nodes[s + 1];
+            if (a.halfWidth < 0.5f || b.halfWidth < 0.5f) {
+                continue; // publishes no ribbon (bake hang gate)
+            }
             const f32 segCap =
                 glm::min(fwdMin[s], fwdMin[s + 1]);
             const f32 hwMax = glm::max(a.halfWidth, b.halfWidth);

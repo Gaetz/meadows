@@ -650,6 +650,21 @@ void main() {
             dbg = mix(vec3(0.3),
                       vec3(checker, 1.0 - abs(vInfo.y), 1.0 - checker),
                       riverness);
+        } else if (waterDebug == 4) {
+            // Source: WHICH draw put this water here — frozen window
+            // yellow, live sim red, baked ribbon blue (brook under the
+            // pin width green), baked lake gray.
+#if defined(WATER_SIM_FROZEN)
+            dbg = vec3(0.9, 0.8, 0.1);
+#elif defined(WATER_SIM)
+            dbg = vec3(0.9, 0.1, 0.1);
+#else
+            bool brookHere = vInfo.x > 0.001 &&
+                             vInfo.x < uWaterDebugInfo.y - 0.05;
+            dbg = vInfo.x > 0.001
+                      ? (brookHere ? vec3(0.1, 0.8, 0.2) : vec3(0.1, 0.3, 0.9))
+                      : vec3(0.5);
+#endif
         }
         fragColor = vec4(dbg, 1.0);
         return;

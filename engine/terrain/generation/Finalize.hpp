@@ -54,6 +54,16 @@ struct FinalizeParams {
     // reaches its depth on the floor; against a wall it stops here
     // and the ribbon beyond is under the rock.
     f32 bedCutMax { 20.0f };
+    // Publication gate: a course point whose surface hangs more than
+    // max(ribbonHangFloor, 1.5 x half-width) above the FINAL fine
+    // ground publishes a half-width of 0 — no ribbon, no sim pin, no
+    // brook film. The water profile is smoother than the gorge floor
+    // the carves dig (a bed 12-20 m under the water along a steep
+    // ramp, measured), and a ribbon drawn at that surface is a sheet
+    // in the air over a dry gorge; the sim refuses such cells too.
+    // Off = legacy, everything publishes.
+    bool ribbonHangGate { true };
+    f32 ribbonHangFloor { 6.0f };
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach
@@ -113,6 +123,8 @@ struct FinalizeParams {
         REFLECT_FIELD(bankMaxCut)
         REFLECT_FIELD(shoulderCutMax)
         REFLECT_FIELD(bedCutMax)
+        REFLECT_FIELD(ribbonHangGate)
+        REFLECT_FIELD(ribbonHangFloor)
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(beachBand)
         REFLECT_FIELD(wetnessReach)

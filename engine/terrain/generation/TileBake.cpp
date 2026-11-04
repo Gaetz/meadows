@@ -1038,6 +1038,20 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
         return pt.x >= keepMinX && pt.x <= keepMaxX && pt.z >= keepMinZ &&
                pt.z <= keepMaxZ;
     };
+    // Ribbon hang gate (FinalizeParams::ribbonHangGate): read on the
+    // FINAL fine ground, after every carve.
+    u32 gatedPts = 0;
+    u32 publishedPts = 0;
+    const auto hangGated = [&](const RiverPoint& pt) {
+        if (!params.finalize.ribbonHangGate || pt.halfWidth <= 0.0f) {
+            return false;
+        }
+        const f32 ground =
+            bilinearWorld(fine.fineSpec, fine.height, pt.x, pt.z);
+        return pt.surface - ground >
+               glm::max(params.finalize.ribbonHangFloor,
+                        1.5f * pt.halfWidth);
+    };
     for (const River& river : hydro.rivers) {
         // A lake-fed head whose source lake is not under it (rim
         // basins clipped at the window edge): DEMOTED to a spring —
@@ -1128,11 +1142,26 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
             if (head) {
                 run.headIsSource = 1;
             }
-            run.points.push_back(pt);
+            ++publishedPts;
+            if (hangGated(pt)) {
+                ++gatedPts;
+                RiverPoint gated = pt;
+                gated.halfWidth = 0.0f;
+                run.points.push_back(gated);
+            } else {
+                run.points.push_back(pt);
+            }
         }
         if (run.points.size() >= 2) {
             emit(std::move(run));
         }
+    }
+    if (gatedPts > 0) {
+        LOG_INFO("tile ({}, {}): ribbon hang gate: {} of {} published "
+                 "points publish no ribbon (surface > max({:.0f} m, 1.5 hw) "
+                 "over the final ground)",
+                 tx, tz, gatedPts, publishedPts,
+                 params.finalize.ribbonHangFloor);
     }
     return out;
 }

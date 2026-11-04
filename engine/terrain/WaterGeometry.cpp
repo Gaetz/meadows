@@ -391,13 +391,18 @@ void meshLakeSheet(const LakeSurface& lake, const WaterBodies& bodies,
     }
 }
 
-void meshRiverRibbon(const RiverSurface& river, vector<f32>& verts,
-                     vector<u32>& indices) {
+namespace {
+
+// One run of ribbon-bearing nodes of a course (meshRiverRibbon splits
+// the course at the nodes that publish no ribbon).
+void meshRibbonRun(const RiverSurface& river,
+                   const vector<RiverNode>& run, vector<f32>& verts,
+                   vector<u32>& indices) {
     // Ribbon strip along the polyline at the water surface, slightly
     // wider than the carved bed so banks clip it. Tight bends are
     // subdivided by curvature (RiverGeometry) — the water-info raster
     // samples the same conditioned curve.
-    vector<RiverNode> nodes = subdivideRiverNodes(river.nodes);
+    vector<RiverNode> nodes = subdivideRiverNodes(run);
     // No runtime grounding of the chord: the published surfaces are
     // seated on the fine pre-carve ground at bake (the fine re-leveling
     // pass in extractMapHydrology) and the carve digs the bed FROM
@@ -453,6 +458,33 @@ void meshRiverRibbon(const RiverSurface& river, vector<f32>& verts,
         prevL = left;
         prevR = right;
     }
+}
+
+} // namespace
+
+void meshRiverRibbon(const RiverSurface& river, vector<f32>& verts,
+                     vector<u32>& indices) {
+    // A node with no half-width publishes NO ribbon (the bake's hang
+    // gate: its surface hangs over a dry bed) — the strip breaks
+    // there. Split BEFORE the curvature subdivision, or the gated
+    // node's zero width would interpolate into a sliver of ribbon
+    // hanging beside its neighbours.
+    constexpr f32 kMinRibbonHalf = 0.5f;
+    vector<RiverNode> run;
+    const auto flush = [&] {
+        if (run.size() >= 2) {
+            meshRibbonRun(river, run, verts, indices);
+        }
+        run.clear();
+    };
+    for (const RiverNode& node : river.nodes) {
+        if (node.halfWidth < kMinRibbonHalf) {
+            flush();
+            continue;
+        }
+        run.push_back(node);
+    }
+    flush();
 }
 
 void buildLocalWaterGeometry(const WaterBodies& bodies,
