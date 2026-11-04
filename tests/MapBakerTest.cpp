@@ -170,7 +170,7 @@ TEST_CASE("map bake: cache, overview, slices, streamer and content hash") {
     const u64 hash = maptest::heightsHash(world);
     MESSAGE("map heights hash: ", hash);
 #if defined(_MSC_VER)
-    CHECK(hash == 9292069832453315724ull); // MSVC (Debug == Release), kTileBakeVersion 130 (bodies only: heights unchanged)
+    CHECK(hash == 6720802162637109620ull); // MSVC (Debug == Release), kTileBakeVersion 131 (brook floor 2.5 m)
 #endif
 
     // The lake budget (passe EAU E5): natural lakes per map, counted

@@ -1472,6 +1472,7 @@ void reportRiverSections(const ReportContext& ctx) {
     u32 brooks = 0, brookHang = 0, brookDeep = 0, brookNarrowed = 0;
     u32 brookNarrowedHang = 0, riverUnpinned = 0, riverDeep = 0;
     vector<f32> brookHangM;
+    vector<f32> brookHw;
     struct Hang {
         f32 x, z, surface, hw, lawHw, drop;
     };
@@ -1534,6 +1535,7 @@ void reportRiverSections(const ReportContext& ctx) {
                 const f32 drop = pt.surface - view.height(pt.x, pt.z);
                 if (hw < kPinHalfWidth) {
                     ++brooks;
+                    brookHw.push_back(hw);
                     f32 lawHw = hw;
                     for (size_t k = i >= 10 ? i - 10 : 0;
                          k <= glm::min(i + 10, count - 1); ++k) {
@@ -1684,13 +1686,15 @@ void reportRiverSections(const ReportContext& ctx) {
              kBankOut, median(bankLow), percentile(bankLow, 90),
              median(bankHigh), percentile(bankHigh, 90));
     LOG_INFO("  sim ownership (pin >= {:.0f} m hw, bed <= max(9, 1.5 hw) under): "
-             "brooks {} cuts ({:.1f} %), of which narrowed from a river (law "
-             "hw >= pin within 10 pts) {} ({:.1f} %); brook ribbons hanging "
+             "brooks {} cuts ({:.1f} %; hw median {:.1f} / p90 {:.1f} m), of "
+             "which narrowed from a river (law hw >= pin within 10 pts) {} "
+             "({:.1f} %); brook ribbons hanging "
              "> {:.0f} m over their bed {} ({:.1f} %; narrowed {}; > 8 m "
              "{}), hang median {:.1f} / p90 {:.1f} m; rivers too deep to "
              "pin {} ({:.1f} %; > 20 m {})",
-             kPinHalfWidth, brooks, pct(brooks), brookNarrowed,
-             pct(brookNarrowed), kHangMin, brookHang, pct(brookHang),
+             kPinHalfWidth, brooks, pct(brooks), median(brookHw),
+             percentile(brookHw, 90), brookNarrowed, pct(brookNarrowed),
+             kHangMin, brookHang, pct(brookHang),
              brookNarrowedHang, brookDeep, median(brookHangM),
              percentile(brookHangM, 90), riverUnpinned, pct(riverUnpinned),
              riverDeep);

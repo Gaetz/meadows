@@ -64,6 +64,16 @@ struct FinalizeParams {
     // Off = legacy, everything publishes.
     bool ribbonHangGate { true };
     f32 ribbonHangFloor { 6.0f };
+    // The narrowest PUBLISHED brook (half-width, m): the fine
+    // re-leveling floors every point of a course that is a brook by
+    // its law at this value (narrowSteep, fitValleys); a river's floor
+    // is the sim's pin width. The brook class spans [this, pin) — a
+    // brook's visibility is its width (the sim films whatever
+    // discharge it gets over the carved notch), so this is the
+    // brook's size knob. Lives here and not in HydrologyParams: the
+    // continent key hashes those, and a publication floor never
+    // touches the continent ground.
+    f32 brookMinHalfWidth { 2.5f };
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach
@@ -125,6 +135,7 @@ struct FinalizeParams {
         REFLECT_FIELD(bedCutMax)
         REFLECT_FIELD(ribbonHangGate)
         REFLECT_FIELD(ribbonHangFloor)
+        REFLECT_FIELD(brookMinHalfWidth)
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(beachBand)
         REFLECT_FIELD(wetnessReach)

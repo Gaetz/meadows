@@ -927,6 +927,9 @@ HydrologyResult extractHydrology(const GridSpec& spec,
         const f32 narrow = glm::mix(
             1.0f, 0.45f,
             glm::clamp((slope - 0.05f) / (0.28f - 0.05f), 0.0f, 1.0f));
+        // Raw floor of the trace only: the PUBLISHED brook floor
+        // (FinalizeParams::brookMinHalfWidth) is applied by the fine
+        // re-leveling, which floors every point of every course.
         pt.halfWidth = glm::max(base * narrow, 1.2f);
         pt.area = out.area[i];
         return pt;

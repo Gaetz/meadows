@@ -1515,20 +1515,21 @@ void HydroReleveling::smoothProfiles() {
 // films the relief. A river narrowed under that width in its rapids
 // changed OWNER, not just width — its ribbon hung in the air over
 // the gorge bed the sim's water ran down (12 % of the cuts, measured
-// dev). So the narrowing floors a river at the pin width; only a
-// course that is a brook by its law keeps the brook floor.
+// dev). So the narrowing floors a river at the pin width; a course
+// that is a brook by its law keeps the published brook floor
+// (FinalizeParams::brookMinHalfWidth, the brook's size knob).
 constexpr f32 kSimPinHalfWidth = 4.0f;
-constexpr f32 kBrookMinHalf = 1.2f;
 
-f32 narrowFloor(f32 lawHalfWidth) {
+f32 narrowFloor(f32 lawHalfWidth, f32 brookFloor) {
     return lawHalfWidth >= kSimPinHalfWidth ? kSimPinHalfWidth
-                                            : kBrookMinHalf;
+                                            : brookFloor;
 }
 
 void HydroReleveling::narrowSteep() {
     constexpr f32 kNarrowFrom = 0.08f; // slope where it starts
     constexpr f32 kNarrowTo = 0.30f;   // fully narrowed
     constexpr f32 kNarrowMin = 0.3f;   // keep 30 % at steepest
+    const f32 brookFloor = params.finalize.brookMinHalfWidth;
     for (size_t r = 0; r < riverCount; ++r) {
         River& river = rivers[r];
         const size_t count = river.points.size();
@@ -1557,7 +1558,7 @@ void HydroReleveling::narrowSteep() {
                            (3.0f - 2.0f * t);
             river.points[i].halfWidth = glm::max(
                 river.points[i].halfWidth * factor,
-                narrowFloor(river.points[i].halfWidth));
+                narrowFloor(river.points[i].halfWidth, brookFloor));
         }
     }
 }
@@ -1585,6 +1586,7 @@ void HydroReleveling::fitValleys() {
     constexpr f32 kStep = 2.0f;       // m across the ribbon
     constexpr f32 kMaxShiftStep = 0.5f; // m of shift per m of course
     constexpr size_t kFixedEnds = 2;
+    const f32 brookFloor = params.finalize.brookMinHalfWidth;
     vector<f32> left, right, shift, px, pz, fit, eroded;
     for (size_t r = 0; r < riverCount; ++r) {
         River& river = rivers[r];
@@ -1680,7 +1682,7 @@ void HydroReleveling::fitValleys() {
             // Same floor as the narrowing: a river never leaves the
             // sim's ownership through its valley fit either.
             const f32 hw = glm::max(glm::min(p.halfWidth, mean),
-                                    narrowFloor(p.halfWidth));
+                                    narrowFloor(p.halfWidth, brookFloor));
             if (hw < p.halfWidth - 0.01f || std::abs(shift[i]) > 0.01f) {
                 ++stats.valleyFitted;
                 stats.valleyShrink += p.halfWidth - hw;
