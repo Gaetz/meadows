@@ -1544,6 +1544,8 @@ LiveStepResult stepLiveWindow(
     if (moved) {
         scrollWindow(state, request.dCol, request.dRow, height,
                      params.seaLevel, crumbs.empty() ? nullptr : &crumbs);
+    }
+    if (moved || request.refreshSources) {
         const auto& sp = state.spec;
         const f32 sMaxX =
             sp.originX + static_cast<f32>(sp.n - 1) * sp.texelSize;
@@ -1560,9 +1562,11 @@ LiveStepResult stepLiveWindow(
         }
         out.sourcesFresh = true;
     }
-    if (bodies && (request.refreshGround || moved)) {
-        // Ground or window moved: re-rasterize the reservoirs (and
-        // apply them — at least one substep).
+    if (bodies &&
+        (request.refreshGround || moved || request.refreshSources)) {
+        // Ground or window moved, or the pin law changed:
+        // re-rasterize the reservoirs (and apply them — at least one
+        // substep).
         pinLakes(state, *bodies);
         pinRivers(state, *bodies, request.pinRiverHalfWidth);
         substeps = glm::max(substeps, 1u);

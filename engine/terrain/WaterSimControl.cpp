@@ -511,11 +511,19 @@ void WaterSimControl::simTick(const Inputs& in) {
             crumbs.push_back(c);
         }
     }
+    const bool sourceLawChanged =
+        simSrcBoost != simCfg.params.bakedDischargeBoost ||
+        simSrcPinHw != simCfg.pinRiverHalfWidth ||
+        simSrcRain != simCfg.params.rainRate;
+    simSrcBoost = simCfg.params.bakedDischargeBoost;
+    simSrcPinHw = simCfg.pinRiverHalfWidth;
+    simSrcRain = simCfg.params.rainRate;
     const LiveStepRequest request {
         .dCol = dCol,
         .dRow = dRow,
         .substeps = substeps,
         .refreshGround = simGroundDirty,
+        .refreshSources = sourceLawChanged,
         .pinRiverHalfWidth = simCfg.pinRiverHalfWidth,
         .rainIntensity = simRainIntensity,
         .rainPuddles = simCfg.rainPuddles,

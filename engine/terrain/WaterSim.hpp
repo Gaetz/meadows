@@ -219,6 +219,10 @@ struct LiveStepRequest {
     i32 dRow { 0 };
     u32 substeps { 0 };
     bool refreshGround { false };
+    // A source-law knob changed (discharge boost, pin width, rain
+    // law): rebuild the entry sources and re-pin the reservoirs
+    // without waiting for the next scroll.
+    bool refreshSources { false };
     f32 pinRiverHalfWidth { 4.0f };
     f32 rainIntensity { 0.0f }; // live storm 0..1
     bool rainPuddles { true };

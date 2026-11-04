@@ -272,6 +272,12 @@ private:
     sptr<WaterSimState> simState;
     sptr<const WaterSimSnapshot> simSnap;
     vector<terraingen::WaterSource> simSrcCache;
+    // Source-law knobs the cached sources were built with: a change
+    // asks the next step to rebuild them (the panel sliders act
+    // without a scroll).
+    f32 simSrcBoost { -1.0f };
+    f32 simSrcPinHw { -1.0f };
+    f32 simSrcRain { -1.0f };
     vector<terraingen::WaterSource> simRuntimeSources; // gameplay springs
     bool simGroundDirty { false };
     bool simFrozenClearPending { false };

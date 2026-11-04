@@ -2788,6 +2788,14 @@ briques Z0-Z5 dans le fichier de plan.
   robinet des ruisseaux ; plage élargie 1-8 → 1-16. Risque nommé : un
   ruisseau dont le film sim reste sous 8 mm est à sec de près, c'était
   la raison d'E9. Jugement dev EN ATTENTE.
+  Dev : « si j'augmente baked discharge, ça ne change rien quand je
+  suis sur la map ? » — exact : les sources d'entrée (où le boost
+  s'applique) n'étaient reconstruites qu'au pré-roll et au défilement
+  de la fenêtre (hystérésis 16 m). Fix : `LiveStepRequest::
+  refreshSources` — un changement de boost, de seuil de pin ou de loi
+  de pluie reconstruit les sources et ré-épingle les réservoirs au pas
+  suivant, sans bouger ; l'eau met ensuite son temps de parcours à
+  descendre le cours.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
