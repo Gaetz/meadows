@@ -11,6 +11,7 @@
 add_executable(cooker cooker/Main.cpp cooker/TextureCook.cpp
                cooker/TerrainMap.cpp cooker/ErosionBench.cpp
                cooker/WaterReplayTool.cpp
+               cooker/WaterBenchTool.cpp
     cooker/WaterSolveTool.cpp
                cooker/PreBakeTool.cpp
                cooker/LandscapeReport.cpp

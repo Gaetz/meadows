@@ -1,5 +1,6 @@
 #include "WaterReplayTool.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -13,20 +14,9 @@
 
 namespace cooker {
 
-namespace {
-
 using render::terrain::WaterSimParams;
 using render::terrain::WaterSimState;
 using render::terraingen::GridSpec;
-
-struct SimStats {
-    u32 wet { 0 };
-    u32 pinned { 0 };
-    u32 isolated { 0 };
-    f64 volume { 0.0 };
-    f32 maxDepth { 0.0f };
-    f32 maxSpeed { 0.0f };
-};
 
 SimStats stats(const WaterSimState& state, const WaterSimParams& params) {
     SimStats out;
@@ -35,10 +25,19 @@ SimStats stats(const WaterSimState& state, const WaterSimParams& params) {
     const auto wetAt = [&](size_t j) {
         return state.depth[j] > params.dryThreshold;
     };
+    vector<f32> brookDepths;
+    const bool hasBrook = state.brookMask.size() == spec.cells();
     for (size_t i = 0; i < spec.cells(); ++i) {
         const f32 d = state.depth[i];
         out.volume += static_cast<f64>(d) * texel * texel;
         out.maxDepth = glm::max(out.maxDepth, d);
+        if (hasBrook && state.brookMask[i] != 0) {
+            ++out.brookCells;
+            brookDepths.push_back(d);
+            out.brookOver8mm += d >= 0.008f ? 1u : 0u;
+            out.brookOver3mm += d >= 0.003f ? 1u : 0u;
+            out.brookMax = glm::max(out.brookMax, d);
+        }
         if (state.pinned.size() == spec.cells() &&
             state.pinned[i] > render::terrain::kWaterInfoDry + 1.0f) {
             ++out.pinned;
@@ -74,6 +73,11 @@ SimStats stats(const WaterSimState& state, const WaterSimParams& params) {
         if (!connected) {
             ++out.isolated;
         }
+    }
+    if (!brookDepths.empty()) {
+        std::sort(brookDepths.begin(), brookDepths.end());
+        out.brookMedian = brookDepths[brookDepths.size() / 2];
+        out.brookP90 = brookDepths[(brookDepths.size() * 9) / 10];
     }
     return out;
 }
@@ -196,18 +200,31 @@ void printStats(const char* label, const SimStats& s) {
              "{:.2f} m/s",
              label, s.wet, s.pinned, s.isolated, s.volume, s.maxDepth,
              s.maxSpeed);
+    if (s.brookCells > 0) {
+        LOG_INFO("water-replay [{}]: brook cells {} | film >= 8 mm {:.1f} % "
+                 "| >= 3 mm {:.1f} % | depth median {:.1f} / p90 {:.1f} / "
+                 "max {:.1f} mm",
+                 label, s.brookCells,
+                 100.0f * static_cast<f32>(s.brookOver8mm) /
+                     static_cast<f32>(s.brookCells),
+                 100.0f * static_cast<f32>(s.brookOver3mm) /
+                     static_cast<f32>(s.brookCells),
+                 s.brookMedian * 1000.0f, s.brookP90 * 1000.0f,
+                 s.brookMax * 1000.0f);
+    }
 }
-
-} // namespace
 
 int waterReplay(char** argv, int argc) {
     const char* dumpPath = argv[2];
     const std::string prefix = argv[3];
     u32 substeps = 0;
     std::string probePath;
+    f32 boost = 1.0f; // every source's discharge x boost
     for (int a = 4; a < argc; ++a) {
         if (std::string(argv[a]) == "--probe" && a + 1 < argc) {
             probePath = argv[++a];
+        } else if (std::string(argv[a]) == "--boost" && a + 1 < argc) {
+            boost = static_cast<f32>(std::atof(argv[++a]));
         } else {
             substeps = static_cast<u32>(std::atoi(argv[a]));
         }
@@ -225,7 +242,8 @@ int waterReplay(char** argv, int argc) {
              dumpPath, state.spec.n, state.spec.n, state.spec.texelSize,
              state.spec.originX, state.spec.originZ, sources.size(),
              params.dt);
-    for (const auto& s : sources) {
+    for (auto& s : sources) {
+        s.discharge *= boost;
         LOG_INFO("water-replay: source ({:.0f}, {:.0f}) {:.2f} m3/s",
                  s.x, s.z, s.discharge);
     }

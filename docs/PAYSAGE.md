@@ -2796,6 +2796,31 @@ briques Z0-Z5 dans le fichier de plan.
   de pluie reconstruit les sources et ré-épingle les réservoirs au pas
   suivant, sans bouger ; l'eau met ensuite son temps de parcours à
   descendre le cours.
+  Dev : « je ne vois pas spécialement l'effet, pas l'impression qu'il y
+  ait plus d'eau ». Mesuré plutôt que deviné : nouveau banc **`cooker
+  water-bench <game> <mapX> <mapZ> <x> <z> [substeps] [--boost x]
+  [--pin hw] [--probe fichier] [--png préfixe]`** — ouvre la fenêtre de
+  la sim au point demandé sur la carte CUITE exactement comme le jeu à
+  l'entrée (sources maîtresses du rect + entrées/têtes/ruissellement
+  des rubans cuits, pré-roll, pins lacs et rivières, rafale 450 pas),
+  la fait avancer et imprime stats, **recensement du film de ruisseau**
+  (cellules du masque ruisseau : % de film ≥ 8 mm, médiane/p90/max, %
+  PUBLIÉ par l'extraction) et la sonde ; `water-replay` gagne le même
+  recensement et `--boost x`. À (5125, 3830), fenêtre 257² à 2 m, 0
+  source maîtresse, 13-16 sources cuites : ×1 → 2,1 m³/s, 62 % des 267
+  cellules ruisseau publiées, médiane 15 mm ; ×3 → 6,3 m³/s, 72 %,
+  46 mm ; ×16 → 33,7 m³/s, 87 %, 221 mm. Le boost AGIT (profondeur ×5),
+  et au point dev le cours 86 porte déjà à ×3 un film de 5-8 cm à
+  10-13 m/s dans la pente à 30-40 % et une vasque de 1,4 m à (5122,
+  3835) (2,5 m à ×16). Pourquoi l'œil ne voit « pas plus d'eau » : (1)
+  le ruisseau est borné par l'entaille de sa loi (demi-largeur 1,2-2,9
+  m) — plus profond ne veut pas dire plus large ; (2) les biefs
+  épinglés (≥ 4 m, pt 49 et au-delà) ignorent le boost par construction
+  (réservoir au niveau publié, sonde identique ×3/×16) ; (3) un film
+  rapide de 5 cm se lit comme un filet. Rendre les ruisseaux plus
+  VISIBLES est donc une affaire de largeur (plancher ruisseau 1,2 m au
+  bake, entaille) ou de rendu du film rapide (torrent/écume), pas de
+  débit. Au dev de choisir.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

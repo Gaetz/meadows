@@ -35,6 +35,7 @@
 #include "TerrainMap.hpp"
 #include "LandscapeReport.hpp"
 #include "PreBakeTool.hpp"
+#include "WaterBenchTool.hpp"
 #include "WaterReplayTool.hpp"
 #include "WaterSolveTool.hpp"
 #include "data/plugins/Validate.hpp"
@@ -527,7 +528,10 @@ int main(int argc, char** argv) {
     if (command == "water-solve" && argc >= 6 && argc <= 8) {
         return cooker::waterSolve(argv, argc);
     }
-    if (command == "water-replay" && argc >= 4 && argc <= 7) {
+    if (command == "water-bench" && argc >= 7) {
+        return cooker::waterBench(argv, argc);
+    }
+    if (command == "water-replay" && argc >= 4 && argc <= 9) {
         return cooker::waterReplay(argv, argc);
     }
     if (command == "pre-bake" && (argc == 6 || argc == 7)) {
