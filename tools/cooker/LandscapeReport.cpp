@@ -1459,6 +1459,23 @@ void reportRiverSections(const ReportContext& ctx) {
     vector<f32> bankLow;   // the lower bank at hw + 30 m, above water
     vector<f32> bankHigh;  // the higher bank
     vector<f32> ribbonDry; // % of the ribbon's width standing dry
+    // Who owns the water near the player (docs/PAYSAGE.md §1.5): the
+    // sim pins a course only from kPinHalfWidth of half-width AND
+    // while the bed stays within max(9, 1.5 hw) of the water; under
+    // the pin width the ribbon is a BROOK — the baked ribbon stays
+    // drawn inside the sim window (film relief only). A brook whose
+    // bed lies metres under its surface is a ribbon hanging in the
+    // air at close range; a brook that was a river a few points
+    // upstream is the steep narrowing at work.
+    constexpr f32 kPinHalfWidth = 4.0f; // sim default (pinRiverHalfWidth)
+    constexpr f32 kHangMin = 3.0f;      // bed this far under = hanging
+    u32 brooks = 0, brookHang = 0, brookDeep = 0, brookNarrowed = 0;
+    u32 brookNarrowedHang = 0, riverUnpinned = 0, riverDeep = 0;
+    vector<f32> brookHangM;
+    struct Hang {
+        f32 x, z, surface, hw, lawHw, drop;
+    };
+    vector<Hang> hangs;
     struct Example {
         f32 x, z, surface, hw, gap, width, crest;
         u32 tier;
@@ -1513,6 +1530,32 @@ void reportRiverSections(const ReportContext& ctx) {
             ++sections;
             const u32 tier = glm::min(pt.tier, 2u);
             ++byTier[tier];
+            {
+                const f32 drop = pt.surface - view.height(pt.x, pt.z);
+                if (hw < kPinHalfWidth) {
+                    ++brooks;
+                    f32 lawHw = hw;
+                    for (size_t k = i >= 10 ? i - 10 : 0;
+                         k <= glm::min(i + 10, count - 1); ++k) {
+                        lawHw = glm::max(lawHw, river.points[k].halfWidth);
+                    }
+                    const bool narrowed = lawHw >= kPinHalfWidth;
+                    brookNarrowed += narrowed ? 1 : 0;
+                    if (drop > kHangMin) {
+                        ++brookHang;
+                        brookHangM.push_back(drop);
+                        brookNarrowedHang += narrowed ? 1 : 0;
+                        brookDeep += drop > 8.0f ? 1 : 0;
+                        if (hangs.size() < 6 && narrowed && drop > 8.0f) {
+                            hangs.push_back({ pt.x, pt.z, pt.surface, hw,
+                                              lawHw, drop });
+                        }
+                    }
+                } else if (drop > glm::max(9.0f, 1.5f * hw)) {
+                    ++riverUnpinned;
+                    riverDeep += drop > 20.0f ? 1 : 0;
+                }
+            }
             offsets.push_back(std::abs(deepestD) / hw);
             if (ribbonN > 0) {
                 ribbonDry.push_back(100.0f * static_cast<f32>(ribbonDryN) /
@@ -1640,6 +1683,22 @@ void reportRiverSections(const ReportContext& ctx) {
              pct(dryInRibbon), median(ribbonDry), percentile(ribbonDry, 90),
              kBankOut, median(bankLow), percentile(bankLow, 90),
              median(bankHigh), percentile(bankHigh, 90));
+    LOG_INFO("  sim ownership (pin >= {:.0f} m hw, bed <= max(9, 1.5 hw) under): "
+             "brooks {} cuts ({:.1f} %), of which narrowed from a river (law "
+             "hw >= pin within 10 pts) {} ({:.1f} %); brook ribbons hanging "
+             "> {:.0f} m over their bed {} ({:.1f} %; narrowed {}; > 8 m "
+             "{}), hang median {:.1f} / p90 {:.1f} m; rivers too deep to "
+             "pin {} ({:.1f} %; > 20 m {})",
+             kPinHalfWidth, brooks, pct(brooks), brookNarrowed,
+             pct(brookNarrowed), kHangMin, brookHang, pct(brookHang),
+             brookNarrowedHang, brookDeep, median(brookHangM),
+             percentile(brookHangM, 90), riverUnpinned, pct(riverUnpinned),
+             riverDeep);
+    for (const Hang& h : hangs) {
+        LOG_INFO("    hanging brook at ({:.0f}, {:.0f}) surf {:.1f}: hw {:.1f} "
+                 "(law {:.1f}), bed {:.1f} m under",
+                 h.x, h.z, h.surface, h.hw, h.lawHw, h.drop);
+    }
     for (const Example& e : examples) {
         LOG_INFO("    sliver: tier {} at ({:.0f}, {:.0f}) surf {:.1f} hw "
                  "{:.1f}: second channel {:.0f} m off, dry strip {:.0f} m "

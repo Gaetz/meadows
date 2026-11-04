@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, clamps) → **coupe de gorge** (`cutGorges`, sur les surfaces finales et AVANT les ajustements de largeur : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V au gabarit de la loi dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) → rétrécissement (pente) → **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, clamps) → **coupe de gorge** (`cutGorges`, sur les surfaces finales et AVANT les ajustements de largeur : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V au gabarit de la loi dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) → rétrécissement (pente ; plancher au seuil de pin de la sim, 4 m, pour tout cours de loi rivière, 1,2 m pour un ruisseau : un cours ne change jamais de propriétaire dans ses rapides) → **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2675,6 +2675,28 @@ briques Z0-Z5 dans le fichier de plan.
   extraction 45 → 48 km enterrés) — à instruire.
   `kTileBakeVersion` 128, (0,0) + (1,0) recuits (continent inchangé)
   et recopiés chez le dev ; hash ré-épinglé.
+  **Retour dev (v128) : « eau et terrain très bien ; il reste des rubans
+  qui ne s'effacent pas quand on s'approche ».** Cause : le ruban cuit
+  ne cède à la sim dans sa fenêtre que si la sim le possède, c'est-à-dire
+  à partir du seuil de pin (`pinRiverHalfWidth` 4 m de demi-largeur) ;
+  en dessous c'est un ruisseau (exemption E4b du shader, film de relief
+  seulement). Or le rétrécissement par la pente (×0,3 au-delà de 30 %,
+  plancher 1,2 m) faisait des ruisseaux des fleuves dans leurs rapides,
+  et les gorges ouvertes en v127 les exposent au-dessus d'un lit creusé
+  10 à 20 m plus bas. Nouveau recensement « sim ownership » du rapport
+  (ruisseaux, dont rétrécis depuis une loi rivière, suspendus > 3 m
+  au-dessus de leur lit, rivières trop profondes pour le pin) : (0,0)
+  22 % de coupes ruisseau dont 12 % rétrécies, 7 % suspendues (392
+  rétrécies, 371 > 8 m), 11 % de rivières trop profondes pour le pin ;
+  (1,0) 29 / 12 / 10 / 16 % (un fleuve de 40 m réduit à 1,2 m pendu
+  80-143 m au-dessus du sol à (11833-11877, 470-486)). **Brique v129 :
+  plancher du rétrécissement au seuil de pin** (`narrowFloor` : 4 m pour
+  tout cours de loi rivière, 1,2 m pour un ruisseau ; même plancher dans
+  l'ajustement de vallée) — un cours ne change jamais de propriétaire
+  dans ses rapides. Restent deux régimes voulus : les vrais ruisseaux
+  suspendus (profil lissé qui décolle en pente raide : sujet à part, un
+  re-seat de leur surface sur le lit) et les rivières trop profondes
+  pour le pin (ruban effacé, eau par écoulement seul).
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
