@@ -219,7 +219,12 @@ void main() {
         // left dry beds beside far water that promised rivers. They
         // have no sim twin, so the double-network artifact that
         // killed the per-texel check cannot return through them.
-        bool brook = vInfo.x > 0.001 && vInfo.x < uWaterDebugInfo.y;
+        // Margin under the threshold: the bake floors a narrowed
+        // river AT the pin width, and the interpolated half-width of
+        // such a ribbon can land a hair under it — read as a brook,
+        // the ribbon stayed drawn in the window, hanging over the
+        // gorge bed the sim's water ran down.
+        bool brook = vInfo.x > 0.001 && vInfo.x < uWaterDebugInfo.y - 0.05;
         if (uWaterSimMapInfo.w > 0.5 && simMode != 1 && !brook) {
             vec2 rel = (vWorldPos.xz - uWaterSimMapInfo.xy) *
                        uWaterSimMapInfo.z;

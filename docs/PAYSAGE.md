@@ -2716,7 +2716,22 @@ briques Z0-Z5 dans le fichier de plan.
   dans une gorge, et un niveau de pin plafonné sous ce seuil. Piste de
   brique : « le lit ne remonte jamais vers l'aval » (monotonie du fond
   le long du cours au carve, bornée par bedCutMax) + recensement des
-  remontées de lit dans le rapport ; au dev de décider.
+  remontées de lit dans le rapport ; au dev de décider (« laissons ça »).
+  **Retour dev au même endroit : une surface d'eau reste affichée en
+  l'air juste au-dessus du sol qui remonte (≈ l'eau publiée à 551,5).**
+  Dans la fenêtre de sim, seul un ruban lu « ruisseau » par le shader
+  (demi-largeur interpolée < seuil de pin) reste dessiné ; au point 155
+  la demi-largeur vaut exactement 4,0 (le plancher v129 = le seuil), et
+  l'interpolation GPU d'un attribut constant peut rendre 3,999… : le
+  ruban est alors un ruisseau pour le shader, gardé, suspendu 13 m
+  au-dessus du lit. (Sur des tuiles v128 le même tronçon était un vrai
+  ruisseau de 3,4-3,6 m, gardé de droit.) **Fix : marge de 5 cm sous
+  le seuil dans le test « ruisseau » du shader** (`water_surface.glsl`,
+  sans recuisson) ; la sim, elle, épingle à partir de 4,0 exactement
+  (mix CPU exact), donc les deux lectures concordent sur toute
+  demi-largeur publiée. Résidu voulu : les vrais ruisseaux suspendus
+  (3,5 % des coupes) restent dessinés en l'air de près — leur surface
+  est à re-seoir sur le lit (sujet à part).
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 
