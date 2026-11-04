@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 
 #include <glm/glm.hpp>
@@ -135,6 +136,60 @@ void renderMap(const WaterSimState& state, const WaterSimParams& params,
     }
 }
 
+// Probe: one line per "x z" of the file (a course's published points,
+// pasted from the landscape report's --at table) — what the sim holds
+// at the nearest cell and the deepest of its 3x3 neighbours. Reads
+// where a reach stops being pinned, where the film thins under the
+// publish thresholds, where the flow stalls.
+void printProbe(const WaterSimState& state, const WaterSimParams& params,
+                const std::string& path, const char* label) {
+    std::ifstream in(path);
+    if (!in) {
+        LOG_ERROR("water-replay: cannot read probe file {}", path);
+        return;
+    }
+    const GridSpec& spec = state.spec;
+    const i32 n = static_cast<i32>(spec.n);
+    const f32 texel = spec.texelSize;
+    const bool hasPins = state.pinned.size() == spec.cells();
+    const bool hasBrook = state.brookMask.size() == spec.cells();
+    LOG_INFO("water-replay [{}] probe {}: x z | ground | depth (3x3 max) | "
+             "surface | pin level (-1 = none) | speed m/s | brook",
+             label, path);
+    f32 x = 0.0f, z = 0.0f;
+    while (in >> x >> z) {
+        const i32 col = static_cast<i32>(std::lround((x - spec.originX) / texel));
+        const i32 row = static_cast<i32>(std::lround((z - spec.originZ) / texel));
+        if (col < 0 || row < 0 || col >= n || row >= n) {
+            LOG_INFO("  {:7.0f} {:7.0f} | outside the window", x, z);
+            continue;
+        }
+        const size_t i = static_cast<size_t>(row) * spec.n +
+                         static_cast<size_t>(col);
+        f32 dMax = 0.0f;
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const i32 c = glm::clamp(col + dx, 0, n - 1);
+                const i32 r = glm::clamp(row + dz, 0, n - 1);
+                dMax = glm::max(dMax, state.depth[static_cast<size_t>(r) * spec.n +
+                                                   static_cast<size_t>(c)]);
+            }
+        }
+        const f32 d = state.depth[i];
+        const f32 fx = state.fE[i] - state.fW[i];
+        const f32 fz = state.fS[i] - state.fN[i];
+        const f32 speed = std::hypot(fx, fz) / (glm::max(d, 0.05f) * texel);
+        const bool pin = hasPins &&
+                         state.pinned[i] > render::terrain::kWaterInfoDry + 1.0f;
+        LOG_INFO("  {:7.0f} {:7.0f} | {:7.1f} | {:6.3f} ({:6.3f}) | {:7.2f} | {:7.1f} | "
+                 "{:5.2f} | {}",
+                 x, z, state.terrain[i], d, dMax, state.terrain[i] + d,
+                 pin ? state.pinned[i] : -1.0f, speed,
+                 hasBrook && state.brookMask[i] ? "brook" : "");
+    }
+    (void)params;
+}
+
 void printStats(const char* label, const SimStats& s) {
     LOG_INFO("water-replay [{}]: wet {} | pinned {} | isolated {} | "
              "volume {:.1f} m3 | max depth {:.2f} m | max speed "
@@ -148,8 +203,15 @@ void printStats(const char* label, const SimStats& s) {
 int waterReplay(char** argv, int argc) {
     const char* dumpPath = argv[2];
     const std::string prefix = argv[3];
-    const u32 substeps =
-        argc >= 5 ? static_cast<u32>(std::atoi(argv[4])) : 0;
+    u32 substeps = 0;
+    std::string probePath;
+    for (int a = 4; a < argc; ++a) {
+        if (std::string(argv[a]) == "--probe" && a + 1 < argc) {
+            probePath = argv[++a];
+        } else {
+            substeps = static_cast<u32>(std::atoi(argv[a]));
+        }
+    }
 
     WaterSimState state;
     WaterSimParams params;
@@ -169,6 +231,9 @@ int waterReplay(char** argv, int argc) {
     }
     printStats("t0", stats(state, params));
     renderMap(state, params, prefix + "-t0.png");
+    if (!probePath.empty()) {
+        printProbe(state, params, probePath, "t0");
+    }
     if (substeps > 0) {
         render::terrain::stepWindow(state, params, sources, substeps);
         const std::string label =
@@ -176,6 +241,9 @@ int waterReplay(char** argv, int argc) {
         printStats(label.c_str(), stats(state, params));
         renderMap(state, params,
                   prefix + "-t" + std::to_string(substeps) + ".png");
+        if (!probePath.empty()) {
+            printProbe(state, params, probePath, label.c_str());
+        }
     }
     return 0;
 }

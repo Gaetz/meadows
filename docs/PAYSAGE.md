@@ -2697,6 +2697,26 @@ briques Z0-Z5 dans le fichier de plan.
   suspendus (profil lissé qui décolle en pente raide : sujet à part, un
   re-seat de leur surface sur le lit) et les rivières trop profondes
   pour le pin (ruban effacé, eau par écoulement seul).
+  **Question dev : à (5400, 4840) l'eau simulée ne descend pas la
+  pente.** Dump sim du dev rejoué hors session (`cooker water-replay
+  … --probe <fichier x z>` : nouvelle sonde le long des points publiés
+  du cours — sol, profondeur, surface, niveau de pin, vitesse). Lecture
+  : la sim est à l'équilibre (volume constant sur 900 sous-pas) ; sur
+  la rampe les cellules épinglées forment un ESCALIER de réservoirs
+  dont le niveau suit le plafond de segment (min de la surface publiée
+  sur les 7 nœuds suivants) : au point 154 (5387, 4861) niveau tenu
+  535,9 pour une eau publiée à 551,5 ; la cellule suivante (5384, 4867)
+  a un sol à 537,1, PLUS HAUT que le niveau tenu (sol amont 530,7, aval
+  534,3) → déversement nul, et la gorge est à sec (profondeur 0,000 sur
+  13 points, 120 m) jusqu'au bief épinglé suivant à (5309, 4909). Le
+  seuil est dans le bake : le lit remonte de 3,8 m entre les points 154
+  et 155 (−18,0 → −12,7 m sous l'eau), les anciens points rétrécis
+  ayant un lit moins profond (la profondeur du carve suit la
+  demi-largeur). Deux causes combinées : un lit qui remonte vers l'aval
+  dans une gorge, et un niveau de pin plafonné sous ce seuil. Piste de
+  brique : « le lit ne remonte jamais vers l'aval » (monotonie du fond
+  le long du cours au carve, bornée par bedCutMax) + recensement des
+  remontées de lit dans le rapport ; au dev de décider.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

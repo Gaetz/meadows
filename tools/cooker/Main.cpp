@@ -527,7 +527,7 @@ int main(int argc, char** argv) {
     if (command == "water-solve" && argc >= 6 && argc <= 8) {
         return cooker::waterSolve(argv, argc);
     }
-    if (command == "water-replay" && (argc == 4 || argc == 5)) {
+    if (command == "water-replay" && argc >= 4 && argc <= 7) {
         return cooker::waterReplay(argv, argc);
     }
     if (command == "pre-bake" && (argc == 6 || argc == 7)) {
