@@ -176,6 +176,11 @@ int waterBench(char** argv, int argc) {
     for (size_t i = 0; i < sources.size(); ++i) {
         (i < masterCount ? masterQ : bakedQ) += sources[i].discharge;
     }
+    for (size_t i = 0; i < sources.size(); ++i) {
+        LOG_INFO("water-bench: source {} ({:.0f}, {:.0f}) {:.2f} m3/s",
+                 i < masterCount ? "master" : "baked", sources[i].x,
+                 sources[i].z, sources[i].discharge);
+    }
     LOG_INFO("water-bench: map ({}, {}) at ({:.0f}, {:.0f}) — window {}x{} "
              "at {} m, origin ({:.0f}, {:.0f}); pin >= {:.1f} m; boost "
              "x{:.2f}; sources: {} master ({:.1f} m3/s) + {} baked "

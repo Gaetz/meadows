@@ -48,6 +48,10 @@ struct HydroRelevelStats {
     size_t gorgeRuns { 0 };     // buried runs the gorge cut grounded
     f64 gorgeKm { 0.0 };        // their length, km
     f32 gorgeDeepest { 0.0f };  // the deepest burial cut, m
+    size_t seated { 0 };        // points lowered onto their bed (seat pass)
+    f64 seatDrop { 0.0 };       // the height they lost, m (sum)
+    f32 seatDeepest { 0.0f };   // the largest single drop, m
+    size_t seatHeld { 0 };      // points a downstream sill keeps > 6 m over their seat
     size_t valleyFitted { 0 };  // points whose ribbon narrowed to its valley
     f64 valleyShrink { 0.0 };   // half-width those points lost, m (sum)
     f64 valleyShift { 0.0 };    // |lateral re-seat| of the fitted points, m (sum)

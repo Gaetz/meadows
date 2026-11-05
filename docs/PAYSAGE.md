@@ -97,7 +97,7 @@ height(x,z) = Σ wᵢ·(bicubic(régionᵢ) + détail) / Σ wᵢ   régions bak�
    → modulations biome/gentle/plaine/lithologie/calm → grille keep (plateau·0,0008 + calmHigh·0,25 ≤ 0,5, fondu de crête, keep bordure 0,8)
    → erodeFluvial (fastscape implicite, 80 it., dépôt à capacité, channel keep) → erodeThermal (60 it.) → roundRidges → relaxation calme → calm ∪ fonds de vallée
 [hydrologie] extractMapHydrology — UNE fois par carte, **hydroTexel 8 m** (découplé du 16 m d'érosion), carte + 1 024 m = 1281² (~5-7 s, horloge de phases au log)
-   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace ; **porte de suspension** à la publication, `ribbonHangGate` : un point dont la surface pend à plus de max(`ribbonHangFloor` 6 m, 1,5·hw) au-dessus du sol fin FINAL publie une demi-largeur 0 = pas de ruban, pas de pin, pas de film) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, clamps) → **coupe de gorge** (`cutGorges`, sur les surfaces finales et AVANT les ajustements de largeur : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V au gabarit de la loi dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) → rétrécissement (pente ; plancher au seuil de pin de la sim, 4 m, pour tout cours de loi rivière, `brookMinHalfWidth` 2,5 m pour un ruisseau = le plancher PUBLIÉ du ruisseau, appliqué à tout point, la loi d'extraction gardant son 1,2 m brut : un cours ne change jamais de propriétaire dans ses rapides) → **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
+   marge au-delà du rect = stage-1 rééchantillonné + carveCoarseDrainage (gravure de drainage D8) → pierceLakeOutlets (≤16 passes, bassins lus sur le sol de DÉBUT de passe, encoche au fond du bassin + 0,3 m puis rampe aval = la ligne droite la plus raide jusqu'au sol atteignable, plafond pierceRampSlope 2 %, plancher riverMinGradient ; bande bornée au verrou + 2 m, plancher pierceMinArea 2 048 m² / pierceMinDepth 2 m, routeFlow paresseux) → priorityFloodFill → routeFlow → lacs (minLakeDepth 0,6 / minLakeArea 3 072 m²) → rivières (riverArea 1,5e5 m² ; publication kCourseTexel = 16 : simplify 4,8 m, pas 8 m, surface et largeur relues par PROJECTION sur la trace brute, rappel dans le chenal : un point lissé sec dans la fenêtre glisse vers sa trace ; **porte de suspension** à la publication, `ribbonHangGate` : un point dont la surface pend à plus de max(`ribbonHangFloor` 6 m, 1,5·hw) au-dessus du sol fin FINAL publie une demi-largeur 0 = pas de ruban, pas de pin, pas de film) → étangs → classifyRivers (tiers + gués) → re-leveling fin (recentrage, retrace, fill = plafond de mare `poolMaxDepth` 6 m au-dessus du plus bas fond amont, tunnel au-delà, pools, cascades, pente, lissage, clamps) → **coupe de gorge** (`cutGorges`, sur les surfaces finales et AVANT les ajustements de largeur : tout run enterré > 2 m hors lacs, quelle que soit sa longueur ou sa profondeur → encoche en V au gabarit de la loi dans pierceDelta jusqu'à l'eau − 0,5 m, borne de flanc LOCALE par point = max(pincement fin, crête fenêtre avant percée) + 2 m, parois 0,7 → `gorgeWallSlope` 1,5 selon la profondeur ; A/B `riverGorges` OFF = selles ≤160 m / ≤32 m seules) → **assise dans la gorge** (`seatHangingRuns`, A/B `ribbonSeatOnBed` : la surface descend sur le sol fin + la loi de profondeur du carve, retenue par le plus haut seuil aval et par la surface du récepteur à l'embouchure ; abaissement seul, lacs et leur amont tenus, récepteurs avant affluents) → rétrécissement (pente ; plancher au seuil de pin de la sim, 4 m, pour tout cours de loi rivière, `brookMinHalfWidth` 2,5 m pour un ruisseau = le plancher PUBLIÉ du ruisseau, appliqué à tout point, la loi d'extraction gardant son 1,2 m brut : un cours ne change jamais de propriétaire dans ses rapides) → **vallée** = le ruban re-assis au milieu du fond où le sol fin reste sous l'eau + 8 m et borné à sa moitié ; au carve S5c la porte anti-fente demande à la fenêtre (min des 4 cellules `filled` autour du point) avant de refuser un lit
 [tranches ×36] bakeMapSlice — workers, 4 096 + 64 + 192 m, 2 m (~12 s)
    finalizeTerrain : bicubique 16→4→2 m + carveCoarseDrainage (le chenal d'un texel reste un chenal), amplifyFine (érosion fine 4 m, keep+halo 192 m), micro-thermique, relief 42 m, carve des lits par tier
    (0,5 / 4 / 7 m, gués 0,4 m ; coupe par texel bornée : lit bedCutMax 20 m, épaulement shoulderCutMax 12 m), lits de lacs, étangs, masques u8 16 m (flow, wetness, beach, detailAmp, biome, rockExposure)
@@ -2856,6 +2856,60 @@ briques Z0-Z5 dans le fichier de plan.
   dev (Release + Debug) ; hash ré-épinglé. Verdict dev en jeu attendu ;
   si trop timide, le curseur est le plancher (3 m = presque tous les
   ruisseaux à la même largeur, la tête de loi est à 3,1 m).
+
+- **2026-11-05 — Le ruban descend dans sa gorge (bump v132).** Dev :
+  « peut-on boucher les trous entre les rubans en augmentant la portée
+  de la sim ? » et « pourquoi ne pas retirer les morceaux aériens ? ».
+  Mesuré d'abord : les trous (points coupés par la porte de suspension,
+  ~15 % des points publiés ; tronçons enterrés 2,2 %) sont sur tous les
+  cours, à toute distance ; la sim ne possède que ±176 m (512 m moins
+  80 m de marge, ±432 m à 1024 m) et 1024 m coûte ×4 (~8 ms/tick,
+  pré-roll 8 s) ; à 4 m de texel un ruisseau tient dans une cellule.
+  Les morceaux aériens sont retirés depuis v130 au-delà de 6 m ; en
+  dessous la hauteur d'axe ne distingue pas une vasque (plafond de mare
+  6 m) d'une nappe. Décision : boucher au bake, pas à la sim. Nouvelle
+  passe **`seat`** du re-leveling (`seatHangingRuns`, A/B
+  `FinalizeParams::ribbonSeatOnBed`), après la coupe de gorge et avant
+  les ajustements de largeur : la surface descend sur le sol de son
+  EMPREINTE (min de fineAt sur l'axe et ±0,5/±1 hw = la rainure, l'axe
+  pouvant être sur un flanc du V) + 0,3 m, retenue par le plus haut
+  seuil aval (rainure + 0,3 de tout point en aval : une fosse se
+  remplit jusqu'à sa lèvre) et par l'embouchure (affluent : la surface
+  assise de son récepteur ; autre cours : sa propre surface, la carte
+  voisine l'attend là) ; abaissement seul, monotone, lacs et leur amont
+  tenus, récepteurs avant affluents. Cause de fond vue en chemin : le
+  carve creuse sa loi de profondeur depuis le SOL (ligne d'eau =
+  min(surface, sol + 0,3), leçon « a surface-referenced dig never
+  reached a hanging ground »), donc une surface 5 m au-dessus du sol
+  finit à 5 m + la loi au-dessus de son lit — assise à sol + loi
+  (premier essai) le lit tombait à 2 × la loi, assise à sol + 0,3 il
+  est à la loi. Premier essai aussi : embouchure libre = des cours
+  entiers vidés jusqu'au niveau de la mer (chutes de 260 m aux lignes
+  de carte). Instruments : « seat N pts, −m, deepest, held by a sill »
+  dans les phases, exemples de chutes > 30 m ; la porte de suspension
+  imprime la médiane des hauteurs et la part « banked » (les deux
+  berges à 1,4 hw au-dessus de l'eau) ; `water-bench` liste ses
+  sources. Mesuré (0,0) : seat 9 587 pts, −232 km cumulés, 2 431 tenus
+  par un seuil ; porte 3 588 → 1 657 points (−54 %), hauteur médiane
+  11-12 m, banked 20 % ; (1,0) porte 5 601 → 3 070 ; ruisseaux
+  suspendus > 3 m 1,7 → 0,6 % ; tronçons enterrés 2,2 → 2,7 % (95 runs,
+  médiane 8 m : l'eau assise dans la rainure, l'axe à côté ; (1,0) 2,7
+  → 3,6 %) ; au point
+  dev (5384, 4867) : eau 550 → 540, lit 12,7 → 2,5 m sous l'eau, ruban
+  republié (hw 4,0) ; la réserve 158-167 du même cours reste 9-13 m
+  sous l'eau sans seuil aval visible — la coupe fine va plus bas que la
+  loi, à instruire. Chutes de 60-93 m à (2726-2751, 3197-3226) et
+  (16106-16129, −920) : des fosses pleines au niveau de débordement
+  drainées jusqu'à leur rainure, à regarder en jeu. Effet de bord au
+  ruisseau (5125, 3830) : sources d'entrée 7 (9,6 m³/s) → 4 (3,3) — en
+  v131 des nœuds de rivière coupés (hw 0) au bord de la fenêtre
+  injectaient leur débit comme des entrées de ruisseau, republiés ils
+  sont nourris par réservoir ; film médian 85 → 28 mm, 4 cm au point
+  dev. Bug vu, non traité : un nœud injecté deux fois (ruissellement +
+  entrée de bord, (5239, 4037)). `kTileBakeVersion` 132, (0,0) + (1,0)
+  recuits (continent inchangé) et recopiés chez le dev (Release +
+  Debug) ; hash ré-épinglé. Verdict dev en jeu attendu : les gorges
+  avec leur eau au fond, les fosses drainées, le ruisseau.
 
 ### 7.8 La passe EAU/CONTINENT (2026-10-09 →, avant Z4)
 

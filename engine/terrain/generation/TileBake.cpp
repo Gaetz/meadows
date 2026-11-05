@@ -755,7 +755,8 @@ MapHydrology extractMapHydrology(
         relevelMapHydrology(params, hydrology, ground, preGround, out, lap);
     LOG_INFO("map hydrology phases: {} | total {:.1f} s | recenter {} "
              "pts | retrace {} runs | fill |ds| {:.0f} m | pools {} | "
-             "gorge {} runs, {:.1f} km, deepest {:.0f} m | valley {} "
+             "gorge {} runs, {:.1f} km, deepest {:.0f} m | seat {} pts, "
+             "-{:.0f} m, deepest {:.1f} m, held by a sill {} | valley {} "
              "pts, -{:.0f} m of half-width, {:.0f} m of re-seat",
              phases,
              std::chrono::duration<f64>(std::chrono::steady_clock::now() -
@@ -763,7 +764,9 @@ MapHydrology extractMapHydrology(
                  .count(),
              stats.recenterMoved, stats.retracedRuns, stats.fillShift,
              stats.poolLakes, stats.gorgeRuns, stats.gorgeKm,
-             stats.gorgeDeepest, stats.valleyFitted, stats.valleyShrink,
+             stats.gorgeDeepest, stats.seated, stats.seatDrop,
+             stats.seatDeepest, stats.seatHeld, stats.valleyFitted,
+             stats.valleyShrink,
              stats.valleyShift);
     return out;
 }
@@ -1042,15 +1045,45 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
     // FINAL fine ground, after every carve.
     u32 gatedPts = 0;
     u32 publishedPts = 0;
-    const auto hangGated = [&](const RiverPoint& pt) {
+    u32 gatedBanked = 0; // gated, yet both banks stand above the water
+    vector<f32> gatedHang, bankedHang;
+    const auto hangGated = [&](const RiverPoint& pt, const RiverPoint& bw,
+                               const RiverPoint& fw) {
         if (!params.finalize.ribbonHangGate || pt.halfWidth <= 0.0f) {
             return false;
         }
         const f32 ground =
             bilinearWorld(fine.fineSpec, fine.height, pt.x, pt.z);
-        return pt.surface - ground >
-               glm::max(params.finalize.ribbonHangFloor,
-                        1.5f * pt.halfWidth);
+        const f32 hang = pt.surface - ground;
+        if (hang <= glm::max(params.finalize.ribbonHangFloor,
+                             1.5f * pt.halfWidth)) {
+            return false;
+        }
+        // Banks at the carve's edge, 1.4 hw either side of the axis.
+        const f32 dx = fw.x - bw.x;
+        const f32 dz = fw.z - bw.z;
+        const f32 len = std::hypot(dx, dz);
+        if (len > 0.01f) {
+            const f32 px = -dz / len * 1.4f * pt.halfWidth;
+            const f32 pz = dx / len * 1.4f * pt.halfWidth;
+            const f32 gl = bilinearWorld(fine.fineSpec, fine.height,
+                                         pt.x - px, pt.z - pz);
+            const f32 gr = bilinearWorld(fine.fineSpec, fine.height,
+                                         pt.x + px, pt.z + pz);
+            if (gl >= pt.surface - 0.5f && gr >= pt.surface - 0.5f) {
+                ++gatedBanked;
+                bankedHang.push_back(hang);
+            }
+        }
+        gatedHang.push_back(hang);
+        return true;
+    };
+    const auto medianOf = [](vector<f32>& v) {
+        if (v.empty()) {
+            return 0.0f;
+        }
+        std::sort(v.begin(), v.end());
+        return v[v.size() / 2];
     };
     for (const River& river : hydro.rivers) {
         // A lake-fed head whose source lake is not under it (rim
@@ -1105,7 +1138,11 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
         bool lastInLake = false;
         bool atHead = true; // next accepted point IS the course head
         const RiverPoint* lastLakePt = nullptr;
-        for (const RiverPoint& pt : river.points) {
+        for (size_t pi = 0; pi < river.points.size(); ++pi) {
+            const RiverPoint& pt = river.points[pi];
+            const RiverPoint& bw = river.points[pi > 0 ? pi - 1 : pi];
+            const RiverPoint& fw =
+                river.points[glm::min(pi + 1, river.points.size() - 1)];
             const bool head = atHead;
             atHead = false;
             if (!inKeep(pt)) {
@@ -1143,7 +1180,7 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
                 run.headIsSource = 1;
             }
             ++publishedPts;
-            if (hangGated(pt)) {
+            if (hangGated(pt, bw, fw)) {
                 ++gatedPts;
                 RiverPoint gated = pt;
                 gated.halfWidth = 0.0f;
@@ -1159,9 +1196,12 @@ TileBakeResult bakeSliceWater(const TileBakeParams& params, i32 tx,
     if (gatedPts > 0) {
         LOG_INFO("tile ({}, {}): ribbon hang gate: {} of {} published "
                  "points publish no ribbon (surface > max({:.0f} m, 1.5 hw) "
-                 "over the final ground)",
+                 "over the final ground), hang median {:.1f} m; of which "
+                 "banked (both banks at 1.4 hw above the water) {}, hang "
+                 "median {:.1f} m",
                  tx, tz, gatedPts, publishedPts,
-                 params.finalize.ribbonHangFloor);
+                 params.finalize.ribbonHangFloor, medianOf(gatedHang),
+                 gatedBanked, medianOf(bankedHang));
     }
     return out;
 }

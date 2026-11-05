@@ -187,6 +187,7 @@ struct HydroReleveling {
     void reseatPonds();
     void dropRapidsFords();
     void cutGorges();
+    void seatHangingRuns();
 };
 
 f32 HydroReleveling::fineAt(f32 x, f32 z) const {
@@ -2002,6 +2003,105 @@ struct RelevelPass {
     void (*run)(HydroReleveling&);
 };
 
+// The ribbon descends into its gorge. The water profile is smoother
+// than the ground under it (the pierce ramps and the gorge cuts dig
+// 5 to 15 m under the fill level along a steep ramp, measured), and
+// the carve then digs its bed from the GROUND, not from the surface
+// (a surface-referenced dig never reached a hanging ground): the
+// published water ends up hang + depth over its bed, a sheet in the
+// air that the publication gate deletes — a hole in the course at
+// every distance. Here the surface is lowered onto the ground of its
+// footprint (the groove: the axis may sit on a flank of the V the
+// carve will open) plus the carve's own waterline margin, so the carve
+// digs exactly its depth law under the water. Held up only by the
+// highest DOWNSTREAM sill (any point further down whose ground is
+// higher: a pit fills to its lip) and by the mouth — a tributary at
+// its receiver's seated surface, any other course at its own level,
+// where the neighbour's bake or a sheet expects it. Lowering only, so
+// the profile stays monotone and nothing new hangs; a point under a
+// lake sheet keeps the sheet's level and so does its upstream.
+// Receivers first (`order`): a tributary follows its stem into the
+// gorge, or falls into it. Runs after the gorge cut (its notches are
+// read live through fineAt) and before the width fits, which then
+// measure the gorge floor at the seated water, not at the sheet.
+void HydroReleveling::seatHangingRuns() {
+    if (!params.finalize.ribbonSeatOnBed) {
+        return;
+    }
+    constexpr f32 kOverBed = 0.3f; // the carve's waterline over the ground
+    vector<f32> seat;
+    struct Drop {
+        f32 x, z, from, to;
+    };
+    vector<Drop> deepest;
+    for (const size_t r : order) {
+        River& river = rivers[r];
+        const size_t count = river.points.size();
+        if (count < 2) {
+            continue;
+        }
+        const vector<f32>& lv = lakeLvls[r];
+        seat.resize(count);
+        for (size_t i = 0; i < count; ++i) {
+            const RiverPoint& p = river.points[i];
+            const RiverPoint& fw = river.points[i + 1 < count ? i + 1 : i];
+            const RiverPoint& bw = river.points[i > 0 ? i - 1 : i];
+            const f32 dx = fw.x - bw.x;
+            const f32 dz = fw.z - bw.z;
+            const f32 len = std::hypot(dx, dz);
+            f32 g = fineAt(p.x, p.z);
+            if (len > 0.01f) {
+                const f32 px = -dz / len;
+                const f32 pz = dx / len;
+                for (const f32 off : { -1.0f, -0.5f, 0.5f, 1.0f }) {
+                    const f32 d = off * p.halfWidth;
+                    g = glm::min(g, fineAt(p.x + px * d, p.z + pz * d));
+                }
+            }
+            seat[i] = g + kOverBed;
+        }
+        // The mouth holds: a tributary at its receiver's (seated)
+        // surface, any other course at its own — it leaves the rect
+        // or ends at a sheet, and the neighbour's bake or the sheet
+        // expects it there (an unheld mouth drained whole courses to
+        // the sea level, 260 m drops at map lines, measured).
+        f32 sill = hydrology.seaLevel;
+        if (links[r].receiver >= 0) {
+            sill = glm::max(
+                sill, rivers[static_cast<size_t>(links[r].receiver)]
+                          .points[links[r].recvIdx]
+                          .surface);
+        } else {
+            sill = glm::max(sill, river.points.back().surface);
+        }
+        for (size_t i = count; i-- > 0;) {
+            sill = glm::max(sill, seat[i]);
+            if (lv[i] > -1.0e17f) {
+                sill = glm::max(sill, lv[i]);
+            }
+            RiverPoint& p = river.points[i];
+            if (sill > seat[i] + 6.0f && p.surface > seat[i] + 6.0f) {
+                ++stats.seatHeld;
+            }
+            if (p.surface > sill + 0.001f) {
+                const f32 drop = p.surface - sill;
+                ++stats.seated;
+                stats.seatDrop += drop;
+                stats.seatDeepest = glm::max(stats.seatDeepest, drop);
+                if (drop > 30.0f && deepest.size() < 8) {
+                    deepest.push_back({ p.x, p.z, p.surface, sill });
+                }
+                p.surface = sill;
+            }
+        }
+    }
+    for (const Drop& d : deepest) {
+        LOG_INFO("  seat: ({:.0f}, {:.0f}) {:.1f} -> {:.1f} m ({:.0f} m "
+                 "drop)",
+                 d.x, d.z, d.from, d.to, d.from - d.to);
+    }
+}
+
 const RelevelPass kRelevelPasses[] = {
     { "recenter", [](HydroReleveling& c) { c.recenterCourses(); } },
     { "retrace", [](HydroReleveling& c) { c.retraceBuriedRuns(); } },
@@ -2031,6 +2131,7 @@ const RelevelPass kRelevelPasses[] = {
     // through its own gorge (measured dev: ribbon interrupted, no
     // sim water under the pin width).
     { "gorge", [](HydroReleveling& c) { c.cutGorges(); } },
+    { "seat", [](HydroReleveling& c) { c.seatHangingRuns(); } },
     { "narrow", [](HydroReleveling& c) { c.narrowSteep(); } },
     { "valley", [](HydroReleveling& c) { c.fitValleys(); } },
 };

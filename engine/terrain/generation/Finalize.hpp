@@ -74,6 +74,13 @@ struct FinalizeParams {
     // continent key hashes those, and a publication floor never
     // touches the continent ground.
     f32 brookMinHalfWidth { 2.5f };
+    // The ribbon descends into its gorge (map re-leveling pass
+    // `seat`): a course surface hanging over the bed the pierce ramps
+    // and gorge cuts dug is lowered onto that bed plus the carve's
+    // depth law, held up only by the highest downstream sill and by
+    // its receiver at the mouth. Off = legacy, the hang gate above
+    // deletes what hangs instead.
+    bool ribbonSeatOnBed { true };
     f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach
@@ -136,6 +143,7 @@ struct FinalizeParams {
         REFLECT_FIELD(ribbonHangGate)
         REFLECT_FIELD(ribbonHangFloor)
         REFLECT_FIELD(brookMinHalfWidth)
+        REFLECT_FIELD(ribbonSeatOnBed)
         REFLECT_FIELD(seaLevel)
         REFLECT_FIELD(beachBand)
         REFLECT_FIELD(wetnessReach)
